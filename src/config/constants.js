@@ -1,0 +1,28 @@
+'use strict';
+
+/** Nombre de la cookie que transporta el refresh token. */
+const REFRESH_COOKIE_NAME = 'ar_refresh_token';
+
+/** Códigos de error estables: el frontend puede ramificar sobre ellos. */
+const ERROR_CODES = Object.freeze({
+  VALIDATION_ERROR: 'VALIDATION_ERROR',
+  INVALID_CREDENTIALS: 'INVALID_CREDENTIALS',
+  EMAIL_ALREADY_REGISTERED: 'EMAIL_ALREADY_REGISTERED',
+  EMAIL_NOT_VERIFIED: 'EMAIL_NOT_VERIFIED',
+  ACCOUNT_SUSPENDED: 'ACCOUNT_SUSPENDED',
+  UNAUTHENTICATED: 'UNAUTHENTICATED',
+  TOKEN_EXPIRED: 'TOKEN_EXPIRED',
+  INVALID_TOKEN: 'INVALID_TOKEN',
+  FORBIDDEN: 'FORBIDDEN',
+  NOT_FOUND: 'NOT_FOUND',
+  TOO_MANY_REQUESTS: 'TOO_MANY_REQUESTS',
+  INTERNAL_ERROR: 'INTERNAL_ERROR',
+});
+
+const ROLES = Object.freeze({
+  USER: 'USER',
+  EDITOR: 'EDITOR',
+  ADMIN: 'ADMIN',
+});
+
+module.exports = { REFRESH_COOKIE_NAME, ERROR_CODES, ROLES };

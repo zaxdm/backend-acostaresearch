@@ -1,0 +1,88 @@
+// Esquema de autenticación — Acosta Research
+// Docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  EDITOR
+  ADMIN
+}
+
+enum UserStatus {
+  PENDING   // registrado, pendiente de verificar el correo
+  ACTIVE
+  SUSPENDED
+}
+
+enum VerificationTokenType {
+  EMAIL_VERIFICATION
+}
+
+model User {
+  id           String     @id @default(uuid()) @db.Uuid
+  email        String     @unique
+  passwordHash String
+  firstName    String
+  lastName     String
+  role         Role       @default(USER)
+  status       UserStatus @default(PENDING)
+
+  emailVerifiedAt DateTime?
+  lastLoginAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  refreshTokens      RefreshToken[]
+  verificationTokens VerificationToken[]
+
+  @@map("users")
+}
+
+/// Refresh tokens rotativos.
+/// Solo se guarda el hash SHA-256: si se filtra la BD, los tokens no son usables.
+/// `familyId` agrupa toda la cadena de rotaciones de una sesión, de modo que al
+/// detectar la reutilización de un token ya rotado se revoca la familia completa.
+model RefreshToken {
+  id        String @id @default(uuid()) @db.Uuid
+  tokenHash String @unique
+  familyId  String @db.Uuid
+
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  userAgent String?
+  ip        String?
+
+  @@index([userId])
+  @@index([familyId])
+  @@map("refresh_tokens")
+}
+
+model VerificationToken {
+  id        String                @id @default(uuid()) @db.Uuid
+  tokenHash String                @unique
+  type      VerificationTokenType
+
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId, type])
+  @@map("verification_tokens")
+}

@@ -41,4 +41,48 @@ const emailLimiter = build({
   message: 'Has solicitado demasiados correos. Inténtalo más tarde.',
 });
 
-module.exports = { globalLimiter, authLimiter, emailLimiter };
+/** Cada reescritura es una llamada de pago: se frena el abuso por ráfagas. */
+const rewriteLimiter = build({
+  windowMs: 60 * 1000,
+  max: 5,
+  message: 'Estás enviando reescrituras demasiado rápido. Espera un momento.',
+});
+
+/** Abrir órdenes de pago es barato para nosotros, pero ensucia la pasarela. */
+const paymentLimiter = build({
+  windowMs: 10 * 60 * 1000,
+  max: 15,
+  message: 'Has abierto demasiados pagos seguidos. Espera unos minutos.',
+});
+
+/**
+ * Límite del conector MCP, contado POR LICENCIA y no por IP.
+ *
+ * Es obligatorio que sea así: Claude llama desde la infraestructura de
+ * Anthropic, de modo que todos los compradores llegan con la misma dirección.
+ * Un límite por IP los metería a todos en el mismo cubo y el primero que
+ * trabajara mucho dejaría fuera a los demás.
+ */
+const mcpLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: (req) => req.params.token ?? 'sin-token',
+  skip: () => env.isDevelopment,
+  handler: (_req, res) =>
+    res.status(429).json({
+      jsonrpc: '2.0',
+      error: { code: -32000, message: 'Demasiadas consultas seguidas. Espera un momento.' },
+      id: null,
+    }),
+});
+
+module.exports = {
+  globalLimiter,
+  authLimiter,
+  emailLimiter,
+  rewriteLimiter,
+  paymentLimiter,
+  mcpLimiter,
+};

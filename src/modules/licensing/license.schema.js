@@ -1,0 +1,42 @@
+'use strict';
+
+const { z } = require('zod');
+
+const generateCodesSchema = z.object({
+  cantidad: z.coerce.number().int().positive().max(100).default(1),
+  productCode: z.string().trim().toUpperCase().max(40).optional(),
+  buyerEmail: z.string().trim().toLowerCase().email().optional(),
+  note: z.string().trim().max(255).optional(),
+  // Caducidad del código sin canjear, en días. Omitir = no caduca.
+  expiraEnDias: z.coerce.number().int().positive().max(365).optional(),
+});
+
+const redeemSchema = z.object({
+  code: z
+    .string({ required_error: 'Escribe el código de activación.' })
+    .trim()
+    .min(6, 'El código está incompleto.')
+    .max(40),
+});
+
+const revokeSchema = z.object({
+  reason: z.string().trim().max(255).optional(),
+});
+
+const idParamSchema = z.object({
+  id: z.string().uuid('Identificador no válido.'),
+});
+
+const listQuerySchema = z.object({
+  status: z.enum(['ACTIVE', 'SUSPENDED', 'REVOKED']).optional(),
+  productCode: z.string().trim().toUpperCase().max(40).optional(),
+  limit: z.coerce.number().int().positive().max(200).default(100),
+});
+
+module.exports = {
+  generateCodesSchema,
+  redeemSchema,
+  revokeSchema,
+  idParamSchema,
+  listQuerySchema,
+};

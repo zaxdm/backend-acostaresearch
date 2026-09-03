@@ -11,6 +11,8 @@ function layout(title, body) {
         <table role="presentation" width="560" cellpadding="0" cellspacing="0"
                style="background:#ffffff;border-radius:12px;padding:32px">
           <tr><td>
+            <p style="margin:0 0 18px;font-size:12px;font-weight:700;letter-spacing:.09em;
+                      text-transform:uppercase;color:#1a56db">Acosta Research</p>
             <h1 style="margin:0 0 16px;font-size:20px">${title}</h1>
             ${body}
             <p style="margin:32px 0 0;font-size:12px;color:#7b8794">
@@ -24,37 +26,37 @@ function layout(title, body) {
 </html>`;
 }
 
-function emailVerification({ firstName, verificationUrl, expiresInHours }) {
+/**
+ * Correo con el código de verificación. El código va en el asunto además del
+ * cuerpo, para que se lea desde la bandeja de entrada sin abrir el mensaje.
+ */
+function emailVerificationCode({ firstName, code, expiresInMinutes }) {
   return {
-    subject: 'Confirma tu correo · Acosta Research',
+    subject: `${code} es tu código de verificación · Acosta Research`,
     text:
       `Hola ${firstName}:\n\n` +
-      `Confirma tu correo abriendo este enlace (válido ${expiresInHours} horas):\n${verificationUrl}\n\n` +
-      'Si no creaste esta cuenta, puedes ignorar este mensaje.',
+      `Tu código de verificación es: ${code}\n` +
+      `Caduca en ${expiresInMinutes} minutos y solo se puede usar una vez.\n\n` +
+      'Si no creaste esta cuenta, ignora este mensaje.',
     html: layout(
-      `Hola ${firstName}, confirma tu correo`,
+      `Hola ${firstName}, este es tu código`,
       `<p style="margin:0 0 24px;font-size:14px;line-height:22px">
-         Para activar tu cuenta en Acosta Research confirma tu dirección de correo.
-         El enlace caduca en ${expiresInHours} horas.
+         Escribe este código en la pantalla de verificación para activar tu cuenta.
        </p>
-       <p style="margin:0 0 24px">
-         <a href="${verificationUrl}"
-            style="display:inline-block;background:#1a56db;color:#ffffff;text-decoration:none;
-                   padding:12px 22px;border-radius:8px;font-size:14px;font-weight:600">
-           Confirmar mi correo
-         </a>
-       </p>
-       <p style="margin:0;font-size:12px;color:#616e7c;word-break:break-all">
-         Si el botón no funciona, copia este enlace: ${verificationUrl}
+       <p style="margin:0 0 24px;padding:18px;text-align:center;background:#eaf0fd;
+                 border-radius:10px;font-size:34px;font-weight:700;letter-spacing:.32em;
+                 color:#1a3fa8">${code}</p>
+       <p style="margin:0;font-size:13px;color:#616e7c">
+         Caduca en ${expiresInMinutes} minutos y solo se puede usar una vez.
+         Si no creaste esta cuenta, ignora este mensaje.
        </p>`,
     ),
   };
 }
 
-function buildVerificationUrl(token) {
-  const url = new URL('/auth/verificar-email', env.APP_URL);
-  url.searchParams.set('token', token);
-  return url.toString();
+/** Enlace a la aplicación, para el pie de los correos. */
+function appUrl() {
+  return env.APP_URL;
 }
 
-module.exports = { emailVerification, buildVerificationUrl };
+module.exports = { emailVerificationCode, appUrl };

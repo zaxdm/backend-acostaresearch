@@ -38,7 +38,11 @@ const loginSchema = z.object({
 });
 
 const verifyEmailSchema = z.object({
-  token: z.string({ required_error: 'Falta el token de verificación.' }).min(20).max(200),
+  email,
+  code: z
+    .string({ required_error: 'Escribe el código que te enviamos.' })
+    .trim()
+    .regex(/^[0-9]{6}$/, 'El código son 6 dígitos.'),
 });
 
 const resendVerificationSchema = z.object({ email });

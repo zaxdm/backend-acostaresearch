@@ -8,11 +8,13 @@ const authService = require('./auth.service');
 
 const authController = {
   register: asyncHandler(async (req, res) => {
-    const user = await authService.register(req.body);
+    const { email, emailSent } = await authService.register(req.body);
     return created(
       res,
-      { user },
-      'Cuenta creada. Revisa tu correo para confirmar tu dirección.',
+      { email, emailSent },
+      emailSent
+        ? 'Te enviamos un código de 6 dígitos. Escríbelo para crear tu cuenta.'
+        : 'No pudimos enviar el código. Pídelo de nuevo en la pantalla de verificación.',
     );
   }),
 
@@ -51,8 +53,8 @@ const authController = {
   }),
 
   verifyEmail: asyncHandler(async (req, res) => {
-    const user = await authService.verifyEmail(req.body.token);
-    return ok(res, { user }, { message: 'Correo confirmado. Ya puedes iniciar sesión.' });
+    const user = await authService.verifyEmail(req.body);
+    return ok(res, { user }, { message: 'Cuenta creada y verificada. Ya puedes iniciar sesión.' });
   }),
 
   resendVerification: asyncHandler(async (req, res) => {

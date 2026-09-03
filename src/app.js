@@ -9,6 +9,7 @@ const pinoHttp = require('pino-http');
 const env = require('./config/env');
 const logger = require('./config/logger');
 const routes = require('./routes');
+const mcpRouter = require('./modules/mcp/mcp.router');
 const { globalLimiter } = require('./middlewares/rateLimit');
 const notFound = require('./middlewares/notFound');
 const errorHandler = require('./middlewares/errorHandler');
@@ -36,8 +37,14 @@ function createApp() {
   app.use(express.urlencoded({ extended: true, limit: '100kb' }));
   app.use(cookieParser());
   app.use(pinoHttp({ logger }));
-  app.use(globalLimiter);
 
+  // El conector MCP va ANTES del límite global a propósito: ese límite cuenta
+  // por IP, y todas las llamadas de Claude llegan desde la misma dirección de
+  // Anthropic. Aplicarlo aquí metería a todos los compradores en el mismo cubo.
+  // El conector tiene su propio límite, contado por licencia.
+  app.use('/mcp', mcpRouter);
+
+  app.use(globalLimiter);
   app.use(env.API_PREFIX, routes);
 
   app.use(notFound);

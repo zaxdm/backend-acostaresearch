@@ -4,11 +4,15 @@ const env = require('./config/env');
 const logger = require('./config/logger');
 const prisma = require('./lib/prisma');
 const createApp = require('./app');
+const { verifyTransport } = require('./lib/mailer');
 
 async function bootstrap() {
   // Fallar aquí y no en la primera petición si la BD no responde.
   await prisma.$connect();
   logger.info('Conexión con la base de datos establecida');
+
+  // No bloquea el arranque: solo deja constancia en el log de si el correo saldrá.
+  await verifyTransport();
 
   const app = createApp();
   const server = app.listen(env.PORT, () => {

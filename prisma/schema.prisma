@@ -6,7 +6,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mysql"
   url      = env("DATABASE_URL")
 }
 
@@ -17,23 +17,21 @@ enum Role {
 }
 
 enum UserStatus {
-  PENDING   // registrado, pendiente de verificar el correo
   ACTIVE
   SUSPENDED
 }
 
-enum VerificationTokenType {
-  EMAIL_VERIFICATION
-}
-
+/// Cuentas reales: una fila aquí significa correo ya verificado.
+/// El alta sin confirmar vive en `PendingRegistration`, no aquí.
 model User {
-  id           String     @id @default(uuid()) @db.Uuid
-  email        String     @unique
-  passwordHash String
-  firstName    String
-  lastName     String
+  // MySQL no tiene tipo UUID nativo: se guarda como CHAR(36).
+  id           String     @id @default(uuid()) @db.Char(36)
+  email        String     @unique @db.VarChar(255)
+  passwordHash String     @db.VarChar(255)
+  firstName    String     @db.VarChar(80)
+  lastName     String     @db.VarChar(80)
   role         Role       @default(USER)
-  status       UserStatus @default(PENDING)
+  status       UserStatus @default(ACTIVE)
 
   emailVerifiedAt DateTime?
   lastLoginAt     DateTime?
@@ -41,8 +39,11 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  refreshTokens      RefreshToken[]
-  verificationTokens VerificationToken[]
+  refreshTokens RefreshToken[]
+  rewrites      Rewrite[]
+  wordPacks     WordPack[]
+  payments      Payment[]
+  licenses      License[]
 
   @@map("users")
 }
@@ -52,37 +53,394 @@ model User {
 /// `familyId` agrupa toda la cadena de rotaciones de una sesión, de modo que al
 /// detectar la reutilización de un token ya rotado se revoca la familia completa.
 model RefreshToken {
-  id        String @id @default(uuid()) @db.Uuid
-  tokenHash String @unique
-  familyId  String @db.Uuid
+  id        String @id @default(uuid()) @db.Char(36)
+  tokenHash String @unique @db.Char(64)
+  familyId  String @db.Char(36)
 
-  userId String @db.Uuid
+  userId String @db.Char(36)
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   expiresAt DateTime
   revokedAt DateTime?
   createdAt DateTime  @default(now())
 
-  userAgent String?
-  ip        String?
+  userAgent String? @db.VarChar(255)
+  ip        String? @db.VarChar(45)
 
   @@index([userId])
   @@index([familyId])
   @@map("refresh_tokens")
 }
 
-model VerificationToken {
-  id        String                @id @default(uuid()) @db.Uuid
-  tokenHash String                @unique
-  type      VerificationTokenType
+/// Alta a medias: los datos del registro esperan aquí hasta que se acierta el
+/// código. Solo entonces nace el `User`, así que la tabla de usuarios nunca
+/// contiene cuentas sin verificar.
+///
+/// Del código se guarda su SHA-256, nunca el valor en claro. `attempts` frena la
+/// fuerza bruta: 6 dígitos son adivinables sin un tope de intentos.
+model PendingRegistration {
+  id           String @id @default(uuid()) @db.Char(36)
+  email        String @unique @db.VarChar(255)
+  passwordHash String @db.VarChar(255)
+  firstName    String @db.VarChar(80)
+  lastName     String @db.VarChar(80)
 
-  userId String @db.Uuid
+  codeHash  String   @db.Char(64)
+  attempts  Int      @default(0)
+  expiresAt DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("pending_registrations")
+}
+
+/// Cada capítulo de una tesis se redacta con convenciones distintas; el
+/// reescritor necesita saber en cuál está para no romperlas.
+enum ThesisChapter {
+  GENERAL
+  CAP_I_PROBLEMA
+  CAP_II_MARCO_TEORICO
+  CAP_III_METODOLOGIA
+  CAP_IV_RESULTADOS
+  CAP_V_DISCUSION
+  CAP_VI_CONCLUSIONES
+  RESUMEN_ABSTRACT
+}
+
+enum RewriteStatus {
+  COMPLETED
+  FAILED
+}
+
+/// Nivel de intervención sobre el texto original.
+enum RewriteMode {
+  LIGERO   // corrige y pule, respeta al máximo la redacción original
+  ESTANDAR // reescribe para claridad y registro académico
+  PROFUNDO // reorganiza la sintaxis y la progresión de las ideas
+}
+
+/// Una reescritura pedida por un usuario. Guarda el original y el resultado
+/// para que el tesista pueda comparar y recuperar su historial, y el consumo
+/// real de tokens para poder auditar el coste y aplicar la cuota.
+model Rewrite {
+  id     String @id @default(uuid()) @db.Char(36)
+  userId String @db.Char(36)
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  expiresAt  DateTime
-  consumedAt DateTime?
-  createdAt  DateTime  @default(now())
+  mode    RewriteMode   @default(ESTANDAR)
+  chapter ThesisChapter @default(GENERAL)
+  status  RewriteStatus
 
-  @@index([userId, type])
-  @@map("verification_tokens")
+  sourceText  String  @db.MediumText
+  resultText  String? @db.MediumText
+  sourceWords Int
+
+  model        String @db.VarChar(60)
+  inputTokens  Int    @default(0)
+  outputTokens Int    @default(0)
+  cachedTokens Int    @default(0)
+  /// Coste estimado en USD con las tarifas del modelo usado.
+  costUsd      Decimal @default(0) @db.Decimal(10, 6)
+
+  errorCode  String? @db.VarChar(60)
+  durationMs Int?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@map("rewrites")
+}
+
+/// Qué entrega un plan al pagarlo.
+enum PlanKind {
+  WORDS   // una bolsa de palabras para el humanizador
+  LICENSE // una licencia del conector MCP (el método de las 9 skills)
+}
+
+/// Lo que se vende: una bolsa de palabras que caduca a los N días.
+/// Los precios se guardan en céntimos para no arrastrar errores de coma flotante.
+model Plan {
+  id           String  @id @default(uuid()) @db.Char(36)
+  code         String  @unique @db.VarChar(40)
+  name         String  @db.VarChar(80)
+  description  String? @db.VarChar(255)
+  words        Int
+  priceCents   Int
+  currency     String  @default("PEN") @db.VarChar(3)
+  durationDays Int     @default(30)
+  active       Boolean @default(true)
+  sortOrder    Int     @default(0)
+
+  /// Qué recibe el comprador. Un plan LICENSE ignora `words` y `durationDays`
+  /// se aplica a la licencia en vez de a la bolsa.
+  kind PlanKind @default(WORDS)
+  /// Para los planes LICENSE: qué producto se licencia.
+  productCode String? @db.VarChar(40)
+
+  /// PayPal no admite soles: para cobrar por ahí hace falta un precio en USD.
+  /// Nulo = el plan no se puede comprar con las pasarelas que cobran en dólares
+  /// (seguirá activándose a mano por Yape).
+  priceUsdCents Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  packs    WordPack[]
+  payments Payment[]
+
+  @@map("plans")
+}
+
+enum WordPackStatus {
+  ACTIVE
+  EXHAUSTED
+  REVOKED
+}
+
+/// Una bolsa concreta comprada (o regalada) por un usuario.
+/// La caducidad NO se guarda como estado: se compara `expiresAt` al consultarla,
+/// así no hace falta ningún proceso que vaya marcando bolsas vencidas.
+model WordPack {
+  id String @id @default(uuid()) @db.Char(36)
+
+  userId String @db.Char(36)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  planId String @db.Char(36)
+  plan   Plan   @relation(fields: [planId], references: [id])
+
+  wordsTotal Int
+  wordsUsed  Int            @default(0)
+  status     WordPackStatus @default(ACTIVE)
+
+  activatedAt DateTime @default(now())
+  expiresAt   DateTime
+
+  /// Trazabilidad del cobro manual: quién pagó, por dónde y con qué operación.
+  paymentMethod String? @db.VarChar(30)
+  paymentRef    String? @db.VarChar(80)
+  amountCents   Int?
+  note          String? @db.VarChar(255)
+
+  /// Administrador que la activó. Null si la dio el sistema (prueba gratuita).
+  grantedById String? @db.Char(36)
+
+  createdAt DateTime @default(now())
+
+  /// Cobro que la originó, si vino de una pasarela.
+  payment Payment?
+
+  @@index([userId, status, expiresAt])
+  @@map("word_packs")
+}
+
+/// Estados de un cobro. No hay "reembolsado" todavía: cuando haga falta se
+/// añade aquí y se refleja revocando la bolsa correspondiente.
+enum PaymentStatus {
+  PENDING   // orden creada en la pasarela; el usuario aún no ha pagado nada
+  PAID      // cobro confirmado y bolsa entregada
+  FAILED    // la pasarela rechazó el cobro o devolvió algo que no cuadra
+  CANCELLED // el usuario cerró la ventana sin llegar a pagar
+}
+
+/// Un intento de compra a través de una pasarela.
+///
+/// La fila se crea ANTES de cobrar, con el importe que nosotros calculamos a
+/// partir del plan: al confirmar, se compara con lo que devuelve la pasarela y
+/// solo se entrega la bolsa si coincide. Así el importe nunca lo decide el
+/// navegador.
+///
+/// `provider` es texto y no un enum a propósito: añadir Culqi o Mercado Pago no
+/// debe obligar a una migración de base de datos.
+model Payment {
+  id String @id @default(uuid()) @db.Char(36)
+
+  userId String @db.Char(36)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  planId String @db.Char(36)
+  plan   Plan   @relation(fields: [planId], references: [id])
+
+  provider          String        @db.VarChar(20)
+  /// Identificador de la orden en la pasarela (en PayPal, el `orderID`).
+  providerOrderId   String        @db.VarChar(120)
+  /// Identificador del cobro ya efectuado, que es el que sirve para conciliar.
+  providerCaptureId String?       @db.VarChar(120)
+  status            PaymentStatus @default(PENDING)
+
+  /// Importe esperado, en céntimos de `currency` (la moneda de la pasarela,
+  /// que no tiene por qué ser la del plan).
+  amountCents Int
+  currency    String @db.VarChar(3)
+
+  /// Lo entregado al confirmar el cobro. Solo uno de los dos, según el plan.
+  wordPackId String?   @unique @db.Char(36)
+  wordPack   WordPack? @relation(fields: [wordPackId], references: [id])
+  licenseId  String?   @unique @db.Char(36)
+  license    License?  @relation(fields: [licenseId], references: [id])
+
+  payerEmail String? @db.VarChar(255)
+  errorCode  String? @db.VarChar(60)
+  /// Respuesta cruda de la pasarela, para poder reclamar con pruebas.
+  rawResponse String? @db.MediumText
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  paidAt    DateTime?
+
+  @@unique([provider, providerOrderId])
+  @@index([userId, createdAt])
+  @@map("payments")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Licencias del conector MCP
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum ActivationCodeStatus {
+  AVAILABLE // generado y aún sin canjear
+  REDEEMED  // ya se cambió por una licencia
+  VOID      // anulado a mano antes de usarse
+}
+
+/// Código de un solo uso que se entrega al comprador tras la venta.
+///
+/// Se guarda solo su SHA-256, igual que los refresh tokens: si se filtra la
+/// base de datos, los códigos no son canjeables. Como consecuencia, el código
+/// en claro se ve UNA vez —al generarlo— y nunca más; por eso se guarda `hint`,
+/// que permite reconocerlo en el panel sin poder reconstruirlo.
+model ActivationCode {
+  id       String @id @default(uuid()) @db.Char(36)
+  codeHash String @unique @db.Char(64)
+  hint     String @db.VarChar(12)
+
+  /// Qué se está vendiendo. Permite tener varios productos con el mismo motor.
+  productCode String               @db.VarChar(40)
+  status      ActivationCodeStatus @default(AVAILABLE)
+
+  buyerEmail String? @db.VarChar(255)
+  note       String? @db.VarChar(255)
+
+  createdById  String?   @db.Char(36)
+  redeemedById String?   @db.Char(36)
+  redeemedAt   DateTime?
+  /// Caducidad del código sin canjear. Nula = no caduca.
+  expiresAt    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  license License?
+
+  @@index([productCode, status])
+  @@map("activation_codes")
+}
+
+enum LicenseStatus {
+  ACTIVE
+  SUSPENDED // parada temporalmente, se puede reactivar
+  REVOKED   // cancelada; el token no vuelve a servir
+}
+
+/// El acceso vivo de un comprador al conector MCP.
+///
+/// El token viaja dentro de la URL del conector, así que el comprador lo ve.
+/// Se guarda hasheado de todos modos: el objetivo no es ocultárselo a él, sino
+/// que una filtración de la base de datos no entregue todas las licencias.
+model License {
+  id String @id @default(uuid()) @db.Char(36)
+
+  userId String @db.Char(36)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  productCode String        @db.VarChar(40)
+  tokenHash   String        @unique @db.Char(64)
+  /// Primeros caracteres del token, para identificarla en el panel.
+  tokenHint   String        @db.VarChar(12)
+  status      LicenseStatus @default(ACTIVE)
+
+  activationCodeId String?         @unique @db.Char(36)
+  activationCode   ActivationCode? @relation(fields: [activationCodeId], references: [id])
+
+  /// Contadores acumulados: el motor de detección compara el uso de hoy contra
+  /// el histórico del propio comprador, que es la señal que sí se sostiene.
+  callsTotal Int       @default(0)
+  lastUsedAt DateTime?
+
+  revokedAt     DateTime?
+  revokedReason String?   @db.VarChar(255)
+  /// Caducidad del acceso. Nula = mientras no se revoque.
+  expiresAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  usages  LicenseUsage[]
+  /// Cobro que la originó, si se compró por la web en vez de canjear un código.
+  payment Payment?
+
+  @@index([userId, status])
+  @@map("licenses")
+}
+
+/// Una llamada al conector. Es la materia prima del motor de detección.
+///
+/// NO se guarda la IP del comprador porque no existe: Claude llama desde la
+/// infraestructura de Anthropic, así que todas las peticiones llegan del mismo
+/// rango de direcciones sea quien sea el que pregunta. Lo que sí distingue a un
+/// token compartido es el volumen frente a su propio histórico, el solapamiento
+/// de llamadas y la incoherencia entre consultas seguidas.
+model LicenseUsage {
+  id String @id @default(uuid()) @db.Char(36)
+
+  licenseId String  @db.Char(36)
+  license   License @relation(fields: [licenseId], references: [id], onDelete: Cascade)
+
+  tool String @db.VarChar(60)
+  /// SHA-256 del texto de la consulta. Permite comparar si dos llamadas
+  /// seguidas hablan de lo mismo sin conservar lo que escribió el tesista.
+  promptHash String? @db.Char(64)
+  /// Sesión declarada por el cliente, cuando la hay: dos sesiones distintas
+  /// vivas a la vez sobre el mismo token es la señal más difícil de disimular.
+  sessionId  String? @db.VarChar(64)
+
+  ok         Boolean @default(true)
+  durationMs Int?
+
+  createdAt DateTime @default(now())
+
+  @@index([licenseId, createdAt])
+  @@map("license_usages")
+}
+
+/// Una de las skills del método, tal como la ve el conector.
+///
+/// El contenido NO está aquí: vive en el bundle `.skill` y, una vez subido, en
+/// la Skills API de Anthropic. Esta tabla solo guarda qué existe, cómo se llama
+/// de cara al comprador y con qué identificador invocarla.
+model Skill {
+  id    String @id @default(uuid()) @db.Char(36)
+  /// El `name` del frontmatter del SKILL.md. Es la clave estable.
+  code  String @unique @db.VarChar(64)
+  orden Int
+
+  displayName String @db.VarChar(120)
+  /// Resumen para el catálogo. Es lo ÚNICO del contenido que ve el comprador.
+  summary     String @db.VarChar(500)
+  bundlePath  String @db.VarChar(255)
+
+  /// Identificadores en la Skills API. Nulos mientras no se haya subido.
+  anthropicSkillId   String? @db.VarChar(80)
+  anthropicVersionId String? @db.VarChar(80)
+
+  /// Tamaño del SKILL.md, para vigilar el coste por invocación.
+  skillMdBytes Int @default(0)
+
+  active Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("skills")
 }

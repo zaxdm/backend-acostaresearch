@@ -40,12 +40,14 @@ const userRepository = {
   },
 
   async paginate({ page, perPage, search }) {
+    // Sin mode: insensitive, que no existe en MySQL. No hace falta, porque la
+    // colación por defecto de MySQL/MariaDB (utf8mb4_..._ci) ya ignora mayúsculas.
     const where = search
       ? {
           OR: [
-            { email: { contains: search, mode: 'insensitive' } },
-            { firstName: { contains: search, mode: 'insensitive' } },
-            { lastName: { contains: search, mode: 'insensitive' } },
+            { email: { contains: search } },
+            { firstName: { contains: search } },
+            { lastName: { contains: search } },
           ],
         }
       : {};

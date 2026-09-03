@@ -44,35 +44,6 @@ const tokenRepository = {
       prisma.refreshToken.create({ data: nextData }),
     ]);
   },
-
-  // ── Tokens de verificación ──────────────────────────────────────────────
-  createVerificationToken(data) {
-    return prisma.verificationToken.create({ data });
-  },
-
-  findVerificationByHash(tokenHash) {
-    return prisma.verificationToken.findUnique({ where: { tokenHash } });
-  },
-
-  /** Invalida los tokens vigentes antes de emitir uno nuevo. */
-  consumePendingVerifications(userId, type) {
-    return prisma.verificationToken.updateMany({
-      where: { userId, type, consumedAt: null },
-      data: { consumedAt: new Date() },
-    });
-  },
-
-  /** Marca el correo como verificado y consume el token en una sola transacción. */
-  confirmEmail(tokenId, userId) {
-    const now = new Date();
-    return prisma.$transaction([
-      prisma.verificationToken.update({ where: { id: tokenId }, data: { consumedAt: now } }),
-      prisma.user.update({
-        where: { id: userId },
-        data: { emailVerifiedAt: now, status: 'ACTIVE' },
-      }),
-    ]);
-  },
 };
 
 module.exports = tokenRepository;

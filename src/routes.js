@@ -3,6 +3,10 @@
 const { Router } = require('express');
 const authRoutes = require('./modules/auth/auth.routes');
 const userRoutes = require('./modules/users/user.routes');
+const rewriteRoutes = require('./modules/rewrite/rewrite.routes');
+const billingRoutes = require('./modules/billing/billing.routes');
+const paymentRoutes = require('./modules/payments/payment.routes');
+const licenseRoutes = require('./modules/licensing/license.routes');
 
 const router = Router();
 
@@ -12,5 +16,9 @@ router.get('/health', (_req, res) =>
 
 router.use('/auth', authRoutes);
 router.use('/users', userRoutes);
+router.use('/rewrites', rewriteRoutes);
+router.use('/billing', billingRoutes);
+router.use('/payments', paymentRoutes);
+router.use('/licenses', licenseRoutes);
 
 module.exports = router;

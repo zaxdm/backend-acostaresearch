@@ -68,6 +68,12 @@ const licenseController = {
     return ok(res, ficha);
   }),
 
+  /** Alertas abiertas de todas las licencias: la bandeja del administrador. */
+  alerts: asyncHandler(async (_req, res) => {
+    const alerts = await licenseService.openAlerts();
+    return ok(res, { alerts });
+  }),
+
   /** Repaso de todas las licencias activas en busca de patrones raros. */
   review: asyncHandler(async (_req, res) => {
     const hallazgos = await licenseService.review();

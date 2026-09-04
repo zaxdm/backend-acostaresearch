@@ -6,6 +6,9 @@ const logger = require('../../config/logger');
 const { ERROR_CODES } = require('../../config/constants');
 const licenseRepository = require('./license.repository');
 const { analizar, NIVELES } = require('./license.detector');
+const limites = require('./license.limits');
+const watch = require('./license.watch');
+const prisma = require('../../lib/prisma');
 const {
   generateOpaqueToken,
   hashToken,
@@ -48,6 +51,36 @@ function urlDelConector(token) {
 /** Mismo mensaje para código inexistente, ya usado o anulado: no se filtra cuál. */
 function codigoInvalido(code = ERROR_CODES.LICENSE_CODE_INVALID) {
   return new AppError('Ese código no es válido o ya se usó.', { statusCode: 400, code });
+}
+
+/**
+ * Topes que le tocan a una licencia según el producto que compró.
+ *
+ * Se leen del plan UNA vez, al emitirla, y se copian a la licencia. Si mañana
+ * subes o bajas los límites del plan, quien ya compró conserva los suyos: es lo
+ * que contrató.
+ */
+async function topesDelProducto(productCode) {
+  const plan = await prisma.plan.findFirst({
+    where: { kind: 'LICENSE', productCode, active: true },
+    select: {
+      mcpCallsPerDay: true,
+      mcpCallsPerMonth: true,
+      mcpCostCentsPerMonth: true,
+      mcpCallsTotal: true,
+      mcpCostCentsTotal: true,
+      mcpDelivery: true,
+    },
+  });
+
+  return {
+    callsPerDay: plan?.mcpCallsPerDay ?? 0,
+    callsPerMonth: plan?.mcpCallsPerMonth ?? 0,
+    costCentsPerMonth: plan?.mcpCostCentsPerMonth ?? 0,
+    callsLimitTotal: plan?.mcpCallsTotal ?? 0,
+    costCentsLimitTotal: plan?.mcpCostCentsTotal ?? 0,
+    delivery: plan?.mcpDelivery ?? 'EXECUTED',
+  };
 }
 
 const licenseService = {
@@ -117,6 +150,7 @@ const licenseService = {
       tokenHint: token.slice(0, 8),
       expiresAt:
         env.LICENSE_DURATION_DAYS > 0 ? addDays(new Date(), env.LICENSE_DURATION_DAYS) : null,
+      ...(await topesDelProducto(registro.productCode)),
     });
 
     // Sin licencia: otra petición canjeó el mismo código un instante antes.
@@ -137,7 +171,7 @@ const licenseService = {
    * eso se encarga la transacción del cobro, para que la licencia y el pago se
    * confirmen juntos o no se confirme ninguno.
    */
-  prepareForPurchase({ userId, productCode, durationDays }) {
+  async prepareForPurchase({ userId, productCode, durationDays }) {
     const token = generateOpaqueToken(32);
 
     return {
@@ -147,6 +181,7 @@ const licenseService = {
         tokenHash: hashToken(token),
         tokenHint: token.slice(0, 8),
         expiresAt: durationDays > 0 ? addDays(new Date(), durationDays) : null,
+        ...(await topesDelProducto(productCode)),
       },
       connectorUrl: urlDelConector(token),
     };
@@ -202,7 +237,20 @@ const licenseService = {
    * Anota la llamada. Nunca lanza: si falla el registro de uso no se le puede
    * negar el servicio a un cliente que sí pagó.
    */
-  async recordUsage({ licenseId, tool, prompt, sessionId, ok = true, durationMs }) {
+  async recordUsage({
+    licenseId,
+    tool,
+    prompt,
+    sessionId,
+    ok = true,
+    durationMs,
+    kind = 'NORMAL',
+    inputTokens = 0,
+    outputTokens = 0,
+    cachedTokens = 0,
+    costCents = 0,
+    cuentaParaElTope = false,
+  }) {
     try {
       await licenseRepository.recordUsage({
         licenseId,
@@ -213,14 +261,64 @@ const licenseService = {
         sessionId: sessionId ?? null,
         ok,
         durationMs,
+        kind,
+        inputTokens,
+        outputTokens,
+        cachedTokens,
+        costCents,
       });
+
+      // Las consultas baratas (catálogo, estado) se registran pero no gastan
+      // cupo: sería absurdo que alguien se quedara sin capítulos por haber
+      // mirado la lista tres veces.
+      if (cuentaParaElTope) {
+        await limites.registrar(licenseId, { costCents });
+      }
     } catch (error) {
       logger.error({ err: error, licenseId }, 'No se pudo registrar el uso de la licencia');
     }
+
+    // La vigilancia va aparte y sin await: si tarda o falla, el tesista ya
+    // tiene su respuesta. Ella misma se salta si revisó hace poco.
+    watch.evaluar(licenseId).catch(() => undefined);
   },
 
-  listForUser(userId) {
-    return licenseRepository.listForUser(userId);
+  /** ¿Le queda cupo a esta licencia? Se consulta ANTES de gastar tokens. */
+  checkLimits(licencia) {
+    return limites.comprobar(licencia);
+  },
+
+  usageSummary(licencia) {
+    return limites.resumen(licencia);
+  },
+
+  listAlerts(licenseId) {
+    return watch.listarAlertas(licenseId);
+  },
+
+  openAlerts() {
+    return watch.alertasAbiertas();
+  },
+
+  /**
+   * Licencias del comprador con su consumo ya normalizado.
+   *
+   * El contador guardado puede ser de ayer; aquí se traduce a lo que de verdad
+   * lleva consumido hoy, para que el panel no muestre un número caducado.
+   */
+  async listForUser(userId) {
+    const licencias = await licenseRepository.listForUser(userId);
+    const dia = limites.selloDia();
+    const mes = limites.selloMes();
+
+    return licencias.map(({ counter, ...licencia }) => ({
+      ...licencia,
+      usage: {
+        callsToday: counter?.dayStamp === dia ? counter.callsToday : 0,
+        callsMonth: counter?.monthStamp === mes ? counter.callsMonth : 0,
+        costCentsMonth: counter?.monthStamp === mes ? counter.costCentsMonth : 0,
+      },
+    }));
   },
 
   /**

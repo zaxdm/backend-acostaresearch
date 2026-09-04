@@ -21,6 +21,12 @@ const licenseSelect = {
   status: true,
   callsTotal: true,
   lastUsedAt: true,
+  callsPerDay: true,
+  callsPerMonth: true,
+  costCentsPerMonth: true,
+  callsLimitTotal: true,
+  costCentsLimitTotal: true,
+  delivery: true,
   revokedAt: true,
   revokedReason: true,
   expiresAt: true,
@@ -67,24 +73,23 @@ const licenseRepository = {
    * ve cero filas y se va sin licencia, que es justo lo que debe pasar con un
    * código de un solo uso.
    */
-  redeem({ codeId, userId, productCode, tokenHash, tokenHint, expiresAt }) {
+  redeem({ codeId, ...datosLicencia }) {
     return prisma.$transaction(async (tx) => {
       const { count } = await tx.activationCode.updateMany({
         where: { id: codeId, status: 'AVAILABLE' },
-        data: { status: 'REDEEMED', redeemedById: userId, redeemedAt: new Date() },
+        data: {
+          status: 'REDEEMED',
+          redeemedById: datosLicencia.userId,
+          redeemedAt: new Date(),
+        },
       });
 
       if (count === 0) return null;
 
+      // Se propagan tal cual los topes que vienen del plan; añadir uno nuevo no
+      // obliga a tocar esta función.
       return tx.license.create({
-        data: {
-          userId,
-          productCode,
-          tokenHash,
-          tokenHint,
-          activationCodeId: codeId,
-          expiresAt,
-        },
+        data: { ...datosLicencia, activationCodeId: codeId },
         select: licenseSelect,
       });
     });
@@ -114,7 +119,18 @@ const licenseRepository = {
   listForUser(userId) {
     return prisma.license.findMany({
       where: { userId },
-      select: licenseSelect,
+      select: {
+        ...licenseSelect,
+        counter: {
+          select: {
+            callsToday: true,
+            callsMonth: true,
+            costCentsMonth: true,
+            dayStamp: true,
+            monthStamp: true,
+          },
+        },
+      },
       orderBy: { createdAt: 'desc' },
     });
   },
@@ -164,10 +180,34 @@ const licenseRepository = {
   // ── Uso ──────────────────────────────────────────────────────────────────
 
   /** Registra la llamada y actualiza los contadores de la licencia. */
-  recordUsage({ licenseId, tool, promptHash, sessionId, ok = true, durationMs }) {
+  recordUsage({
+    licenseId,
+    tool,
+    promptHash,
+    sessionId,
+    ok = true,
+    durationMs,
+    kind = 'NORMAL',
+    inputTokens = 0,
+    outputTokens = 0,
+    cachedTokens = 0,
+    costCents = 0,
+  }) {
     return prisma.$transaction([
       prisma.licenseUsage.create({
-        data: { licenseId, tool, promptHash, sessionId, ok, durationMs },
+        data: {
+          licenseId,
+          tool,
+          promptHash,
+          sessionId,
+          ok,
+          durationMs,
+          kind,
+          inputTokens,
+          outputTokens,
+          cachedTokens,
+          costCents,
+        },
       }),
       prisma.license.update({
         where: { id: licenseId },

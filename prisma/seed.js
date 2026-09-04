@@ -71,16 +71,65 @@ const PLANES = [
     code: 'METODO_9_SKILLS',
     name: 'Método de tesis · 9 capítulos',
     description:
-      'Acceso al método completo desde tu propio Claude: los 9 capítulos, capítulo por capítulo.',
+      'Acceso permanente al método completo desde tu propio Claude, capítulo por capítulo.',
     kind: 'LICENSE',
     productCode: 'METODO_9_SKILLS',
     // Un plan de licencia no entrega palabras; el campo existe por el esquema.
     words: 0,
-    priceCents: 10000,
-    priceUsdCents: 2990,
-    // Vigencia de la licencia en días. 365 = un año de acceso al conector.
-    durationDays: 365,
+    priceCents: 19900,
+    // S/199 son unos $54; se cobra algo más para absorber la comisión
+    // internacional de PayPal y que lo que llega se acerque al precio anunciado.
+    priceUsdCents: 5790,
+    // 0 = el acceso no caduca nunca.
+    durationDays: 0,
+    //
+    // ENTREGA. El método viaja al Claude del comprador y trabaja él, así que
+    // atenderlo no nos cuesta un solo token. Es lo que permite vender un acceso
+    // vitalicio sin una factura detrás.
+    mcpDelivery: 'INSTRUCTIONS',
+    //
+    // TOPES. Sin coste que contener, los frenos de gasto sobran: un tope total
+    // sobre un producto que no caduca solo servía para acotar una factura que
+    // ya no existe. Se quitan todos menos uno.
+    //
+    // El diario se queda, y no como límite de uso: es la única barrera contra
+    // la descarga sistemática. El método completo son ~100 tramos; a 200 al día
+    // se puede vaciar en una sesión larga, pero eso deja un rastro inconfundible
+    // en el registro y lo ve el detector. Trabajar de verdad son diez o quince
+    // consultas al día, así que ningún tesista lo va a rozar.
+
+  
+    mcpCallsPerDay: 200,
+    mcpCallsPerMonth: 0,
+    mcpCostCentsPerMonth: 0,
+    mcpCallsTotal: 0,
+    mcpCostCentsTotal: 0,
     sortOrder: 10,
+  },
+  {
+    // RETIRADO. Existió mientras hubo dos versiones del método —una ejecutada
+    // en nuestro servidor y otra entregada al comprador—. Ahora solo hay una,
+    // la entregada, y se vende a S/199 bajo METODO_9_SKILLS.
+    //
+    // No se borra: hay licencias emitidas con este código y el histórico de
+    // pagos lo referencia. Apagado deja de listarse y deja de poder comprarse.
+    code: 'METODO_9_GUIAS',
+    name: 'Método de tesis · guías (retirado)',
+    description: 'Reemplazado por el plan único de S/199.',
+    kind: 'LICENSE',
+    productCode: 'METODO_9_GUIAS',
+    words: 0,
+    priceCents: 9900,
+    priceUsdCents: 2990,
+    durationDays: 0,
+    active: false,
+    mcpCallsPerDay: 200,
+    mcpCallsPerMonth: 0,
+    mcpCostCentsPerMonth: 0,
+    mcpCallsTotal: 0,
+    mcpCostCentsTotal: 0,
+    mcpDelivery: 'INSTRUCTIONS',
+    sortOrder: 11,
   },
 ];
 
@@ -116,15 +165,24 @@ async function sembrarAdmin() {
 async function sembrarPlanes() {
   for (const plan of PLANES) {
     // Se actualizan palabras y precio, pero no se desactiva un plan que el
-    // administrador haya apagado a mano desde la base de datos.
+    // administrador haya apagado a mano desde la base de datos. La excepción es
+    // un plan que declare `active` aquí: eso es una decisión del catálogo, no
+    // un apagado temporal, y tiene que imponerse al volver a sembrar.
     await prisma.plan.upsert({
       where: { code: plan.code },
       update: {
+        ...(plan.active === undefined ? {} : { active: plan.active }),
         name: plan.name,
         description: plan.description,
         words: plan.words,
         kind: plan.kind ?? 'WORDS',
         productCode: plan.productCode ?? null,
+        mcpCallsPerDay: plan.mcpCallsPerDay ?? 0,
+        mcpCallsPerMonth: plan.mcpCallsPerMonth ?? 0,
+        mcpCostCentsPerMonth: plan.mcpCostCentsPerMonth ?? 0,
+        mcpCallsTotal: plan.mcpCallsTotal ?? 0,
+        mcpCostCentsTotal: plan.mcpCostCentsTotal ?? 0,
+        mcpDelivery: plan.mcpDelivery ?? 'EXECUTED',
         priceCents: plan.priceCents,
         priceUsdCents: plan.priceUsdCents ?? null,
         durationDays: plan.durationDays,

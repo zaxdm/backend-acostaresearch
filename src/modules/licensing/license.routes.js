@@ -40,6 +40,7 @@ router.delete('/codes/:id', validate({ params: idParamSchema }), licenseControll
 
 router.get('/', validate({ query: listQuerySchema }), licenseController.list);
 router.get('/review', licenseController.review);
+router.get('/alerts', licenseController.alerts);
 router.get('/:id', validate({ params: idParamSchema }), licenseController.inspect);
 router.post(
   '/:id/revoke',

@@ -62,6 +62,11 @@ const schema = z.object({
   // Plan que se regala al crear la cuenta. Vacío = sin prueba gratuita.
   TRIAL_PLAN_CODE: z.string().default('PRUEBA'),
 
+  // Modo simulado del conector: responde sin llamar a Anthropic, con cifras de
+  // consumo verosímiles. Sirve para probar la conversación, el cupo y el coste
+  // sin gastar. NUNCA en producción: el arranque lo impide.
+  SKILLS_SIMULADAS: booleanish.default('false'),
+
   // ── Pasarela de pago (PayPal) ───────────────────────────────────────────
   // Sin credenciales, el módulo responde 503 y la venta sigue siendo manual.
   PAYPAL_ENV: z.enum(['sandbox', 'live']).default('sandbox'),
@@ -77,6 +82,14 @@ const schema = z.object({
   LICENSE_PRODUCT_CODE: z.string().default('METODO_9_SKILLS'),
   // Días de vigencia de una licencia nueva. 0 = sin caducidad.
   LICENSE_DURATION_DAYS: z.coerce.number().int().nonnegative().default(0),
+
+  // Carpeta donde viven los bundles (.skill) que sirve el conector. Es la que
+  // escribe el panel al subir una skill, así que tiene que ser persistente:
+  // en un hosting con disco efímero hay que montarle un volumen.
+  SKILLS_DIR: z.string().default(path.resolve(__dirname, '../../../skills')),
+  // Techo del .skill que se acepta por el panel. Los del método rondan los
+  // 60 KB; el margen es para bundles con muchos materiales de apoyo.
+  SKILLS_MAX_BYTES: z.coerce.number().int().positive().default(15 * 1024 * 1024),
 });
 
 const parsed = schema.safeParse(process.env);
@@ -92,6 +105,38 @@ if (!parsed.success) {
 
 const raw = parsed.data;
 
+/**
+ * Comprobaciones que solo tienen sentido en producción.
+ *
+ * La del conector no es cosmética: Claude llama desde la nube de Anthropic, así
+ * que una URL en localhost o sin HTTPS simplemente no es alcanzable y el
+ * comprador vería un conector que nunca conecta, sin ningún error que lo
+ * explique. Es mejor no arrancar.
+ */
+if (raw.NODE_ENV === 'production') {
+  const problemas = [];
+
+  if (!raw.MCP_PUBLIC_URL.startsWith('https://')) {
+    problemas.push('MCP_PUBLIC_URL debe empezar por https:// para que Claude pueda conectarse.');
+  }
+  if (/localhost|127\.0\.0\.1/.test(raw.MCP_PUBLIC_URL)) {
+    problemas.push('MCP_PUBLIC_URL apunta a localhost: Claude no llama desde el equipo del comprador.');
+  }
+  if (!raw.COOKIE_SECURE) {
+    problemas.push('COOKIE_SECURE debería ser true en producción.');
+  }
+  if (raw.SKILLS_SIMULADAS) {
+    problemas.push(
+      'SKILLS_SIMULADAS está activo: el conector devolvería texto de mentira a clientes reales.',
+    );
+  }
+
+  if (problemas.length > 0) {
+    console.error(`Configuración inválida para producción:\n${problemas.map((p) => `  · ${p}`).join('\n')}`);
+    process.exit(1);
+  }
+}
+
 const env = Object.freeze({
   ...raw,
   isProduction: raw.NODE_ENV === 'production',
@@ -103,7 +148,13 @@ const env = Object.freeze({
   refreshCookiePath: `${raw.API_PREFIX}/auth`,
   // Hace falta host y contraseña: con uno solo, el envío fallaría en cada intento.
   smtpEnabled: Boolean(raw.SMTP_HOST && raw.SMTP_PASS),
-  rewriteEnabled: Boolean(raw.ANTHROPIC_API_KEY),
+  // Con la simulación encendida el conector funciona sin clave. La doble
+  // condición no es redundante: aunque el arranque ya lo impide en producción,
+  // esta es la que consulta el código, y conviene que no dependa de otra
+  // comprobación hecha treinta líneas más arriba.
+  skillsSimuladas: raw.SKILLS_SIMULADAS && raw.NODE_ENV !== 'production',
+  rewriteEnabled:
+    Boolean(raw.ANTHROPIC_API_KEY) || (raw.SKILLS_SIMULADAS && raw.NODE_ENV !== 'production'),
   paypalEnabled: Boolean(raw.PAYPAL_CLIENT_ID && raw.PAYPAL_CLIENT_SECRET),
   paypalApiBase:
     raw.PAYPAL_ENV === 'live' ? 'https://api-m.paypal.com' : 'https://api-m.sandbox.paypal.com',

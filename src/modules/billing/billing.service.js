@@ -16,6 +16,15 @@ const billingService = {
     return billingRepository.listPlans();
   },
 
+  /** Plan activo por su código. Lanza si no existe: lo usan las compras. */
+  async findPlan(code) {
+    const plan = await billingRepository.findPlanByCode(code);
+    if (!plan || !plan.active) {
+      throw new NotFoundError(`No existe un plan activo con el código ${code}.`);
+    }
+    return plan;
+  },
+
   /**
    * Datos de una bolsa nueva a partir de un plan. La regla de caducidad vive
    * aquí y en un solo sitio: la usan tanto la activación manual como la

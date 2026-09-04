@@ -4,6 +4,7 @@ const logger = require('../../config/logger');
 const { ERROR_CODES } = require('../../config/constants');
 const billingRepository = require('../billing/billing.repository');
 const billingService = require('../billing/billing.service');
+const discountService = require('../billing/discount.service');
 const licenseService = require('../licensing/license.service');
 const licenseRepository = require('../licensing/license.repository');
 const paymentRepository = require('./payment.repository');
@@ -60,7 +61,7 @@ const paymentService = {
    * importe, que lo calcula el servidor a partir del plan. El navegador manda
    * el código del plan, nunca el precio.
    */
-  async createOrder({ userId, planCode, providerCode }) {
+  async createOrder({ userId, planCode, providerCode, discountCode }) {
     const provider = obtenerPasarela(providerCode);
 
     const plan = await billingRepository.findPlanByCode(planCode);
@@ -68,13 +69,19 @@ const paymentService = {
       throw new NotFoundError(`No existe un plan activo con el código ${planCode}.`);
     }
 
-    const amountCents = provider.priceForPlan(plan);
-    if (!amountCents || amountCents <= 0) {
+    const precioBase = provider.priceForPlan(plan);
+    if (!precioBase || precioBase <= 0) {
       throw new AppError(`El plan ${plan.name} no se puede pagar con ${provider.label}.`, {
         statusCode: 409,
         code: ERROR_CODES.PLAN_NOT_PURCHASABLE,
       });
     }
+
+    // El descuento lo resuelve el servidor a partir del código: el navegador
+    // manda el código, nunca el importe rebajado.
+    const descuento = await discountService.resolve({ code: discountCode, plan });
+    const rebaja = descuento ? descuento.discountUsdCents : 0;
+    const amountCents = precioBase - rebaja;
 
     let orden;
     try {
@@ -97,6 +104,8 @@ const paymentService = {
       providerOrderId: orden.orderId,
       amountCents,
       currency: provider.currency,
+      discountCodeId: descuento?.id ?? null,
+      discountCents: rebaja,
     });
 
     logger.info(
@@ -110,6 +119,7 @@ const paymentService = {
       approveUrl: orden.approveUrl,
       amountCents,
       currency: provider.currency,
+      discount: descuento ? { code: descuento.code, amountCents: rebaja } : null,
       plan: { code: plan.code, name: plan.name, words: plan.words },
     };
   },
@@ -198,7 +208,7 @@ const paymentService = {
     // genere una sola vez y su URL se pueda devolver al comprador.
     const esLicencia = payment.plan.kind === 'LICENSE';
     const licenciaPreparada = esLicencia
-      ? licenseService.prepareForPurchase({
+      ? await licenseService.prepareForPurchase({
           userId,
           productCode: payment.plan.productCode ?? payment.plan.code,
           durationDays: payment.plan.durationDays,
@@ -209,6 +219,11 @@ const paymentService = {
       paymentId: payment.id,
       captura,
       entregar: async (tx) => {
+        // El código solo se gasta si el pago llegó a confirmarse.
+        if (payment.discountCodeId) {
+          await discountService.registrarUso(payment.discountCodeId, tx);
+        }
+
         if (esLicencia) {
           const license = await licenseRepository.create(licenciaPreparada.data, tx);
           return {

@@ -152,6 +152,26 @@ model Rewrite {
   @@map("rewrites")
 }
 
+/// Cómo sirve el conector el contenido de una licencia.
+///
+/// Es la decisión que define el producto, y tiene un precio en los dos
+/// sentidos:
+///
+///   EXECUTED     — el servidor ejecuta la skill y devuelve el resultado. El
+///                  método no sale nunca del servidor, pero cada consulta
+///                  consume tokens de nuestra cuenta.
+///
+///   INSTRUCTIONS — el conector entrega las instrucciones y el trabajo lo hace
+///                  el Claude del comprador. No cuesta un céntimo, pero el
+///                  contenido llega a su equipo: se puede leer desplegando el
+///                  resultado de la herramienta, y ninguna instrucción lo
+///                  impide, porque para entonces ya llegó. Lo que sí queda es
+///                  el control de acceso, la revocación y la trazabilidad.
+enum McpDelivery {
+  EXECUTED
+  INSTRUCTIONS
+}
+
 /// Qué entrega un plan al pagarlo.
 enum PlanKind {
   WORDS   // una bolsa de palabras para el humanizador
@@ -177,6 +197,25 @@ model Plan {
   kind PlanKind @default(WORDS)
   /// Para los planes LICENSE: qué producto se licencia.
   productCode String? @db.VarChar(40)
+
+  /// Topes del conector, por licencia. 0 = sin tope.
+  ///
+  /// El que de verdad protege el margen es el de coste: treinta llamadas al
+  /// capítulo de Metodología cuestan varias veces más que treinta a
+  /// Conclusiones, porque cada skill pesa distinto. Contar llamadas aproxima
+  /// mal; contar dólares no.
+  mcpCallsPerDay       Int @default(0)
+  mcpCallsPerMonth     Int @default(0)
+  mcpCostCentsPerMonth Int @default(0)
+  /// Topes TOTALES, sin reinicio. Son los que hacen viable un acceso
+  /// permanente: si el producto no caduca, un tope mensual no tiene fondo
+  /// —doce meses cuestan doce veces el mes— y acaba costando más que la venta.
+  /// El acceso es para siempre; el uso incluido, finito.
+  mcpCallsTotal        Int @default(0)
+  mcpCostCentsTotal    Int @default(0)
+
+  /// Cómo se sirve el contenido. Ver `McpDelivery`.
+  mcpDelivery McpDelivery @default(EXECUTED)
 
   /// PayPal no admite soles: para cobrar por ahí hace falta un precio en USD.
   /// Nulo = el plan no se puede comprar con las pasarelas que cobran en dólares
@@ -280,6 +319,12 @@ model Payment {
   licenseId  String?   @unique @db.Char(36)
   license    License?  @relation(fields: [licenseId], references: [id])
 
+  /// Descuento aplicado, si el comprador usó un código promocional.
+  discountCodeId String?       @db.Char(36)
+  discountCode   DiscountCode? @relation(fields: [discountCodeId], references: [id])
+  /// Rebaja en céntimos de la moneda del cobro, ya restada de `amountCents`.
+  discountCents  Int           @default(0)
+
   payerEmail String? @db.VarChar(255)
   errorCode  String? @db.VarChar(60)
   /// Respuesta cruda de la pasarela, para poder reclamar con pruebas.
@@ -368,6 +413,22 @@ model License {
   callsTotal Int       @default(0)
   lastUsedAt DateTime?
 
+  /// Topes copiados del plan al comprar. Se guardan aquí y no se leen del plan
+  /// cada vez a propósito: subir o bajar el precio de un plan no debe cambiar
+  /// lo que compró alguien el mes pasado.
+  callsPerDay         Int @default(0)
+  callsPerMonth       Int @default(0)
+  costCentsPerMonth   Int @default(0)
+  callsLimitTotal     Int @default(0)
+  costCentsLimitTotal Int @default(0)
+
+  /// Copiado del plan al emitirla, como los topes.
+  delivery McpDelivery @default(EXECUTED)
+
+  /// Última vez que el motor de detección la revisó. Evita recalcular treinta
+  /// días de historial en cada llamada.
+  lastCheckedAt DateTime?
+
   revokedAt     DateTime?
   revokedReason String?   @db.VarChar(255)
   /// Caducidad del acceso. Nula = mientras no se revoque.
@@ -376,7 +437,10 @@ model License {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  usages  LicenseUsage[]
+  usages   LicenseUsage[]
+  alerts   LicenseAlert[]
+  sessions McpSession[]
+  counter LicenseCounter?
   /// Cobro que la originó, si se compró por la web en vez de canjear un código.
   payment Payment?
 
@@ -405,8 +469,16 @@ model LicenseUsage {
   /// vivas a la vez sobre el mismo token es la señal más difícil de disimular.
   sessionId  String? @db.VarChar(64)
 
-  ok         Boolean @default(true)
+  ok         Boolean   @default(true)
   durationMs Int?
+  kind       UsageKind @default(NORMAL)
+
+  /// Consumo real de la llamada. Es lo que se compara contra el tope de gasto,
+  /// y lo que permite saber de verdad cuánto cuesta cada capítulo.
+  inputTokens  Int @default(0)
+  outputTokens Int @default(0)
+  cachedTokens Int @default(0)
+  costCents    Int @default(0)
 
   createdAt DateTime @default(now())
 
@@ -443,4 +515,158 @@ model Skill {
   updatedAt DateTime @updatedAt
 
   @@map("skills")
+}
+
+/// Contadores del conector, uno por licencia.
+///
+/// Existe para que comprobar el límite sea una sola lectura por id, en vez de
+/// contar filas de `license_usages` en cada llamada.
+///
+/// El reinicio no necesita ningún proceso programado: se guarda el día y el mes
+/// en curso como texto, y si el sello no coincide con hoy, el contador vale
+/// cero. Un servidor apagado una semana vuelve con las cuentas correctas.
+model LicenseCounter {
+  licenseId String  @id @db.Char(36)
+  license   License @relation(fields: [licenseId], references: [id], onDelete: Cascade)
+
+  callsToday     Int @default(0)
+  callsMonth     Int @default(0)
+  costCentsToday Int @default(0)
+  costCentsMonth Int @default(0)
+
+  /// Acumulados desde el primer día y sin reinicio: se comparan contra los
+  /// topes totales. Solo suman las llamadas que de verdad se sirvieron.
+  callsLifetime     Int @default(0)
+  costCentsLifetime Int @default(0)
+
+  /// Sellos en hora de Lima: el día del comprador, no el del servidor.
+  dayStamp   String @db.VarChar(10)
+  monthStamp String @db.VarChar(7)
+
+  updatedAt DateTime @updatedAt
+
+  @@map("license_counters")
+}
+
+/// Qué clase de llamada fue. Alimenta tanto los límites como la detección.
+enum UsageKind {
+  NORMAL             // consulta legítima
+  EXTRACTION_ATTEMPT // intento de sacar las instrucciones internas
+  BLOCKED_LIMIT      // rechazada por haber agotado el tope
+}
+
+enum AlertKind {
+  VOLUMEN
+  SESIONES_SOLAPADAS
+  CONSULTAS_INCOHERENTES
+  EXTRACCION
+}
+
+enum AlertLevel {
+  ALERTA
+  SOSPECHA_ALTA
+}
+
+enum AlertAction {
+  NINGUNA
+  NOTIFICADO
+  REVOCADO
+}
+
+/// Lo que el motor de detección encontró, guardado en vez de recalculado.
+///
+/// Hace falta que quede escrito por dos razones: para que la regla de "a la
+/// segunda se revoca" tenga memoria, y para poder explicarle a un comprador
+/// por qué se le cortó el acceso.
+model LicenseAlert {
+  id String @id @default(uuid()) @db.Char(36)
+
+  licenseId String  @db.Char(36)
+  license   License @relation(fields: [licenseId], references: [id], onDelete: Cascade)
+
+  kind   AlertKind
+  level  AlertLevel
+  action AlertAction @default(NINGUNA)
+
+  /// Las métricas que la dispararon, para poder revisarla meses después.
+  detalle String? @db.VarChar(500)
+
+  createdAt DateTime @default(now())
+
+  @@index([licenseId, createdAt])
+  @@map("license_alerts")
+}
+
+/// Código promocional que rebaja el precio de una compra.
+///
+/// A diferencia de `ActivationCode`, este SÍ se guarda en claro: no es una
+/// credencial que dé acceso a nada, sino una rebaja, y el administrador
+/// necesita releerlo para reenviárselo a un cliente o publicarlo.
+///
+/// La rebaja se define en céntimos de SOL, que es la moneda en la que se
+/// anuncian los precios. Al cobrar en dólares se traslada la misma proporción,
+/// para que el descuento anunciado y el cobrado coincidan.
+model DiscountCode {
+  id   String @id @default(uuid()) @db.Char(36)
+  code String @unique @db.VarChar(40)
+
+  amountCents Int
+
+  /// Plan al que se limita. Nulo = vale para cualquiera.
+  planCode String? @db.VarChar(40)
+
+  /// Cuántas veces puede canjearse en total. 0 = sin límite.
+  maxUses   Int @default(0)
+  usedCount Int @default(0)
+
+  active    Boolean   @default(true)
+  expiresAt DateTime?
+  note      String?   @db.VarChar(255)
+
+  createdById String?  @db.Char(36)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  payments Payment[]
+
+  @@index([active, expiresAt])
+  @@map("discount_codes")
+}
+
+/// Una conversación abierta con una skill a través del conector.
+///
+/// Las skills del método CONVERSAN: preguntan, esperan respuesta y avanzan por
+/// pasos. Una llamada a una herramienta MCP es de un solo tiro, así que el hilo
+/// tiene que vivir aquí: el cliente manda un identificador y el servidor
+/// recupera lo hablado.
+model McpSession {
+  id String @id @default(uuid()) @db.Char(36)
+
+  licenseId String  @db.Char(36)
+  license   License @relation(fields: [licenseId], references: [id], onDelete: Cascade)
+
+  skillCode String @db.VarChar(64)
+  /// Identificador que elige el cliente para su hilo.
+  clientKey String @db.VarChar(64)
+
+  /// La conversación, en el formato de la Messages API.
+  messages String @db.LongText
+
+  /// Contenedor de ejecución que se reutiliza entre turnos: dentro viven los
+  /// .docx que va generando la skill. Caduca solo, y entonces se empieza otro.
+  containerId String?   @db.VarChar(120)
+  expiresAt   DateTime?
+
+  turns     Int      @default(0)
+  /// Último tramo del método entregado, en las licencias de entrega.
+  /// Permite servir el paso siguiente sin que el cliente lleve la cuenta.
+  lastSection Int    @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Un cliente no puede tener dos hilos con la misma clave.
+  @@unique([licenseId, clientKey])
+  @@index([licenseId, updatedAt])
+  @@map("mcp_sessions")
 }

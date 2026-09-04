@@ -14,6 +14,8 @@ const createOrderSchema = z.object({
     .toUpperCase()
     .max(40),
   provider: z.string().trim().toUpperCase().max(20).default('PAYPAL'),
+  // Código promocional. El servidor calcula la rebaja; aquí solo viaja el código.
+  discountCode: z.string().trim().max(40).optional(),
 });
 
 const orderParamsSchema = z.object({

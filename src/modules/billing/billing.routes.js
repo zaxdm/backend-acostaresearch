@@ -5,7 +5,12 @@ const authenticate = require('../../middlewares/authenticate');
 const authorize = require('../../middlewares/authorize');
 const validate = require('../../middlewares/validate');
 const { ROLES } = require('../../config/constants');
-const { grantPackSchema } = require('./billing.schema');
+const {
+  grantPackSchema,
+  createDiscountSchema,
+  discountIdParamSchema,
+  validateDiscountSchema,
+} = require('./billing.schema');
 const billingController = require('./billing.controller');
 
 const router = Router();
@@ -25,5 +30,31 @@ router.post(
   billingController.grant,
 );
 router.get('/packs', authenticate, authorize(ROLES.ADMIN), billingController.recent);
+
+// ── Descuentos ─────────────────────────────────────────────────────────────
+// Comprobar un código exige sesión pero no rol: lo hace el propio comprador
+// antes de pagar, para ver cuánto le queda.
+router.post(
+  '/discounts/validate',
+  authenticate,
+  validate({ body: validateDiscountSchema }),
+  billingController.validateDiscount,
+);
+
+router.post(
+  '/discounts',
+  authenticate,
+  authorize(ROLES.ADMIN),
+  validate({ body: createDiscountSchema }),
+  billingController.createDiscount,
+);
+router.get('/discounts', authenticate, authorize(ROLES.ADMIN), billingController.discounts);
+router.patch(
+  '/discounts/:id',
+  authenticate,
+  authorize(ROLES.ADMIN),
+  validate({ params: discountIdParamSchema }),
+  billingController.toggleDiscount,
+);
 
 module.exports = router;

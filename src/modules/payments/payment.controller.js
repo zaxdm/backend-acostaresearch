@@ -14,6 +14,7 @@ const paymentController = {
       userId: req.user.id,
       planCode: req.body.planCode,
       providerCode: req.body.provider,
+      discountCode: req.body.discountCode,
     });
     return created(res, { order });
   }),

@@ -2,54 +2,122 @@
 
 const env = require('../config/env');
 
-function layout(title, body) {
+/**
+ * Marco de todos los correos.
+ *
+ * Se escribe con tablas y estilos en línea porque los clientes de correo no
+ * son navegadores: Outlook ignora flexbox y grid, y muchos borran las hojas de
+ * estilo. Lo que aquí parece anticuado es lo único que se ve igual en Gmail,
+ * Outlook y el correo del móvil.
+ *
+ * `preheader` es el texto que Gmail enseña en la bandeja junto al asunto. Sin
+ * él, ese hueco lo rellena la primera frase visible —que suele ser el nombre de
+ * la marca— y se desperdicia la única línea que decide si alguien abre.
+ */
+function layout(title, body, { preheader = '' } = {}) {
+  const contacto = env.SUPPORT_WHATSAPP_URL
+    ? `<a href="${env.SUPPORT_WHATSAPP_URL}" style="color:#1a56db;text-decoration:none">WhatsApp</a> ·`
+    : '';
+
   return `<!doctype html>
 <html lang="es">
-  <body style="margin:0;padding:32px;background:#f4f5f7;font-family:Segoe UI,Roboto,Arial,sans-serif;color:#1f2933">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-      <tr><td align="center">
-        <table role="presentation" width="560" cellpadding="0" cellspacing="0"
-               style="background:#ffffff;border-radius:12px;padding:32px">
-          <tr><td>
-            <p style="margin:0 0 18px;font-size:12px;font-weight:700;letter-spacing:.09em;
-                      text-transform:uppercase;color:#1a56db">Acosta Research</p>
-            <h1 style="margin:0 0 16px;font-size:20px">${title}</h1>
-            ${body}
-            <p style="margin:32px 0 0;font-size:12px;color:#7b8794">
-              Acosta Research · Este es un mensaje automático, no respondas a este correo.
-            </p>
-          </td></tr>
-        </table>
-      </td></tr>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="color-scheme" content="light only" />
+    <title>${title}</title>
+  </head>
+  <body style="margin:0;padding:0;background:#eef0f4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;color:#1a2233;-webkit-font-smoothing:antialiased">
+
+    <!-- Vista previa de la bandeja de entrada. Invisible en el mensaje. -->
+    <div style="display:none;max-height:0;overflow:hidden;opacity:0">${preheader}</div>
+
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#eef0f4">
+      <tr>
+        <td align="center" style="padding:32px 16px">
+
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px">
+
+            <!-- Marca -->
+            <tr>
+              <td style="padding:0 4px 16px">
+                <span style="font-size:17px;font-weight:700;color:#1a2233;letter-spacing:-0.01em">Acosta</span>
+                <span style="font-size:17px;font-weight:600;color:#1a56db"> IA &amp; Research</span>
+              </td>
+            </tr>
+
+            <!-- Contenido -->
+            <tr>
+              <td style="background:#ffffff;border:1px solid #e2e5ea;border-radius:14px;padding:34px 32px">
+                <h1 style="margin:0 0 20px;font-size:21px;line-height:1.3;font-weight:650;color:#1a2233">${title}</h1>
+                ${body}
+              </td>
+            </tr>
+
+            <!-- Pie -->
+            <tr>
+              <td style="padding:22px 8px 0;font-size:12.5px;line-height:1.7;color:#8b95a6">
+                ${contacto}
+                <a href="${appUrl()}" style="color:#1a56db;text-decoration:none">acostaresearch.com</a>
+                <br />
+                Benicio Gonzalo Acosta Enríquez · Trujillo, Perú
+              </td>
+            </tr>
+
+          </table>
+        </td>
+      </tr>
     </table>
   </body>
 </html>`;
 }
 
 /**
- * Correo con el código de verificación. El código va en el asunto además del
- * cuerpo, para que se lea desde la bandeja de entrada sin abrir el mensaje.
+ * Correo con el código de verificación.
+ *
+ * El código va también en el ASUNTO. Es lo que permite leerlo desde la lista de
+ * mensajes, sin abrir nada, y con eso mucha gente ya puede volver a la pestaña
+ * y teclearlo. Cuando el correo tarda, esa diferencia decide si termina el
+ * registro o lo deja.
+ *
+ * Los dígitos van separados en tres grupos: seis cifras seguidas se copian mal
+ * de memoria, y el error se descubre después de teclear, cuando ya frustra.
  */
 function emailVerificationCode({ firstName, code, expiresInMinutes }) {
+  const grupos = code.slice(0, 3) + '<span style="color:#c3cbd8"> · </span>' + code.slice(3);
+
   return {
     subject: `${code} es tu código de verificación · Acosta Research`,
     text:
-      `Hola ${firstName}:\n\n` +
-      `Tu código de verificación es: ${code}\n` +
-      `Caduca en ${expiresInMinutes} minutos y solo se puede usar una vez.\n\n` +
+      `Hola ${firstName}:
+
+` +
+      `Tu código de verificación es: ${code}
+` +
+      `Caduca en ${expiresInMinutes} minutos y solo se puede usar una vez.
+
+` +
       'Si no creaste esta cuenta, ignora este mensaje.',
     html: layout(
       `Hola ${firstName}, este es tu código`,
-      `<p style="margin:0 0 24px;font-size:14px;line-height:22px">
-         Escribe este código en la pantalla de verificación para activar tu cuenta.
+      `<p style="margin:0 0 22px;font-size:15px;line-height:1.6;color:#52606d">
+         Escríbelo en la pantalla de verificación y tu cuenta queda activa.
        </p>
-       <p style="margin:0 0 24px;padding:18px;text-align:center;background:#eaf0fd;
-                 border-radius:10px;font-size:34px;font-weight:700;letter-spacing:.32em;
-                 color:#1a3fa8">${code}</p>
-       <p style="margin:0;font-size:13px;color:#616e7c">
-         Caduca en ${expiresInMinutes} minutos y solo se puede usar una vez.
-         Si no creaste esta cuenta, ignora este mensaje.
+
+       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+         <tr>
+           <td align="center" style="background:#f2f6fe;border:1px solid #d7e3fb;border-radius:12px;padding:26px 16px">
+             <div style="font-size:38px;font-weight:700;letter-spacing:.14em;color:#1a3fa8;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif">${grupos}</div>
+             <div style="margin-top:10px;font-size:12.5px;color:#7b8794">Caduca en ${expiresInMinutes} minutos</div>
+           </td>
+         </tr>
+       </table>
+
+       <p style="margin:22px 0 0;font-size:13.5px;line-height:1.65;color:#7b8794">
+         Solo se puede usar una vez. Si no creaste esta cuenta, ignora este mensaje: sin el
+         código no se llega a crear nada.
        </p>`,
+      { preheader: `Tu código es ${code}. Caduca en ${expiresInMinutes} minutos.` },
     ),
   };
 }

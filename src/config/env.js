@@ -54,6 +54,9 @@ const schema = z.object({
   // pasar la alineación de DMARC —Brevo firma con SU dominio, no con el de
   // Google— y acaba en spam aunque el correo salga sin errores.
   MAIL_FROM: z.string().default('no-responder@acostaresearch.com'),
+  // Enlace de contacto que aparece en el pie de los correos. Vacío = no se
+  // muestra: es preferible callar a ofrecer una vía que no atiende nadie.
+  SUPPORT_WHATSAPP_URL: vacioComoAusente(z.string().url()),
   // A dónde responde el tesista. Vacío = responde al remitente.
   // Sirve para poner un buzón que sí se lee sin sacrificar la entrega.
   MAIL_REPLY_TO: vacioComoAusente(z.string().email()),

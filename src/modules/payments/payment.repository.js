@@ -11,6 +11,7 @@ const paymentSelect = {
   currency: true,
   createdAt: true,
   paidAt: true,
+  reviewNote: true,
   plan: { select: { code: true, name: true, words: true, durationDays: true } },
 };
 
@@ -46,16 +47,16 @@ const paymentRepository = {
    * Cierra el cobro: marca el pago como pagado y entrega la bolsa, todo en la
    * misma transacción.
    *
-   * El `updateMany` con `status: 'PENDING'` es la pieza clave: hace de cerrojo.
+   * El `updateMany` con el estado de partida es la pieza clave: hace de cerrojo.
    * Si dos peticiones intentan confirmar el mismo pago a la vez —doble clic,
-   * reintento del navegador— solo una encuentra el pago pendiente; la otra ve
-   * cero filas afectadas y recibe `null`, así que nunca se entregan dos bolsas
-   * por un mismo cobro.
+   * reintento del navegador, dos administradores aprobando— solo una lo
+   * encuentra en ese estado; la otra ve cero filas afectadas y recibe `null`,
+   * así que nunca se entregan dos bolsas por un mismo cobro.
    */
-  settle({ paymentId, captura, entregar }) {
+  settle({ paymentId, captura, entregar, estadoEsperado = 'PENDING' }) {
     return prisma.$transaction(async (tx) => {
       const { count } = await tx.payment.updateMany({
-        where: { id: paymentId, status: 'PENDING' },
+        where: { id: paymentId, status: estadoEsperado },
         data: {
           status: 'PAID',
           providerCaptureId: captura.captureId,
@@ -111,6 +112,75 @@ const paymentRepository = {
         plan: { select: { code: true, name: true } },
       },
     });
+  },
+
+  // ── Pago manual (Yape) ───────────────────────────────────────────────────
+
+  /** El pago con su plan completo. Hace falta para entregar lo comprado. */
+  findByIdWithPlan(id) {
+    return prisma.payment.findUnique({ where: { id }, include: { plan: true } });
+  },
+
+  /**
+   * Comprobantes esperando revisión, del más antiguo al más nuevo.
+   *
+   * El orden no es el habitual a propósito: aquí hay gente esperando su
+   * acceso, y el que lleva más tiempo esperando es el que hay que mirar antes.
+   */
+  listInReview({ limit = 100 } = {}) {
+    return prisma.payment.findMany({
+      where: { status: 'IN_REVIEW' },
+      select: {
+        ...paymentSelect,
+        operationCode: true,
+        proofMime: true,
+        discountCents: true,
+        user: { select: { id: true, email: true, firstName: true, lastName: true } },
+      },
+      orderBy: { createdAt: 'asc' },
+      take: limit,
+    });
+  },
+
+  /**
+   * Engancha la captura al pago y lo pone a la espera de revisión.
+   *
+   * Solo avanza desde PENDING o IN_REVIEW: un pago ya aprobado no admite otra
+   * captura, que sería la forma evidente de colar un comprobante distinto del
+   * que se aprobó.
+   */
+  async attachProof(id, { userId, proofPath, proofMime, operationCode }) {
+    const { count } = await prisma.payment.updateMany({
+      where: { id, userId, status: { in: ['PENDING', 'IN_REVIEW'] } },
+      data: {
+        proofPath,
+        proofMime,
+        ...(operationCode === undefined ? {} : { operationCode }),
+        status: 'IN_REVIEW',
+      },
+    });
+    return count > 0;
+  },
+
+  /** Deja el pago rechazado con el motivo que verá el comprador. */
+  async reject(id, { reviewedById, reviewNote }) {
+    const { count } = await prisma.payment.updateMany({
+      where: { id, status: 'IN_REVIEW' },
+      data: { status: 'REJECTED', reviewedById, reviewedAt: new Date(), reviewNote },
+    });
+    return count > 0;
+  },
+
+  /** Anota quién aprobó, una vez la entrega ya se cerró en su transacción. */
+  markReviewed(id, reviewedById) {
+    return prisma.payment.update({
+      where: { id },
+      data: { reviewedById, reviewedAt: new Date() },
+    });
+  },
+
+  countInReview() {
+    return prisma.payment.count({ where: { status: 'IN_REVIEW' } });
   },
 
   listRecent({ limit = 50 } = {}) {

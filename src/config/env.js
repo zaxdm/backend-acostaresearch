@@ -67,11 +67,37 @@ const schema = z.object({
   // sin gastar. NUNCA en producción: el arranque lo impide.
   SKILLS_SIMULADAS: booleanish.default('false'),
 
+  // ── Acceso con Google ───────────────────────────────────────────────────
+  // Client ID de la app OAuth (console.cloud.google.com → Credenciales). Es
+  // público por diseño: viaja en el HTML y Google comprueba el origen. Vacío =
+  // no se ofrece el botón y solo queda el acceso con contraseña.
+  // Admite varios separados por comas: es normal tener un cliente OAuth para
+  // desarrollo y otro para el dominio real. El token solo se acepta si su
+  // `aud` es uno de estos, así que la lista no afloja nada — cada entrada
+  // sigue siendo un cliente nuestro.
+  GOOGLE_CLIENT_ID: vacioComoAusente(z.string()),
+
   // ── Pasarela de pago (PayPal) ───────────────────────────────────────────
   // Sin credenciales, el módulo responde 503 y la venta sigue siendo manual.
   PAYPAL_ENV: z.enum(['sandbox', 'live']).default('sandbox'),
   PAYPAL_CLIENT_ID: vacioComoAusente(z.string()),
   PAYPAL_CLIENT_SECRET: vacioComoAusente(z.string()),
+
+  // ── Pago manual (Yape o transferencia) ──────────────────────────────────
+  // El comprador paga con el QR y sube la captura; un administrador la mira y
+  // activa el acceso. Es la vía principal en Perú, donde PayPal es minoritario.
+  // Vacíos = no se muestran los datos del titular junto al QR, solo el QR.
+  YAPE_TITULAR: vacioComoAusente(z.string()),
+  YAPE_NUMERO: vacioComoAusente(z.string()),
+  // A quién le llega el aviso de que hay un comprobante esperando. Si se deja
+  // vacío se busca en la base de datos el primer administrador activo, para
+  // que el aviso no se pierda por un .env sin rellenar.
+  ADMIN_NOTIFY_EMAIL: vacioComoAusente(z.string().email()),
+  // Carpeta de los comprobantes. Como la de skills, tiene que ser persistente:
+  // son la prueba de un cobro y hay que poder releerlos meses después.
+  PROOFS_DIR: z.string().default(path.resolve(__dirname, '../../storage/comprobantes')),
+  // Techo de la captura. Una foto de pantalla de móvil no pasa de 2-3 MB.
+  PROOF_MAX_BYTES: z.coerce.number().int().positive().default(6 * 1024 * 1024),
 
   // ── Conector MCP (licencias) ────────────────────────────────────────────
   // Base pública de la URL que el comprador pega en Claude. Tiene que ser
@@ -155,7 +181,18 @@ const env = Object.freeze({
   skillsSimuladas: raw.SKILLS_SIMULADAS && raw.NODE_ENV !== 'production',
   rewriteEnabled:
     Boolean(raw.ANTHROPIC_API_KEY) || (raw.SKILLS_SIMULADAS && raw.NODE_ENV !== 'production'),
+  googleAuthEnabled: Boolean(raw.GOOGLE_CLIENT_ID),
+  googleClientIds: (raw.GOOGLE_CLIENT_ID ?? '')
+    .split(',')
+    .map((id) => id.trim())
+    .filter(Boolean),
   paypalEnabled: Boolean(raw.PAYPAL_CLIENT_ID && raw.PAYPAL_CLIENT_SECRET),
+  // El pago manual no depende de credenciales: basta con que haya un QR en la
+  // web. Estos datos son solo el texto que lo acompaña.
+  yape: {
+    titular: raw.YAPE_TITULAR ?? null,
+    numero: raw.YAPE_NUMERO ?? null,
+  },
   paypalApiBase:
     raw.PAYPAL_ENV === 'live' ? 'https://api-m.paypal.com' : 'https://api-m.sandbox.paypal.com',
 });

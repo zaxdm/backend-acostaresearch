@@ -47,4 +47,23 @@ const verifyEmailSchema = z.object({
 
 const resendVerificationSchema = z.object({ email });
 
-module.exports = { registerSchema, loginSchema, verifyEmailSchema, resendVerificationSchema };
+/**
+ * El token de Google. Se comprueba solo que parezca un JWT: la validación real
+ * —firma, emisor, destinatario, caducidad— la hace `google.verifier`, que es
+ * el único sitio donde puede hacerse bien.
+ */
+const googleSchema = z.object({
+  credential: z
+    .string()
+    .min(20, 'Falta el token de Google.')
+    .max(4096)
+    .regex(/^[\w-]+\.[\w-]+\.[\w-]+$/, 'El token de Google no tiene el formato esperado.'),
+});
+
+module.exports = {
+  googleSchema,
+  registerSchema,
+  loginSchema,
+  verifyEmailSchema,
+  resendVerificationSchema,
+};

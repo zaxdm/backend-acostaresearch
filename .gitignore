@@ -39,3 +39,6 @@ build/
 # Cache
 .cache/
 .npm/
+
+# Comprobantes de pago subidos por los compradores.
+storage/

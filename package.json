@@ -37,6 +37,7 @@
     "dotenv": "^16.6.1",
     "express": "^5.0.1",
     "express-rate-limit": "^7.5.0",
+    "google-auth-library": "^11.0.2",
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.2",
     "nodemailer": "^6.10.1",

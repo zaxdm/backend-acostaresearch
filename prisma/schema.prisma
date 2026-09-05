@@ -27,7 +27,12 @@ model User {
   // MySQL no tiene tipo UUID nativo: se guarda como CHAR(36).
   id           String     @id @default(uuid()) @db.Char(36)
   email        String     @unique @db.VarChar(255)
-  passwordHash String     @db.VarChar(255)
+  /// Nulo en las cuentas que entran con Google: ahí no hay contraseña que
+  /// guardar, y un hash de relleno solo serviría para confundir.
+  passwordHash String?    @db.VarChar(255)
+  /// El `sub` de Google: identificador estable de la cuenta. El correo puede
+  /// cambiar, esto no.
+  googleId     String?    @unique @db.VarChar(64)
   firstName    String     @db.VarChar(80)
   lastName     String     @db.VarChar(80)
   role         Role       @default(USER)
@@ -278,8 +283,10 @@ model WordPack {
 /// añade aquí y se refleja revocando la bolsa correspondiente.
 enum PaymentStatus {
   PENDING   // orden creada en la pasarela; el usuario aún no ha pagado nada
+  IN_REVIEW // pago manual con comprobante enviado, a la espera de que el administrador lo mire
   PAID      // cobro confirmado y bolsa entregada
   FAILED    // la pasarela rechazó el cobro o devolvió algo que no cuadra
+  REJECTED  // el administrador revisó el comprobante y no lo dio por bueno
   CANCELLED // el usuario cerró la ventana sin llegar a pagar
 }
 
@@ -330,12 +337,31 @@ model Payment {
   /// Respuesta cruda de la pasarela, para poder reclamar con pruebas.
   rawResponse String? @db.MediumText
 
+  /// ── Pago manual (Yape o transferencia) ──────────────────────────────────
+  /// Ruta del comprobante en disco, relativa al directorio de comprobantes. La
+  /// imagen NO se guarda en la base de datos: son capturas de pantalla de un
+  /// megabyte largo y aquí solo estorban a cada consulta de la tabla.
+  proofPath String? @db.VarChar(255)
+  proofMime String? @db.VarChar(40)
+  /// Número de operación que muestra Yape. Es lo que permite cuadrar el
+  /// comprobante con el extracto real sin fiarse de la captura.
+  operationCode String? @db.VarChar(40)
+  /// Quién revisó el comprobante y qué decidió. Como el `createdById` de los
+  /// códigos, va sin relación: es un apunte de auditoría, no algo que se
+  /// navegue desde el usuario.
+  reviewedById String?   @db.Char(36)
+  reviewedAt   DateTime?
+  /// Motivo del rechazo. Se le enseña al comprador tal cual, así que se
+  /// escribe pensando en que lo va a leer él.
+  reviewNote String? @db.VarChar(255)
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   paidAt    DateTime?
 
   @@unique([provider, providerOrderId])
   @@index([userId, createdAt])
+  @@index([status, createdAt])
   @@map("payments")
 }
 

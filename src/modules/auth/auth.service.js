@@ -11,6 +11,7 @@ const {
 const userRepository = require('../users/user.repository');
 const tokenRepository = require('./token.repository');
 const pendingRepository = require('./pendingRegistration.repository');
+const googleVerifier = require('./google.verifier');
 const billingService = require('../billing/billing.service');
 const { sendMail } = require('../../lib/mailer');
 const { emailVerificationCode } = require('../../lib/emailTemplates');
@@ -125,6 +126,19 @@ const authService = {
       await fakeVerify(password);
       throw new UnauthorizedError(
         'Correo o contraseña incorrectos.',
+        ERROR_CODES.INVALID_CREDENTIALS,
+      );
+    }
+
+    // Cuenta creada con Google: no hay contraseña contra la que comparar.
+    //
+    // Decirlo revela que ese correo existe, y hasta aquí el flujo evitaba
+    // filtrarlo. Se acepta a conciencia: la alternativa es responder «contraseña
+    // incorrecta» a alguien que nunca tuvo una, y dejarlo probando indefinidamente
+    // con su propia cuenta delante.
+    if (!user.passwordHash) {
+      throw new UnauthorizedError(
+        'Esta cuenta entra con Google. Usa el botón «Continuar con Google».',
         ERROR_CODES.INVALID_CREDENTIALS,
       );
     }
@@ -293,6 +307,81 @@ const authService = {
 
     logger.info({ userId: user.id, email: user.email }, 'Cuenta creada tras verificar el código');
     return user;
+  },
+
+  /**
+   * Entra —o se da de alta— con una cuenta de Google.
+   *
+   * Es una sola operación para las dos cosas a propósito. En la pantalla no hay
+   * un botón de «registrarme con Google» y otro de «entrar con Google» que
+   * hagan cosas distintas: nadie recuerda con cuál se dio de alta, y obligarle
+   * a acertar solo produce el error «ya existe una cuenta con ese correo» ante
+   * alguien que está mirando su propia cuenta.
+   *
+   * Tres caminos:
+   *   · Ya entró antes con Google  → se identifica por `googleId`.
+   *   · Tiene cuenta con contraseña → se enlaza. Es seguro porque Google
+   *     afirma que el correo está verificado, y eso ya se comprobó.
+   *   · No existe                   → se crea, ya verificada: pedirle un código
+   *     al correo que Google acaba de confirmar sería teatro.
+   */
+  async loginWithGoogle(idToken, context) {
+    const identidad = await googleVerifier.verificar(idToken);
+
+    let user = await userRepository.findByGoogleId(identidad.googleId);
+    let creada = false;
+
+    if (!user) {
+      const porCorreo = await userRepository.findByEmailWithSecret(identidad.email);
+
+      if (porCorreo) {
+        user = await userRepository.update(porCorreo.id, {
+          googleId: identidad.googleId,
+          // Quien llega por Google trae el correo confirmado por Google. Si la
+          // cuenta se había quedado a medias, esto la termina de abrir.
+          emailVerifiedAt: porCorreo.emailVerifiedAt ?? new Date(),
+        });
+        logger.info({ userId: user.id }, 'Cuenta existente enlazada con Google');
+      } else {
+        user = await userRepository.create({
+          email: identidad.email,
+          firstName: identidad.firstName,
+          lastName: identidad.lastName,
+          googleId: identidad.googleId,
+          emailVerifiedAt: new Date(),
+        });
+        creada = true;
+
+        // Misma prueba gratuita que en el alta con contraseña. Si falla, la
+        // cuenta ya existe y no debe romperse el acceso por esto.
+        try {
+          await billingService.grantTrial(user.id);
+        } catch (error) {
+          logger.error({ err: error, userId: user.id }, 'No se pudo activar la prueba gratuita');
+        }
+
+        logger.info({ userId: user.id, email: user.email }, 'Cuenta creada con Google');
+      }
+    }
+
+    // La suspensión se comprueba DESPUÉS de resolver la cuenta: da igual por
+    // qué puerta entre, un suspendido no pasa.
+    if (user.status === 'SUSPENDED') {
+      throw new ForbiddenError('Tu cuenta está suspendida.', ERROR_CODES.ACCOUNT_SUSPENDED);
+    }
+
+    const { token, expiresAt, data } = await issueRefreshToken({ userId: user.id, context });
+    await tokenRepository.createRefreshToken(data);
+
+    const publicUser = await userRepository.update(user.id, { lastLoginAt: new Date() });
+
+    return {
+      user: publicUser,
+      creada,
+      accessToken: signAccessToken({ userId: user.id, role: user.role, email: user.email }),
+      refreshToken: token,
+      refreshExpiresAt: expiresAt,
+    };
   },
 
   /**

@@ -5,6 +5,7 @@ const validate = require('../../middlewares/validate');
 const authenticate = require('../../middlewares/authenticate');
 const { authLimiter, emailLimiter } = require('../../middlewares/rateLimit');
 const {
+  googleSchema,
   registerSchema,
   loginSchema,
   verifyEmailSchema,
@@ -16,6 +17,10 @@ const router = Router();
 
 router.post('/register', authLimiter, validate({ body: registerSchema }), authController.register);
 router.post('/login', authLimiter, validate({ body: loginSchema }), authController.login);
+
+// Entrar y darse de alta con Google son la misma ruta: quien pulsa el botón no
+// sabe —ni tiene por qué— si ya tenía cuenta aquí.
+router.post('/google', authLimiter, validate({ body: googleSchema }), authController.google);
 
 // Se autentica con la cookie httpOnly, no con el access token.
 router.post('/refresh', authController.refresh);

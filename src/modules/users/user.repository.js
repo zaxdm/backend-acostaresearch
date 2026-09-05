@@ -27,6 +27,10 @@ const userRepository = {
     return prisma.user.findUnique({ where: { email } });
   },
 
+  findByGoogleId(googleId) {
+    return prisma.user.findUnique({ where: { googleId } });
+  },
+
   findByEmail(email) {
     return prisma.user.findUnique({ where: { email }, select: publicSelect });
   },

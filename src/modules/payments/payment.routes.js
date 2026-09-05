@@ -12,8 +12,13 @@ const {
   providerQuerySchema,
 } = require('./payment.schema');
 const paymentController = require('./payment.controller');
+const manualRoutes = require('./manual.routes');
 
 const router = Router();
+
+// Pago manual por Yape: sus rutas van aparte porque la subida del comprobante
+// necesita un cuerpo crudo y un techo de tamaño propio.
+router.use('/manual', manualRoutes);
 
 // Público: la web de venta necesita saber si hay pago en línea sin pedir sesión.
 router.get('/providers', paymentController.providers);

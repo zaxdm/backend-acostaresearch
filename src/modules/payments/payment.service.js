@@ -5,9 +5,9 @@ const { ERROR_CODES } = require('../../config/constants');
 const billingRepository = require('../billing/billing.repository');
 const billingService = require('../billing/billing.service');
 const discountService = require('../billing/discount.service');
-const licenseService = require('../licensing/license.service');
 const licenseRepository = require('../licensing/license.repository');
 const paymentRepository = require('./payment.repository');
+const { entregarPago } = require('./payment.delivery');
 const { getProvider, enabledProviders } = require('./providers');
 const { AppError, NotFoundError } = require('../../shared/errors/AppError');
 
@@ -204,47 +204,16 @@ const paymentService = {
     }
 
     // Un plan de licencia entrega acceso al conector; uno de palabras, una
-    // bolsa. La preparación va fuera de la transacción para que el token se
-    // genere una sola vez y su URL se pueda devolver al comprador.
-    const esLicencia = payment.plan.kind === 'LICENSE';
-    const licenciaPreparada = esLicencia
-      ? await licenseService.prepareForPurchase({
-          userId,
-          productCode: payment.plan.productCode ?? payment.plan.code,
-          durationDays: payment.plan.durationDays,
-        })
-      : null;
-
-    const entrega = await paymentRepository.settle({
-      paymentId: payment.id,
+    // bolsa. De eso se encarga `payment.delivery`, que es el mismo camino que
+    // recorre la aprobación de un Yape: lo que se entrega no puede depender de
+    // por dónde se pagó.
+    //
+    // En la bolsa se anota el precio del plan en soles, como en las
+    // activaciones manuales: el importe real en dólares vive en `payments`.
+    const entrega = await entregarPago({
+      payment,
       captura,
-      entregar: async (tx) => {
-        // El código solo se gasta si el pago llegó a confirmarse.
-        if (payment.discountCodeId) {
-          await discountService.registrarUso(payment.discountCodeId, tx);
-        }
-
-        if (esLicencia) {
-          const license = await licenseRepository.create(licenciaPreparada.data, tx);
-          return {
-            enlace: { licenseId: license.id },
-            resultado: { license, connectorUrl: licenciaPreparada.connectorUrl },
-          };
-        }
-
-        const pack = await tx.wordPack.create({
-          data: billingService.packDataForPlan({
-            userId,
-            plan: payment.plan,
-            paymentMethod: provider.code,
-            paymentRef: captura.captureId,
-            // Se guarda el precio del plan en soles, como en las activaciones
-            // manuales: el importe real en dólares vive en la fila de `payments`.
-            note: `Pago en línea con ${provider.label}`,
-          }),
-        });
-        return { enlace: { wordPackId: pack.id }, resultado: { pack } };
-      },
+      notaBolsa: `Pago en línea con ${provider.label}`,
     });
 
     // Sin entrega: otra petición simultánea ya cerró este pago. No es un error.

@@ -30,6 +30,19 @@ const authController = {
     return ok(res, { user, accessToken }, { message: 'Sesión iniciada.' });
   }),
 
+  /** Entrar o darse de alta con Google. Es la misma puerta para ambas cosas. */
+  google: asyncHandler(async (req, res) => {
+    const { user, creada, accessToken, refreshToken, refreshExpiresAt } =
+      await authService.loginWithGoogle(req.body.credential, extractContext(req));
+
+    setRefreshCookie(res, refreshToken, refreshExpiresAt);
+    return ok(
+      res,
+      { user, accessToken },
+      { message: creada ? 'Cuenta creada. ¡Bienvenido!' : 'Sesión iniciada.' },
+    );
+  }),
+
   refresh: asyncHandler(async (req, res) => {
     const { accessToken, refreshToken, refreshExpiresAt } = await authService.refresh(
       readRefreshCookie(req),

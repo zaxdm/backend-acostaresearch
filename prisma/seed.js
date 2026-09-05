@@ -107,12 +107,18 @@ const PLANES = [
     // producto no consume tokens nuestros, así que un tope mensual o total solo
     // acotaría una factura que no existe. Se quitan todos menos uno.
     //
-    // El diario se queda, y no como límite de uso: es la única barrera contra
-    // la descarga sistemática. El método completo son ~100 tramos; a 200 al día
-    // se puede vaciar en una sesión larga, pero eso deja un rastro inconfundible
-    // en el registro y lo ve el detector. Trabajar de verdad son diez o quince
-    // consultas al día, así que ningún tesista lo va a rozar.
-    mcpCallsPerDay: 200,
+    // El diario no es un límite de uso: es la única barrera contra la descarga
+    // sistemática, porque en modo INSTRUCTIONS el método sí viaja al Claude del
+    // comprador. El método completo son ~101 tramos, así que este tope permite
+    // vaciarlo casi cinco veces en un mismo día.
+    //
+    // Se fija alto a propósito, con el uso real muy por debajo —el día más
+    // intenso registrado fueron 34 consultas y la media son 10—, de modo que
+    // ningún tesista pueda toparse con él. La contrapartida es que la
+    // protección efectiva ya no la da este número, sino el rastro que deja en
+    // el registro pedir tramos sin trabajar ninguno, que es lo que mira
+    // `license.detector`. Conviene revisar las alertas con más frecuencia.
+    mcpCallsPerDay: 500,
     mcpCallsPerMonth: 0,
     mcpCostCentsPerMonth: 0,
     mcpCallsTotal: 0,

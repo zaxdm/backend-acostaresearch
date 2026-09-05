@@ -157,6 +157,30 @@ const skillBundle = {
   },
 
   /**
+   * Convierte lo que hay guardado en `skill.bundlePath` en una ruta usable.
+   *
+   * En la base de datos se guarda solo el NOMBRE del archivo, no su ruta
+   * completa, y se resuelve aquí contra la carpeta de este entorno. La razón es
+   * concreta: una ruta absoluta se guarda una vez y deja de ser cierta en
+   * cuanto el servidor cambia de sitio. Las filas escritas desde Windows decían
+   * «C:\Users\...\skills\marco-teorico.skill», que en el servidor Linux no
+   * existe, y el conector respondía que el capítulo no está publicado con los
+   * archivos delante.
+   *
+   * Se aceptan también las rutas absolutas antiguas: se les toma el nombre y se
+   * resuelven igual, de modo que una base que venga de antes funciona sin que
+   * nadie tenga que corregirla.
+   */
+  resolver(bundlePath) {
+    if (!bundlePath) return null;
+    // basename() de POSIX no entiende la barra invertida de Windows, así que se
+    // parte por las dos: esto tiene que digerir rutas escritas en cualquiera de
+    // los dos sistemas.
+    const nombre = bundlePath.split(/[\\/]/).pop();
+    return path.join(env.SKILLS_DIR, nombre);
+  },
+
+  /**
    * Escribe el bundle en la carpeta que lee el conector.
    *
    * Se escribe a un temporal y se renombra: si el proceso muere a mitad, el
@@ -173,7 +197,9 @@ const skillBundle = {
     fs.writeFileSync(temporal, buffer);
     fs.renameSync(temporal, destino);
 
-    return destino;
+    // Se devuelve el NOMBRE, no la ruta: es lo que se guarda en la ficha para
+    // que la skill no quede atada a la carpeta de este servidor.
+    return path.basename(destino);
   },
 
   existe(code) {

@@ -3,6 +3,18 @@
 
 generator client {
   provider = "prisma-client-js"
+  // El motor de consultas es un binario compilado para una arquitectura
+  // concreta. "native" cubre el equipo donde se desarrolla (Windows x64) y el
+  // segundo, el servidor: Ubuntu x86-64 con OpenSSL 3, que es lo que da un
+  // Hetzner CX.
+  //
+  // Sin declararlo, el despliegue instala y compila sin una sola queja y luego
+  // revienta en la primera consulta con un error sobre un motor que no
+  // encuentra, sin decir que la causa es esta.
+  //
+  // Si el servidor pasara a ARM (línea CAX), cámbialo por
+  // "linux-arm64-openssl-3.0.x".
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {

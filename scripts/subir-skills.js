@@ -29,6 +29,7 @@ const { toFile } = require('@anthropic-ai/sdk');
 const env = require('../src/config/env');
 const logger = require('../src/config/logger');
 const prisma = require('../src/lib/prisma');
+const skillBundle = require('../src/modules/skills/skill.bundle');
 
 /** Límite de la API: 30 MB sin comprimir por skill. */
 const MAX_BYTES = 30 * 1024 * 1024;
@@ -62,11 +63,14 @@ async function ficherosDelBundle(rutaBundle) {
 }
 
 async function subirUna(cliente, skill, { versionNueva }) {
-  if (!fs.existsSync(skill.bundlePath)) {
-    throw new Error(`No se encuentra el bundle: ${skill.bundlePath}`);
+  // La ficha guarda el nombre del archivo; la carpeta la pone este entorno.
+  const rutaBundle = skillBundle.resolver(skill.bundlePath);
+
+  if (!fs.existsSync(rutaBundle)) {
+    throw new Error(`No se encuentra el bundle: ${rutaBundle}`);
   }
 
-  const files = await ficherosDelBundle(skill.bundlePath);
+  const files = await ficherosDelBundle(rutaBundle);
 
   // Si ya estaba subida se crea una VERSIÓN nueva en vez de otra skill: así el
   // identificador no cambia y las licencias en uso no se enteran.

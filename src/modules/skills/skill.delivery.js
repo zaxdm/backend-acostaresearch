@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const AdmZip = require('adm-zip');
 const logger = require('../../config/logger');
 const { marcar } = require('./skill.watermark');
+const skillBundle = require('./skill.bundle');
 
 /**
  * Entrega del método: el modo que no cuesta nada.
@@ -123,7 +124,10 @@ function partir(skillMd) {
 }
 
 /** Lee el bundle, lo parte y lo guarda en memoria. */
-function leerBundle(rutaBundle) {
+function leerBundle(bundlePath) {
+  // Lo guardado es un nombre de archivo; la carpeta la pone el entorno.
+  const rutaBundle = skillBundle.resolver(bundlePath);
+
   if (cache.has(rutaBundle)) return cache.get(rutaBundle);
 
   if (!fs.existsSync(rutaBundle)) {

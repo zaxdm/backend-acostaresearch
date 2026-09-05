@@ -49,7 +49,14 @@ const schema = z.object({
   SMTP_SECURE: booleanish.default('false'),
   SMTP_USER: vacioComoAusente(z.string()),
   SMTP_PASS: vacioComoAusente(z.string()),
-  MAIL_FROM: z.string().default('lavaya.soport@gmail.com'),
+  // Remitente. Tiene que estar dado de alta y validado como «sender» en Brevo,
+  // y conviene que sea del dominio propio: un @gmail.com de remitente no puede
+  // pasar la alineación de DMARC —Brevo firma con SU dominio, no con el de
+  // Google— y acaba en spam aunque el correo salga sin errores.
+  MAIL_FROM: z.string().default('no-responder@acostaresearch.com'),
+  // A dónde responde el tesista. Vacío = responde al remitente.
+  // Sirve para poner un buzón que sí se lee sin sacrificar la entrega.
+  MAIL_REPLY_TO: vacioComoAusente(z.string().email()),
 
   // ── Reescritor académico (Claude) ───────────────────────────────────────
   ANTHROPIC_API_KEY: vacioComoAusente(z.string()),

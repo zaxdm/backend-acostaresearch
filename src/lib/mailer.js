@@ -22,7 +22,21 @@ const transporter = env.smtpEnabled
   : nodemailer.createTransport({ jsonTransport: true });
 
 async function sendMail({ to, subject, html, text }) {
-  const info = await transporter.sendMail({ from: env.MAIL_FROM, to, subject, html, text });
+  const info = await transporter.sendMail({
+    from: env.MAIL_FROM,
+    // A dónde va la respuesta si el tesista le da a «Responder».
+    //
+    // Existe para poder separar las dos cosas: el remitente tiene que ser una
+    // dirección del dominio propio —es lo que firma Brevo y lo que mira el
+    // filtro antispam—, pero las respuestas conviene leerlas en el buzón de
+    // siempre. Sin esto habría que elegir entre entregar bien o enterarse de
+    // las respuestas.
+    ...(env.MAIL_REPLY_TO ? { replyTo: env.MAIL_REPLY_TO } : {}),
+    to,
+    subject,
+    html,
+    text,
+  });
 
   if (!env.smtpEnabled) {
     logger.info({ to, subject, text }, 'Correo simulado (SMTP sin configurar)');

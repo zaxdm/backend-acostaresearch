@@ -54,16 +54,28 @@ function codigoInvalido(code = ERROR_CODES.LICENSE_CODE_INVALID) {
 }
 
 /**
- * Topes que le tocan a una licencia según el producto que compró.
+ * Lo que el plan define para una licencia: cuánto dura y con qué topes.
  *
- * Se leen del plan UNA vez, al emitirla, y se copian a la licencia. Si mañana
- * subes o bajas los límites del plan, quien ya compró conserva los suyos: es lo
- * que contrató.
+ * Se lee UNA vez, al emitirla, y se copia a la licencia. Si mañana subes o bajas
+ * los límites del plan, quien ya compró conserva los suyos: es lo que contrató.
+ *
+ * LA DURACIÓN SALE DEL PLAN, NO DEL .env
+ * ---------------------------------------
+ * Antes había dos fuentes: la compra por la web usaba `plan.durationDays` y el
+ * canje de un código de activación usaba `LICENSE_DURATION_DAYS`. Con la
+ * variable a 0, cada código que se repartía —a un cliente que pagó por
+ * transferencia, a un colega, a un alumno de cortesía— entregaba acceso
+ * VITALICIO de un producto que se vende por trimestres, y no había forma de
+ * notarlo salvo mirando la fila en la base de datos.
+ *
+ * Ahora manda el plan y solo el plan. La variable de entorno queda como último
+ * recurso, para un producto que no tenga plan asociado.
  */
-async function topesDelProducto(productCode) {
+async function contratoDelProducto(productCode) {
   const plan = await prisma.plan.findFirst({
     where: { kind: 'LICENSE', productCode, active: true },
     select: {
+      durationDays: true,
       mcpCallsPerDay: true,
       mcpCallsPerMonth: true,
       mcpCostCentsPerMonth: true,
@@ -74,12 +86,17 @@ async function topesDelProducto(productCode) {
   });
 
   return {
-    callsPerDay: plan?.mcpCallsPerDay ?? 0,
-    callsPerMonth: plan?.mcpCallsPerMonth ?? 0,
-    costCentsPerMonth: plan?.mcpCostCentsPerMonth ?? 0,
-    callsLimitTotal: plan?.mcpCallsTotal ?? 0,
-    costCentsLimitTotal: plan?.mcpCostCentsTotal ?? 0,
-    delivery: plan?.mcpDelivery ?? 'EXECUTED',
+    /** Días de acceso. 0 = sin caducidad. */
+    durationDays: plan?.durationDays ?? env.LICENSE_DURATION_DAYS,
+    /** Se separan porque se vuelcan tal cual en la fila de la licencia. */
+    topes: {
+      callsPerDay: plan?.mcpCallsPerDay ?? 0,
+      callsPerMonth: plan?.mcpCallsPerMonth ?? 0,
+      costCentsPerMonth: plan?.mcpCostCentsPerMonth ?? 0,
+      callsLimitTotal: plan?.mcpCallsTotal ?? 0,
+      costCentsLimitTotal: plan?.mcpCostCentsTotal ?? 0,
+      delivery: plan?.mcpDelivery ?? 'EXECUTED',
+    },
   };
 }
 
@@ -141,6 +158,9 @@ const licenseService = {
       });
     }
 
+    // Duración y topes salen del plan del producto, igual que en una compra.
+    const contrato = await contratoDelProducto(registro.productCode);
+
     const token = generateOpaqueToken(32);
     const licencia = await licenseRepository.redeem({
       codeId: registro.id,
@@ -149,8 +169,8 @@ const licenseService = {
       tokenHash: hashToken(token),
       tokenHint: token.slice(0, 8),
       expiresAt:
-        env.LICENSE_DURATION_DAYS > 0 ? addDays(new Date(), env.LICENSE_DURATION_DAYS) : null,
-      ...(await topesDelProducto(registro.productCode)),
+        contrato.durationDays > 0 ? addDays(new Date(), contrato.durationDays) : null,
+      ...contrato.topes,
     });
 
     // Sin licencia: otra petición canjeó el mismo código un instante antes.
@@ -171,8 +191,10 @@ const licenseService = {
    * eso se encarga la transacción del cobro, para que la licencia y el pago se
    * confirmen juntos o no se confirme ninguno.
    */
-  async prepareForPurchase({ userId, productCode, durationDays }) {
-    const topes = await topesDelProducto(productCode);
+  async prepareForPurchase({ userId, productCode }) {
+    // La duración ya NO llega por parámetro: la decide el plan, para que compra
+    // y canje no puedan discrepar nunca.
+    const { durationDays, topes } = await contratoDelProducto(productCode);
 
     // ¿Está renovando? Si ya tiene una licencia de este mismo grupo y no está
     // revocada, se le alarga esa en vez de emitirle otra. Emitir una nueva le

@@ -27,7 +27,7 @@ async function entregarPago({ payment, captura, estadoEsperado = 'PENDING', nota
     ? await licenseService.prepareForPurchase({
         userId: payment.userId,
         productCode: payment.plan.productCode ?? payment.plan.code,
-        durationDays: payment.plan.durationDays,
+        // La duración no se pasa: la resuelve el propio servicio desde el plan.
       })
     : null;
 

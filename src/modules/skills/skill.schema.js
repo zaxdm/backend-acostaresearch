@@ -19,6 +19,8 @@ const booleanoOpcional = z
 
 const uploadQuerySchema = z.object({
   displayName: z.string().trim().min(3).max(120).optional(),
+  // El grupo al que pertenece: el productCode del plan que lo vende.
+  productCode: z.string().trim().max(40).optional(),
   summary: z.string().trim().min(10).max(500).optional(),
   orden: numeroOpcional,
   active: booleanoOpcional,
@@ -27,6 +29,8 @@ const uploadQuerySchema = z.object({
 const updateSchema = z
   .object({
     displayName: z.string().trim().min(3).max(120).optional(),
+    // Cadena vacía = sacarlo de todo grupo.
+    productCode: z.string().trim().max(40).nullable().optional(),
     summary: z.string().trim().min(10).max(500).optional(),
     orden: z.number().int().min(0).optional(),
     active: z.boolean().optional(),

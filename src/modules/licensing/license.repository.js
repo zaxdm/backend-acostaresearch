@@ -104,6 +104,29 @@ const licenseRepository = {
     return cliente.license.create({ data, select: licenseSelect });
   },
 
+  /**
+   * Alarga la vigencia de una licencia que ya existe.
+   *
+   * Es lo que ocurre al renovar. Se conserva el token —y por tanto la URL que
+   * el comprador ya tiene pegada en Claude— porque cambiarlo le obligaría a
+   * reinstalar el conector cada trimestre, que es la forma más rápida de que
+   * alguien no renueve.
+   *
+   * Los topes se refrescan con los del plan vigente: quien paga otra vez
+   * compra el producto de hoy, no el de hace tres meses.
+   *
+   * No resucita una licencia revocada: `revokedAt` y su motivo se quedan como
+   * están, y quien la elige comprueba antes que no lo esté. Pagar de nuevo no
+   * puede ser la forma de deshacer una revocación por uso compartido.
+   */
+  extend(id, { expiresAt, topes }, cliente = prisma) {
+    return cliente.license.update({
+      where: { id },
+      data: { expiresAt, status: 'ACTIVE', ...topes },
+      select: licenseSelect,
+    });
+  },
+
   /** Licencia por el hash de su token. Es la consulta del camino caliente. */
   findByTokenHash(tokenHash) {
     return prisma.license.findUnique({

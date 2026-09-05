@@ -535,6 +535,17 @@ model Skill {
   code  String @unique @db.VarChar(64)
   orden Int
 
+  /// A qué grupo pertenece: el `productCode` del plan que lo vende.
+  ///
+  /// Un grupo es un producto: «método de tesis», «humanizar texto». Cada uno
+  /// tiene su precio y su duración, y una licencia solo ve los capítulos de
+  /// SU grupo. Sin esto, comprar cualquier cosa daba acceso a todo.
+  ///
+  /// Nulo = visible para cualquier licencia. No es la vía normal, pero evita
+  /// que una skill subida sin elegir grupo desaparezca en silencio: es más
+  /// fácil de detectar un capítulo que se ve de más que uno que no se ve.
+  productCode String? @db.VarChar(40)
+
   displayName String @db.VarChar(120)
   /// Resumen para el catálogo. Es lo ÚNICO del contenido que ve el comprador.
   summary     String @db.VarChar(500)
@@ -552,6 +563,7 @@ model Skill {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@index([productCode])
   @@map("skills")
 }
 

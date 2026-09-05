@@ -119,7 +119,9 @@ function construirServidor(licencia) {
       inputSchema: SIN_ARGUMENTOS,
     },
     async () => {
-      const skills = await skillService.listCatalog();
+      // Solo los capítulos del grupo que esta licencia compró. Sin el filtro,
+      // quien pagara el humanizador vería también el método de tesis.
+      const skills = await skillService.listCatalog(licencia.productCode);
       await licenseService.recordUsage({ licenseId: licencia.id, tool: 'listar_capitulos' });
 
       if (skills.length === 0) {
@@ -239,7 +241,13 @@ function construirServidor(licencia) {
 
       const skill = await skillService.findByCode(capitulo);
 
-      if (!skill || !skill.active) {
+      // Un capítulo de otro grupo se trata como inexistente, no como prohibido.
+      // Que no salga en la lista no impide pedirlo por su clave, y la clave no
+      // es ningún secreto; decir «no tienes acceso a ese» sería confirmarle a
+      // quien va probando que ahí hay algo que comprar.
+      const suyo = skill && skillService.perteneceAlGrupo(skill, licencia.productCode);
+
+      if (!skill || !skill.active || !suyo) {
         await licenseService.recordUsage({
           licenseId: licencia.id,
           tool: 'redactar',

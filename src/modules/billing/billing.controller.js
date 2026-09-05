@@ -4,6 +4,7 @@ const asyncHandler = require('../../shared/http/asyncHandler');
 const { ok, created } = require('../../shared/http/apiResponse');
 const billingService = require('./billing.service');
 const discountService = require('./discount.service');
+const productService = require('./product.service');
 const { addDays } = require('../../shared/utils/tokens');
 
 const billingController = {
@@ -55,6 +56,27 @@ const billingController = {
   recent: asyncHandler(async (_req, res) => {
     const packs = await billingService.listRecentPacks();
     return ok(res, { packs });
+  }),
+
+  // ── Grupos de skills ─────────────────────────────────────────────────────
+  //
+  // Un grupo es un producto vendible: sus capítulos, su precio y su duración.
+  // Se administran aquí y no en el módulo de skills porque lo que se crea es
+  // un plan; los capítulos solo se cuelgan de él después.
+
+  products: asyncHandler(async (_req, res) => {
+    const products = await productService.list();
+    return ok(res, { products });
+  }),
+
+  createProduct: asyncHandler(async (req, res) => {
+    const product = await productService.create(req.body);
+    return created(res, { product }, `Grupo «${product.name}» creado.`);
+  }),
+
+  updateProduct: asyncHandler(async (req, res) => {
+    const product = await productService.update(req.params.code, req.body);
+    return ok(res, { product }, { message: 'Grupo actualizado.' });
   }),
 };
 

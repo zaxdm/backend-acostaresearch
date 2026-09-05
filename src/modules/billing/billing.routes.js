@@ -10,6 +10,9 @@ const {
   createDiscountSchema,
   discountIdParamSchema,
   validateDiscountSchema,
+  createProductSchema,
+  updateProductSchema,
+  productCodeParamSchema,
 } = require('./billing.schema');
 const billingController = require('./billing.controller');
 
@@ -30,6 +33,28 @@ router.post(
   billingController.grant,
 );
 router.get('/packs', authenticate, authorize(ROLES.ADMIN), billingController.recent);
+
+// ── Grupos de skills ───────────────────────────────────────────────────────
+//
+// Solo para el administrador. Lo que ve el comprador de un grupo —nombre,
+// precio, duración— ya sale por `GET /plans`, que es público y filtra los
+// retirados; aquí se listan también esos, que es justo lo que no debe ver
+// alguien que solo viene a comprar.
+router.get('/products', authenticate, authorize(ROLES.ADMIN), billingController.products);
+router.post(
+  '/products',
+  authenticate,
+  authorize(ROLES.ADMIN),
+  validate({ body: createProductSchema }),
+  billingController.createProduct,
+);
+router.patch(
+  '/products/:code',
+  authenticate,
+  authorize(ROLES.ADMIN),
+  validate({ params: productCodeParamSchema, body: updateProductSchema }),
+  billingController.updateProduct,
+);
 
 // ── Descuentos ─────────────────────────────────────────────────────────────
 // Comprobar un código exige sesión pero no rol: lo hace el propio comprador

@@ -83,7 +83,7 @@ const PLANES = [
     code: 'METODO_9_SKILLS',
     name: 'Método de tesis · 9 capítulos',
     description:
-      'Acceso permanente al método completo desde tu propio Claude, capítulo por capítulo.',
+      'Tres meses con el método completo desde tu propio Claude, capítulo por capítulo.',
     kind: 'LICENSE',
     productCode: 'METODO_9_SKILLS',
     // Un plan de licencia no entrega palabras; el campo existe por el esquema.
@@ -92,25 +92,26 @@ const PLANES = [
     // S/199 son unos $54; se cobra algo más para absorber la comisión
     // internacional de PayPal y que lo que llega se acerque al precio anunciado.
     priceUsdCents: 5790,
-    // 0 = el acceso no caduca nunca.
-    durationDays: 0,
+    // Tres meses de acceso. Es el tiempo de un ciclo de tesis: el tesista
+    // trabaja con el método el trimestre que lo necesita, y quien tarde más
+    // renueva. Renovar alarga la MISMA licencia, así que no tiene que volver a
+    // instalar el conector ni cambiar la URL que ya tiene en Claude.
+    durationDays: 90,
     //
     // ENTREGA. El método viaja al Claude del comprador y trabaja él, así que
-    // atenderlo no nos cuesta un solo token. Es lo que permite vender un acceso
-    // vitalicio sin una factura detrás.
+    // atenderlo no nos cuesta un solo token, ni durante estos tres meses ni en
+    // las renovaciones.
     mcpDelivery: 'INSTRUCTIONS',
     //
-    // TOPES. Sin coste que contener, los frenos de gasto sobran: un tope total
-    // sobre un producto que no caduca solo servía para acotar una factura que
-    // ya no existe. Se quitan todos menos uno.
+    // TOPES. Sin coste que contener, los frenos de gasto sobran: atender este
+    // producto no consume tokens nuestros, así que un tope mensual o total solo
+    // acotaría una factura que no existe. Se quitan todos menos uno.
     //
     // El diario se queda, y no como límite de uso: es la única barrera contra
     // la descarga sistemática. El método completo son ~100 tramos; a 200 al día
     // se puede vaciar en una sesión larga, pero eso deja un rastro inconfundible
     // en el registro y lo ve el detector. Trabajar de verdad son diez o quince
     // consultas al día, así que ningún tesista lo va a rozar.
-
-  
     mcpCallsPerDay: 200,
     mcpCallsPerMonth: 0,
     mcpCostCentsPerMonth: 0,

@@ -16,6 +16,7 @@ const skillDelivery = require('./skill.delivery');
 
 const catalogoSelect = {
   code: true,
+  productCode: true,
   orden: true,
   displayName: true,
   summary: true,
@@ -26,6 +27,7 @@ const catalogoSelect = {
 const adminSelect = {
   id: true,
   code: true,
+  productCode: true,
   orden: true,
   displayName: true,
   summary: true,
@@ -36,14 +38,66 @@ const adminSelect = {
   updatedAt: true,
 };
 
+/**
+ * Filtro de grupo para una licencia.
+ *
+ * Una licencia solo ve los capítulos de SU grupo. Se cuelan también los que no
+ * tienen grupo asignado: son la red de seguridad para una skill subida sin
+ * elegirlo, y es preferible que se vea de más —y se note— a que desaparezca en
+ * silencio del conector de todo el mundo.
+ *
+ * Sin `productCode` no se filtra nada: es lo que necesita la portada pública,
+ * que enseña el catálogo entero a quien todavía no ha comprado.
+ */
+function delGrupo(productCode) {
+  if (!productCode) return {};
+  return { OR: [{ productCode }, { productCode: null }] };
+}
+
+/**
+ * Comprueba que el grupo existe antes de colgarle un capítulo.
+ *
+ * Un grupo no es una etiqueta libre: es el `productCode` de un plan que alguien
+ * puede comprar. Aceptar uno inventado dejaría el capítulo colgando de un
+ * producto inexistente —invisible para todas las licencias— y sin ningún aviso.
+ */
+async function exigirGrupo(productCode) {
+  const plan = await prisma.plan.findFirst({
+    where: { kind: 'LICENSE', productCode },
+    select: { code: true },
+  });
+
+  if (!plan) {
+    throw new NotFoundError(
+      `No hay ningún grupo con el código «${productCode}». Créalo primero en Grupos.`,
+    );
+  }
+}
+
 const skillService = {
-  /** Skills activas, en el orden del método. */
-  listCatalog() {
+  /**
+   * Skills activas, en el orden del método.
+   *
+   * Con `productCode` devuelve solo las del grupo que esa licencia compró; sin
+   * él, todas: es la misma consulta que alimenta la web pública.
+   */
+  listCatalog(productCode = null) {
     return prisma.skill.findMany({
-      where: { active: true },
+      where: { active: true, ...delGrupo(productCode) },
       select: catalogoSelect,
       orderBy: { orden: 'asc' },
     });
+  },
+
+  /**
+   * ¿Puede esta licencia pedir este capítulo?
+   *
+   * Se comprueba en la entrega y no solo en el listado: que algo no salga en
+   * la lista no impide pedirlo por su código, y el código de un capítulo no es
+   * ningún secreto.
+   */
+  perteneceAlGrupo(skill, productCode) {
+    return skill.productCode === null || skill.productCode === productCode;
   },
 
   findByCode(code) {
@@ -100,9 +154,15 @@ const skillService = {
    * administrador pudiera escribirla a mano acabaría habiendo una skill cuyo
    * archivo dice una cosa y cuya ficha dice otra.
    */
-  async upsertFromBundle({ buffer, displayName, summary, orden, active }) {
+  async upsertFromBundle({ buffer, displayName, summary, orden, active, productCode }) {
     const datos = skillBundle.analizar(buffer);
     const existente = await prisma.skill.findUnique({ where: { code: datos.code } });
+
+    // Si se indica grupo, tiene que existir y tiene que ser vendible. Un
+    // `productCode` inventado dejaría el capítulo colgando de un producto que
+    // nadie puede comprar: invisible para todos y sin ningún aviso.
+    const grupo = productCode?.trim() || null;
+    if (grupo) await exigirGrupo(grupo);
 
     const ruta = skillBundle.guardar(datos.code, buffer);
 
@@ -130,6 +190,9 @@ const skillService = {
           ...comun,
           orden: orden ?? existente.orden,
           active: active ?? existente.active,
+          // Reemplazar el archivo no cambia de grupo por sí solo: si no se
+          // indica uno, se queda donde estaba.
+          productCode: grupo ?? existente.productCode,
           // El bundle cambió, así que lo que hay subido a la Skills API ya no
           // corresponde. Se borra la referencia para que `subir-skills` lo
           // vuelva a publicar y no se sirva una versión vieja.
@@ -143,12 +206,20 @@ const skillService = {
       return { skill, tramos, creada: false };
     }
 
-    const ultima = await prisma.skill.findFirst({ orderBy: { orden: 'desc' }, select: { orden: true } });
+    // El orden se cuenta DENTRO del grupo: cada producto es un método con su
+    // propia secuencia. Numerarlos a lo largo de toda la tabla haría que el
+    // primer capítulo de un grupo nuevo se llamara «10».
+    const ultima = await prisma.skill.findFirst({
+      where: { productCode: grupo },
+      orderBy: { orden: 'desc' },
+      select: { orden: true },
+    });
 
     const skill = await prisma.skill.create({
       data: {
         ...comun,
         code: datos.code,
+        productCode: grupo,
         orden: orden ?? (ultima ? ultima.orden + 1 : 1),
         active: active ?? true,
       },
@@ -163,6 +234,14 @@ const skillService = {
   async updateMeta(id, cambios) {
     const existente = await prisma.skill.findUnique({ where: { id } });
     if (!existente) throw new NotFoundError('Esa skill no existe.');
+
+    // Cambiar de grupo es mover el capítulo de un producto a otro, así que el
+    // destino tiene que existir. La cadena vacía significa «sin grupo».
+    if (cambios.productCode !== undefined) {
+      const grupo = cambios.productCode?.trim() || null;
+      if (grupo) await exigirGrupo(grupo);
+      cambios = { ...cambios, productCode: grupo };
+    }
 
     return prisma.skill.update({ where: { id }, data: cambios, select: adminSelect });
   },

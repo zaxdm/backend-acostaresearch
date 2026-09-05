@@ -42,6 +42,22 @@ async function entregarPago({ payment, captura, estadoEsperado = 'PENDING', nota
       }
 
       if (esLicencia) {
+        // Renovar alarga la licencia que ya tiene; comprar por primera vez
+        // emite una nueva. La diferencia la decidió `prepareForPurchase`.
+        //
+        // En una renovación NO se devuelve `connectorUrl`, y es a propósito:
+        // el token no cambia, así que la URL que el comprador ya tiene sigue
+        // siendo la buena. Mandarle una nueva le haría pensar que la anterior
+        // dejó de servir.
+        if (licenciaPreparada.renovacion) {
+          const { licenseId, expiresAt, topes } = licenciaPreparada.renovacion;
+          const license = await licenseRepository.extend(licenseId, { expiresAt, topes }, tx);
+          return {
+            enlace: { licenseId: license.id },
+            resultado: { license, renovada: true },
+          };
+        }
+
         const license = await licenseRepository.create(licenciaPreparada.data, tx);
         return {
           enlace: { licenseId: license.id },

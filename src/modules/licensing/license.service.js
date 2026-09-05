@@ -172,6 +172,39 @@ const licenseService = {
    * confirmen juntos o no se confirme ninguno.
    */
   async prepareForPurchase({ userId, productCode, durationDays }) {
+    const topes = await topesDelProducto(productCode);
+
+    // ¿Está renovando? Si ya tiene una licencia de este mismo grupo y no está
+    // revocada, se le alarga esa en vez de emitirle otra. Emitir una nueva le
+    // dejaría dos conectores en Claude —uno de ellos muerto— y le obligaría a
+    // reinstalar cada trimestre, que es la forma más rápida de que no renueve.
+    //
+    // Una revocada no cuenta: pagar de nuevo no puede deshacer una revocación
+    // por uso compartido. En ese caso se emite una limpia y la vieja se queda
+    // como está, con su motivo.
+    const vigente = await prisma.license.findFirst({
+      where: { userId, productCode, status: { not: 'REVOKED' } },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, expiresAt: true },
+    });
+
+    if (vigente) {
+      // Se cuenta desde la caducidad actual si aún no ha llegado, y desde hoy
+      // si ya pasó: renovar con margen no debe costarle los días que le
+      // quedaban. Una licencia sin caducidad —de las vendidas «de por vida»—
+      // se queda sin caducidad: pagar no puede empeorar lo que ya tenía.
+      const sinCaducidad = vigente.expiresAt === null;
+      const desde = vigente.expiresAt > new Date() ? vigente.expiresAt : new Date();
+
+      return {
+        renovacion: {
+          licenseId: vigente.id,
+          expiresAt: sinCaducidad || durationDays === 0 ? null : addDays(desde, durationDays),
+          topes,
+        },
+      };
+    }
+
     const token = generateOpaqueToken(32);
 
     return {
@@ -181,7 +214,7 @@ const licenseService = {
         tokenHash: hashToken(token),
         tokenHint: token.slice(0, 8),
         expiresAt: durationDays > 0 ? addDays(new Date(), durationDays) : null,
-        ...(await topesDelProducto(productCode)),
+        ...topes,
       },
       connectorUrl: urlDelConector(token),
     };

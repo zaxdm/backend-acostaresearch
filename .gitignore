@@ -42,3 +42,6 @@ build/
 
 # Comprobantes de pago subidos por los compradores.
 storage/
+
+# Respaldos traídos del servidor. Contienen el .env de producción.
+respaldos/

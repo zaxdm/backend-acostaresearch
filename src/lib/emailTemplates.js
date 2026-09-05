@@ -166,6 +166,9 @@ function manualPaymentReceived({ buyer, planName, amountCents, operationCode, pa
  */
 function manualPaymentApproved({ firstName, planName, esLicencia }) {
   const enlace = `${appUrl()}/perfil`;
+  // La guía SÍ puede viajar por correo: no es una credencial, es un manual.
+  // Explica cómo instalar el conector, no da acceso a ninguno.
+  const guia = `${appUrl()}/guias/guia-instalacion.pdf`;
 
   const siguiente = esLicencia
     ? 'Entra en tu panel y pulsa «Nueva URL» en tu licencia: esa es la dirección que se conecta a tu Claude.'
@@ -181,15 +184,23 @@ function manualPaymentApproved({ firstName, planName, esLicencia }) {
       siguiente,
       '',
       `Tu panel: ${enlace}`,
+      ...(esLicencia ? ['', `Guía de instalación (PDF): ${guia}`] : []),
     ].join('\n'),
     html: layout(
       'Pago confirmado',
       `<p style="margin:0 0 14px;font-size:15px;line-height:1.6">Hola ${firstName}: hemos
          comprobado tu pago de <strong>${planName}</strong> y tu acceso ya está activo.</p>
        <p style="margin:0 0 22px;font-size:15px;line-height:1.6">${siguiente}</p>
-       <p style="margin:0;font-size:14px">
+       <p style="margin:0 0 12px;font-size:14px">
          <a href="${enlace}" style="color:#1a56db">Abrir mi panel</a>
-       </p>`,
+       </p>
+       ${
+         esLicencia
+           ? `<p style="margin:0;font-size:14px">
+         <a href="${guia}" style="color:#1a56db">Descargar la guía de instalación (PDF)</a>
+       </p>`
+           : ''
+       }`,
     ),
   };
 }

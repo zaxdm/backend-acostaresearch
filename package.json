@@ -27,7 +27,8 @@
     "licenses:topes": "node scripts/aplicar-topes.js",
     "licenses:unificar": "node scripts/unificar-metodo.js",
     "deploy": "git push && ssh acosta /opt/acostaresearch/desplegar.sh",
-    "licenses:trimestre": "node scripts/pasar-a-trimestre.js"
+    "licenses:trimestre": "node scripts/pasar-a-trimestre.js",
+    "backup:traer": "node scripts/traer-respaldo.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.123.0",

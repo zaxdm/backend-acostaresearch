@@ -1,0 +1,24 @@
+# Lo que NO debe entrar en la imagen.
+#
+# Lo primero de la lista es el motivo de que este archivo exista: el .env lleva
+# los secretos de JWT, la contraseña de la base de datos y la clave de PayPal.
+# En la imagen viajarían a cualquiera que la descargue; en el hosting van como
+# variables de entorno, que es su sitio.
+.env
+.env.*
+!.env.example
+
+node_modules
+npm-debug.log
+
+.git
+.gitignore
+
+# Se montan como volumen, no se copian: lo que hay aquí en local no tiene por
+# qué ser lo que haya en producción.
+storage
+tests
+
+Dockerfile
+.dockerignore
+DESPLIEGUE.md

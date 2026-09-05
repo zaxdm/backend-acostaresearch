@@ -176,6 +176,23 @@ function pie({ numero, total, siguiente }) {
   );
 }
 
+/**
+ * Deja constancia cuando un texto sale sin firma.
+ *
+ * Un tramo sin marca no se podrá atribuir si aparece filtrado, y eso hay que
+ * saberlo ANTES de que pase, no el día que alguien pega el capítulo en un grupo
+ * de WhatsApp y no hay forma de averiguar de qué licencia salió. Se registra
+ * como aviso para que se vea en el log sin tener que ir a buscarlo.
+ */
+function avisarSiVaSinFirma(marcado, contexto) {
+  if (marcado.escritos > 0) return;
+
+  logger.warn(
+    contexto,
+    'Texto entregado SIN marca de agua: no reúne líneas suficientes para firmarlo',
+  );
+}
+
 const skillDelivery = {
   /**
    * Entrega un tramo del método, marcado con la licencia.
@@ -203,13 +220,22 @@ const skillDelivery = {
         siguiente: ultimo ? null : tramos[numero].titulo,
       });
 
+    const marcado = marcar(cuerpo, licencia.id);
+    avisarSiVaSinFirma(marcado, { licenseId: licencia.id, skill: skill.code, tramo: numero });
+
     logger.info(
-      { licenseId: licencia.id, skill: skill.code, tramo: numero, de: tramos.length },
+      {
+        licenseId: licencia.id,
+        skill: skill.code,
+        tramo: numero,
+        de: tramos.length,
+        bits: marcado.escritos,
+      },
       'Tramo del método entregado',
     );
 
     return {
-      texto: marcar(cuerpo, licencia.id),
+      texto: marcado.texto,
       numero,
       total: tramos.length,
       ultimo,
@@ -240,7 +266,14 @@ const skillDelivery = {
       cabecera({ skill, licencia, tramo: `apoyo: ${clave}`, total: tramos.length }) +
       referencias.get(clave);
 
-    return { texto: marcar(cuerpo, licencia.id), numero: 0, total: tramos.length, ultimo: false };
+    const marcado = marcar(cuerpo, licencia.id);
+    avisarSiVaSinFirma(marcado, {
+      licenseId: licencia.id,
+      skill: skill.code,
+      referencia: clave,
+    });
+
+    return { texto: marcado.texto, numero: 0, total: tramos.length, ultimo: false };
   },
 
   /** Cuántos tramos tiene un capítulo, sin entregar nada. */

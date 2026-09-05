@@ -44,26 +44,46 @@ function aBits(numero) {
 }
 
 /**
+ * Dónde empieza el texto de verdad de una línea.
+ *
+ * Devuelve cuántos caracteres hay que saltarse: la sangría y, si la hay, la
+ * viñeta o el número de la lista. La marca va DETRÁS de eso.
+ *
+ * Es el cambio que abrió las listas. Antes se descartaba toda línea que
+ * empezara por «-», «*» o «>», que en estas skills es casi todo: escritas a
+ * base de viñetas, muchos tramos no reunían ocho líneas aptas y salían del
+ * servidor sin ninguna marca. Poniendo el carácter después del guion —«- ​así»—
+ * la viñeta sigue siendo una viñeta y la línea sirve igual.
+ */
+const SANGRIA_Y_VINETA = /^\s*(?:[-*+]\s+|\d+[.)]\s+|>\s+)?/;
+
+function anclaje(linea) {
+  return SANGRIA_Y_VINETA.exec(linea)[0].length;
+}
+
+/**
  * ¿Sirve esta línea para llevar una marca?
  *
- * Se descartan las que empiezan por un carácter con significado en Markdown
- * —encabezados, tablas, código, citas, reglas— porque ahí un carácter extra
- * podría cambiar cómo se interpreta la línea, y el método tiene que funcionar
- * igual de bien marcado que sin marcar.
+ * Se descartan las estructurales —encabezados, tablas, vallas de código y
+ * reglas horizontales—: ahí un carácter extra sí puede cambiar cómo se
+ * interpreta la línea, y el método tiene que funcionar igual de bien marcado
+ * que sin marcar.
  *
- * Lo que queda son líneas con cuerpo: prosa y contenido de listas, que es de lo
- * que están hechas estas skills. Exigir además que empezaran por letra dejaba
- * fuera casi todo, porque el método usa listas por todas partes.
+ * Del resto se exige cuerpo DESPUÉS de la viñeta. Una marca en «- Sí» se
+ * pierde en cuanto alguien recorta la cita.
  */
 function marcable(linea) {
   const limpia = linea.trim();
-  return limpia.length > 25 && !/^[#|`\->*═─~=+[\]]/.test(limpia);
+  if (limpia.length === 0) return false;
+  if (/^(#|\||`{3}|[═─~_]{3,}|-{3,}|\*{3,}|={3,})/.test(limpia)) return false;
+
+  return linea.slice(anclaje(linea)).trim().length > 25;
 }
 
-/** Inserta la marca DESPUÉS de la sangría, para no alterar la estructura. */
+/** Inserta la marca detrás de la sangría y de la viñeta, nunca dentro de una palabra. */
 function insertar(linea, caracter) {
-  const sangria = linea.length - linea.trimStart().length;
-  return linea.slice(0, sangria) + caracter + linea.slice(sangria);
+  const corte = anclaje(linea);
+  return linea.slice(0, corte) + caracter + linea.slice(corte);
 }
 
 /**
@@ -75,6 +95,10 @@ function insertar(linea, caracter) {
  *
  * Si no hay líneas suficientes para los 32 bits se marca lo que quepa: una
  * huella parcial sigue estrechando el círculo de sospechosos.
+ *
+ * Devuelve `{ texto, escritos }`. Los bits escritos importan: cuando salen
+ * cero, ese tramo viaja sin firma y no se podrá atribuir si aparece filtrado.
+ * Antes eso pasaba en silencio; ahora lo sabe quien llama, y lo registra.
  */
 function marcar(texto, licenseId) {
   const bits = aBits(huella(licenseId));
@@ -85,7 +109,7 @@ function marcar(texto, licenseId) {
     if (marcable(lineas[i])) candidatas.push(i);
   }
 
-  if (candidatas.length < 8) return texto;
+  if (candidatas.length < 8) return { texto, escritos: 0 };
 
   // Se reparten a lo largo de todo el texto, para que cualquier trozo que se
   // filtre lleve unas cuantas.
@@ -99,7 +123,11 @@ function marcar(texto, licenseId) {
     escritos += 1;
   }
 
-  return escritos >= 8 ? lineas.join('\n') : texto;
+  // Menos de ocho bits no identifican nada: se devuelve el texto limpio para
+  // no dejar rastros que solo sirvan para que alguien descubra el mecanismo.
+  if (escritos < 8) return { texto, escritos: 0 };
+
+  return { texto: lineas.join('\n'), escritos };
 }
 
 /**

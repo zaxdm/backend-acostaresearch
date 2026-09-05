@@ -37,6 +37,15 @@ const PLANES = [
     durationDays: 30,
     sortOrder: 0,
   },
+  // ── Bolsas del humanizador ─────────────────────────────────────────────
+  //
+  // Fuera de la venta mientras el humanizador no tenga clave de Anthropic.
+  // Cobrar por un servicio que no puede responder es la peor forma de perder
+  // un cliente: paga, falla y pide la devolución.
+  //
+  // Se dejan definidos —no borrados— porque el precio y los topes ya estaban
+  // pensados. Para reabrirlos basta con quitar `active: false` de los tres y
+  // volver a sembrar; la clave en ANTHROPIC_API_KEY es lo que falta.
   {
     code: 'BASICO',
     name: 'Básico',
@@ -46,6 +55,7 @@ const PLANES = [
     priceUsdCents: 590,
     durationDays: 30,
     sortOrder: 1,
+    active: false,
   },
   {
     code: 'TESISTA',
@@ -56,6 +66,7 @@ const PLANES = [
     priceUsdCents: 890,
     durationDays: 30,
     sortOrder: 2,
+    active: false,
   },
   {
     code: 'INTENSIVO',
@@ -66,6 +77,7 @@ const PLANES = [
     priceUsdCents: 1790,
     durationDays: 30,
     sortOrder: 3,
+    active: false,
   },
   {
     code: 'METODO_9_SKILLS',

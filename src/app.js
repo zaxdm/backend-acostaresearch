@@ -17,8 +17,21 @@ const errorHandler = require('./middlewares/errorHandler');
 function createApp() {
   const app = express();
 
-  // Detrás de Nginx/Heroku: necesario para que req.ip y las cookies secure funcionen.
-  app.set('trust proxy', 1);
+  // DOS saltos, no uno: navegador → Netlify → Caddy → aquí.
+  //
+  // Con 1, Express se quedaba con la IP del borde de Netlify y esa pasaba a ser
+  // la clave del limitador de peticiones. Resultado: TODOS los visitantes de la
+  // web compartían un mismo cubo, y como el límite de autenticación son diez
+  // intentos por cuarto de hora, el undécimo que intentara registrarse recibía
+  // un 429 aunque fuese el primero en probarlo.
+  //
+  // CONTRAPARTIDA, y conviene tenerla presente: confiar en dos saltos significa
+  // que una petición dirigida al backend SIN pasar por Netlify puede fabricar
+  // su propia cabecera X-Forwarded-For y elegir con qué clave se la cuenta, o
+  // sea, esquivar el límite. Se acepta porque la alternativa era dejar la web
+  // sin registro ni acceso en cuanto hubiera dos personas a la vez, y porque
+  // quien quiera saltarse un límite por IP puede rotar IPs igualmente.
+  app.set('trust proxy', 2);
   app.disable('x-powered-by');
 
   app.use(helmet());

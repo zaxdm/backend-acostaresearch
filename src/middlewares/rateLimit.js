@@ -27,10 +27,17 @@ const globalLimiter = build({
   message: 'Demasiadas peticiones. Inténtalo de nuevo en unos minutos.',
 });
 
-/** Límite estricto para endpoints que se prestan a fuerza bruta. */
+/**
+ * Límite para los endpoints que se prestan a fuerza bruta.
+ *
+ * Treinta por cuarto de hora y por IP. No son treinta por persona: en Perú es
+ * habitual que un operador saque a muchos abonados por la misma IP pública, así
+ * que un número bajo aquí bloquea a gente que no ha hecho nada. Diez se quedaba
+ * corto incluso para una sola persona que se equivoque al teclear.
+ */
 const authLimiter = build({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: 30,
   message: 'Demasiados intentos. Espera unos minutos antes de volver a intentarlo.',
 });
 

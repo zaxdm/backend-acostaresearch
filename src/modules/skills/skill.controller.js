@@ -6,8 +6,10 @@ const skillService = require('./skill.service');
 
 const skillController = {
   /** Público: es lo que muestra la portada. Nombre y resumen, nada más. */
-  catalog: asyncHandler(async (_req, res) => {
-    const skills = await skillService.listCatalog();
+  catalog: asyncHandler(async (req, res) => {
+    // Sin grupo, el catálogo entero: es lo que quiere el panel. Con grupo, solo
+    // los capítulos de ese producto, que es lo que quiere cada página de venta.
+    const skills = await skillService.listCatalog(req.query.grupo ?? null);
     return ok(res, { skills });
   }),
 

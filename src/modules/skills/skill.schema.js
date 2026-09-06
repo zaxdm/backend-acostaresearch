@@ -26,6 +26,17 @@ const uploadQuerySchema = z.object({
   active: booleanoOpcional,
 });
 
+/**
+ * Filtro del catálogo público.
+ *
+ * Sin `grupo` devuelve todo, que es lo que necesita el panel. La web de venta
+ * SÍ lo manda: cada página vende un producto, y listar ahí los capítulos de los
+ * demás convierte un catálogo en un revoltijo.
+ */
+const catalogQuerySchema = z.object({
+  grupo: z.string().trim().toUpperCase().max(40).optional(),
+});
+
 const updateSchema = z
   .object({
     displayName: z.string().trim().min(3).max(120).optional(),
@@ -53,6 +64,7 @@ const idParamSchema = z.object({
 
 module.exports = {
   uploadQuerySchema,
+  catalogQuerySchema,
   updateSchema,
   idParamSchema,
   capitulosDelGrupoSchema,

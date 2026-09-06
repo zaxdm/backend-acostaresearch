@@ -9,6 +9,7 @@ const { ROLES } = require('../../config/constants');
 const env = require('../../config/env');
 const {
   uploadQuerySchema,
+  catalogQuerySchema,
   updateSchema,
   idParamSchema,
   capitulosDelGrupoSchema,
@@ -37,7 +38,7 @@ const bundle = express.raw({
 // ── Público ────────────────────────────────────────────────────────────────
 // La portada lista los capítulos sin pedir sesión: quien llega desde TikTok
 // tiene que poder ver qué se vende antes de registrarse.
-router.get('/catalogo', skillController.catalog);
+router.get('/catalogo', validate({ query: catalogQuerySchema }), skillController.catalog);
 
 // ── Administración ─────────────────────────────────────────────────────────
 router.use(authenticate, authorize(ROLES.ADMIN));

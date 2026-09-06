@@ -61,6 +61,7 @@ model User {
   wordPacks     WordPack[]
   payments      Payment[]
   licenses      License[]
+  accountCodes  AccountCode[]
 
   @@map("users")
 }
@@ -771,4 +772,35 @@ model McpSession {
   @@unique([licenseId, clientKey])
   @@index([licenseId, updatedAt])
   @@map("mcp_sessions")
+}
+
+/// Código de un solo uso para confirmar un cambio delicado en una cuenta que YA
+/// existe: hoy, cambiar la contraseña.
+///
+/// No se reutiliza `PendingRegistration` porque no es lo mismo: allí el usuario
+/// todavía no existe y la fila ES el alta a medias. Aquí la cuenta existe, el
+/// código solo autoriza una operación, y al gastarse desaparece.
+///
+/// La pareja (usuario, propósito) es única: pedir otro código sustituye al
+/// anterior en vez de dejar varios vivos. Un código viejo que siga valiendo es
+/// exactamente lo que no se quiere de una cosa que se manda por correo.
+model AccountCode {
+  id String @id @default(uuid()) @db.Char(36)
+
+  userId String @db.Char(36)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Qué autoriza al acertarlo. Hoy solo PASSWORD.
+  purpose String @db.VarChar(30)
+
+  codeHash String @db.Char(64)
+  /// Fallos seguidos. Al llegar al tope el código muere y hay que pedir otro.
+  attempts Int    @default(0)
+
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, purpose])
+  @@map("account_codes")
 }

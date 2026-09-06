@@ -122,6 +122,107 @@ function emailVerificationCode({ firstName, code, expiresInMinutes }) {
   };
 }
 
+/**
+ * El código para cambiar la contraseña de una cuenta que ya existe.
+ *
+ * Va aparte del de alta y no es una plantilla reutilizada con otro título: este
+ * correo llega a quien ya tiene cuenta, y por eso dice algo que el otro no puede
+ * decir —«si no has sido tú, tu contraseña sigue siendo la de siempre»—. Quien
+ * recibe un código que no pidió necesita saber, en la primera línea, si tiene
+ * que hacer algo o no.
+ */
+function passwordChangeCode({ firstName, code, expiresInMinutes }) {
+  const grupos = code.slice(0, 3) + '<span style="color:#c3cbd8"> · </span>' + code.slice(3);
+
+  return {
+    subject: `${code} para cambiar tu contraseña · Acosta Research`,
+    text:
+      `Hola ${firstName}:
+
+` +
+      `Tu código para cambiar la contraseña es: ${code}
+` +
+      `Caduca en ${expiresInMinutes} minutos y solo se puede usar una vez.
+
+` +
+      'Si no has pedido este cambio, no hagas nada: tu contraseña sigue siendo la de siempre.',
+    html: layout(
+      'Tu código para cambiar la contraseña',
+      `<p style="margin:0 0 22px;font-size:15px;line-height:1.6;color:#52606d">
+         Hola ${firstName}: escríbelo en la pantalla donde lo pediste y elige tu contraseña nueva.
+       </p>
+
+       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+         <tr>
+           <td align="center" style="background:#f2f6fe;border:1px solid #d7e3fb;border-radius:12px;padding:26px 16px">
+             <div style="font-size:38px;font-weight:700;letter-spacing:.14em;color:#1a3fa8;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif">${grupos}</div>
+             <div style="margin-top:10px;font-size:12.5px;color:#7b8794">Caduca en ${expiresInMinutes} minutos</div>
+           </td>
+         </tr>
+       </table>
+
+       <p style="margin:22px 0 0;font-size:13.5px;line-height:1.65;color:#7b8794">
+         <b>Si no has pedido este cambio, no hagas nada.</b> Sin este código no se cambia nada y
+         tu contraseña sigue siendo la de siempre.
+       </p>`,
+      { preheader: `Tu código es ${code}. Caduca en ${expiresInMinutes} minutos.` },
+    ),
+  };
+}
+
+/**
+ * A quien acaba de recibir una cuenta de administrador.
+ *
+ * Lleva la contraseña dentro, y eso es una decisión incómoda que conviene
+ * mirar de frente: la alternativa —dictarla por WhatsApp— es peor, y el primer
+ * consejo del correo es cambiarla, que es lo único que la deja de verdad fuera
+ * de una bandeja de entrada.
+ */
+function adminAccountCreated({ firstName, email, password }) {
+  return {
+    subject: 'Tu cuenta de administrador · Acosta Research',
+    text:
+      `Hola ${firstName}:
+
+` +
+      `Ya tienes una cuenta de administrador en ${appUrl()}.
+
+` +
+      `Correo: ${email}
+` +
+      `Contraseña provisional: ${password}
+
+` +
+      'Entra y cámbiala cuanto antes desde Mi cuenta: mientras siga siendo esta, está escrita en un correo.',
+    html: layout(
+      'Ya tienes acceso al panel',
+      `<p style="margin:0 0 22px;font-size:15px;line-height:1.6;color:#52606d">
+         Hola ${firstName}: te hemos creado una cuenta de administrador.
+       </p>
+
+       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+         <tr>
+           <td style="background:#f7f9fc;border:1px solid #e2e8f2;border-radius:12px;padding:18px 20px;font-size:14.5px;line-height:1.8;color:#334155">
+             <div><b>Correo:</b> ${email}</div>
+             <div><b>Contraseña provisional:</b> <span style="font-family:ui-monospace,Menlo,Consolas,monospace">${password}</span></div>
+           </td>
+         </tr>
+       </table>
+
+       <p style="margin:22px 0 0;font-size:14.5px;line-height:1.6;color:#52606d">
+         Entra en <a href="${appUrl()}/auth/login" style="color:#1a56db;text-decoration:none">${appUrl()}</a>
+       </p>
+
+       <p style="margin:18px 0 0;font-size:13.5px;line-height:1.65;color:#7b8794">
+         <b>Cámbiala en cuanto entres</b>, desde «Mi cuenta» en el panel. Mientras siga siendo
+         esta, la contraseña está escrita en un correo que cualquiera con acceso a tu bandeja
+         puede leer.
+       </p>`,
+      { preheader: 'Tu cuenta de administrador ya está lista.' },
+    ),
+  };
+}
+
 /** Enlace a la aplicación, para el pie de los correos. */
 function appUrl() {
   return env.APP_URL;
@@ -625,6 +726,8 @@ function activationCode({ codes, planName, expiresAt }) {
 
 module.exports = {
   emailVerificationCode,
+  passwordChangeCode,
+  adminAccountCreated,
   licenseAlert,
   manualPaymentReceived,
   // Los tres de entrega salen de `payment.delivery`, que es el punto por donde

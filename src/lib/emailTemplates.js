@@ -224,55 +224,239 @@ function manualPaymentReceived({ buyer, planName, amountCents, operationCode, pa
     ),
   };
 }
+/**
+ * Fecha larga en español, para el comprador. `null` = sin caducidad.
+ *
+ * Se fija la zona horaria de Lima en vez de dejar la del servidor: una
+ * caducidad guardada a medianoche se leería un día antes o después según dónde
+ * corra el proceso, y el comprador está en Perú aunque el VPS esté en Alemania.
+ * Es la misma hora con la que `license.limits` cuenta los días.
+ */
+function fecha(valor) {
+  if (!valor) return null;
+  const d = valor instanceof Date ? valor : new Date(valor);
+  if (Number.isNaN(d.getTime())) return null;
+
+  try {
+    return d.toLocaleDateString('es-PE', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+      timeZone: 'America/Lima',
+    });
+  } catch {
+    // Si el Node de turno viniera sin datos de idioma, mejor una fecha fea que
+    // un correo roto.
+    return d.toISOString().slice(0, 10);
+  }
+}
 
 /**
- * Al comprador: su pago quedó aprobado.
+ * Cómo empieza un correo de entrega según de dónde vino la compra.
  *
- * NO lleva la URL del conector. Un correo se reenvía, se queda en la bandeja y
- * pasa por servidores que no son nuestros; esa URL es la credencial completa
- * del acceso. Se le manda a su panel, que es donde puede generarla él.
+ * Un Yape se aprueba a mano y horas después, así que ahí la frase tiene que
+ * decir que ya lo comprobamos: es la respuesta a una espera. En una pasarela el
+ * cobro fue instantáneo, y en un canje no hubo cobro ninguno.
+ *
+ * Devuelve la frase en minúscula porque casi siempre va detrás de «Hola
+ * Fulano:». Cuando abre párrafo, `enMayuscula` la ajusta.
  */
-function manualPaymentApproved({ firstName, planName, esLicencia }) {
-  const enlace = `${appUrl()}/perfil`;
-  // La guía SÍ puede viajar por correo: no es una credencial, es un manual.
-  // Explica cómo instalar el conector, no da acceso a ninguno.
-  const guia = `${appUrl()}/guias/guia-instalacion.pdf`;
+function confirmacionDePago(via, planName) {
+  const producto = `«${planName}»`;
 
-  const siguiente = esLicencia
-    ? 'Entra en tu panel y pulsa «Nueva URL» en tu licencia: esa es la dirección que se conecta a tu Claude.'
-    : 'Ya tienes las palabras cargadas en tu cuenta. Puedes empezar cuando quieras.';
+  if (via === 'yape') return `hemos comprobado tu pago de ${producto}`;
+  if (via === 'codigo') return `hemos activado tu código de ${producto}`;
+  return `hemos confirmado tu pago de ${producto}`;
+}
+
+/** Primera letra en mayúscula, para cuando la frase abre la oración. */
+function enMayuscula(frase) {
+  return frase.charAt(0).toUpperCase() + frase.slice(1);
+}
+
+/**
+ * Al comprador: su acceso al método está activo, con la URL del conector.
+ *
+ * La URL viaja por correo aun siendo la credencial completa del acceso, y es
+ * una decisión, no un descuido. La alternativa —mandarlo al panel a generarla
+ * él— mete un paso justo en el momento en que acaba de pagar; y quien paga por
+ * Yape ni siquiera está delante de la pantalla cuando aprobamos el
+ * comprobante, así que el correo es la única superficie que le alcanza.
+ *
+ * Lo que hace asumible el riesgo es que rotarla es gratis y está a un botón:
+ * si el correo se reenvía sin pensar, «Nueva URL» invalida la anterior al
+ * instante.
+ *
+ * El aviso de «guárdala» no es una fórmula de cortesía: del token solo se
+ * guarda su SHA-256, así que este correo es —junto al Claude del comprador— el
+ * único sitio del mundo donde esa URL existe.
+ */
+function licenseReady({ firstName, planName, connectorUrl, expiresAt, via }) {
+  const panel = `${appUrl()}/perfil`;
+  const guia = `${appUrl()}/guias/guia-instalacion.pdf`;
+  const vence = fecha(expiresAt);
+  const vigencia = vence ? `Lo tienes hasta el ${vence}.` : 'No caduca.';
+  const confirmacion = confirmacionDePago(via, planName);
 
   return {
-    subject: 'Pago confirmado · Acosta Research',
+    subject: 'Tu acceso al método está activo · Acosta Research',
+    // El preheader repite que la URL va dentro. Es lo que hace que este correo
+    // se reconozca dentro de un mes, buscando «url» en la bandeja.
     text: [
       `Hola ${firstName}:`,
       '',
-      `Hemos comprobado tu pago de «${planName}» y tu acceso ya está activo.`,
+      `${enMayuscula(confirmacion)} y tu acceso ya está activo. ${vigencia}`,
       '',
-      siguiente,
+      'Esta es tu URL personal del conector:',
       '',
-      `Tu panel: ${enlace}`,
-      ...(esLicencia ? ['', `Guía de instalación (PDF): ${guia}`] : []),
+      connectorUrl,
+      '',
+      // Sin cortar la frase a mitad: el cliente de correo ya envuelve solo, y
+      // una línea partida a mano no se encuentra al buscar en la bandeja.
+      'GUÁRDALA. Por seguridad no la almacenamos en claro, así que no podemos volver a enviártela. Si la pierdes, genera una nueva desde tu panel.',
+      '',
+      'Cómo conectarla a Claude:',
+      '  1. Abre Claude y entra en Configuración → Conectores.',
+      '  2. Pulsa «Añadir conector personalizado» y pega la URL de arriba.',
+      '  3. Escríbele «trabajemos mi tesis» y pídele que use el conector.',
+      '',
+      `Guía de instalación con capturas (PDF): ${guia}`,
+      `Tu panel: ${panel}`,
+      '',
+      'Esta licencia es individual. Compartir la URL puede provocar que se desactive.',
     ].join('\n'),
     html: layout(
-      'Pago confirmado',
-      `<p style="margin:0 0 14px;font-size:15px;line-height:1.6">Hola ${firstName}: hemos
-         comprobado tu pago de <strong>${planName}</strong> y tu acceso ya está activo.</p>
-       <p style="margin:0 0 22px;font-size:15px;line-height:1.6">${siguiente}</p>
-       <p style="margin:0 0 12px;font-size:14px">
-         <a href="${enlace}" style="color:#1a56db">Abrir mi panel</a>
+      'Tu acceso al método está activo',
+      `<p style="margin:0 0 20px;font-size:15px;line-height:1.6">Hola ${firstName}:
+         ${confirmacion} y tu acceso ya está activo. ${vigencia}</p>
+
+       <p style="margin:0 0 8px;font-size:13px;font-weight:650;color:#52606d">
+         TU URL PERSONAL DEL CONECTOR
        </p>
-       ${
-         esLicencia
-           ? `<p style="margin:0;font-size:14px">
+       <p style="margin:0 0 14px;padding:14px 16px;background:#101a2e;border-radius:10px;
+                 font-family:Consolas,'Courier New',monospace;font-size:13px;line-height:1.5;
+                 color:#dbe6ff;word-break:break-all">${connectorUrl}</p>
+
+       <p style="margin:0 0 24px;padding:12px 16px;background:#fdf3e3;border-radius:10px;
+                 font-size:13.5px;line-height:1.6;color:#96590d">
+         <strong>Guárdala.</strong> Por seguridad no la almacenamos en claro, así que no podemos
+         volver a enviártela. Si la pierdes, generas una nueva desde tu panel en un segundo.
+       </p>
+
+       <p style="margin:0 0 10px;font-size:15px;font-weight:650">Cómo conectarla a Claude</p>
+       <table role="presentation" cellpadding="0" cellspacing="0" border="0"
+              style="margin:0 0 24px;font-size:14px;line-height:1.6;color:#52606d">
+         <tr>
+           <td style="padding:0 10px 8px 0;color:#1a56db;font-weight:700">1</td>
+           <td style="padding:0 0 8px">Abre Claude y entra en <strong>Configuración → Conectores</strong>.</td>
+         </tr>
+         <tr>
+           <td style="padding:0 10px 8px 0;color:#1a56db;font-weight:700">2</td>
+           <td style="padding:0 0 8px">Pulsa <strong>Añadir conector personalizado</strong> y pega la URL de arriba.</td>
+         </tr>
+         <tr>
+           <td style="padding:0 10px 0 0;color:#1a56db;font-weight:700">3</td>
+           <td>Escríbele «trabajemos mi tesis» y pídele que use el conector.</td>
+         </tr>
+       </table>
+
+       <p style="margin:0 0 10px;font-size:14px">
          <a href="${guia}" style="color:#1a56db">Descargar la guía de instalación (PDF)</a>
-       </p>`
-           : ''
-       }`,
+       </p>
+       <p style="margin:0 0 22px;font-size:14px">
+         <a href="${panel}" style="color:#1a56db">Abrir mi panel</a>
+       </p>
+
+       <p style="margin:0;font-size:13px;line-height:1.6;color:#8b95a6">
+         Esta licencia es individual. Compartir la URL puede provocar que se desactive.
+       </p>`,
+      { preheader: 'Dentro va tu URL personal del conector. Guárdala: no podemos reenviártela.' },
     ),
   };
 }
 
+/**
+ * Al comprador: renovó, y su acceso se alargó.
+ *
+ * Este correo NO lleva URL, y no por prudencia: es que no existe una nueva.
+ * Renovar alarga la misma licencia y conserva el token, precisamente para que
+ * no tenga que reinstalar el conector cada trimestre. Mandarle una dirección
+ * aquí —aunque fuera la misma— le haría pensar que la que tiene dejó de
+ * servir, y acabaría reinstalando sin necesidad.
+ */
+function licenseRenewed({ firstName, planName, expiresAt, via }) {
+  const panel = `${appUrl()}/perfil`;
+  const vence = fecha(expiresAt);
+  const hasta = vence ? `hasta el ${vence}` : 'sin fecha de caducidad';
+  const confirmacion = confirmacionDePago(via, planName);
+
+  return {
+    subject: 'Tu acceso al método se renovó · Acosta Research',
+    text: [
+      `Hola ${firstName}:`,
+      '',
+      `${enMayuscula(confirmacion)}. Tu acceso queda ampliado ${hasta}.`,
+      '',
+      'No tienes que tocar nada en Claude: sigue funcionando la misma URL que ya tienes instalada. No hace falta volver a añadir el conector.',
+      '',
+      `Tu panel: ${panel}`,
+    ].join('\n'),
+    html: layout(
+      'Tu acceso se renovó',
+      `<p style="margin:0 0 18px;font-size:15px;line-height:1.6">Hola ${firstName}:
+         ${confirmacion}. Tu acceso queda
+         ampliado <strong>${hasta}</strong>.</p>
+
+       <p style="margin:0 0 22px;padding:14px 16px;background:#e7f6ef;border-radius:10px;
+                 font-size:14px;line-height:1.6;color:#12734b">
+         <strong>No tienes que tocar nada en Claude.</strong> Sigue funcionando la misma URL que
+         ya tienes instalada; no hace falta volver a añadir el conector.
+       </p>
+
+       <p style="margin:0;font-size:14px">
+         <a href="${panel}" style="color:#1a56db">Abrir mi panel</a>
+       </p>`,
+      { preheader: 'Tu acceso queda ampliado. La URL que ya tienes instalada sigue sirviendo.' },
+    ),
+  };
+}
+
+/**
+ * Al comprador: su bolsa de palabras ya está cargada.
+ *
+ * Antes este correo solo salía en los pagos por Yape. Ahora sale también en los
+ * de pasarela, que hasta hoy no recibían nada: quien pagaba con PayPal se
+ * quedaba sin una sola línea en su bandeja que demostrara la compra.
+ */
+function wordsReady({ firstName, planName, words, expiresAt, via }) {
+  const enlace = `${appUrl()}/humanizador`;
+  const vence = fecha(expiresAt);
+  const caduca = vence ? ` Puedes usarlas hasta el ${vence}.` : '';
+  const cantidad = new Intl.NumberFormat('es-PE').format(words);
+  const confirmacion = confirmacionDePago(via, planName);
+
+  return {
+    subject: 'Tu bolsa de palabras está activa · Acosta Research',
+    text: [
+      `Hola ${firstName}:`,
+      '',
+      `${enMayuscula(confirmacion)} y ya tienes ${cantidad} palabras cargadas en tu cuenta.${caduca}`,
+      '',
+      `Empezar a usarlas: ${enlace}`,
+    ].join('\n'),
+    html: layout(
+      'Tu bolsa de palabras está activa',
+      `<p style="margin:0 0 20px;font-size:15px;line-height:1.6">Hola ${firstName}:
+         ${confirmacion} y ya tienes
+         <strong>${cantidad} palabras</strong> cargadas en tu cuenta.${caduca}</p>
+
+       <p style="margin:0;font-size:14px">
+         <a href="${enlace}" style="color:#1a56db">Empezar a usarlas</a>
+       </p>`,
+      { preheader: `${cantidad} palabras cargadas en tu cuenta.` },
+    ),
+  };
+}
 /**
  * Al comprador: no pudimos dar el pago por bueno.
  *
@@ -313,11 +497,126 @@ function manualPaymentRejected({ firstName, planName, motivo }) {
   };
 }
 
+/**
+ * Al comprador que pagó fuera de la web: aquí está tu código de activación.
+ *
+ * Es el correo de quien pagó por Western Union, por transferencia o por un Yape
+ * que llegó al WhatsApp, y todavía no tiene cuenta. No puede recibir la URL del
+ * conector —esa nace al canjear, y el canje necesita una cuenta—, así que lo que
+ * recibe es el código y el camino para llegar a ella.
+ *
+ * EL CÓDIGO VA TAMBIÉN EN EL ASUNTO
+ * ----------------------------------
+ * Por lo mismo que el de verificación: entre que se paga y se crea la cuenta
+ * pasan horas o días, y este correo se busca en la bandeja mucho después. Con
+ * el código en el asunto se encuentra sin abrir nada.
+ *
+ * EL ORDEN DE LOS PASOS IMPORTA
+ * ------------------------------
+ * Primero crear la cuenta, después canjear. Al revés no existe: el código se
+ * pega en el perfil, y al perfil solo se entra con sesión iniciada. Decirlo en
+ * ese orden evita el mensaje de «no encuentro dónde meterlo».
+ */
+function activationCode({ codes, planName, expiresAt }) {
+  const registro = `${appUrl()}/auth/registro`;
+  const panel = `${appUrl()}/perfil`;
+  const vence = fecha(expiresAt);
+  const caduca = vence ? ` Tienes hasta el ${vence} para canjearlo.` : '';
+  const varios = codes.length > 1;
+  const titulo = varios ? 'Tus códigos de activación' : 'Tu código de activación';
+
+  const bloques = codes
+    .map(
+      (codigo) => `<tr>
+           <td align="center" style="background:#f2f6fe;border:1px solid #d7e3fb;border-radius:12px;
+                     padding:22px 16px">
+             <div style="font-family:Consolas,'Courier New',monospace;font-size:23px;font-weight:700;
+                         letter-spacing:.06em;color:#1a3fa8;word-break:break-all">${codigo}</div>
+           </td>
+         </tr>
+         <tr><td style="height:10px;line-height:10px">&nbsp;</td></tr>`,
+    )
+    .join('');
+
+  return {
+    // Con un solo código —que es el caso normal— va en el asunto. Con varios no
+    // cabe, y quien compra un lote no lo busca de memoria.
+    subject: varios
+      ? `${titulo} · Acosta Research`
+      : `${codes[0]} es tu código de activación · Acosta Research`,
+    text: [
+      'Hola:',
+      '',
+      `Recibimos tu pago de «${planName}». Este es tu código de activación:`,
+      '',
+      ...codes.map((codigo) => `  ${codigo}`),
+      '',
+      `Guárdalo: es de un solo uso y no podemos volver a mostrártelo.${caduca}`,
+      '',
+      'Cómo activarlo, en dos pasos:',
+      `  1. Crea tu cuenta en ${registro} (te pedimos un código de 6 cifras por correo para verificarla).`,
+      `  2. Entra en tu perfil, ${panel}, pega el código en «¿Compraste por Yape o transferencia?» y pulsa Canjear.`,
+      '',
+      'En cuanto lo canjees te llega otro correo con tu URL personal del conector, que es lo que se pega en Claude.',
+      '',
+      'Si algo no te cuadra, respóndenos a este mensaje.',
+    ].join('\n'),
+    html: layout(
+      titulo,
+      `<p style="margin:0 0 20px;font-size:15px;line-height:1.6">Hola: recibimos tu pago de
+         <strong>${planName}</strong>. ${varios ? 'Estos son tus códigos' : 'Este es tu código'}
+         de activación.</p>
+
+       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+         ${bloques}
+       </table>
+
+       <p style="margin:12px 0 24px;font-size:13.5px;line-height:1.65;color:#7b8794">
+         Guárda${varios ? 'los' : 'lo'}: ${varios ? 'son de un solo uso' : 'es de un solo uso'} y
+         no podemos volver a mostrár${varios ? 'telos' : 'telo'}.${caduca}
+       </p>
+
+       <p style="margin:0 0 10px;font-size:13px;font-weight:650;color:#52606d">
+         CÓMO ACTIVARLO, EN DOS PASOS
+       </p>
+       <p style="margin:0 0 10px;font-size:14.5px;line-height:1.65">
+         <strong>1.</strong> Crea tu cuenta en
+         <a href="${registro}" style="color:#1a56db">acostaresearch.com</a>. Te pedimos un código
+         de 6 cifras por correo para verificarla.
+       </p>
+       <p style="margin:0 0 22px;font-size:14.5px;line-height:1.65">
+         <strong>2.</strong> Entra en <a href="${panel}" style="color:#1a56db">tu perfil</a>, pega
+         el código en «¿Compraste por Yape o transferencia?» y pulsa Canjear.
+       </p>
+
+       <p style="margin:0 0 18px;font-size:14px;line-height:1.65;color:#52606d">
+         En cuanto lo canjees te llega otro correo con tu URL personal del conector, que es lo que
+         se pega en Claude.
+       </p>
+
+       <p style="margin:0;font-size:13.5px;line-height:1.65;color:#7b8794">
+         Si algo no te cuadra, responde a este mensaje y lo miramos.
+       </p>`,
+      {
+        preheader: varios
+          ? `${codes.length} códigos de activación de ${planName}.`
+          : `Tu código es ${codes[0]}. Se canjea desde tu perfil.`,
+      },
+    ),
+  };
+}
+
 module.exports = {
   emailVerificationCode,
   licenseAlert,
   manualPaymentReceived,
-  manualPaymentApproved,
+  // Los tres de entrega salen de `payment.delivery`, que es el punto por donde
+  // pasan por igual la pasarela y la aprobación de un Yape.
+  licenseReady,
+  licenseRenewed,
+  wordsReady,
   manualPaymentRejected,
+  // Al comprador que pagó fuera de la web y todavía no tiene cuenta.
+  activationCode,
   appUrl,
 };

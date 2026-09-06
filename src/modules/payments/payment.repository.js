@@ -22,11 +22,21 @@ const paymentRepository = {
     return prisma.payment.create({ data });
   },
 
-  /** El pago con su plan completo: hace falta para crear la bolsa. */
+  /**
+   * El pago con su plan completo: hace falta para crear la bolsa.
+   *
+   * Y con el comprador, que es a quien hay que escribirle al entregar. Va aquí
+   * y no en una consulta aparte porque `payment.delivery` avisa por correo en
+   * las dos vías de cobro, y la de Yape ya traía al usuario cargado: sin esto,
+   * el que paga con pasarela se quedaría sin su correo de entrega.
+   */
   findByOrderId(provider, providerOrderId) {
     return prisma.payment.findUnique({
       where: { provider_providerOrderId: { provider, providerOrderId } },
-      include: { plan: true },
+      include: {
+        plan: true,
+        user: { select: { id: true, email: true, firstName: true, lastName: true } },
+      },
     });
   },
 

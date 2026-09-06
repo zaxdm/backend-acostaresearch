@@ -1,10 +1,67 @@
 'use strict';
 
+const logger = require('../../config/logger');
+const { sendMail } = require('../../lib/mailer');
+const plantillas = require('../../lib/emailTemplates');
 const billingService = require('../billing/billing.service');
 const discountService = require('../billing/discount.service');
 const licenseService = require('../licensing/license.service');
 const licenseRepository = require('../licensing/license.repository');
 const paymentRepository = require('./payment.repository');
+
+/**
+ * Avisa al comprador de lo que acaba de recibir, sin bloquear.
+ *
+ * Un fallo del correo no puede tumbar nada: para cuando esto se ejecuta, el
+ * cobro ya está confirmado y lo comprado ya está entregado en la base de datos.
+ * Se registra en el log —que es donde se mira si alguien reclama que no le
+ * llegó— y se sigue.
+ *
+ * El caso de la licencia es el delicado: ese correo lleva la URL del conector y
+ * es el único sitio donde esa URL vuelve a existir, porque del token solo se
+ * guarda el hash. Si el envío falla, al comprador le queda «Nueva URL» en su
+ * panel; por eso ese botón no se quita.
+ */
+function avisarAlComprador(payment, entrega) {
+  const usuario = payment.user;
+
+  if (!usuario?.email) {
+    logger.warn({ paymentId: payment.id }, 'Entrega sin correo del comprador: no se avisa');
+    return;
+  }
+
+  // Yape se aprueba a mano y horas después; una pasarela cobra al instante. El
+  // correo lo dice de forma distinta en cada caso.
+  const via = payment.provider === 'YAPE' ? 'yape' : 'online';
+  const datos = { firstName: usuario.firstName, planName: payment.plan.name, via };
+
+  let mensaje;
+
+  if (entrega.license) {
+    mensaje = entrega.renovada
+      ? plantillas.licenseRenewed({ ...datos, expiresAt: entrega.license.expiresAt })
+      : plantillas.licenseReady({
+          ...datos,
+          connectorUrl: entrega.connectorUrl,
+          expiresAt: entrega.license.expiresAt,
+        });
+  } else if (entrega.pack) {
+    mensaje = plantillas.wordsReady({
+      ...datos,
+      words: entrega.pack.wordsTotal,
+      expiresAt: entrega.pack.expiresAt,
+    });
+  } else {
+    return;
+  }
+
+  sendMail({ to: usuario.email, ...mensaje }).catch((error) => {
+    logger.error(
+      { err: error, paymentId: payment.id, userId: payment.userId },
+      'No se pudo enviar el correo de entrega al comprador',
+    );
+  });
+}
 
 /**
  * Lo que se entrega cuando un pago se da por bueno.
@@ -31,7 +88,7 @@ async function entregarPago({ payment, captura, estadoEsperado = 'PENDING', nota
       })
     : null;
 
-  return paymentRepository.settle({
+  const entrega = await paymentRepository.settle({
     paymentId: payment.id,
     estadoEsperado,
     captura,
@@ -78,6 +135,14 @@ async function entregarPago({ payment, captura, estadoEsperado = 'PENDING', nota
       return { enlace: { wordPackId: pack.id }, resultado: { pack } };
     },
   });
+
+  // El aviso va FUERA de la transacción a propósito: solo se avisa de lo que ya
+  // está cerrado en la base de datos. Y solo si hubo entrega —si `settle`
+  // devolvió null, otra petición cobró este pago un instante antes y el correo
+  // ya salió con ella, así que aquí no se manda un duplicado.
+  if (entrega) avisarAlComprador(payment, entrega);
+
+  return entrega;
 }
 
 module.exports = { entregarPago };

@@ -7,6 +7,7 @@ const logger = require('../../config/logger');
 const { ERROR_CODES } = require('../../config/constants');
 const { sendMail } = require('../../lib/mailer');
 const plantillas = require('../../lib/emailTemplates');
+const { avisarAlAdmin } = require('../../lib/notify');
 const billingRepository = require('../billing/billing.repository');
 const discountService = require('../billing/discount.service');
 const paymentRepository = require('./payment.repository');
@@ -29,12 +30,19 @@ const { AppError, NotFoundError } = require('../../shared/errors/AppError');
  * administrador lleva el número de operación: lo que se coteja es el extracto
  * real, no la imagen.
  *
- * LA URL NUNCA VIAJA POR CORREO
- * ------------------------------
- * Al aprobar se crea la licencia, pero su URL no se le manda al comprador ni se
- * le enseña al administrador. Esa URL es la credencial entera del acceso: quien
- * la tenga, entra. El comprador la genera él desde su panel, que es el único
- * sitio donde se identifica antes de verla.
+ * LA URL SÍ VIAJA POR CORREO, PERO NO SALE DE AQUÍ
+ * -------------------------------------------------
+ * Al aprobar se crea la licencia y su URL se le manda al comprador por correo.
+ * Antes no: se le mandaba al panel a generarla él. Se cambió porque quien paga
+ * por Yape no está mirando la pantalla cuando aprobamos —han pasado horas—, y
+ * el correo es la única superficie que le alcanza en ese momento.
+ *
+ * El envío NO se hace en este archivo, sino en `payment.delivery`, que es el
+ * mismo punto por el que pasa un cobro de pasarela: lo que recibe el comprador
+ * no puede depender de por dónde pagó.
+ *
+ * Al administrador se le sigue sin enseñar esa URL: quien mira esta pantalla no
+ * es el dueño de la licencia.
  */
 
 const PROVEEDOR = 'YAPE';
@@ -177,6 +185,16 @@ const manualService = {
       { paymentId: payment.id },
     );
 
+    // Y un empujón al móvil, porque el correo se lee cuando uno abre el correo
+    // y esto espera a que alguien lo mire. Va sin el correo del comprador a
+    // propósito: ver quién es y su comprobante exige entrar al panel.
+    avisarAlAdmin({
+      titulo: `Yape por revisar · S/ ${(amountCents / 100).toFixed(2)}`,
+      mensaje: `${comprador.firstName} ${(comprador.lastName || '').charAt(0)}. · ${plan.name}`,
+      etiquetas: ['moneybag'],
+      enlace: `${env.APP_URL}/admin?seccion=yape`,
+    });
+
     return {
       paymentId: payment.id,
       reference: payment.providerOrderId,
@@ -263,15 +281,12 @@ const manualService = {
       'Pago por Yape aprobado y producto entregado',
     );
 
-    avisar(
-      payment.user.email,
-      plantillas.manualPaymentApproved({
-        firstName: payment.user.firstName,
-        planName: payment.plan.name,
-        esLicencia,
-      }),
-      { paymentId },
-    );
+    // El correo al comprador NO se manda aquí: lo manda `entregarPago`, que es
+    // el mismo punto por el que pasa un cobro de pasarela. Antes salía desde
+    // aquí y decía «entra al panel y pulsa Nueva URL»; ahora lleva la URL
+    // dentro, y tenía que hacerlo igual viniera de Yape o de PayPal. Dos envíos
+    // en dos sitios distintos era la forma segura de que un día dijeran cosas
+    // distintas.
 
     return {
       alreadyProcessed: false,

@@ -103,6 +103,21 @@ const schema = z.object({
   // vacío se busca en la base de datos el primer administrador activo, para
   // que el aviso no se pierda por un .env sin rellenar.
   ADMIN_NOTIFY_EMAIL: vacioComoAusente(z.string().email()),
+  // Aviso al móvil cuando entra un comprobante. El correo llega igual; esto es
+  // para enterarse sin abrir el correo, que es lo que acorta la espera del
+  // comprador.
+  //
+  // Sin `NTFY_TOPIC` no se llama a ningún servidor: el aviso se queda en el
+  // log, que es justo lo que hace falta en desarrollo.
+  //
+  // El tópico ES la credencial: en el plan gratuito de ntfy cualquiera que
+  // acierte el nombre puede leer lo que se publique en él. Por eso se genera
+  // largo y aleatorio, y por eso el aviso no lleva datos del comprador.
+  NTFY_URL: z.string().url().default('https://ntfy.sh'),
+  NTFY_TOPIC: vacioComoAusente(z.string()),
+  // Solo si el tópico está reservado con una cuenta de pago. Con uno público
+  // sobra.
+  NTFY_TOKEN: vacioComoAusente(z.string()),
   // Carpeta de los comprobantes. Como la de skills, tiene que ser persistente:
   // son la prueba de un cobro y hay que poder releerlos meses después.
   PROOFS_DIR: z.string().default(path.resolve(__dirname, '../../storage/comprobantes')),

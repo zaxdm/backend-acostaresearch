@@ -4,6 +4,8 @@ const crypto = require('node:crypto');
 const env = require('../../config/env');
 const logger = require('../../config/logger');
 const { ERROR_CODES } = require('../../config/constants');
+const { sendMail } = require('../../lib/mailer');
+const plantillas = require('../../lib/emailTemplates');
 const licenseRepository = require('./license.repository');
 const { analizar, NIVELES } = require('./license.detector');
 const limites = require('./license.limits');
@@ -48,6 +50,39 @@ function urlDelConector(token) {
   return `${env.MCP_PUBLIC_URL.replace(/\/+$/, '')}/${token}`;
 }
 
+/**
+ * Manda al comprador la URL que se acaba de emitir, sin bloquear el canje.
+ *
+ * Tiene que salir desde aquí y no desde el controlador porque el token en claro
+ * solo existe dentro de esta función: en cuanto se devuelve, lo único que queda
+ * en la base de datos es su SHA-256.
+ *
+ * Un fallo del correo no puede tumbar el canje —el código ya se gastó y la
+ * licencia ya existe—, así que se registra y se sigue. Al comprador le queda la
+ * URL en pantalla y «Nueva URL» en su panel.
+ */
+function avisarDeLaEntrega({ userId, planName, connectorUrl, expiresAt }) {
+  prisma.user
+    .findUnique({ where: { id: userId }, select: { email: true, firstName: true } })
+    .then((usuario) => {
+      if (!usuario?.email) return null;
+
+      return sendMail({
+        to: usuario.email,
+        ...plantillas.licenseReady({
+          firstName: usuario.firstName,
+          planName,
+          connectorUrl,
+          expiresAt,
+          via: 'codigo',
+        }),
+      });
+    })
+    .catch((error) => {
+      logger.error({ err: error, userId }, 'No se pudo enviar el correo del canje');
+    });
+}
+
 /** Mismo mensaje para código inexistente, ya usado o anulado: no se filtra cuál. */
 function codigoInvalido(code = ERROR_CODES.LICENSE_CODE_INVALID) {
   return new AppError('Ese código no es válido o ya se usó.', { statusCode: 400, code });
@@ -75,6 +110,7 @@ async function contratoDelProducto(productCode) {
   const plan = await prisma.plan.findFirst({
     where: { kind: 'LICENSE', productCode, active: true },
     select: {
+      name: true,
       durationDays: true,
       mcpCallsPerDay: true,
       mcpCallsPerMonth: true,
@@ -86,6 +122,8 @@ async function contratoDelProducto(productCode) {
   });
 
   return {
+    /** Cómo se llama lo comprado, para poder nombrarlo en el correo de entrega. */
+    nombre: plan?.name ?? 'Método de tesis',
     /** Días de acceso. 0 = sin caducidad. */
     durationDays: plan?.durationDays ?? env.LICENSE_DURATION_DAYS,
     /** Se separan porque se vuelcan tal cual en la fila de la licencia. */
@@ -100,11 +138,39 @@ async function contratoDelProducto(productCode) {
   };
 }
 
+/**
+ * Le manda el código al comprador, sin bloquear la generación.
+ *
+ * Solo sale si el administrador escribió un correo. Ese campo era «para tu
+ * registro» y ahora además entrega: quien paga por Western Union o por una
+ * transferencia no tiene cuenta todavía, así que el correo es la única
+ * superficie que le alcanza, y dictar doce caracteres por WhatsApp es la forma
+ * segura de que uno llegue mal escrito.
+ *
+ * Que falle el envío no puede tumbar nada: los códigos ya están creados y el
+ * administrador los tiene en pantalla para copiarlos. Se registra y se sigue.
+ */
+function avisarDelCodigo({ buyerEmail, codigos, planName, expiresAt }) {
+  sendMail({
+    to: buyerEmail,
+    ...plantillas.activationCode({ codes: codigos, planName, expiresAt }),
+  }).catch((error) => {
+    logger.error(
+      { err: error, buyerEmail },
+      'No se pudo enviar el código de activación al comprador',
+    );
+  });
+}
+
 const licenseService = {
   /**
    * Genera códigos de un solo uso. Devuelve los códigos EN CLARO una única vez:
    * en la base de datos solo queda su hash, así que si no se copian ahora, se
    * pierden y hay que generar otros.
+   *
+   * Si se indica el correo del comprador, se le mandan también por ahí. La
+   * pantalla del administrador los sigue enseñando igual: el correo puede
+   * rebotar, y en ese caso lo único que queda es lo que se copió a mano.
    */
   async generateCodes({ cantidad = 1, productCode, buyerEmail, note, createdById, expiresAt }) {
     const producto = productCode ?? env.LICENSE_PRODUCT_CODE;
@@ -129,7 +195,14 @@ const licenseService = {
     await licenseRepository.createCodes(filas);
     logger.info({ cantidad, producto, buyerEmail }, 'Códigos de activación generados');
 
-    return { productCode: producto, codes: codigos };
+    if (buyerEmail) {
+      // El nombre del plan sale del mismo sitio que en una compra, para que el
+      // comprador lea lo mismo que vio en la web al pagar.
+      const contrato = await contratoDelProducto(producto);
+      avisarDelCodigo({ buyerEmail, codigos, planName: contrato.nombre, expiresAt });
+    }
+
+    return { productCode: producto, codes: codigos, enviadoA: buyerEmail ?? null };
   },
 
   /**
@@ -181,7 +254,20 @@ const licenseService = {
       'Código canjeado: licencia activada',
     );
 
-    return { license: licencia, connectorUrl: urlDelConector(token) };
+    const url = urlDelConector(token);
+
+    // El mismo correo que recibe quien compra por la web. Un canje es una
+    // entrega igual que un cobro, y la URL solo existe en este instante: si no
+    // sale ahora, el único sitio donde queda es la pantalla que el comprador
+    // tiene delante.
+    avisarDeLaEntrega({
+      userId,
+      planName: contrato.nombre,
+      connectorUrl: url,
+      expiresAt: licencia.expiresAt,
+    });
+
+    return { license: licencia, connectorUrl: url };
   },
 
   /**

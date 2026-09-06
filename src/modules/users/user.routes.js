@@ -11,6 +11,7 @@ const {
   updateProfileSchema,
   changePasswordSchema,
   createAdminSchema,
+  deleteAccountSchema,
 } = require('./user.schema');
 const userController = require('./user.controller');
 
@@ -34,6 +35,20 @@ router.post(
   authLimiter,
   validate({ body: changePasswordSchema }),
   userController.changePassword,
+);
+
+/**
+ * Borrar la propia cuenta.
+ *
+ * Pasa por el limitador de ráfagas como el cambio de contraseña: es la operación
+ * más destructiva que puede hacer alguien sobre sí mismo, y no hay ninguna razón
+ * legítima para llamarla dos veces seguidas.
+ */
+router.delete(
+  '/me',
+  authLimiter,
+  validate({ body: deleteAccountSchema }),
+  userController.deleteMe,
 );
 
 // ── Administración ─────────────────────────────────────────────────────────

@@ -1,8 +1,8 @@
 'use strict';
 
 const asyncHandler = require('../../shared/http/asyncHandler');
-const { ok, created } = require('../../shared/http/apiResponse');
-const { readRefreshCookie } = require('../../shared/utils/cookies');
+const { ok, created, noContent } = require('../../shared/http/apiResponse');
+const { readRefreshCookie, clearRefreshCookie } = require('../../shared/utils/cookies');
 const userService = require('./user.service');
 
 const userController = {
@@ -46,6 +46,14 @@ const userController = {
             : 'Contraseña cambiada.',
       },
     );
+  }),
+
+  deleteMe: asyncHandler(async (req, res) => {
+    await userService.deleteOwnAccount(req.user.id, req.body);
+    // La cookie se limpia aquí: la sesión que acaba de borrar su cuenta no puede
+    // quedarse con un refresh token en el navegador apuntando a nada.
+    clearRefreshCookie(res);
+    return noContent(res);
   }),
 
   createAdmin: asyncHandler(async (req, res) => {

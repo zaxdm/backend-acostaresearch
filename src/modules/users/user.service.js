@@ -10,6 +10,7 @@ const {
 } = require('../../config/constants');
 const prisma = require('../../lib/prisma');
 const { sendMail } = require('../../lib/mailer');
+const { avisarAlAdmin } = require('../../lib/notify');
 const { passwordChangeCode, adminAccountCreated } = require('../../lib/emailTemplates');
 const tokenRepository = require('../auth/token.repository');
 const { hashPassword } = require('../../shared/utils/password');
@@ -197,6 +198,92 @@ const userService = {
     logger.warn({ userId, sesionesCerradas: count }, 'Contraseña cambiada');
 
     return { sesionesCerradas: count };
+  },
+
+  /**
+   * Borra la propia cuenta, a petición de su dueño.
+   *
+   * NO borra la fila, y esa es la decisión importante. De un usuario cuelgan sus
+   * pagos y sus licencias con borrado en cascada: un `delete` de verdad se
+   * llevaría por delante las ventas, y una venta ocurrió aunque el comprador se
+   * vaya. Lo que se borra es la persona —nombre, apellido, correo, contraseña,
+   * su cuenta de Google—, y lo que queda es una fila anónima de la que siguen
+   * colgando los apuntes contables.
+   *
+   * Para el dueño el efecto es el que espera: no puede volver a entrar, su correo
+   * queda libre para registrarse de nuevo y su conector deja de responder.
+   *
+   * Un administrador NO se puede borrar desde aquí. No es una jerarquía: es que
+   * el último administrador que se borrara dejaría el panel sin nadie dentro y
+   * sin forma de volver a entrar.
+   */
+  async deleteOwnAccount(userId, { email }) {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, firstName: true, lastName: true, role: true },
+    });
+    if (!user) throw new NotFoundError('El usuario ya no existe.');
+
+    if (user.role === ROLES.ADMIN) {
+      throw new AppError(
+        'Una cuenta de administrador no se borra desde aquí. Pídeselo a otro administrador.',
+        { statusCode: 403, code: ERROR_CODES.FORBIDDEN },
+      );
+    }
+
+    // El correo tiene que ser el de ESTA cuenta. Es lo que impide borrar la que
+    // no era cuando alguien tiene dos abiertas.
+    if (email !== user.email.toLowerCase()) {
+      throw new AppError('Ese no es el correo de esta cuenta.', {
+        statusCode: 400,
+        code: ERROR_CODES.VALIDATION_ERROR,
+      });
+    }
+
+    // Un correo que nadie puede tener: el dominio .invalid está reservado
+    // justamente para esto, así que ni existe ni existirá. Lleva el id dentro
+    // para no chocar con el de otra cuenta borrada.
+    const anonimo = `borrada-${user.id}@cuenta.invalid`;
+    const ahora = new Date();
+
+    await prisma.$transaction([
+      // Las licencias se revocan, no se borran: el conector tiene que dejar de
+      // responder hoy, y el motivo queda escrito por si mañana pregunta alguien.
+      prisma.license.updateMany({
+        where: { userId, status: { not: 'REVOKED' } },
+        data: { status: 'REVOKED', revokedAt: ahora, revokedReason: 'Cuenta borrada por su dueño' },
+      }),
+      prisma.accountCode.deleteMany({ where: { userId } }),
+      prisma.refreshToken.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: ahora },
+      }),
+      prisma.user.update({
+        where: { id: userId },
+        data: {
+          email: anonimo,
+          firstName: 'Cuenta',
+          lastName: 'borrada',
+          passwordHash: null,
+          googleId: null,
+          status: 'DELETED',
+          deletedAt: ahora,
+        },
+      }),
+    ]);
+
+    logger.warn({ userId, email: user.email }, 'Cuenta borrada por su dueño');
+
+    // Enterarse importa: alguien que se va puede ser un problema que no vimos, y
+    // si tenía licencia activa quizá haya que escribirle antes de que se enfríe.
+    avisarAlAdmin({
+      titulo: 'Una cuenta se ha borrado',
+      mensaje: `${user.firstName} ${user.lastName} (${user.email}) ha borrado su cuenta. Sus licencias quedan revocadas.`,
+      etiquetas: ['wave'],
+      prioridad: 3,
+    });
+
+    return { email: user.email };
   },
 
   /**

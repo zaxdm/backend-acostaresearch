@@ -1,0 +1,5 @@
+-- AlterTable
+ALTER TABLE `users` ADD COLUMN `deletedAt` DATETIME(3) NULL;
+
+-- AlterEnum
+ALTER TABLE `users` MODIFY `status` ENUM('ACTIVE', 'SUSPENDED', 'DELETED') NOT NULL DEFAULT 'ACTIVE';

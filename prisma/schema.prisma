@@ -31,6 +31,10 @@ enum Role {
 enum UserStatus {
   ACTIVE
   SUSPENDED
+  /// La borró su dueño. La fila sigue ahí, vacía de datos personales, porque de
+  /// ella cuelgan los pagos: borrarla de verdad se llevaría por delante las
+  /// ventas, y una venta ocurrió aunque el comprador se vaya.
+  DELETED
 }
 
 /// Cuentas reales: una fila aquí significa correo ya verificado.
@@ -52,6 +56,8 @@ model User {
 
   emailVerifiedAt DateTime?
   lastLoginAt     DateTime?
+  /// Cuándo pidió el dueño que se borrara. Nulo en una cuenta viva.
+  deletedAt       DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

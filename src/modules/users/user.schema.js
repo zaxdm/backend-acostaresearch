@@ -75,9 +75,35 @@ const createAdminSchema = z.object({
   password: password.optional(),
 });
 
+/**
+ * Borrar la propia cuenta.
+ *
+ * Se piden dos cosas y ninguna sobra. La palabra impide el clic sin querer; el
+ * correo impide equivocarse de cuenta, que es el error de verdad cuando alguien
+ * tiene abiertas la suya y la de otro. Escribir «eliminar» a secas se hace en
+ * piloto automático; escribir tu propio correo obliga a mirar cuál es.
+ *
+ * La palabra se compara sin tildes ni mayúsculas —«ELIMINAR», «Eliminar»— porque
+ * lo que se comprueba es la intención, no la ortografía.
+ */
+const deleteAccountSchema = z.object({
+  confirmacion: z
+    .string({ required_error: 'Escribe «eliminar» para confirmar.' })
+    .trim()
+    .toLowerCase()
+    .refine((v) => v === 'eliminar', 'Escribe exactamente «eliminar».'),
+  email: z
+    .string({ required_error: 'Escribe tu correo para confirmar.' })
+    .trim()
+    .toLowerCase()
+    .email('Escribe el correo de esta cuenta.')
+    .max(255),
+});
+
 module.exports = {
   listQuerySchema,
   updateProfileSchema,
   changePasswordSchema,
   createAdminSchema,
+  deleteAccountSchema,
 };

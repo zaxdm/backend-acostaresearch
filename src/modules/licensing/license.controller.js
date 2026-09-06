@@ -121,6 +121,12 @@ const licenseController = {
     const license = await licenseService.reactivate(req.params.id);
     return ok(res, { license }, { message: 'Licencia reactivada.' });
   }),
+
+  /** Borrado de verdad. Para limpiar pruebas; a un cliente se le revoca. */
+  eliminar: asyncHandler(async (req, res) => {
+    await licenseService.eliminar({ id: req.params.id, adminId: req.user.id });
+    return noContent(res);
+  }),
 };
 
 module.exports = licenseController;

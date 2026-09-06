@@ -712,6 +712,41 @@ const licenseService = {
     return actualizada;
   },
 
+  /**
+   * Borra una licencia y todo su rastro de uso. No hay vuelta atrás.
+   *
+   * Existe para limpiar pruebas, no para gestionar clientes: a un comprador de
+   * verdad se le REVOCA —queda la fila, el motivo y la fecha, y se puede
+   * reactivar—. Borrar es para las licencias que uno se emitió a sí mismo
+   * probando, que no deberían contar en ninguna cifra ni aparecer en ninguna
+   * lista dentro de seis meses.
+   *
+   * El cobro asociado NO se borra: se suelta. Ver `licenseRepository.remove`.
+   */
+  async eliminar({ id, adminId }) {
+    const licencia = await licenseRepository.findForRemoval(id);
+    if (!licencia) throw new NotFoundError('Esa licencia no existe.');
+
+    await licenseRepository.remove(id);
+
+    // A nivel de aviso: es irreversible y toca el acceso de alguien, así que
+    // tiene que poder reconstruirse qué se borró aunque la fila ya no esté.
+    logger.warn(
+      {
+        licenseId: id,
+        producto: licencia.productCode,
+        estado: licencia.status,
+        token: licencia.tokenHint,
+        consultas: licencia.callsTotal,
+        titular: licencia.user?.email,
+        cobroSoltado: licencia.payment?.id ?? null,
+        borradaPor: adminId,
+      },
+      'Licencia borrada desde el panel',
+    );
+
+    return { id };
+  },
   async reactivate(id) {
     const licencia = await licenseRepository.findById(id);
     if (!licencia) throw new NotFoundError('No encontramos esa licencia.');

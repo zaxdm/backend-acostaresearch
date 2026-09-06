@@ -145,6 +145,38 @@ const licenseRepository = {
     });
   },
 
+  /** Lo que hace falta saber antes de borrarla, y para dejarlo en el log. */
+  findForRemoval(id) {
+    return prisma.license.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        productCode: true,
+        status: true,
+        tokenHint: true,
+        callsTotal: true,
+        user: { select: { email: true } },
+        payment: { select: { id: true, status: true, amountCents: true } },
+      },
+    });
+  },
+
+  /**
+   * Borra la licencia de verdad, con su rastro de uso.
+   *
+   * Lo que cuelga de ella —consultas, contadores, alertas, sesiones— se va
+   * solo: son relaciones en cascada. Lo único que hay que soltar a mano es el
+   * COBRO, y se suelta en vez de borrarse a propósito: el dinero que entró es
+   * un hecho contable que no deja de haber ocurrido porque se limpie el acceso
+   * que pagó. El apunte queda huérfano en Movimientos, y ahí se borra aparte
+   * si además sobra.
+   */
+  remove(id) {
+    return prisma.$transaction(async (tx) => {
+      await tx.payment.updateMany({ where: { licenseId: id }, data: { licenseId: null } });
+      await tx.license.delete({ where: { id } });
+    });
+  },
   /** Licencia por el hash de su token. Es la consulta del camino caliente. */
   findByTokenHash(tokenHash) {
     return prisma.license.findUnique({

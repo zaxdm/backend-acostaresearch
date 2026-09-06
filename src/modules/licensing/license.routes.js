@@ -76,4 +76,9 @@ router.post(
   licenseController.reactivate,
 );
 
+// Borrar es irreversible y se lleva por delante el rastro de uso. Va después
+// de revocar y reactivar porque ese es el orden en que se usan: primero se
+// corta el acceso, y solo se borra lo que además sobra.
+router.delete('/:id', validate({ params: idParamSchema }), licenseController.eliminar);
+
 module.exports = router;

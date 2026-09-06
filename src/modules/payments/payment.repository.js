@@ -230,6 +230,29 @@ const paymentRepository = {
       take: limit,
     });
   },
+
+  /** Lo justo para decidir si se puede borrar y qué hay que limpiar detrás. */
+  findForRemoval(id) {
+    return prisma.payment.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        status: true,
+        provider: true,
+        amountCents: true,
+        currency: true,
+        licenseId: true,
+        wordPackId: true,
+        proofPath: true,
+        payerEmail: true,
+        user: { select: { email: true } },
+      },
+    });
+  },
+
+  remove(id) {
+    return prisma.payment.delete({ where: { id } });
+  },
 };
 
 module.exports = paymentRepository;

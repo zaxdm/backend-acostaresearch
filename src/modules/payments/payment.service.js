@@ -7,6 +7,7 @@ const billingService = require('../billing/billing.service');
 const discountService = require('../billing/discount.service');
 const licenseRepository = require('../licensing/license.repository');
 const paymentRepository = require('./payment.repository');
+const proofStorage = require('./proof.storage');
 const { entregarPago } = require('./payment.delivery');
 const { getProvider, enabledProviders } = require('./providers');
 const { AppError, NotFoundError } = require('../../shared/errors/AppError');
@@ -249,6 +250,46 @@ const paymentService = {
 
   listRecent() {
     return paymentRepository.listRecent();
+  },
+
+  /**
+   * Borra un apunte de cobro del historial. Solo ADMIN.
+   *
+   * Existe porque el historial se llena de intentos que no llegaron a nada
+   * —órdenes de PayPal abandonadas, pruebas— y un libro de cuentas que no se
+   * puede limpiar deja de leerse, que es peor que no tenerlo.
+   *
+   * BORRA EL APUNTE, NO LA ENTREGA. Si ese pago activó una licencia o una bolsa
+   * de palabras, siguen vivas: la relación la guarda el pago, así que al
+   * desaparecer solo se pierde el rastro de por dónde entró el dinero. Por eso
+   * queda escrito en el log con quién lo borró y de cuánto era: es lo único que
+   * sobrevive.
+   */
+  async remove({ id, byId }) {
+    const pago = await paymentRepository.findForRemoval(id);
+    if (!pago) throw new NotFoundError('Ese pago no existe.');
+
+    await paymentRepository.remove(id);
+
+    // El comprobante de Yape se va con el apunte: sin la fila a la que
+    // pertenece, esa imagen ya no es el justificante de nada.
+    if (pago.proofPath) await proofStorage.borrar(pago.proofPath);
+
+    logger.warn(
+      {
+        paymentId: pago.id,
+        provider: pago.provider,
+        status: pago.status,
+        amountCents: pago.amountCents,
+        currency: pago.currency,
+        comprador: pago.user?.email ?? pago.payerEmail,
+        entrego: pago.licenseId ?? pago.wordPackId ?? null,
+        borradoPor: byId,
+      },
+      'Pago borrado del historial desde el panel',
+    );
+
+    return { id: pago.id };
   },
 };
 

@@ -10,6 +10,7 @@ const {
   createOrderSchema,
   orderParamsSchema,
   providerQuerySchema,
+  paymentIdParamSchema,
 } = require('./payment.schema');
 const paymentController = require('./payment.controller');
 const manualRoutes = require('./manual.routes');
@@ -49,5 +50,15 @@ router.post(
 
 router.get('/', authenticate, paymentController.mine);
 router.get('/recent', authenticate, authorize(ROLES.ADMIN), paymentController.recent);
+
+// Limpiar el historial. Va la última para que ninguna ruta con nombre fijo
+// —«/recent», «/manual»— acabe interpretada como un identificador.
+router.delete(
+  '/:id',
+  authenticate,
+  authorize(ROLES.ADMIN),
+  validate({ params: paymentIdParamSchema }),
+  paymentController.remove,
+);
 
 module.exports = router;

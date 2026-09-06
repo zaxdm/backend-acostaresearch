@@ -26,4 +26,14 @@ const providerQuerySchema = z.object({
   provider: z.string().trim().toUpperCase().max(20).default('PAYPAL'),
 });
 
-module.exports = { createOrderSchema, orderParamsSchema, providerQuerySchema };
+/** El identificador del pago en nuestra base, no el de la pasarela. */
+const paymentIdParamSchema = z.object({
+  id: z.string().uuid('Identificador no válido.'),
+});
+
+module.exports = {
+  createOrderSchema,
+  orderParamsSchema,
+  providerQuerySchema,
+  paymentIdParamSchema,
+};

@@ -51,6 +51,11 @@ const paymentController = {
     const payments = await paymentService.listRecent();
     return ok(res, { payments });
   }),
+
+  remove: asyncHandler(async (req, res) => {
+    await paymentService.remove({ id: req.params.id, byId: req.user.id });
+    return noContent(res);
+  }),
 };
 
 module.exports = paymentController;

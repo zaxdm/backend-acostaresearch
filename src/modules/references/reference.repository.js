@@ -232,13 +232,20 @@ async function buscar({ palabras, productCode, limite = 8 }) {
     : '';
 
   const consulta = palabras.map((palabra) => '+' + palabra + '*').join(' ');
-  const parametros = [consulta, ...(productCode ? [productCode] : []), limite];
+
+  // La expresión va dos veces: una para filtrar y otra para puntuar. Ordenar
+  // solo por año devolvía lo más reciente de entre lo que coincidía, y con seis
+  // resultados eso no es lo mismo que lo mejor: un artículo de 2027 que roza el
+  // tema desplazaba al de 2019 que va justo de eso. El año sigue contando, pero
+  // por detrás de la relevancia.
+  const parametros = [consulta, consulta, ...(productCode ? [productCode] : []), limite];
 
   const porIndice = await prisma.$queryRawUnsafe(
-    'SELECT r.* FROM `references` r ' +
+    'SELECT r.*, MATCH(r.busqueda) AGAINST (? IN BOOLEAN MODE) AS relevancia ' +
+      'FROM `references` r ' +
       'WHERE MATCH(r.busqueda) AGAINST (? IN BOOLEAN MODE) ' +
       filtroProducto +
-      'ORDER BY r.year DESC, r.title ASC LIMIT ?',
+      'ORDER BY relevancia DESC, r.year DESC LIMIT ?',
     ...parametros,
   );
 

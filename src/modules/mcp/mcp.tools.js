@@ -29,8 +29,9 @@ const ESQUEMA_FUENTES = fromJsonSchema({
       type: 'string',
       minLength: 3,
       description:
-        'Sobre qué buscar. Palabras del contenido, no una pregunta entera: ' +
-        '«validez de constructo», «muestreo por conveniencia», «alfa de Cronbach».',
+        'Sobre qué buscar, EN INGLÉS y en palabras del contenido, no una pregunta entera: ' +
+        '«construct validity», «convenience sampling», «Cronbach alpha». ' +
+        'Tradúcelo tú: el tesista escribe en español y la biblioteca está en inglés.',
     },
     cuantas: {
       type: 'integer',
@@ -452,7 +453,11 @@ function construirServidor(licencia) {
           'Busca referencias reales y verificadas en la biblioteca de Acosta | IA & Research. ' +
           'ÚSALA SIEMPRE que haga falta citar: antecedentes, marco teórico, metodología o ' +
           'discusión. NO cites de memoria: los datos bibliográficos que no salen de aquí ' +
-          'suelen tener el año o el DOI equivocados, y eso lo comprueba un jurado en segundos.',
+          'suelen tener el año o el DOI equivocados, y eso lo comprueba un jurado en segundos. ' +
+          'BUSCA EN INGLÉS: la biblioteca son artículos indexados en Scopus y Web of Science, ' +
+          'y sus títulos y resúmenes están en inglés. El tesista te escribe en español, así que ' +
+          'traduce tú el tema antes de buscar («validez de constructo» → «construct validity»). ' +
+          'Si en inglés no sale nada, prueba con sinónimos antes de darlo por perdido.',
         inputSchema: ESQUEMA_FUENTES,
       },
       async ({ tema, cuantas }) => {
@@ -473,9 +478,12 @@ function construirServidor(licencia) {
         if (fuentes.length === 0) {
           return texto(
             `No hay ninguna fuente sobre «${tema}» en la biblioteca.\n\n` +
-              'DÍSELO AL TESISTA TAL CUAL y sigue sin citar ahí, o pídele a él la fuente. ' +
-              'NO rellenes el hueco con referencias de memoria: es donde se cuelan los ' +
-              'datos inventados.',
+              'Antes de rendirte: ¿lo buscaste EN INGLÉS? La biblioteca son artículos de ' +
+              'Scopus y Web of Science. Prueba una vez más con el tema traducido, o con ' +
+              'sinónimos del término.\n\n' +
+              'Si aun así no hay nada, DÍSELO AL TESISTA TAL CUAL y sigue sin citar ahí, o ' +
+              'pídele a él la fuente. NO rellenes el hueco con referencias de memoria: es ' +
+              'donde se cuelan los datos inventados.',
           );
         }
 

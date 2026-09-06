@@ -810,3 +810,102 @@ model AccountCode {
   @@unique([userId, purpose])
   @@map("account_codes")
 }
+
+/// Una fuente bibliográfica del corpus de la casa.
+///
+/// El corpus se cura en Zotero, no aquí: allí está el conector del navegador
+/// que captura una ficha de Scopus o de Scielo en un clic, y el editor con el
+/// que se corrige un autor mal puesto. Esta tabla es un espejo de solo lectura.
+///
+/// POR QUÉ SE ESPEJA EN VEZ DE CONSULTAR ZOTERO EN VIVO
+/// ----------------------------------------------------
+/// El límite de peticiones de Zotero es por cuenta, y la cuenta es UNA para
+/// todos los clientes a la vez: un día bueno de ventas bloquearía a todos. Y
+/// una consulta en vivo mete a un tercero dentro de cada turno de Claude, así
+/// que un rato lento de Zotero es un rato lento del producto, y una caída suya
+/// es una caída nuestra. Sincronizar es barato —la API devuelve solo lo que
+/// cambió— y deja al conector leyendo de la misma base que todo lo demás.
+model Reference {
+  id String @id @default(uuid()) @db.Char(36)
+
+  /// La clave del ítem en Zotero. Es la identidad de la fuente: al sincronizar
+  /// se actualiza por ella, de modo que corregir una ficha en Zotero corrige
+  /// la fila y no crea una segunda.
+  zoteroKey String @unique @db.VarChar(16)
+  /// Versión del ítem en Zotero, para pedir solo lo modificado.
+  version   Int
+
+  itemType String  @db.VarChar(40)
+  title    String  @db.VarChar(500)
+  /// Autores ya formateados: «Hernández, R.; Fernández, C.».
+  authors  String  @db.VarChar(500)
+  year     Int?
+  /// Revista, libro, congreso o editorial, según el tipo de fuente.
+  source   String? @db.VarChar(300)
+  doi      String? @db.VarChar(200)
+  url      String? @db.VarChar(500)
+  abstract String? @db.Text
+
+  /// Las notas del ítem, unidas y sin etiquetas HTML.
+  ///
+  /// Vale más que el resumen: el resumen lo escribió la revista para vender su
+  /// artículo, y la nota la escribió Acosta diciendo para qué sirve esta fuente
+  /// y qué afirmación respalda.
+  notes String? @db.Text
+
+  /// Las etiquetas de Zotero, separadas por coma. Se guardan como texto porque
+  /// se muestran; el filtro por producto NO se hace aquí, sino en `groups`.
+  tags String @default("") @db.VarChar(500)
+
+  /// Título, autores, resumen, notas y etiquetas en minúsculas y sin tildes.
+  ///
+  /// Una sola columna para buscar. Con un corpus de cientos de fuentes —no de
+  /// millones— un LIKE sobre este campo responde de sobra, y evita depender de
+  /// los índices de texto completo, que en Prisma siguen tras una bandera.
+  busqueda String @db.Text
+
+  groups ReferenceGroup[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([year])
+  @@map("references")
+}
+
+/// A qué productos pertenece una fuente. Mismo trato que `SkillGroup`.
+///
+/// SIN NINGUNA FILA = VISIBLE PARA TODOS, y aquí eso no es un caso raro sino lo
+/// habitual: la metodología —Hernández Sampieri, Creswell, las normas APA—
+/// sirve igual a quien escribe una tesis que a quien manda un artículo a una
+/// revista. Solo se etiqueta lo que de verdad pertenece a una ruta.
+model ReferenceGroup {
+  referenceId String    @db.Char(36)
+  reference   Reference @relation(fields: [referenceId], references: [id], onDelete: Cascade)
+
+  /// El `productCode` del plan, igual que en `skill_groups`. No es clave
+  /// foránea por la misma razón que allí.
+  productCode String @db.VarChar(40)
+
+  createdAt DateTime @default(now())
+
+  @@id([referenceId, productCode])
+  @@index([productCode])
+  @@map("reference_groups")
+}
+
+/// Marcador de la última sincronización. Una sola fila, siempre la 1.
+///
+/// Guarda la versión de la biblioteca, no la fecha: Zotero versiona la
+/// biblioteca entera con un número que crece, y pedir `?since=<esa versión>`
+/// devuelve exactamente lo que cambió desde entonces, borrados incluidos. Con
+/// una fecha habría que traerlo todo y comparar.
+model ReferenceSync {
+  id             Int       @id @default(1)
+  libraryVersion Int       @default(0)
+  lastRunAt      DateTime?
+  /// Cuántas fuentes quedaron tras la última pasada. Es lo que enseña el panel.
+  lastCount      Int       @default(0)
+
+  @@map("reference_sync")
+}

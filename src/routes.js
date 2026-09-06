@@ -8,6 +8,7 @@ const billingRoutes = require('./modules/billing/billing.routes');
 const paymentRoutes = require('./modules/payments/payment.routes');
 const licenseRoutes = require('./modules/licensing/license.routes');
 const skillRoutes = require('./modules/skills/skill.routes');
+const referenceRoutes = require('./modules/references/reference.routes');
 
 const router = Router();
 
@@ -22,5 +23,6 @@ router.use('/billing', billingRoutes);
 router.use('/payments', paymentRoutes);
 router.use('/licenses', licenseRoutes);
 router.use('/skills', skillRoutes);
+router.use('/referencias', referenceRoutes);
 
 module.exports = router;

@@ -157,6 +157,22 @@ const schema = z.object({
   // Techo del .skill que se acepta por el panel. Los del método rondan los
   // 60 KB; el margen es para bundles con muchos materiales de apoyo.
   SKILLS_MAX_BYTES: z.coerce.number().int().positive().default(15 * 1024 * 1024),
+
+  // ── Corpus bibliográfico (Zotero) ───────────────────────────────────────
+  // La biblioteca se cura en Zotero y este servidor la espeja. La clave TIENE
+  // QUE SER DE SOLO LECTURA: se crea en zotero.org/settings/keys sin marcar
+  // «Allow write access». Así, aunque se filtrara entera, nadie puede borrar
+  // ni modificar el corpus; y como el conector no expone ninguna herramienta
+  // de escritura, tampoco hay por dónde intentarlo.
+  //
+  // Vacía = la sincronización y la búsqueda de fuentes quedan apagadas, sin
+  // romper nada: el conector sigue sirviendo capítulos como hasta ahora.
+  ZOTERO_API_KEY: vacioComoAusente(z.string()),
+  // El identificador numérico de la cuenta, no el nombre de usuario.
+  ZOTERO_USER_ID: vacioComoAusente(z.string().regex(/^[0-9]+$/, 'ZOTERO_USER_ID es numérico')),
+  // Biblioteca de grupo, si el corpus vive en una en vez de en la personal.
+  // Con valor, manda sobre ZOTERO_USER_ID.
+  ZOTERO_GROUP_ID: vacioComoAusente(z.string().regex(/^[0-9]+$/, 'ZOTERO_GROUP_ID es numérico')),
 });
 
 const parsed = schema.safeParse(process.env);
@@ -234,6 +250,16 @@ const env = Object.freeze({
     titular: raw.YAPE_TITULAR ?? null,
     numero: raw.YAPE_NUMERO ?? null,
   },
+  // El corpus solo se activa con clave y con una biblioteca a la que apuntar.
+  zoteroEnabled: Boolean(raw.ZOTERO_API_KEY && (raw.ZOTERO_GROUP_ID || raw.ZOTERO_USER_ID)),
+  // La ruta de la biblioteca dentro de la API. Un grupo manda sobre la cuenta
+  // personal: si algún día el corpus se mueve a un grupo compartido, basta con
+  // rellenar ZOTERO_GROUP_ID y no hay que tocar código.
+  zoteroLibrary: raw.ZOTERO_GROUP_ID
+    ? `groups/${raw.ZOTERO_GROUP_ID}`
+    : raw.ZOTERO_USER_ID
+      ? `users/${raw.ZOTERO_USER_ID}`
+      : null,
   paypalApiBase:
     raw.PAYPAL_ENV === 'live' ? 'https://api-m.paypal.com' : 'https://api-m.sandbox.paypal.com',
 });

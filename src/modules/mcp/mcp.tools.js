@@ -9,6 +9,7 @@ const skillDelivery = require('../skills/skill.delivery');
 const licenseService = require('../licensing/license.service');
 const { analizarIntencion, RESPUESTA_RECHAZO } = require('../licensing/license.guard');
 const prisma = require('../../lib/prisma');
+const referenceService = require('../references/reference.service');
 
 /**
  * Los esquemas de las herramientas van en JSON Schema, no en Zod.
@@ -20,6 +21,27 @@ const prisma = require('../../lib/prisma');
  * encerrado.
  */
 const SIN_ARGUMENTOS = fromJsonSchema({ type: 'object', properties: {}, additionalProperties: false });
+
+const ESQUEMA_FUENTES = fromJsonSchema({
+  type: 'object',
+  properties: {
+    tema: {
+      type: 'string',
+      minLength: 3,
+      description:
+        'Sobre qué buscar. Palabras del contenido, no una pregunta entera: ' +
+        '«validez de constructo», «muestreo por conveniencia», «alfa de Cronbach».',
+    },
+    cuantas: {
+      type: 'integer',
+      minimum: 1,
+      maximum: 15,
+      description: 'Cuántas fuentes quieres. Por omisión, seis.',
+    },
+  },
+  required: ['tema'],
+  additionalProperties: false,
+});
 
 const ESQUEMA_REDACTAR = fromJsonSchema({
   type: 'object',
@@ -415,6 +437,66 @@ function construirServidor(licencia) {
       return texto(resultado.texto);
     },
   );
+
+  // ── Corpus bibliográfico ─────────────────────────────────────────────────
+  // Solo existe si hay corpus configurado. Una herramienta anunciada que
+  // responde «no hay nada» en cada llamada es peor que no tenerla: el
+  // asistente la sigue intentando y el tesista cree que le falta algo por
+  // activar.
+  if (env.zoteroEnabled) {
+    server.registerTool(
+      'buscar_fuentes',
+      {
+        title: 'Buscar fuentes en la biblioteca',
+        description:
+          'Busca referencias reales y verificadas en la biblioteca de Acosta | IA & Research. ' +
+          'ÚSALA SIEMPRE que haga falta citar: antecedentes, marco teórico, metodología o ' +
+          'discusión. NO cites de memoria: los datos bibliográficos que no salen de aquí ' +
+          'suelen tener el año o el DOI equivocados, y eso lo comprueba un jurado en segundos.',
+        inputSchema: ESQUEMA_FUENTES,
+      },
+      async ({ tema, cuantas }) => {
+        await licenseService.recordUsage({
+          licenseId: licencia.id,
+          tool: 'buscar_fuentes',
+          prompt: tema,
+        });
+
+        // Mismo filtro que el catálogo de capítulos: cada licencia ve lo suyo.
+        // Las fuentes sin producto —la metodología— las ve todo el mundo.
+        const fuentes = await referenceService.buscarParaLicencia({
+          tema,
+          cuantas,
+          productCode: licencia.productCode,
+        });
+
+        if (fuentes.length === 0) {
+          return texto(
+            `No hay ninguna fuente sobre «${tema}» en la biblioteca.\n\n` +
+              'DÍSELO AL TESISTA TAL CUAL y sigue sin citar ahí, o pídele a él la fuente. ' +
+              'NO rellenes el hueco con referencias de memoria: es donde se cuelan los ' +
+              'datos inventados.',
+          );
+        }
+
+        const fichas = fuentes.map((f, i) => {
+          const lineas = [`${i + 1}. ${f.cita}`];
+          // La nota vale más que el resumen: el resumen lo escribió la revista
+          // para vender su artículo; la nota la escribió Acosta diciendo para
+          // qué sirve la fuente.
+          if (f.nota) lineas.push(`   Nota de Acosta: ${f.nota.slice(0, 400)}`);
+          else if (f.resumen) lineas.push(`   Resumen: ${f.resumen.slice(0, 400)}`);
+          return lineas.join('\n');
+        });
+
+        return texto(
+          `Fuentes de la biblioteca sobre «${tema}»:\n\n${fichas.join('\n\n')}\n\n` +
+            'Cita EXACTAMENTE como están escritas, sin cambiar años, autores ni DOIs. ' +
+            'Si ninguna sirve para lo que estabas escribiendo, dilo en vez de forzarla.',
+        );
+      },
+    );
+  }
 
   return server;
 }

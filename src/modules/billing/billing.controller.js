@@ -78,6 +78,11 @@ const billingController = {
     const product = await productService.update(req.params.code, req.body);
     return ok(res, { product }, { message: 'Grupo actualizado.' });
   }),
+
+  deleteProduct: asyncHandler(async (req, res) => {
+    const product = await productService.remove(req.params.code);
+    return ok(res, { product }, { message: `Grupo «${product.name}» eliminado.` });
+  }),
 };
 
 module.exports = billingController;

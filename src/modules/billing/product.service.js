@@ -162,6 +162,56 @@ const productService = {
   async retire(code) {
     return productService.update(code, { active: false });
   },
+
+  /**
+   * Borra un grupo de verdad, y solo si no ha dejado rastro.
+   *
+   * Existe para deshacer un grupo creado por error —un código mal escrito, una
+   * prueba— y para nada más. En cuanto algo apunta a él, borrarlo haría daño:
+   *
+   *   · Una licencia emitida quedaría apuntando a un producto inexistente, y su
+   *     dueño perdería el acceso sin haber hecho nada.
+   *   · Un capítulo colgado de ese código dejaría de servirse.
+   *   · Un pago cobrado perdería la referencia de qué se vendió, que es
+   *     justo lo que hay que poder demostrar meses después.
+   *
+   * Por eso se comprueba antes y se niega con un motivo concreto: el
+   * administrador tiene que saber QUÉ lo impide, no leer un «no se puede».
+   * Cuando algo lo bloquea, lo que quiere de verdad es «Retirar», que lo saca
+   * de la venta sin tocar lo ya vendido.
+   */
+  async remove(code) {
+    const grupo = await prisma.plan.findFirst({
+      where: { code, kind: 'LICENSE' },
+      select: { id: true, code: true, productCode: true, name: true },
+    });
+    if (!grupo) throw new NotFoundError('Ese grupo no existe.');
+
+    const [licencias, capitulos, pagos, bolsas] = await Promise.all([
+      prisma.license.count({ where: { productCode: grupo.productCode } }),
+      prisma.skill.count({ where: { productCode: grupo.productCode } }),
+      prisma.payment.count({ where: { planId: grupo.id } }),
+      prisma.wordPack.count({ where: { planId: grupo.id } }),
+    ]);
+
+    const motivos = [];
+    if (licencias > 0) motivos.push(`${licencias} licencia${licencias === 1 ? '' : 's'} emitida${licencias === 1 ? '' : 's'}`);
+    if (pagos > 0) motivos.push(`${pagos} pago${pagos === 1 ? '' : 's'} registrado${pagos === 1 ? '' : 's'}`);
+    if (capitulos > 0) motivos.push(`${capitulos} capítulo${capitulos === 1 ? '' : 's'}`);
+    if (bolsas > 0) motivos.push(`${bolsas} bolsa${bolsas === 1 ? '' : 's'} de palabras`);
+
+    if (motivos.length > 0) {
+      throw new ConflictError(
+        `No se puede borrar «${grupo.name}»: tiene ${motivos.join(', ')}. ` +
+          'Usa «Retirar» para sacarlo de la venta sin tocar lo ya vendido.',
+      );
+    }
+
+    await prisma.plan.delete({ where: { id: grupo.id } });
+    logger.warn({ code: grupo.code, nombre: grupo.name }, 'Grupo borrado desde el panel');
+
+    return { code: grupo.code, name: grupo.name };
+  },
 };
 
 module.exports = productService;

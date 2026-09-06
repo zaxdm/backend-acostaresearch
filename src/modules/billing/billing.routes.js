@@ -55,6 +55,16 @@ router.patch(
   validate({ params: productCodeParamSchema, body: updateProductSchema }),
   billingController.updateProduct,
 );
+// Borrar solo funciona con un grupo que no haya dejado rastro: el servicio se
+// niega —diciendo qué lo impide— si tiene licencias, pagos o capítulos. Para
+// todo lo demás está «Retirar», que es un PATCH de `active`.
+router.delete(
+  '/products/:code',
+  authenticate,
+  authorize(ROLES.ADMIN),
+  validate({ params: productCodeParamSchema }),
+  billingController.deleteProduct,
+);
 
 // ── Descuentos ─────────────────────────────────────────────────────────────
 // Comprobar un código exige sesión pero no rol: lo hace el propio comprador

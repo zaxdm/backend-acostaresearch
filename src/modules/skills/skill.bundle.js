@@ -40,6 +40,47 @@ function rutaPeligrosa(nombre) {
   return nombre.startsWith('/') || nombre.includes('..') || /^[a-zA-Z]:/.test(nombre);
 }
 
+/** Los cuatro bytes con los que empieza cualquier .zip. */
+function esZip(buffer) {
+  return buffer.length > 4 && buffer.readUInt32LE(0) === 0x04034b50;
+}
+
+/**
+ * Un SKILL.md suelto también vale como bundle.
+ *
+ * Una skill sin materiales de apoyo es un único archivo Markdown, y comprimirlo
+ * solo para subirlo es un paso que no aporta nada: quien lo escribe lo guarda
+ * como `humanizador-academico.skill` y lo arrastra. Antes eso fallaba con «El
+ * bundle no tiene SKILL.md», que era verdad y no ayudaba en nada.
+ *
+ * Se envuelve aquí, en la entrada, y no se toca nada más: a partir de este
+ * punto todo el sistema —el analizador, el guardado, el conector— sigue viendo
+ * un .zip normal con su SKILL.md dentro. La alternativa era enseñar a cada
+ * lector a distinguir los dos formatos, que es multiplicar el mismo `if` por
+ * todos los sitios donde se abre un bundle.
+ */
+function empaquetar(buffer) {
+  const zip = new AdmZip();
+  zip.addFile('SKILL.md', buffer);
+  return zip.toBuffer();
+}
+
+/**
+ * Deja el archivo en forma de bundle, venga como venga.
+ *
+ * Un .zip pasa tal cual. Cualquier otra cosa se toma por un SKILL.md suelto y
+ * se envuelve; si no lo era, `analizar` lo rechazará después por no declarar un
+ * `name` válido en su cabecera, que es un motivo mucho más útil que «no es un
+ * zip».
+ */
+function normalizar(buffer) {
+  if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
+    throw rechazar('No llegó ningún archivo.');
+  }
+
+  return esZip(buffer) ? buffer : empaquetar(buffer);
+}
+
 /**
  * Lee el bloque YAML de cabecera del SKILL.md.
  *
@@ -90,6 +131,9 @@ function recortar(texto, maximo) {
 }
 
 const skillBundle = {
+  /** Deja el archivo en forma de bundle: un SKILL.md suelto se envuelve. */
+  normalizar,
+
   /**
    * Comprueba que el buffer es un bundle utilizable y extrae sus datos.
    *
@@ -97,20 +141,19 @@ const skillBundle = {
    * un archivo equivocado hay que decirle cuál es el problema, no «error».
    */
   analizar(buffer) {
-    if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
-      throw rechazar('No llegó ningún archivo.');
-    }
-
     if (buffer.length > env.SKILLS_MAX_BYTES) {
       const mb = (env.SKILLS_MAX_BYTES / 1024 / 1024).toFixed(0);
       throw rechazar(`El archivo pasa de ${mb} MB.`);
     }
 
+    // Un SKILL.md suelto se envuelve para que a partir de aquí todo sea igual.
+    const bundle = normalizar(buffer);
+
     let entradas;
     try {
-      entradas = new AdmZip(buffer).getEntries().filter((e) => !e.isDirectory);
+      entradas = new AdmZip(bundle).getEntries().filter((e) => !e.isDirectory);
     } catch {
-      throw rechazar('El archivo no es un .zip válido. Sube el .skill sin abrirlo.');
+      throw rechazar('El archivo no se pudo leer. Sube el .skill sin abrirlo.');
     }
 
     const sospechosa = entradas.find((e) => rutaPeligrosa(e.entryName));

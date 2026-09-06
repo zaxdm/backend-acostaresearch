@@ -155,7 +155,12 @@ const skillService = {
    * archivo dice una cosa y cuya ficha dice otra.
    */
   async upsertFromBundle({ buffer, displayName, summary, orden, active, productCode }) {
-    const datos = skillBundle.analizar(buffer);
+    // Se normaliza ANTES de nada y se guarda lo normalizado: si llegó un
+    // SKILL.md suelto, lo que va al disco es ya el bundle envuelto. Guardar el
+    // archivo original dejaría en la carpeta del conector algo que después no
+    // se puede abrir como zip.
+    const bundle = skillBundle.normalizar(buffer);
+    const datos = skillBundle.analizar(bundle);
     const existente = await prisma.skill.findUnique({ where: { code: datos.code } });
 
     // Si se indica grupo, tiene que existir y tiene que ser vendible. Un
@@ -164,7 +169,7 @@ const skillService = {
     const grupo = productCode?.trim() || null;
     if (grupo) await exigirGrupo(grupo);
 
-    const ruta = skillBundle.guardar(datos.code, buffer);
+    const ruta = skillBundle.guardar(datos.code, bundle);
 
     // El bundle vive en memoria mientras el servidor está en pie: sin esto se
     // seguiría sirviendo el contenido anterior hasta el próximo reinicio.

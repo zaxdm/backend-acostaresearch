@@ -1,5 +1,6 @@
 'use strict';
 
+const path = require('node:path');
 const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
@@ -58,6 +59,23 @@ function createApp() {
   app.use('/mcp', mcpRouter);
 
   app.use(globalLimiter);
+
+  // La guía de instalación, servida desde aquí.
+  //
+  // Va detrás del límite global a propósito: es un PDF de casi un mega y sin
+  // freno cualquiera podría pedirlo en bucle. Y se declara UN archivo concreto
+  // en vez de exponer la carpeta con `express.static`, porque una carpeta
+  // servida entera es una invitación a que mañana alguien deje ahí algo que no
+  // debía ser público.
+  app.get('/guias/guia-instalacion.pdf', (req, res, next) => {
+    res.sendFile(path.join(env.GUIAS_DIR, 'guia-instalacion.pdf'), (error) => {
+      // Si el archivo no está, que caiga en el 404 normal y quede en el log:
+      // el correo de compra enlaza aquí, así que un fallo silencioso sería
+      // exactamente lo que no queremos.
+      if (error) next(error.status === 404 ? undefined : error);
+    });
+  });
+
   app.use(env.API_PREFIX, routes);
 
   app.use(notFound);

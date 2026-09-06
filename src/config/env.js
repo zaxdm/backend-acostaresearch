@@ -121,6 +121,22 @@ const schema = z.object({
   // Carpeta de los comprobantes. Como la de skills, tiene que ser persistente:
   // son la prueba de un cobro y hay que poder releerlos meses después.
   PROOFS_DIR: z.string().default(path.resolve(__dirname, '../../storage/comprobantes')),
+
+  // ── Guía de instalación ─────────────────────────────────────────────────
+  // Dónde está el PDF que se le enlaza al comprador, y con qué dirección se le
+  // enlaza.
+  //
+  // La sirve este backend y no la web por una razón práctica: la web se publica
+  // en Netlify, y Netlify puede quedarse sin poder desplegar —por créditos, por
+  // un build roto, por lo que sea— justo cuando hace falta cambiar el PDF. El
+  // correo de compra sale de aquí, así que la guía que ese correo enlaza vive
+  // aquí también: una cosa menos que dependa de un tercero.
+  //
+  // La carpeta va fuera del directorio del código, como skills y comprobantes,
+  // para que un despliegue no se la lleve por delante.
+  GUIAS_DIR: z.string().default(path.resolve(__dirname, '../../storage/guias')),
+  // Dirección pública de la guía. Vacía = se enlaza la copia de la web.
+  GUIA_URL: vacioComoAusente(z.string().url()),
   // Techo de la captura. Una foto de pantalla de móvil no pasa de 2-3 MB.
   PROOF_MAX_BYTES: z.coerce.number().int().positive().default(6 * 1024 * 1024),
 

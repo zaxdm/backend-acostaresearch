@@ -128,6 +128,23 @@ function appUrl() {
 }
 
 /**
+ * Dónde está la guía de instalación en PDF.
+ *
+ * Por defecto se enlaza la copia de la web, que es donde vivía. `GUIA_URL`
+ * permite apuntar a otra —hoy, a la que sirve este mismo backend— sin tocar
+ * código, y volver atrás vaciando la variable.
+ *
+ * Esto no es una preferencia estética: si el enlace apunta a un archivo que no
+ * existe, la web responde con su `index.html` y al comprador se le descarga la
+ * portada con extensión `.pdf`, en el correo en que acaba de pagar. Que la
+ * dirección sea configurable es lo que permite arreglarlo sin depender de que
+ * un tercero pueda desplegar.
+ */
+function guiaUrl() {
+  return env.GUIA_URL || `${appUrl()}/guias/guia-instalacion.pdf`;
+}
+
+/**
  * Aviso de uso anómalo en una licencia del conector.
  *
  * El tono importa: la mayoría de las veces esto le llega a alguien que no ha
@@ -293,7 +310,7 @@ function enMayuscula(frase) {
  */
 function licenseReady({ firstName, planName, connectorUrl, expiresAt, via }) {
   const panel = `${appUrl()}/perfil`;
-  const guia = `${appUrl()}/guias/guia-instalacion.pdf`;
+  const guia = guiaUrl();
   const vence = fecha(expiresAt);
   const vigencia = vence ? `Lo tienes hasta el ${vence}.` : 'No caduca.';
   const confirmacion = confirmacionDePago(via, planName);

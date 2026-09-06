@@ -120,6 +120,36 @@ const discountService = {
   },
 
   /**
+   * Borra un código promocional.
+   *
+   * «Apagar» y «borrar» no son lo mismo y ambos hacen falta: una promoción que
+   * puede volver se apaga, y una que se escribió mal o que ya no se va a repetir
+   * estorba en la lista para siempre. Apagarla la deja ahí ocupando sitio, y una
+   * lista que solo crece se acaba mirando por encima.
+   *
+   * Un código YA CANJEADO se puede borrar igual. La rebaja vive en el pago
+   * —`discountCents`, ya restada—, así que las cuentas siguen cuadrando; el
+   * enlace se queda en nulo y lo único que se pierde es saber con qué código se
+   * consiguió esa rebaja. Se avisa de cuántas veces se usó porque eso sí es
+   * irrecuperable.
+   */
+  async remove(id) {
+    const codigo = await prisma.discountCode.findUnique({
+      where: { id },
+      select: { id: true, code: true, usedCount: true },
+    });
+    if (!codigo) throw new NotFoundError('No encontramos ese código de descuento.');
+
+    await prisma.discountCode.delete({ where: { id } });
+    logger.warn(
+      { code: codigo.code, usos: codigo.usedCount },
+      'Código de descuento borrado desde el panel',
+    );
+
+    return { code: codigo.code, usedCount: codigo.usedCount };
+  },
+
+  /**
    * Busca un código utilizable para un plan concreto.
    *
    * Devuelve además cuánto rebaja en cada moneda, calculado sobre el plan: el

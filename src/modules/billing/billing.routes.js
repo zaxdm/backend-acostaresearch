@@ -92,4 +92,15 @@ router.patch(
   billingController.toggleDiscount,
 );
 
+// Aquí sí hay borrado de verdad, al contrario que en los grupos: un código
+// promocional no tiene nada colgando: la rebaja que concedió ya está guardada
+// dentro del pago, no se lee desde aquí.
+router.delete(
+  '/discounts/:id',
+  authenticate,
+  authorize(ROLES.ADMIN),
+  validate({ params: discountIdParamSchema }),
+  billingController.deleteDiscount,
+);
+
 module.exports = router;

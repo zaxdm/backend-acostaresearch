@@ -53,6 +53,11 @@ const billingController = {
     return ok(res, { discount });
   }),
 
+  deleteDiscount: asyncHandler(async (req, res) => {
+    const discount = await discountService.remove(req.params.id);
+    return ok(res, { discount }, { message: `Código «${discount.code}» borrado.` });
+  }),
+
   recent: asyncHandler(async (_req, res) => {
     const packs = await billingService.listRecentPacks();
     return ok(res, { packs });

@@ -14,20 +14,22 @@ const skillDelivery = require('./skill.delivery');
  * responda al conector; ese es el punto de todo el diseño.
  */
 
+const gruposSelect = { select: { productCode: true } };
+
 const catalogoSelect = {
   code: true,
-  productCode: true,
   orden: true,
   displayName: true,
   summary: true,
   anthropicSkillId: true,
+  groups: gruposSelect,
 };
 
 /** Lo que ve el administrador: todo menos la ruta del bundle. */
 const adminSelect = {
   id: true,
   code: true,
-  productCode: true,
+  groups: gruposSelect,
   orden: true,
   displayName: true,
   summary: true,
@@ -42,16 +44,23 @@ const adminSelect = {
  * Filtro de grupo para una licencia.
  *
  * Una licencia solo ve los capítulos de SU grupo. Se cuelan también los que no
- * tienen grupo asignado: son la red de seguridad para una skill subida sin
- * elegirlo, y es preferible que se vea de más —y se note— a que desaparezca en
- * silencio del conector de todo el mundo.
+ * están en ninguno: son la red de seguridad para una skill subida sin elegirlo,
+ * y es preferible que se vea de más —y se note— a que desaparezca en silencio
+ * del conector de todo el mundo.
  *
  * Sin `productCode` no se filtra nada: es lo que necesita la portada pública,
  * que enseña el catálogo entero a quien todavía no ha comprado.
  */
 function delGrupo(productCode) {
   if (!productCode) return {};
-  return { OR: [{ productCode }, { productCode: null }] };
+  return { OR: [{ groups: { none: {} } }, { groups: { some: { productCode } } }] };
+}
+
+/** Aplana `groups` a una lista de códigos: es lo que espera quien lo consume. */
+function conGrupos(skill) {
+  if (!skill) return skill;
+  const { groups, ...resto } = skill;
+  return { ...resto, productCodes: (groups ?? []).map((g) => g.productCode) };
 }
 
 /**
@@ -81,12 +90,13 @@ const skillService = {
    * Con `productCode` devuelve solo las del grupo que esa licencia compró; sin
    * él, todas: es la misma consulta que alimenta la web pública.
    */
-  listCatalog(productCode = null) {
-    return prisma.skill.findMany({
+  async listCatalog(productCode = null) {
+    const skills = await prisma.skill.findMany({
       where: { active: true, ...delGrupo(productCode) },
       select: catalogoSelect,
       orderBy: { orden: 'asc' },
     });
+    return skills.map(conGrupos);
   },
 
   /**
@@ -97,20 +107,26 @@ const skillService = {
    * ningún secreto.
    */
   perteneceAlGrupo(skill, productCode) {
-    return skill.productCode === null || skill.productCode === productCode;
+    const suyos = skill.productCodes ?? [];
+    return suyos.length === 0 || suyos.includes(productCode);
   },
 
-  findByCode(code) {
-    return prisma.skill.findUnique({ where: { code } });
+  async findByCode(code) {
+    const skill = await prisma.skill.findUnique({
+      where: { code },
+      include: { groups: gruposSelect },
+    });
+    return conGrupos(skill);
   },
 
   /** Skills ya registradas en la Skills API: las únicas invocables. */
-  listInvocables() {
-    return prisma.skill.findMany({
+  async listInvocables() {
+    const skills = await prisma.skill.findMany({
       where: { active: true, anthropicSkillId: { not: null } },
       select: catalogoSelect,
       orderBy: { orden: 'asc' },
     });
+    return skills.map(conGrupos);
   },
 
   /** Guarda los identificadores que devuelve la Skills API tras subir el bundle. */
@@ -124,8 +140,9 @@ const skillService = {
   // ── Administración ───────────────────────────────────────────────────────
 
   /** Todas, activas o no, para el panel. */
-  listAll() {
-    return prisma.skill.findMany({ select: adminSelect, orderBy: { orden: 'asc' } });
+  async listAll() {
+    const skills = await prisma.skill.findMany({ select: adminSelect, orderBy: { orden: 'asc' } });
+    return skills.map(conGrupos);
   },
 
   /**
@@ -143,7 +160,7 @@ const skillService = {
       select: adminSelect,
     });
 
-    return { ...datos, reemplaza: existente };
+    return { ...datos, reemplaza: conGrupos(existente) };
   },
 
   /**
@@ -195,9 +212,19 @@ const skillService = {
           ...comun,
           orden: orden ?? existente.orden,
           active: active ?? existente.active,
-          // Reemplazar el archivo no cambia de grupo por sí solo: si no se
-          // indica uno, se queda donde estaba.
-          productCode: grupo ?? existente.productCode,
+          // Subirlo desde un grupo lo AÑADE a ese grupo; no lo saca de los
+          // demás. Volver a subir el archivo desde el pack con humanizador no
+          // puede dejar sin capítulo al método de tesis.
+          ...(grupo
+            ? {
+                groups: {
+                  connectOrCreate: {
+                    where: { skillId_productCode: { skillId: existente.id, productCode: grupo } },
+                    create: { productCode: grupo },
+                  },
+                },
+              }
+            : {}),
           // El bundle cambió, así que lo que hay subido a la Skills API ya no
           // corresponde. Se borra la referencia para que `subir-skills` lo
           // vuelva a publicar y no se sirva una versión vieja.
@@ -208,14 +235,14 @@ const skillService = {
       });
 
       logger.info({ code: skill.code, tramos }, 'Skill actualizada desde el panel');
-      return { skill, tramos, creada: false };
+      return { skill: conGrupos(skill), tramos, creada: false };
     }
 
     // El orden se cuenta DENTRO del grupo: cada producto es un método con su
     // propia secuencia. Numerarlos a lo largo de toda la tabla haría que el
     // primer capítulo de un grupo nuevo se llamara «10».
     const ultima = await prisma.skill.findFirst({
-      where: { productCode: grupo },
+      where: grupo ? { groups: { some: { productCode: grupo } } } : { groups: { none: {} } },
       orderBy: { orden: 'desc' },
       select: { orden: true },
     });
@@ -224,15 +251,15 @@ const skillService = {
       data: {
         ...comun,
         code: datos.code,
-        productCode: grupo,
         orden: orden ?? (ultima ? ultima.orden + 1 : 1),
         active: active ?? true,
+        ...(grupo ? { groups: { create: { productCode: grupo } } } : {}),
       },
       select: adminSelect,
     });
 
     logger.info({ code: skill.code, tramos }, 'Skill añadida desde el panel');
-    return { skill, tramos, creada: true };
+    return { skill: conGrupos(skill), tramos, creada: true };
   },
 
   /** Edita la ficha. No toca el archivo: para eso se vuelve a subir el bundle. */
@@ -240,15 +267,78 @@ const skillService = {
     const existente = await prisma.skill.findUnique({ where: { id } });
     if (!existente) throw new NotFoundError('Esa skill no existe.');
 
-    // Cambiar de grupo es mover el capítulo de un producto a otro, así que el
-    // destino tiene que existir. La cadena vacía significa «sin grupo».
-    if (cambios.productCode !== undefined) {
-      const grupo = cambios.productCode?.trim() || null;
-      if (grupo) await exigirGrupo(grupo);
-      cambios = { ...cambios, productCode: grupo };
+    // `productCodes` es la lista COMPLETA de grupos del capítulo: lo que no
+    // venga en ella deja de serlo. Lista vacía = en ninguno, que es la red de
+    // seguridad de siempre (se ve desde cualquier licencia).
+    const { productCodes, ...ficha } = cambios;
+
+    if (productCodes !== undefined) {
+      const grupos = [...new Set(productCodes.map((c) => c.trim()).filter(Boolean))];
+      for (const grupo of grupos) await exigirGrupo(grupo);
+
+      await prisma.$transaction([
+        prisma.skillGroup.deleteMany({
+          where:
+            grupos.length > 0 ? { skillId: id, productCode: { notIn: grupos } } : { skillId: id },
+        }),
+        ...grupos.map((productCode) =>
+          prisma.skillGroup.upsert({
+            where: { skillId_productCode: { skillId: id, productCode } },
+            create: { skillId: id, productCode },
+            update: {},
+          }),
+        ),
+      ]);
     }
 
-    return prisma.skill.update({ where: { id }, data: cambios, select: adminSelect });
+    const skill = await prisma.skill.update({
+      where: { id },
+      data: ficha,
+      select: adminSelect,
+    });
+
+    return conGrupos(skill);
+  },
+
+  /**
+   * Fija de una vez qué capítulos tiene un grupo.
+   *
+   * Es lo que pulsa «Guardar cambios» en la ventana de un grupo, y existe como
+   * operación propia justo por lo que puede tocar: SOLO las filas de ESTE
+   * grupo. Antes esto se hacía con un PATCH por capítulo cambiando su único
+   * `productCode`, así que marcar un capítulo aquí lo borraba del grupo de al
+   * lado. Con esta forma, eso ya no se puede escribir ni por error.
+   */
+  async setGroupSkills(productCode, skillIds) {
+    await exigirGrupo(productCode);
+
+    const ids = [...new Set(skillIds)];
+    if (ids.length > 0) {
+      const existen = await prisma.skill.count({ where: { id: { in: ids } } });
+      if (existen !== ids.length) {
+        throw new NotFoundError('Alguno de los capítulos marcados ya no existe. Vuelve a cargar.');
+      }
+    }
+
+    await prisma.$transaction([
+      prisma.skillGroup.deleteMany({
+        where: ids.length > 0 ? { productCode, skillId: { notIn: ids } } : { productCode },
+      }),
+      ...ids.map((skillId) =>
+        prisma.skillGroup.upsert({
+          where: { skillId_productCode: { skillId, productCode } },
+          create: { skillId, productCode },
+          update: {},
+        }),
+      ),
+    ]);
+
+    // Lo que sirve el conector se arma con el catálogo: si no se olvida, un
+    // capítulo recién añadido no aparece hasta el próximo reinicio.
+    skillDelivery.olvidar();
+
+    logger.info({ productCode, capitulos: ids.length }, 'Capítulos de un grupo actualizados');
+    return skillService.listAll();
   },
 
   /**

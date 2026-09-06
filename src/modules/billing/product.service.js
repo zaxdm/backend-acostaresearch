@@ -41,9 +41,14 @@ const grupoSelect = {
   mcpDelivery: true,
 };
 
-/** Cuántos capítulos cuelgan de cada grupo, para enseñarlo en el panel. */
+/**
+ * Cuántos capítulos tiene cada grupo, para enseñarlo en el panel.
+ *
+ * La suma de las columnas puede pasar del total de capítulos que hay, y no es
+ * un error: un capítulo compartido cuenta en cada grupo donde está.
+ */
 async function contarSkills(grupos) {
-  const conteo = await prisma.skill.groupBy({
+  const conteo = await prisma.skillGroup.groupBy({
     by: ['productCode'],
     _count: { _all: true },
   });
@@ -189,7 +194,7 @@ const productService = {
 
     const [licencias, capitulos, pagos, bolsas] = await Promise.all([
       prisma.license.count({ where: { productCode: grupo.productCode } }),
-      prisma.skill.count({ where: { productCode: grupo.productCode } }),
+      prisma.skillGroup.count({ where: { productCode: grupo.productCode } }),
       prisma.payment.count({ where: { planId: grupo.id } }),
       prisma.wordPack.count({ where: { planId: grupo.id } }),
     ]);

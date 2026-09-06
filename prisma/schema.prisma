@@ -563,16 +563,12 @@ model Skill {
   code  String @unique @db.VarChar(64)
   orden Int
 
-  /// A qué grupo pertenece: el `productCode` del plan que lo vende.
+  /// En qué grupos aparece. Ver `SkillGroup`.
   ///
-  /// Un grupo es un producto: «método de tesis», «humanizar texto». Cada uno
-  /// tiene su precio y su duración, y una licencia solo ve los capítulos de
-  /// SU grupo. Sin esto, comprar cualquier cosa daba acceso a todo.
-  ///
-  /// Nulo = visible para cualquier licencia. No es la vía normal, pero evita
-  /// que una skill subida sin elegir grupo desaparezca en silencio: es más
-  /// fácil de detectar un capítulo que se ve de más que uno que no se ve.
-  productCode String? @db.VarChar(40)
+  /// Sin ninguna fila = visible para cualquier licencia. No es la vía normal,
+  /// pero evita que una skill subida sin elegir grupo desaparezca en silencio:
+  /// es más fácil de detectar un capítulo que se ve de más que uno que no se ve.
+  groups SkillGroup[]
 
   displayName String @db.VarChar(120)
   /// Resumen para el catálogo. Es lo ÚNICO del contenido que ve el comprador.
@@ -591,8 +587,36 @@ model Skill {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([productCode])
   @@map("skills")
+}
+
+/// En qué grupos aparece un capítulo.
+///
+/// UNA SKILL PUEDE ESTAR EN VARIOS GRUPOS A LA VEZ
+/// -----------------------------------------------
+/// Antes esto era una columna `productCode` en `skills`, es decir, un capítulo
+/// pertenecía a un grupo y solo a uno. Y eso no describe el negocio: «Tema y
+/// delimitación» es el primer capítulo del método de tesis Y del pack de tesis
+/// con humanizador. Con una columna, meterlo en el segundo lo sacaba del
+/// primero sin avisar, y el grupo de al lado se quedaba sin capítulo.
+///
+/// El orden se queda en `Skill.orden`, no aquí: los grupos que comparten
+/// capítulos comparten también la secuencia del método, que es justo por lo que
+/// los comparten.
+model SkillGroup {
+  skillId String @db.Char(36)
+  skill   Skill  @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  /// El `productCode` del plan que vende ese grupo. No es una clave foránea
+  /// porque el plan se identifica por `code` y varios planes pueden compartir
+  /// `productCode`: lo que se comprueba, en el servicio, es que exista alguno.
+  productCode String @db.VarChar(40)
+
+  createdAt DateTime @default(now())
+
+  @@id([skillId, productCode])
+  @@index([productCode])
+  @@map("skill_groups")
 }
 
 /// Contadores del conector, uno por licencia.

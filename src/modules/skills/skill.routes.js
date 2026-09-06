@@ -7,7 +7,13 @@ const authorize = require('../../middlewares/authorize');
 const validate = require('../../middlewares/validate');
 const { ROLES } = require('../../config/constants');
 const env = require('../../config/env');
-const { uploadQuerySchema, updateSchema, idParamSchema } = require('./skill.schema');
+const {
+  uploadQuerySchema,
+  updateSchema,
+  idParamSchema,
+  capitulosDelGrupoSchema,
+  grupoParamSchema,
+} = require('./skill.schema');
 const skillController = require('./skill.controller');
 
 const router = Router();
@@ -44,6 +50,14 @@ router.patch(
   validate({ params: idParamSchema, body: updateSchema }),
   skillController.update,
 );
+// Los capítulos de un grupo, de una vez. Va antes que `/:id` para que
+// «grupos» no se lea como un identificador.
+router.put(
+  '/grupos/:productCode',
+  validate({ params: grupoParamSchema, body: capitulosDelGrupoSchema }),
+  skillController.setGroupSkills,
+);
+
 router.delete('/:id', validate({ params: idParamSchema }), skillController.remove);
 
 module.exports = router;

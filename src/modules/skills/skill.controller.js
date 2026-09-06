@@ -42,6 +42,18 @@ const skillController = {
     return ok(res, { skill }, { message: 'Ficha actualizada.' });
   }),
 
+  /**
+   * Fija de una vez los capítulos de un grupo.
+   *
+   * Devuelve el catálogo entero porque marcar capítulos aquí cambia también la
+   * ficha de otros grupos —los que comparten esos capítulos—, y el panel tiene
+   * que repintarlos sin pedir la lista otra vez.
+   */
+  setGroupSkills: asyncHandler(async (req, res) => {
+    const skills = await skillService.setGroupSkills(req.params.productCode, req.body.skillIds);
+    return ok(res, { skills }, { message: 'Capítulos del grupo actualizados.' });
+  }),
+
   remove: asyncHandler(async (req, res) => {
     await skillService.remove(req.params.id);
     return noContent(res);

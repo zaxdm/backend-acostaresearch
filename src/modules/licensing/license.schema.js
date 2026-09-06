@@ -9,6 +9,17 @@ const generateCodesSchema = z.object({
   note: z.string().trim().max(255).optional(),
   // Caducidad del código sin canjear, en días. Omitir = no caduca.
   expiraEnDias: z.coerce.number().int().positive().max(365).optional(),
+  // ── El cobro que hay detrás ───────────────────────────────────────────────
+  // Mismo vocabulario que las bolsas de palabras: los dos describen dinero que
+  // entró fuera de la web, y dos listas distintas para lo mismo acabarían
+  // divergiendo. CORTESIA es un regalo y no registra cobro.
+  paymentMethod: z
+    .enum(['YAPE', 'PLIN', 'TRANSFERENCIA', 'PAYPAL', 'WESTERN_UNION', 'CORTESIA'])
+    .default('CORTESIA'),
+  paymentRef: z.string().trim().max(80).optional(),
+  // Lo realmente cobrado, en soles. Omitirlo toma el precio del plan, que es lo
+  // normal: se cobra el precio de la web y teclearlo otra vez solo añade erratas.
+  importe: z.coerce.number().nonnegative().max(100000).optional(),
 });
 
 const redeemSchema = z.object({

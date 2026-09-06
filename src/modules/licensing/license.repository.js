@@ -9,6 +9,11 @@ const codeSelect = {
   status: true,
   buyerEmail: true,
   note: true,
+  // El cobro apuntado: la tabla del panel lo enseña para que se vea el dinero
+  // que sigue en el aire mientras el código no se canjea.
+  paymentMethod: true,
+  paymentRef: true,
+  amountCents: true,
   redeemedAt: true,
   expiresAt: true,
   createdAt: true,
@@ -72,8 +77,15 @@ const licenseRepository = {
    * canjean el mismo código a la vez, solo una lo encuentra disponible. La otra
    * ve cero filas y se va sin licencia, que es justo lo que debe pasar con un
    * código de un solo uso.
+   *
+   * Si el código traía un cobro apuntado —una venta que se pagó por Western
+   * Union, por transferencia o por un Yape que llegó al WhatsApp—, el pago se
+   * crea aquí dentro, atado a la licencia. Va en la misma transacción por lo
+   * mismo que en `payment.repository.settle`: entregar el acceso y apuntar el
+   * dinero son una sola cosa, y partirlas deja el agujero de una venta
+   * entregada que no existe en las cuentas.
    */
-  redeem({ codeId, ...datosLicencia }) {
+  redeem({ codeId, datosLicencia, pago = null }) {
     return prisma.$transaction(async (tx) => {
       const { count } = await tx.activationCode.updateMany({
         where: { id: codeId, status: 'AVAILABLE' },
@@ -88,10 +100,14 @@ const licenseRepository = {
 
       // Se propagan tal cual los topes que vienen del plan; añadir uno nuevo no
       // obliga a tocar esta función.
-      return tx.license.create({
+      const license = await tx.license.create({
         data: { ...datosLicencia, activationCodeId: codeId },
         select: licenseSelect,
       });
+
+      if (pago) await tx.payment.create({ data: { ...pago, licenseId: license.id } });
+
+      return license;
     });
   },
 

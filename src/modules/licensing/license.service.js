@@ -110,7 +110,9 @@ async function contratoDelProducto(productCode) {
   const plan = await prisma.plan.findFirst({
     where: { kind: 'LICENSE', productCode, active: true },
     select: {
+      id: true,
       name: true,
+      priceCents: true,
       durationDays: true,
       mcpCallsPerDay: true,
       mcpCallsPerMonth: true,
@@ -122,6 +124,10 @@ async function contratoDelProducto(productCode) {
   });
 
   return {
+    /** Fila del plan. Null si el producto no tiene ninguno: entonces no hay pago que registrar. */
+    planId: plan?.id ?? null,
+    /** Precio de catálogo, que es lo que se cobra salvo que se diga otra cosa. */
+    priceCents: plan?.priceCents ?? 0,
     /** Cómo se llama lo comprado, para poder nombrarlo en el correo de entrega. */
     nombre: plan?.name ?? 'Método de tesis',
     /** Días de acceso. 0 = sin caducidad. */
@@ -162,6 +168,65 @@ function avisarDelCodigo({ buyerEmail, codigos, planName, expiresAt }) {
   });
 }
 
+/** Moneda de los cobros de fuera de la web: los precios se anuncian en soles. */
+const MONEDA = 'PEN';
+
+/**
+ * El pago que hay que apuntar al canjear un código, o null si no hay ninguno.
+ *
+ * POR QUÉ EL PAGO NACE AQUÍ Y NO AL GENERAR EL CÓDIGO
+ * ----------------------------------------------------
+ * Un pago cuelga de una cuenta, y cuando el código se genera esa cuenta todavía
+ * no existe: quien pagó por Western Union puede tardar días en registrarse. El
+ * dinero se apunta en el código —que es donde el administrador lo sabe— y el
+ * pago se materializa en el canje, que es el primer momento en que hay un
+ * usuario al que colgárselo.
+ *
+ * La consecuencia hay que tenerla presente: una venta cobrada cuyo código nunca
+ * se canjea no aparece en las cifras. Por eso la tabla de códigos del panel
+ * enseña el importe junto al estado, que es donde se ve ese dinero en el aire.
+ *
+ * Devuelve null —y entonces no se apunta nada— en tres casos: una cortesía, un
+ * código de los antiguos (sin estos campos) y un producto sin plan activo, que
+ * no tiene precio ni fila a la que referirse.
+ */
+function pagoDelCodigo({ registro, contrato, userId }) {
+  const metodo = registro.paymentMethod;
+
+  if (!metodo || metodo === 'CORTESIA') return null;
+  if (!contrato.planId) return null;
+
+  const importe = registro.amountCents ?? contrato.priceCents;
+  if (!importe || importe <= 0) return null;
+
+  return {
+    userId,
+    planId: contrato.planId,
+    provider: metodo,
+    // La pareja (provider, providerOrderId) es única. El id del código sirve de
+    // referencia y además impide que un mismo código apunte dos cobros.
+    providerOrderId: registro.id,
+    providerCaptureId: registro.paymentRef || registro.id,
+    status: 'PAID',
+    amountCents: importe,
+    currency: MONEDA,
+    payerEmail: registro.buyerEmail,
+    // Mismo papel que en un Yape: es lo que permite cuadrarlo con el extracto.
+    operationCode: registro.paymentRef,
+    paidAt: new Date(),
+    // Quién dio por bueno el cobro. No lo revisó una pantalla: lo cobró una
+    // persona, la misma que generó el código.
+    reviewedById: registro.createdById,
+    reviewedAt: new Date(),
+    rawResponse: JSON.stringify({
+      via: 'CODIGO_DE_ACTIVACION',
+      codigo: registro.hint,
+      nota: registro.note,
+      generadoEn: registro.createdAt,
+    }),
+  };
+}
+
 const licenseService = {
   /**
    * Genera códigos de un solo uso. Devuelve los códigos EN CLARO una única vez:
@@ -172,8 +237,27 @@ const licenseService = {
    * pantalla del administrador los sigue enseñando igual: el correo puede
    * rebotar, y en ese caso lo único que queda es lo que se copió a mano.
    */
-  async generateCodes({ cantidad = 1, productCode, buyerEmail, note, createdById, expiresAt }) {
+  async generateCodes({
+    cantidad = 1,
+    productCode,
+    buyerEmail,
+    note,
+    createdById,
+    expiresAt,
+    paymentMethod = 'CORTESIA',
+    paymentRef,
+    amountCents,
+  }) {
     const producto = productCode ?? env.LICENSE_PRODUCT_CODE;
+    // Se lee siempre, no solo cuando hay que mandar correo: de aquí sale el
+    // precio con el que se apunta el cobro.
+    const contrato = await contratoDelProducto(producto);
+
+    const cortesia = paymentMethod === 'CORTESIA';
+    // Un regalo no cobra nada. Y si no se dijo cuánto, se cobró el precio de la
+    // web: es lo que ocurre en la práctica y evita teclear la cifra dos veces.
+    const cobrado = cortesia ? null : (amountCents ?? contrato.priceCents);
+
     const codigos = [];
     const filas = [];
 
@@ -189,20 +273,33 @@ const licenseService = {
         note,
         createdById,
         expiresAt,
+        paymentMethod,
+        paymentRef: paymentRef || null,
+        amountCents: cobrado,
       });
     }
 
     await licenseRepository.createCodes(filas);
-    logger.info({ cantidad, producto, buyerEmail }, 'Códigos de activación generados');
+    logger.info(
+      { cantidad, producto, buyerEmail, paymentMethod, amountCents: cobrado },
+      'Códigos de activación generados',
+    );
 
     if (buyerEmail) {
       // El nombre del plan sale del mismo sitio que en una compra, para que el
       // comprador lea lo mismo que vio en la web al pagar.
-      const contrato = await contratoDelProducto(producto);
       avisarDelCodigo({ buyerEmail, codigos, planName: contrato.nombre, expiresAt });
     }
 
-    return { productCode: producto, codes: codigos, enviadoA: buyerEmail ?? null };
+    return {
+      productCode: producto,
+      codes: codigos,
+      enviadoA: buyerEmail ?? null,
+      // Lo que se apuntó como cobro, para que el panel lo confirme en pantalla.
+      // Un importe de cero se anuncia como lo que es —nada—, porque es lo que
+      // hará el canje: sin dinero no se apunta ningún pago.
+      cobro: cortesia || !cobrado ? null : { paymentMethod, amountCents: cobrado },
+    };
   },
 
   /**
@@ -237,13 +334,20 @@ const licenseService = {
     const token = generateOpaqueToken(32);
     const licencia = await licenseRepository.redeem({
       codeId: registro.id,
-      userId,
-      productCode: registro.productCode,
-      tokenHash: hashToken(token),
-      tokenHint: token.slice(0, 8),
-      expiresAt:
-        contrato.durationDays > 0 ? addDays(new Date(), contrato.durationDays) : null,
-      ...contrato.topes,
+      // El cobro que se apuntó al generar el código. Se pasa al repositorio para
+      // que el pago nazca dentro de la misma transacción que la licencia: o
+      // quedan las dos cosas o no queda ninguna. Un canje que entregara el
+      // acceso sin apuntar el dinero es exactamente el agujero que esto cierra.
+      pago: pagoDelCodigo({ registro, contrato, userId }),
+      datosLicencia: {
+        userId,
+        productCode: registro.productCode,
+        tokenHash: hashToken(token),
+        tokenHint: token.slice(0, 8),
+        expiresAt:
+          contrato.durationDays > 0 ? addDays(new Date(), contrato.durationDays) : null,
+        ...contrato.topes,
+      },
     });
 
     // Sin licencia: otra petición canjeó el mismo código un instante antes.
@@ -573,3 +677,8 @@ const licenseService = {
 };
 
 module.exports = licenseService;
+
+// Se expone aparte de la API del servicio, y a propósito: es una función pura y
+// es la que decide si una venta se apunta o se pierde, así que conviene poder
+// probarla sin una base de datos delante.
+module.exports.pagoDelCodigo = pagoDelCodigo;

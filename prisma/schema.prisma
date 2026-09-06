@@ -405,6 +405,24 @@ model ActivationCode {
   buyerEmail String? @db.VarChar(255)
   note       String? @db.VarChar(255)
 
+  /// El cobro que hubo detrás, cuando el dinero entró fuera de la web.
+  ///
+  /// Un código se reparte por dos motivos distintos y la diferencia importa:
+  /// puede ser una venta cobrada por Western Union, transferencia o un Yape que
+  /// llegó al WhatsApp, o puede ser una cortesía. Sin estos campos las dos
+  /// entregaban lo mismo y ninguna dejaba rastro del dinero, así que esas ventas
+  /// no existían en las cifras del panel.
+  ///
+  /// Se apunta aquí, al generar, y no al canjear: quien sabe cuánto se cobró y
+  /// por dónde es el administrador en el momento de la venta. El pago se crea
+  /// después, al canjear, porque hasta entonces no hay cuenta a la que colgarlo.
+  ///
+  /// `paymentMethod` nulo o CORTESIA = regalo: no se registra ningún cobro.
+  paymentMethod String? @db.VarChar(30)
+  /// Nº de operación o MTCN, para cuadrarlo contra el extracto real.
+  paymentRef    String? @db.VarChar(80)
+  amountCents   Int?
+
   createdById  String?   @db.Char(36)
   redeemedById String?   @db.Char(36)
   redeemedAt   DateTime?

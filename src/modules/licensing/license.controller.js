@@ -8,12 +8,15 @@ const licenseService = require('./license.service');
 const licenseController = {
   /** Solo ADMIN. Los códigos en claro se devuelven aquí y nunca más. */
   generate: asyncHandler(async (req, res) => {
-    const { expiraEnDias, ...resto } = req.body;
+    const { expiraEnDias, importe, ...resto } = req.body;
 
     const resultado = await licenseService.generateCodes({
       ...resto,
       createdById: req.user.id,
       expiresAt: expiraEnDias ? addDays(new Date(), expiraEnDias) : undefined,
+      // El panel pide soles porque es lo que el administrador tiene delante; la
+      // base de datos guarda céntimos, como todo el resto del dinero.
+      amountCents: importe === undefined ? undefined : Math.round(importe * 100),
     });
 
     return created(

@@ -11,6 +11,7 @@ const { analizar, NIVELES } = require('./license.detector');
 const limites = require('./license.limits');
 const watch = require('./license.watch');
 const prisma = require('../../lib/prisma');
+const proofStorage = require('../payments/proof.storage');
 const {
   generateOpaqueToken,
   hashToken,
@@ -259,12 +260,21 @@ const licenseService = {
     const cobrado = cortesia ? null : (amountCents ?? contrato.priceCents);
 
     const codigos = [];
+    const ids = [];
     const filas = [];
 
     for (let i = 0; i < cantidad; i += 1) {
       const codigo = generarCodigo();
       codigos.push(codigo);
+
+      // El identificador se genera aquí y no en la base de datos porque
+      // `createMany` no devuelve las filas creadas, y hace falta saber a qué
+      // código enganchar el comprobante que suba el administrador justo después.
+      const id = crypto.randomUUID();
+      ids.push(id);
+
       filas.push({
+        id,
         codeHash: hashToken(codigo),
         // Los últimos 4 caracteres bastan para reconocerlo en el panel.
         hint: codigo.slice(-4),
@@ -294,12 +304,61 @@ const licenseService = {
     return {
       productCode: producto,
       codes: codigos,
+      // Los identificadores viajan para que el panel pueda adjuntarle el
+      // comprobante al código recién creado, si el administrador subió uno.
+      ids,
       enviadoA: buyerEmail ?? null,
       // Lo que se apuntó como cobro, para que el panel lo confirme en pantalla.
       // Un importe de cero se anuncia como lo que es —nada—, porque es lo que
       // hará el canje: sin dinero no se apunta ningún pago.
       cobro: cortesia || !cobrado ? null : { paymentMethod, amountCents: cobrado },
     };
+  },
+
+  /**
+   * Guarda el comprobante de una venta cobrada fuera de la web.
+   *
+   * Es opcional a propósito: una cortesía no tiene captura, y una transferencia
+   * que ya se vio en el extracto tampoco la necesita. Cuando la hay, es lo que
+   * permite reconstruir meses después de dónde salió ese dinero, que es
+   * exactamente lo que se pregunta cuando algo no cuadra.
+   *
+   * La imagen va a la misma carpeta que los comprobantes de Yape: es el mismo
+   * tipo de dato con el mismo problema —pesa, hay que conservarla y no debe
+   * vivir en la base de datos—, así que no merecía un almacén propio.
+   */
+  async adjuntarComprobante(id, buffer) {
+    const codigo = await prisma.activationCode.findUnique({
+      where: { id },
+      select: { id: true, proofPath: true },
+    });
+    if (!codigo) throw new NotFoundError('Ese código no existe.');
+
+    const guardado = await proofStorage.guardar(buffer, { paymentId: `codigo-${id}` });
+
+    // Si ya tenía una, se sustituye y la anterior se borra: dos capturas del
+    // mismo cobro solo sirven para dudar de cuál era la buena.
+    if (codigo.proofPath) await proofStorage.borrar(codigo.proofPath);
+
+    await prisma.activationCode.update({
+      where: { id },
+      data: { proofPath: guardado.path, proofMime: guardado.mime },
+    });
+
+    logger.info({ codeId: id }, 'Comprobante adjuntado a un código de activación');
+    return { mime: guardado.mime };
+  },
+
+  /** La imagen del comprobante, para verla en el panel. */
+  async comprobanteDe(id) {
+    const codigo = await prisma.activationCode.findUnique({
+      where: { id },
+      select: { proofPath: true, proofMime: true },
+    });
+
+    if (!codigo?.proofPath) throw new NotFoundError('Ese código no tiene comprobante.');
+
+    return { buffer: await proofStorage.leer(codigo.proofPath), mime: codigo.proofMime };
   },
 
   /**

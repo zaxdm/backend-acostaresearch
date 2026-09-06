@@ -1,11 +1,13 @@
 'use strict';
 
 const { Router } = require('express');
+const express = require('express');
 const authenticate = require('../../middlewares/authenticate');
 const authorize = require('../../middlewares/authorize');
 const validate = require('../../middlewares/validate');
 const { authLimiter } = require('../../middlewares/rateLimit');
 const { ROLES } = require('../../config/constants');
+const env = require('../../config/env');
 const {
   generateCodesSchema,
   redeemSchema,
@@ -35,6 +37,27 @@ router.post(
 router.use(authorize(ROLES.ADMIN));
 
 router.post('/codes', validate({ body: generateCodesSchema }), licenseController.generate);
+
+/**
+ * El comprobante de una venta cobrada fuera de la web.
+ *
+ * Va en su propia petición, con el cuerpo crudo, por lo mismo que el de Yape: el
+ * resto de la API está limitada a 100 KB —lo correcto para JSON y demasiado poco
+ * para la foto de una pantalla— y ese techo se abre solo aquí y solo para
+ * imágenes. El `type` acota qué se parsea, pero no se le cree: el formato real
+ * lo comprueba `proof.storage` leyendo los primeros bytes.
+ */
+router.post(
+  '/codes/:id/proof',
+  express.raw({ type: ['image/png', 'image/jpeg', 'image/webp'], limit: env.PROOF_MAX_BYTES }),
+  validate({ params: idParamSchema }),
+  licenseController.subirComprobante,
+);
+router.get(
+  '/codes/:id/proof',
+  validate({ params: idParamSchema }),
+  licenseController.verComprobante,
+);
 router.get('/codes', validate({ query: listQuerySchema }), licenseController.codes);
 router.delete('/codes/:id', validate({ params: idParamSchema }), licenseController.voidCode);
 

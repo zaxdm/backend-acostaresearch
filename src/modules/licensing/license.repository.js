@@ -14,6 +14,8 @@ const codeSelect = {
   paymentMethod: true,
   paymentRef: true,
   amountCents: true,
+  // Solo si hay comprobante guardado: la tabla enseña el enlace para verlo.
+  proofMime: true,
   redeemedAt: true,
   expiresAt: true,
   createdAt: true,

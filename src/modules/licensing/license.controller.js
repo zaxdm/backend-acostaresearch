@@ -4,6 +4,7 @@ const asyncHandler = require('../../shared/http/asyncHandler');
 const { ok, created, noContent } = require('../../shared/http/apiResponse');
 const { addDays } = require('../../shared/utils/tokens');
 const licenseService = require('./license.service');
+const { ValidationError } = require('../../shared/errors/AppError');
 
 const licenseController = {
   /** Solo ADMIN. Los códigos en claro se devuelven aquí y nunca más. */
@@ -24,6 +25,34 @@ const licenseController = {
       resultado,
       'Códigos generados. Cópialos ahora: no se pueden volver a consultar.',
     );
+  }),
+
+  subirComprobante: asyncHandler(async (req, res) => {
+    // `express.raw` deja un Buffer vacío cuando el tipo no encaja; se comprueba
+    // aquí para responder «falta la imagen» en vez de fallar más adentro.
+    if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+      throw new ValidationError(
+        [{ field: 'imagen', message: 'Adjunta una imagen PNG, JPG o WEBP.' }],
+        'No llegó ninguna imagen.',
+      );
+    }
+
+    const guardado = await licenseService.adjuntarComprobante(req.params.id, req.body);
+    return ok(res, { proof: guardado }, { message: 'Comprobante guardado.' });
+  }),
+
+  /**
+   * Devuelve la imagen tal cual, no un JSON con la imagen dentro.
+   *
+   * Se sirve por la API y no como archivo estático porque hay que comprobar la
+   * sesión: un comprobante lleva el nombre y el importe de una venta.
+   */
+  verComprobante: asyncHandler(async (req, res) => {
+    const { buffer, mime } = await licenseService.comprobanteDe(req.params.id);
+
+    res.set('Content-Type', mime ?? 'application/octet-stream');
+    res.set('Cache-Control', 'private, max-age=300');
+    return res.send(buffer);
   }),
 
   codes: asyncHandler(async (req, res) => {

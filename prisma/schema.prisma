@@ -423,6 +423,16 @@ model ActivationCode {
   paymentRef    String? @db.VarChar(80)
   amountCents   Int?
 
+  /// Comprobante de la venta, si el administrador guardó uno. Opcional a
+  /// propósito: una cortesía no tiene captura y una transferencia que ya se vio
+  /// en el extracto tampoco la necesita.
+  ///
+  /// Como en los pagos por Yape, la imagen va a disco y aquí solo queda su
+  /// ruta: pesa uno o dos megabytes y dentro de una tabla que se lista entera
+  /// en el panel solo estorbaría.
+  proofPath String? @db.VarChar(255)
+  proofMime String? @db.VarChar(40)
+
   createdById  String?   @db.Char(36)
   redeemedById String?   @db.Char(36)
   redeemedAt   DateTime?

@@ -189,6 +189,30 @@ const paymentRepository = {
     });
   },
 
+  /**
+   * Comprobantes manuales ya resueltos, del más reciente al más antiguo.
+   *
+   * Es el historial del panel: lo que queda cuando un pago sale de la bandeja.
+   * Entran también los que nunca llegaron a comprobante —PENDING sin captura,
+   * CANCELLED— porque un pago de Yape que se quedó a medias es justo lo que se
+   * busca cuando alguien escribe «pagué y no me llegó nada».
+   */
+  listReviewed({ provider, limit = 200 } = {}) {
+    return prisma.payment.findMany({
+      where: { provider, status: { not: 'IN_REVIEW' } },
+      select: {
+        ...paymentSelect,
+        operationCode: true,
+        discountCents: true,
+        proofPath: true,
+        reviewedAt: true,
+        user: { select: { id: true, email: true, firstName: true, lastName: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+    });
+  },
+
   countInReview() {
     return prisma.payment.count({ where: { status: 'IN_REVIEW' } });
   },

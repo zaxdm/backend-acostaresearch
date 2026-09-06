@@ -38,6 +38,11 @@ const manualController = {
     return ok(res, { payments });
   }),
 
+  historial: asyncHandler(async (_req, res) => {
+    const payments = await manualService.historial();
+    return ok(res, { payments });
+  }),
+
   /** La imagen, tal cual. No se cachea: es un documento de un cobro. */
   comprobante: asyncHandler(async (req, res) => {
     const { buffer, mime } = await manualService.comprobante(req.params.id);

@@ -210,6 +210,23 @@ const manualService = {
     return paymentRepository.listInReview();
   },
 
+  /**
+   * Historial: los comprobantes que ya pasaron por la bandeja.
+   *
+   * Se devuelve la tanda entera —las últimas doscientas— y el panel busca y
+   * filtra dentro. Con este volumen, paginar contra el servidor solo añadiría
+   * una espera por cada letra escrita en el buscador.
+   *
+   * La ruta del comprobante NO sale de aquí: es una ruta de disco y no le sirve
+   * de nada a quien mira el panel. Se cambia por un booleano, que es la única
+   * pregunta que hace la pantalla: ¿hay imagen que abrir?
+   */
+  async historial({ limit } = {}) {
+    const pagos = await paymentRepository.listReviewed({ provider: PROVEEDOR, limit });
+
+    return pagos.map(({ proofPath, ...pago }) => ({ ...pago, tieneComprobante: Boolean(proofPath) }));
+  },
+
   contarPendientes() {
     return paymentRepository.countInReview();
   },

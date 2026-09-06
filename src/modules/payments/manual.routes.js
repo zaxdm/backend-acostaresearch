@@ -49,6 +49,10 @@ router.use(authenticate, authorize(ROLES.ADMIN));
 
 router.get('/pending', manualController.pendientes);
 
+// Lo ya resuelto. Va aparte de la bandeja porque son dos preguntas distintas:
+// qué me falta por mirar y qué pasó con aquel pago.
+router.get('/history', manualController.historial);
+
 router.get(
   '/:id/proof',
   validate({ params: paymentParamsSchema }),

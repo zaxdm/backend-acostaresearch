@@ -12,7 +12,7 @@ const prisma = require('../src/lib/prisma');
 const logger = require('../src/config/logger');
 const { hashPassword } = require('../src/shared/utils/password');
 
-const ADMIN_EMAIL = (process.env.SEED_ADMIN_EMAIL ?? 'admin@acostaresearch.com').toLowerCase();
+const ADMIN_EMAIL = (process.env.SEED_ADMIN_EMAIL ?? 'esteban.dioses@tecsup.edu.pe').toLowerCase();
 const ADMIN_PASSWORD = process.env.SEED_ADMIN_PASSWORD ?? 'Admin12345';
 
 /**

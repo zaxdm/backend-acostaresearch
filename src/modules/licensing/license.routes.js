@@ -61,6 +61,14 @@ router.get(
 router.get('/codes', validate({ query: listQuerySchema }), licenseController.codes);
 router.delete('/codes/:id', validate({ params: idParamSchema }), licenseController.voidCode);
 
+// Anular deja la fila; esto la borra. Van en rutas distintas a propósito: son
+// dos decisiones distintas y ninguna debería colarse por descuido en la otra.
+router.delete(
+  '/codes/:id/permanent',
+  validate({ params: idParamSchema }),
+  licenseController.deleteCode,
+);
+
 router.get('/', validate({ query: listQuerySchema }), licenseController.list);
 router.get('/review', licenseController.review);
 router.get('/alerts', licenseController.alerts);

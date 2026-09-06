@@ -65,6 +65,12 @@ const licenseController = {
     return noContent(res);
   }),
 
+  /** Borrar de verdad. Anular es lo otro, y sigue estando. */
+  deleteCode: asyncHandler(async (req, res) => {
+    await licenseService.deleteCode(req.params.id);
+    return noContent(res);
+  }),
+
   /** El comprador canjea su código estando dentro de su cuenta. */
   redeem: asyncHandler(async (req, res) => {
     const resultado = await licenseService.redeemCode({

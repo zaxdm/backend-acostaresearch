@@ -768,6 +768,41 @@ const licenseService = {
       });
     }
   },
+
+  /**
+   * Borra un código de la lista. Irreversible, y distinto de anularlo.
+   *
+   * Anular deja la fila con su venta apuntada y solo impide el canje; esto la
+   * saca de la lista y de las cifras. Está para limpiar los que uno se generó
+   * probando, que si no se quedan ahí para siempre.
+   *
+   * La licencia que ese código entregó NO se toca: la clave la guarda la
+   * licencia y la base la deja en nulo al borrar el código, así que quien lo
+   * canjeó sigue entrando igual. El pago del canje tampoco se va, y eso tiene
+   * una consecuencia que conviene saber: ese dinero deja de contarse como
+   * «código de activación» y pasa a contarse por su medio —Yape, Western Union—,
+   * porque es el pago el que queda.
+   */
+  async deleteCode(id) {
+    const codigo = await prisma.activationCode.findUnique({
+      where: { id },
+      select: { id: true, hint: true, status: true, amountCents: true, proofPath: true },
+    });
+    if (!codigo) throw new NotFoundError('Ese código no existe.');
+
+    await prisma.activationCode.delete({ where: { id } });
+
+    // El comprobante se va con él: sin la venta a la que pertenece, esa imagen
+    // ya no justifica nada.
+    if (codigo.proofPath) await proofStorage.borrar(codigo.proofPath);
+
+    logger.warn(
+      { hint: codigo.hint, status: codigo.status, amountCents: codigo.amountCents },
+      'Código de activación borrado desde el panel',
+    );
+
+    return { hint: codigo.hint };
+  },
 };
 
 module.exports = licenseService;

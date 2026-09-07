@@ -207,9 +207,13 @@ const paymentRepository = {
       where: { provider, status: { not: 'IN_REVIEW' } },
       select: {
         ...paymentSelect,
-        // Para poder mover esa licencia de producto desde el historial de
-        // accesos, que es donde se mira quién compró qué.
+        // La licencia que entregó este cobro y qué producto tiene HOY.
+        //
+        // No es lo mismo que `plan`: el plan es lo que se compró y se queda
+        // como está —reescribirlo falsearía la venta y el gráfico de ingresos—,
+        // mientras que la licencia se puede mover de producto después.
         licenseId: true,
+        license: { select: { productCode: true } },
         operationCode: true,
         discountCents: true,
         proofPath: true,
@@ -230,6 +234,7 @@ const paymentRepository = {
       select: {
         ...paymentSelect,
         licenseId: true,
+        license: { select: { productCode: true } },
         providerCaptureId: true,
         payerEmail: true,
         errorCode: true,

@@ -66,7 +66,14 @@ const licenseRepository = {
   listCodes({ productCode, status, limit = 100 } = {}) {
     return prisma.activationCode.findMany({
       where: { ...(productCode && { productCode }), ...(status && { status }) },
-      select: { ...codeSelect, license: { select: { id: true, status: true } } },
+      // `productCode` de la licencia además del del código: son cosas distintas
+      // desde que se puede mover una licencia de producto. El del código es lo
+      // que se vendió y no cambia nunca; el de la licencia es lo que esa
+      // persona tiene hoy.
+      select: {
+        ...codeSelect,
+        license: { select: { id: true, status: true, productCode: true } },
+      },
       orderBy: { createdAt: 'desc' },
       take: limit,
     });

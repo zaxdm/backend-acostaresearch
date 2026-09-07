@@ -274,6 +274,16 @@ function pagoDelCodigo({ registro, contrato, userId }) {
 const emisionesDeAdmin = new Map();
 
 /** El trabajo de `ensureForAdmin`, ya sin el cerrojo. */
+/**
+ * Por qué se revocó la licencia del administrador.
+ *
+ * Se guarda como texto y se vuelve a leer: es lo que distingue una licencia que
+ * el propio sistema apagó al retirar el producto de otra que se revocó a mano.
+ * Solo las primeras se vuelven a encender si el producto regresa al catálogo;
+ * deshacer una decisión tomada a mano sería peor que no arreglar nada.
+ */
+const RETIRADO_DEL_CATALOGO = 'Producto retirado del catálogo.';
+
 async function emitirParaAdmin(userId) {
   const planes = await prisma.plan.findMany({
     where: { kind: 'LICENSE', active: true, productCode: { not: null } },
@@ -282,7 +292,9 @@ async function emitirParaAdmin(userId) {
   });
 
   const productos = planes.map((plan) => plan.productCode);
-  if (productos.length === 0) return [];
+
+  // Sin catálogo NO se sale antes: si se retiró el último producto, lo que hay
+  // que hacer es precisamente apagar las licencias que quedaron sueltas.
 
   const yaTiene = await prisma.license.findMany({
     where: { userId, productCode: { in: productos } },
@@ -324,6 +336,44 @@ async function emitirParaAdmin(userId) {
     });
 
     emitidas.push(licencia);
+  }
+
+  // Y al revés: lo que se retiró del catálogo se apaga.
+  //
+  // Sin esto, retirar un producto dejaba al dueño con su conector en pantalla,
+  // ofreciéndole generar una URL nueva para algo que ya no vende. La licencia se
+  // revoca en vez de borrarse porque el producto puede volver, y porque borrarla
+  // se llevaría por delante su rastro de uso.
+  //
+  // Solo toca las del ADMINISTRADOR. A quien compró ese producto antes de que se
+  // retirara no se le quita nada: retirar un plan es dejar de venderlo, no
+  // quitarle lo pagado a nadie.
+  const { count: apagadas } = await prisma.license.updateMany({
+    where: {
+      userId,
+      status: 'ACTIVE',
+      productCode: { notIn: productos },
+    },
+    data: { status: 'REVOKED', revokedAt: new Date(), revokedReason: RETIRADO_DEL_CATALOGO },
+  });
+
+  // Si el producto vuelve, vuelve su licencia. Solo las que apagó esto: una
+  // revocada a mano se queda como está.
+  const { count: reencendidas } = await prisma.license.updateMany({
+    where: {
+      userId,
+      status: 'REVOKED',
+      revokedReason: RETIRADO_DEL_CATALOGO,
+      productCode: { in: productos },
+    },
+    data: { status: 'ACTIVE', revokedAt: null, revokedReason: null },
+  });
+
+  if (apagadas > 0 || reencendidas > 0) {
+    logger.info(
+      { userId, apagadas, reencendidas },
+      'Licencias del administrador ajustadas al catálogo vigente',
+    );
   }
 
   return emitidas;
@@ -764,8 +814,40 @@ const licenseService = {
     const dia = limites.selloDia();
     const mes = limites.selloMes();
 
+    // Cómo se llama cada producto, y si todavía se vende.
+    //
+    // La licencia guarda el código —METODO_9_SKILLS— porque es lo que no cambia
+    // aunque el plan se renombre. Pero eso no es lo que se le enseña a nadie: el
+    // dueño ve «METODO_DE_TESIS_HUMANIZADOR» donde debería leer el nombre que él
+    // mismo le puso al producto.
+    const planes = await prisma.plan.findMany({
+      where: { kind: 'LICENSE', productCode: { in: licencias.map((l) => l.productCode) } },
+      select: { productCode: true, name: true, active: true },
+    });
+
+    const nombreDe = new Map();
+    const seVende = new Set();
+    for (const plan of planes) {
+      // Gana el activo: un producto puede arrastrar planes viejos con nombres
+      // antiguos, y el nombre bueno es el del que está a la venta.
+      if (plan.active || !nombreDe.has(plan.productCode)) {
+        nombreDe.set(plan.productCode, plan.name);
+      }
+      if (plan.active) seVende.add(plan.productCode);
+    }
+
     return licencias.map(({ counter, ...licencia }) => ({
       ...licencia,
+      /** El nombre de venta. Si ningún plan lo nombra, el código: feo pero cierto. */
+      productName: nombreDe.get(licencia.productCode) ?? licencia.productCode,
+      /**
+       * El producto ya no se vende.
+       *
+       * No implica que la licencia no sirva: quien lo compró antes de retirarlo
+       * conserva su acceso, y retirar un plan es dejar de venderlo, no quitarle
+       * lo pagado a nadie.
+       */
+      retirado: !seVende.has(licencia.productCode),
       usage: {
         callsToday: counter?.dayStamp === dia ? counter.callsToday : 0,
         callsMonth: counter?.monthStamp === mes ? counter.callsMonth : 0,

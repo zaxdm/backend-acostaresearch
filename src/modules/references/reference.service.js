@@ -136,6 +136,9 @@ async function traerNotas(desdeVersion) {
       if (!mapper.esNota(item)) continue;
       const texto = mapper.textoPlano(item.data.note);
       if (!texto) continue;
+      // La inmensa mayoría de las notas de esta biblioteca no son notas: son la
+      // ficha administrativa que Scopus adjunta al exportar. Ver el detector.
+      if (mapper.esPapeleoDeScopus(texto)) continue;
       const padre = item.data.parentItem;
       (porPadre[padre] ??= []).push(texto);
     }

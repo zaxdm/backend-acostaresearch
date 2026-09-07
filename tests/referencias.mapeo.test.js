@@ -203,3 +203,44 @@ test('devuelve como mucho las que se piden', () => {
   const filas = Array.from({ length: 20 }, (_, i) => fuente(`10.1000/${i}`, `Trabajo ${i}`, 2020));
   assert.equal(sinRepetidos(filas, 6).length, 6);
 });
+
+/**
+ * El papeleo de Scopus.
+ *
+ * Casi todas las «notas» de esta biblioteca no las escribió nadie: son la ficha
+ * que Scopus adjunta al exportar. Y el conector prefiere la nota al resumen, así
+ * que sin filtrarlas le enseñaría al tesista «Export Date: 06 September 2026;
+ * Conference code: 199657» en lugar de lo que trata el artículo — y firmado como
+ * nota de Acosta, que es justo lo que la haría creíble.
+ */
+
+const { esPapeleoDeScopus } = require('../src/modules/references/zotero.mapper');
+
+test('la ficha del exportador se reconoce y se tira', () => {
+  for (const papeleo of [
+    'Export Date: 06 September 2026; Cited By: 13; Conference name: ICCR 2024',
+    'Cited By: 0; Funding details: Inyuvesi Yakwazulu-Natali, UKZN',
+    'Correspondence Address: N.P. Nzimande; Department of Geography',
+    'Conference code: 199657',
+  ]) {
+    assert.equal(esPapeleoDeScopus(papeleo), true, papeleo);
+  }
+});
+
+test('una nota escrita por una persona se conserva', () => {
+  for (const nota of [
+    'Sirve para justificar el muestreo por conveniencia del capítulo III',
+    'Ojo: esta revista está en la lista de depredadoras, no usar.',
+    'El instrumento de este estudio es el que adapta Karina.',
+    '',
+  ]) {
+    assert.equal(esPapeleoDeScopus(nota), false, nota);
+  }
+});
+
+test('una nota de verdad que MENCIONA el papeleo no se tira: solo cuenta cómo empieza', () => {
+  assert.equal(
+    esPapeleoDeScopus('Muy citado (Cited By: 300), buen antecedente para el capítulo II'),
+    false,
+  );
+});

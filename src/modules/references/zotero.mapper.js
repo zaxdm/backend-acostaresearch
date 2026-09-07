@@ -16,6 +16,24 @@ const NO_BIBLIOGRAFICOS = new Set(['note', 'attachment', 'annotation']);
 const esFuente = (item) => !NO_BIBLIOGRAFICOS.has(item?.data?.itemType);
 const esNota = (item) => item?.data?.itemType === 'note' && Boolean(item?.data?.parentItem);
 
+/**
+ * La ficha administrativa que Scopus cuelga de cada artículo al exportarlo.
+ *
+ * No es una nota de nadie: es papeleo del exportador —fecha de descarga, código
+ * del congreso, dirección postal del autor de correspondencia—. Se descarta
+ * porque el conector prefiere la nota al resumen, y enseñarle a un tesista
+ * «Export Date: 06 September 2026; Conference code: 199657» en lugar de lo que
+ * trata el artículo es peor que no enseñarle nada. Encima iría firmada como
+ * nota de Acosta, que es lo que la haría creíble.
+ *
+ * El día que se escriba una nota de verdad sobre una de estas fuentes, la nota
+ * de verdad entra: esto solo mira si el texto EMPIEZA por el papeleo.
+ */
+const esPapeleoDeScopus = (texto) =>
+  /^\s*(export date|cited by|correspondence address|funding details|conference name|conference code|chemicals\/cas|references:)\s*:/i.test(
+    texto ?? '',
+  );
+
 /** Quita el HTML de una nota de Zotero, que se guarda como marcado. */
 function textoPlano(html) {
   if (!html) return '';
@@ -135,4 +153,4 @@ function aFila(item, notas = []) {
   return { fila, etiquetas };
 }
 
-module.exports = { esFuente, esNota, aFila, normalizar, textoPlano };
+module.exports = { esFuente, esNota, esPapeleoDeScopus, aFila, normalizar, textoPlano };

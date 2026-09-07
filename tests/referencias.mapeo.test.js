@@ -148,3 +148,58 @@ test('sin DOI se cita la URL, y sin ninguna de las dos la cita termina en el pun
   const sinNada = aFila(itemDeRevista({ DOI: undefined, url: undefined })).fila;
   assert.match(cita(sinNada), /Revista de Psicología\.$/);
 });
+
+/**
+ * Lo repetido.
+ *
+ * La biblioteca se llenó exportando búsquedas de Scopus, y dos búsquedas que se
+ * solapan traen artículos en común: el mismo trabajo entra otra vez con otra
+ * clave de Zotero, y para la base son dos fuentes distintas. En una respuesta de
+ * seis resultados, dos gastados en repetir el mismo artículo son dos que el
+ * tesista no recibe. Lo notó el propio asistente en la primera prueba real.
+ */
+
+const { sinRepetidos } = require('../src/modules/references/reference.repository');
+
+const fuente = (doi, title, year) => ({ doi, title, year });
+
+test('el mismo DOI no ocupa dos huecos', () => {
+  const filas = [
+    fuente('10.1186/s12912-024-01848-6', 'The biosafety incident response scale', 2024),
+    fuente('10.1186/s12912-024-01848-6', 'The biosafety incident response scale', 2024),
+    fuente('10.2196/16520', 'eHealth acceptability scale', 2020),
+  ];
+  const unicas = sinRepetidos(filas, 6);
+  assert.equal(unicas.length, 2);
+  assert.equal(unicas[1].doi, '10.2196/16520');
+});
+
+test('se queda con la primera, que es la más relevante', () => {
+  const filas = [
+    fuente('10.1000/x', 'Construct validity', 2019),
+    fuente('10.1000/X', 'Construct validity', 2024),
+  ];
+  const [primera] = sinRepetidos(filas, 6);
+  // El DOI se compara sin distinguir mayúsculas: son el mismo artículo.
+  assert.equal(sinRepetidos(filas, 6).length, 1);
+  assert.equal(primera.year, 2019);
+});
+
+test('sin DOI se compara el título, que es lo único que queda', () => {
+  const filas = [
+    fuente(null, 'Metodología de la investigación', 2014),
+    fuente(null, 'METODOLOGIA DE LA INVESTIGACION.', 2014),
+    fuente(null, 'Otro trabajo distinto', 2014),
+  ];
+  assert.equal(sinRepetidos(filas, 6).length, 2);
+});
+
+test('dos artículos distintos sin DOI no se confunden', () => {
+  const filas = [fuente(null, 'Validez de constructo', 2019), fuente(null, 'Validez de criterio', 2019)];
+  assert.equal(sinRepetidos(filas, 6).length, 2);
+});
+
+test('devuelve como mucho las que se piden', () => {
+  const filas = Array.from({ length: 20 }, (_, i) => fuente(`10.1000/${i}`, `Trabajo ${i}`, 2020));
+  assert.equal(sinRepetidos(filas, 6).length, 6);
+});

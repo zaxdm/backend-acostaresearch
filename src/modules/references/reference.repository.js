@@ -222,6 +222,37 @@ const contar = () => prisma.reference.count();
  * mínimo de longitud, y es preferible una respuesta lenta a una biblioteca que
  * parece vacía.
  */
+/**
+ * Quita el mismo artículo repetido.
+ *
+ * La biblioteca se llenó exportando búsquedas de Scopus, y dos búsquedas
+ * distintas devuelven artículos en común: el mismo trabajo entra otra vez, con
+ * otra clave de Zotero, y para la base son dos fuentes. No es un fallo de la
+ * sincronización —en Zotero también están los dos— pero en una respuesta de seis
+ * resultados, dos gastados en repetir el mismo artículo son dos que el tesista
+ * no recibe. El propio asistente lo notó antes que nosotros.
+ *
+ * El DOI es la identidad real de un artículo. Sin DOI se compara el título, que
+ * es lo único que queda.
+ */
+function sinRepetidos(filas, limite) {
+  const vistos = new Set();
+  const unicas = [];
+
+  for (const fila of filas) {
+    const identidad = fila.doi
+      ? 'doi:' + String(fila.doi).toLowerCase()
+      : 'titulo:' + normalizar(fila.title).replace(/[^a-z0-9]/g, '');
+
+    if (vistos.has(identidad)) continue;
+    vistos.add(identidad);
+    unicas.push(fila);
+    if (unicas.length >= limite) break;
+  }
+
+  return unicas;
+}
+
 async function buscar({ palabras, productCode, limite = 8 }) {
   // Una fuente sin grupos la ven todas las licencias; con grupos, solo las de
   // su producto. Es el mismo criterio que el catálogo de capítulos.
@@ -238,7 +269,11 @@ async function buscar({ palabras, productCode, limite = 8 }) {
   // resultados eso no es lo mismo que lo mejor: un artículo de 2027 que roza el
   // tema desplazaba al de 2019 que va justo de eso. El año sigue contando, pero
   // por detrás de la relevancia.
-  const parametros = [consulta, consulta, ...(productCode ? [productCode] : []), limite];
+  // Se piden más de las que se van a devolver porque después se quitan las
+  // repetidas: con el límite justo, una respuesta de seis podría quedarse en
+  // tres. El triple cubre de sobra lo que se ha visto duplicado.
+  const margen = limite * 3;
+  const parametros = [consulta, consulta, ...(productCode ? [productCode] : []), margen];
 
   const porIndice = await prisma.$queryRawUnsafe(
     'SELECT r.*, MATCH(r.busqueda) AGAINST (? IN BOOLEAN MODE) AS relevancia ' +
@@ -249,9 +284,9 @@ async function buscar({ palabras, productCode, limite = 8 }) {
     ...parametros,
   );
 
-  if (porIndice.length > 0) return porIndice;
+  if (porIndice.length > 0) return sinRepetidos(porIndice, limite);
 
-  return prisma.reference.findMany({
+  const porTexto = await prisma.reference.findMany({
     where: {
       AND: [
         ...palabras.map((palabra) => ({ busqueda: { contains: palabra } })),
@@ -261,8 +296,10 @@ async function buscar({ palabras, productCode, limite = 8 }) {
       ],
     },
     orderBy: [{ year: 'desc' }, { title: 'asc' }],
-    take: limite,
+    take: margen,
   });
+
+  return sinRepetidos(porTexto, limite);
 }
 
 /** Lo que enseña el panel: página a página, con el buscador del administrador. */
@@ -286,6 +323,7 @@ async function listarParaPanel({ pagina = 1, tamano = 20, texto = '' }) {
 module.exports = {
   POR_LOTE,
   gruposDeEtiquetas,
+  sinRepetidos,
   estadoSync,
   guardarSync,
   guardarLote,

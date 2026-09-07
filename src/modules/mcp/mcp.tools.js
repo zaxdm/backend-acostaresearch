@@ -500,6 +500,10 @@ function construirServidor(licencia) {
         return texto(
           `Fuentes de la biblioteca sobre «${tema}»:\n\n${fichas.join('\n\n')}\n\n` +
             'Cita EXACTAMENTE como están escritas, sin cambiar años, autores ni DOIs. ' +
+            'NO TRADUZCAS LOS TÍTULOS: en la bibliografía va el título original, en el ' +
+            'idioma en que se publicó. Puedes explicar en español de qué va cada fuente, ' +
+            'pero la referencia se copia tal cual. Un título traducido no lo encuentra ' +
+            'nadie al comprobarlo, y eso es lo primero que hace un jurado. ' +
             'Si ninguna sirve para lo que estabas escribiendo, dilo en vez de forzarla.',
         );
       },

@@ -244,3 +244,9 @@ test('una nota de verdad que MENCIONA el papeleo no se tira: solo cuenta cómo e
     false,
   );
 });
+
+test('Web of Science escribe su papeleo distinto, y también se tira', () => {
+  assert.equal(esPapeleoDeScopus('Times Cited in Web of Science Core Collection:  1'), true);
+  assert.equal(esPapeleoDeScopus('Total Times Cited:  18'), true);
+  assert.equal(esPapeleoDeScopus('Cited Reference Count:  29'), true);
+});

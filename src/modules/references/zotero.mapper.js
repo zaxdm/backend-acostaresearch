@@ -29,10 +29,25 @@ const esNota = (item) => item?.data?.itemType === 'note' && Boolean(item?.data?.
  * El día que se escriba una nota de verdad sobre una de estas fuentes, la nota
  * de verdad entra: esto solo mira si el texto EMPIEZA por el papeleo.
  */
-const esPapeleoDeScopus = (texto) =>
-  /^\s*(export date|cited by|correspondence address|funding details|conference name|conference code|chemicals\/cas|references:)\s*:/i.test(
-    texto ?? '',
-  );
+const PAPELEO = [
+  // Scopus
+  /^export date\s*:/i,
+  /^cited by\s*:/i,
+  /^correspondence address\s*:/i,
+  /^funding details\s*:/i,
+  /^conference (name|code|date)\s*:/i,
+  /^chemicals\/cas\s*:/i,
+  /^references\s*:/i,
+  // Web of Science, que lo escribe distinto y con el número al final
+  /^times cited\b/i,
+  /^total times cited\b/i,
+  /^cited reference count\b/i,
+];
+
+const esPapeleoDeScopus = (texto) => {
+  const limpio = String(texto ?? '').trim();
+  return PAPELEO.some((patron) => patron.test(limpio));
+};
 
 /** Quita el HTML de una nota de Zotero, que se guarda como marcado. */
 function textoPlano(html) {

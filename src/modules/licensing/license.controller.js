@@ -5,6 +5,7 @@ const { ok, created, noContent } = require('../../shared/http/apiResponse');
 const { addDays } = require('../../shared/utils/tokens');
 const licenseService = require('./license.service');
 const { ValidationError } = require('../../shared/errors/AppError');
+const { ROLES } = require('../../config/constants');
 
 const licenseController = {
   /** Solo ADMIN. Los códigos en claro se devuelven aquí y nunca más. */
@@ -92,6 +93,14 @@ const licenseController = {
   }),
 
   mine: asyncHandler(async (req, res) => {
+    // El administrador no compra su propio producto: se le emite aquí, la
+    // primera vez que abre el panel, gratis y sin caducidad. Va en esta lectura
+    // y no en un botón porque así también lo alcanza el día que se añada una
+    // ruta nueva al catálogo, sin que él tenga que acordarse de nada.
+    if (req.user.role === ROLES.ADMIN) {
+      await licenseService.ensureForAdmin(req.user.id);
+    }
+
     const licenses = await licenseService.listForUser(req.user.id);
     return ok(res, { licenses });
   }),

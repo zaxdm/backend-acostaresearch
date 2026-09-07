@@ -114,10 +114,17 @@ async function evaluar(licenseId, { forzar = false } = {}) {
   try {
     const licencia = await prisma.license.findUnique({
       where: { id: licenseId },
-      include: { user: { select: { email: true, firstName: true } } },
+      include: { user: { select: { email: true, firstName: true, role: true } } },
     });
 
     if (!licencia || licencia.status !== 'ACTIVE') return null;
+
+    // La licencia del administrador no se vigila. Es la única del sistema que
+    // no se vendió: la usa el dueño para probar y para enseñar el producto, y
+    // eso produce justo las señales que el detector busca —dos sesiones vivas,
+    // capítulos pedidos sin trabajar ninguno—. Aplicada aquí, la regla acabaría
+    // revocándole su propio conector a las doce horas del primer aviso.
+    if (licencia.user?.role === 'ADMIN') return null;
 
     const revisadaHaceNada =
       licencia.lastCheckedAt &&

@@ -23,6 +23,15 @@ const codeSelect = {
 
 const licenseSelect = {
   id: true,
+  // De quién es. Faltaba, y se notó al mover una licencia de producto: el aviso
+  // por correo buscaba al comprador con `id: undefined` y fallaba en silencio,
+  // porque ese correo se manda sin esperarlo para que un fallo del SMTP no deje
+  // a medias un cambio que en la base ya está hecho. El cambio se aplicaba y el
+  // comprador no se enteraba nunca.
+  //
+  // No es un dato sensible: la licencia solo la ve su dueño o un administrador,
+  // y los dos saben ya de quién es.
+  userId: true,
   productCode: true,
   tokenHint: true,
   status: true,

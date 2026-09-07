@@ -107,6 +107,33 @@ carga una skill que puede pesar 30 000 tokens, y no todas pesan igual.
 Los contadores se reinician solos comparando el sello de día y mes en hora de
 Lima. No hay ningún proceso programado que mantener.
 
+## La licencia del administrador
+
+No se compra ni se canjea: se emite sola la primera vez que un ADMIN abre
+«Cuentas → Mi conector» en el panel (`licenseService.ensureForAdmin`). Una por
+cada producto con plan de licencia activo en el catálogo, así que añadir una
+ruta nueva se la da sin tocar código.
+
+Tres diferencias con la de un comprador, y las tres a propósito:
+
+- **Sin cobro.** Nace sin `ActivationCode` y sin `Payment`. Un canje de cortesía
+  habría dejado apuntada en Movimientos una venta que no ocurrió.
+- **Sin caducidad y sin topes.** `expiresAt` nulo y los topes a cero. Los topes
+  contienen el gasto y frenan la descarga sistemática por parte de un comprador;
+  sobre el dueño no aplica ninguna de las dos, y quedarse sin cupo el día que
+  enseña su propio producto es justo lo que hay que evitar.
+- **Fuera de la vigilancia.** `license.watch` se salta las licencias de un
+  ADMIN. Probar desde dos sitios y pedir capítulos sin trabajar ninguno son las
+  señales que el detector busca, y son exactamente lo que hace el dueño: sin la
+  excepción, el sistema le revocaba su propio conector a las doce horas del
+  primer aviso.
+
+El modo de entrega SÍ se copia del plan: es lo que hace que su conector se
+comporte igual que el del comprador, que es para lo que le sirve tenerlo.
+
+Es idempotente y mira la licencia en CUALQUIER estado, no solo activa: si se
+revocó una a mano, no se vuelve a emitir en la siguiente visita al panel.
+
 ## Licencias compartidas
 
 `license.detector.js` puntúa el uso; `license.watch.js` decide.

@@ -265,6 +265,70 @@ function pagoDelCodigo({ registro, contrato, userId }) {
   };
 }
 
+/**
+ * Emisiones de administrador en vuelo, por usuario.
+ *
+ * Ver `ensureForAdmin`: evita que dos peticiones simultáneas del mismo
+ * administrador emitan dos licencias del mismo producto.
+ */
+const emisionesDeAdmin = new Map();
+
+/** El trabajo de `ensureForAdmin`, ya sin el cerrojo. */
+async function emitirParaAdmin(userId) {
+  const planes = await prisma.plan.findMany({
+    where: { kind: 'LICENSE', active: true, productCode: { not: null } },
+    select: { productCode: true },
+    distinct: ['productCode'],
+  });
+
+  const productos = planes.map((plan) => plan.productCode);
+  if (productos.length === 0) return [];
+
+  const yaTiene = await prisma.license.findMany({
+    where: { userId, productCode: { in: productos } },
+    select: { productCode: true },
+  });
+
+  const faltan = productos.filter(
+    (producto) => !yaTiene.some((licencia) => licencia.productCode === producto),
+  );
+
+  const emitidas = [];
+
+  for (const productCode of faltan) {
+    const contrato = await contratoDelProducto(productCode);
+    const token = generateOpaqueToken(32);
+
+    // Los topes no se pasan: el esquema los deja en cero, y cero es sin tope.
+    const licencia = await licenseRepository.create({
+      userId,
+      productCode,
+      tokenHash: hashToken(token),
+      tokenHint: token.slice(0, 8),
+      expiresAt: null,
+      delivery: contrato.topes.delivery,
+    });
+
+    logger.info(
+      { userId, licenseId: licencia.id, producto: productCode },
+      'Licencia de administrador emitida: permanente y sin cobro',
+    );
+
+    // El token en claro solo existe aquí. Si el correo no sale, al
+    // administrador le queda «Nueva URL» en su panel, como a cualquiera.
+    avisarDeLaEntrega({
+      userId,
+      planName: contrato.nombre,
+      connectorUrl: urlDelConector(token),
+      expiresAt: null,
+    });
+
+    emitidas.push(licencia);
+  }
+
+  return emitidas;
+}
+
 const licenseService = {
   /**
    * Genera códigos de un solo uso. Devuelve los códigos EN CLARO una única vez:
@@ -639,6 +703,54 @@ const licenseService = {
 
   openAlerts() {
     return watch.alertasAbiertas();
+  },
+
+  /**
+   * Le asegura al administrador una licencia viva de cada producto, gratis y
+   * para siempre.
+   *
+   * POR QUÉ NO SE RESUELVE CON UN CÓDIGO DE CORTESÍA
+   * ------------------------------------------------
+   * Se podía: generar dos códigos y canjearlos. Pero un canje deja rastro de
+   * venta —un `ActivationCode` gastado y, si lleva importe, un `Payment`—, y
+   * ninguna de las dos cosas ocurrió. El dueño no se compra su producto. Aquí
+   * la licencia nace sin código y sin cobro: en Movimientos no aparece nada,
+   * que es exactamente lo que pasó.
+   *
+   * SIN CADUCIDAD Y SIN TOPES
+   * -------------------------
+   * `expiresAt` nulo y los topes a cero —0 = sin tope en toda la casa—. Los
+   * topes existen para contener el gasto y para frenar la descarga sistemática
+   * del método por parte de un comprador; sobre el dueño no aplica ninguna de
+   * las dos, y quedarse sin cupo el día que enseña su propio producto es el
+   * único desenlace que este código tiene que evitar.
+   *
+   * El modo de entrega SÍ se copia del plan: es lo que hace que el conector del
+   * administrador se comporte igual que el del comprador, que es justo para lo
+   * que le sirve tenerlo.
+   *
+   * QUÉ PRODUCTOS
+   * -------------
+   * Los del catálogo, no una lista escrita aquí. Hoy son el método de tesis con
+   * Humanizador y la ruta del artículo científico; el día que se añada un
+   * tercero, el administrador lo tendrá sin que nadie toque este archivo.
+   *
+   * Es idempotente: se llama cada vez que el administrador abre su panel y no
+   * hace nada si ya las tiene. Se mira la licencia en CUALQUIER estado, no solo
+   * activa: si se revocó una a mano, volver a emitirla en la siguiente visita
+   * desharía esa decisión en silencio.
+   */
+  async ensureForAdmin(userId) {
+    // Dos pestañas abiertas a la vez piden el panel a la vez, y no hay índice
+    // único que impida dos licencias del mismo producto. El cerrojo es de este
+    // proceso, que es donde ocurre la carrera: son dos peticiones del mismo
+    // administrador con milisegundos de diferencia, no dos servidores.
+    const enCurso = emisionesDeAdmin.get(userId);
+    if (enCurso) return enCurso;
+
+    const tarea = emitirParaAdmin(userId).finally(() => emisionesDeAdmin.delete(userId));
+    emisionesDeAdmin.set(userId, tarea);
+    return tarea;
   },
 
   /**

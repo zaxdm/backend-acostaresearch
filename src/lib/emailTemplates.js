@@ -540,6 +540,64 @@ function licenseRenewed({ firstName, planName, expiresAt, via }) {
 }
 
 /**
+ * Al comprador: su licencia pasó a otro producto.
+ *
+ * NO se le pide que regenere la URL, y es a propósito.
+ *
+ * La URL no depende del producto: cuelga de un token de la licencia, y la
+ * licencia es la misma. Lo que cambia es qué capítulos le devuelve el conector,
+ * y eso ya está cambiado en el servidor cuando sale este correo. Pedirle que
+ * genere una nueva sería, además de innecesario, peligroso: al hacerlo la
+ * anterior deja de valer, así que quien empiece y no termine se queda sin
+ * acceso por un trámite que no hacía falta.
+ *
+ * Lo único que puede pasar es que Claude tenga en memoria la lista de capítulos
+ * de antes. Eso se arregla abriendo una conversación nueva, y eso sí se dice.
+ */
+function licenseProductChanged({ firstName, planName, capitulos }) {
+  const panel = `${appUrl()}/perfil`;
+  const cuantos = capitulos > 0 ? `${capitulos} capítulos` : 'los capítulos del método';
+
+  return {
+    subject: `Tu acceso ahora incluye ${planName} · Acosta Research`,
+    text: [
+      `Hola ${firstName}:`,
+      '',
+      `Hemos ampliado tu acceso: tu licencia pasa a ${planName}, y desde ahora tienes ${cuantos} disponibles en Claude.`,
+      '',
+      'No tienes que hacer nada. La misma URL que ya tienes instalada sirve: no hace falta volver a añadir el conector ni generar una nueva.',
+      '',
+      'Si al preguntarle a Claude te sigue apareciendo la lista de antes, abre una conversación nueva. Claude guarda en memoria los capítulos de la conversación en la que estás, y ahí se le queda la lista vieja.',
+      '',
+      `Tu panel: ${panel}`,
+    ].join('\n'),
+    html: layout(
+      'Tu acceso se amplió',
+      `<p style="margin:0 0 18px;font-size:15px;line-height:1.6">Hola ${firstName}:
+         hemos ampliado tu acceso. Tu licencia pasa a <strong>${planName}</strong>, y desde
+         ahora tienes ${cuantos} disponibles en Claude.</p>
+
+       <p style="margin:0 0 22px;padding:14px 16px;background:#e7f6ef;border-radius:10px;
+                 font-size:14px;line-height:1.6;color:#12734b">
+         <strong>No tienes que hacer nada.</strong> La misma URL que ya tienes instalada sirve:
+         no hace falta volver a añadir el conector ni generar una nueva.
+       </p>
+
+       <p style="margin:0 0 22px;font-size:14px;line-height:1.6;color:#4b5563">
+         Si al preguntarle a Claude te sigue apareciendo la lista de antes, abre una
+         <strong>conversación nueva</strong>. Claude guarda los capítulos de la conversación en
+         la que estás, y ahí se le queda la lista vieja.
+       </p>
+
+       <p style="margin:0;font-size:14px">
+         <a href="${panel}" style="color:#1a56db">Abrir mi panel</a>
+       </p>`,
+      { preheader: 'Ya está activo. La URL que tienes instalada sigue sirviendo.' },
+    ),
+  };
+}
+
+/**
  * Al comprador: su bolsa de palabras ya está cargada.
  *
  * Antes este correo solo salía en los pagos por Yape. Ahora sale también en los
@@ -734,6 +792,7 @@ module.exports = {
   // pasan por igual la pasarela y la aprobación de un Yape.
   licenseReady,
   licenseRenewed,
+  licenseProductChanged,
   wordsReady,
   manualPaymentRejected,
   // Al comprador que pagó fuera de la web y todavía no tiene cuenta.

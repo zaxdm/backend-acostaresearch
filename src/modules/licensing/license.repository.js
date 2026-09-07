@@ -145,6 +145,25 @@ const licenseRepository = {
     });
   },
 
+  /**
+   * Cambia el producto de una licencia y le copia los topes del plan nuevo.
+   *
+   * Los topes van juntos y no aparte: una licencia guarda los suyos copiados del
+   * plan al emitirla —para que subir el precio no cambie lo que compró alguien
+   * el mes pasado—, así que moverla de producto sin traerse los del nuevo la
+   * dejaría con el catálogo ampliado y el cupo de antes. Que es la peor mitad.
+   *
+   * La caducidad NO se toca: cambiar de producto no es renovar, y regalar meses
+   * sin querer es un error que solo se descubre cuando ya caducó tarde.
+   */
+  changeProduct(id, { productCode, delivery, topes }) {
+    return prisma.license.update({
+      where: { id },
+      data: { productCode, delivery, ...topes },
+      select: licenseSelect,
+    });
+  },
+
   /** Lo que hace falta saber antes de borrarla, y para dejarlo en el log. */
   findForRemoval(id) {
     return prisma.license.findUnique({

@@ -12,6 +12,7 @@ const {
   generateCodesSchema,
   redeemSchema,
   revokeSchema,
+  changeProductSchema,
   idParamSchema,
   listQuerySchema,
 } = require('./license.schema');
@@ -78,6 +79,15 @@ router.post(
   validate({ params: idParamSchema, body: revokeSchema }),
   licenseController.revoke,
 );
+// Mover de producto NO cambia la URL del conector: el token cuelga de la
+// licencia y la licencia sigue siendo la misma. Por eso es un cambio y no una
+// reemisión, y por eso al comprador no hay que pedirle nada.
+router.post(
+  '/:id/product',
+  validate({ params: idParamSchema, body: changeProductSchema }),
+  licenseController.changeProduct,
+);
+
 router.post(
   '/:id/reactivate',
   validate({ params: idParamSchema }),

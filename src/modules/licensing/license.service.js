@@ -17,7 +17,12 @@ const {
   hashToken,
   addDays,
 } = require('../../shared/utils/tokens');
-const { AppError, NotFoundError } = require('../../shared/errors/AppError');
+const {
+  AppError,
+  ConflictError,
+  NotFoundError,
+  ValidationError,
+} = require('../../shared/errors/AppError');
 
 /**
  * Alfabeto sin caracteres que se confunden al dictarlos por WhatsApp: fuera la
@@ -81,6 +86,38 @@ function avisarDeLaEntrega({ userId, planName, connectorUrl, expiresAt }) {
     })
     .catch((error) => {
       logger.error({ err: error, userId }, 'No se pudo enviar el correo del canje');
+    });
+}
+
+/**
+ * Al comprador, cuando su licencia pasa a otro producto.
+ *
+ * Se cuentan los capítulos para poder decirle cuántos tiene ahora: «tienes 19
+ * capítulos» dice algo, «se te amplió el acceso» no dice nada.
+ *
+ * Va sin await, como el de la entrega: que el correo tarde o falle no puede
+ * dejar a medias un cambio que en la base ya está hecho.
+ */
+function avisarDelCambioDeProducto({ userId, planName, productCode }) {
+  Promise.all([
+    prisma.user.findUnique({ where: { id: userId }, select: { email: true, firstName: true } }),
+    prisma.skill.count({
+      where: { active: true, groups: { some: { productCode } } },
+    }),
+  ])
+    .then(([usuario, capitulos]) => {
+      if (!usuario?.email) return null;
+      return sendMail({
+        to: usuario.email,
+        ...plantillas.licenseProductChanged({
+          firstName: usuario.firstName,
+          planName,
+          capitulos,
+        }),
+      });
+    })
+    .catch((error) => {
+      logger.error({ err: error, userId }, 'No se pudo avisar del cambio de producto');
     });
 }
 
@@ -651,6 +688,56 @@ const licenseService = {
 
     logger.info({ licenseId, userId }, 'URL del conector regenerada');
     return { license: actualizada, connectorUrl: urlDelConector(token) };
+  },
+
+  /**
+   * Mueve una licencia a otro producto, desde el panel.
+   *
+   * Existe porque el catálogo cambia: quien compró «las 9 skills» antes de que
+   * existiera la ruta del artículo tiene derecho a que se le amplíe sin volver a
+   * pagar, y hasta ahora la única forma era emitirle una licencia nueva —con
+   * otra URL— y revocarle la vieja. Eso le rompe el conector instalado por una
+   * decisión que no tomó él.
+   *
+   * Aquí no cambia la URL. El token cuelga de la licencia y la licencia es la
+   * misma; lo único que cambia es qué capítulos le devuelve el conector, y eso
+   * es inmediato.
+   */
+  async changeProduct({ id, productCode, byId }) {
+    const licencia = await licenseRepository.findById(id);
+    if (!licencia) throw new NotFoundError('No encontramos esa licencia.');
+
+    if (licencia.productCode === productCode) {
+      throw new ConflictError('Esa licencia ya está en ese producto.');
+    }
+
+    // Sin plan activo no hay topes que copiar, y dejarla con los de antes sería
+    // darle un catálogo que no puede usar. Mejor negarse aquí.
+    const contrato = await contratoDelProducto(productCode);
+    if (!contrato.planId) {
+      throw new ValidationError(
+        `No hay ningún plan activo para «${productCode}», así que no sé con qué topes dejarla.`,
+      );
+    }
+
+    const actualizada = await licenseRepository.changeProduct(id, {
+      productCode,
+      delivery: contrato.delivery,
+      topes: contrato.topes,
+    });
+
+    logger.info(
+      { licenseId: id, de: licencia.productCode, a: productCode, porAdmin: byId },
+      'Licencia movida de producto desde el panel',
+    );
+
+    avisarDelCambioDeProducto({
+      userId: licencia.userId,
+      planName: contrato.nombre,
+      productCode,
+    });
+
+    return { license: actualizada, anterior: licencia.productCode };
   },
 
   listAll(filtros) {

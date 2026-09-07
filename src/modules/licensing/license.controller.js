@@ -128,6 +128,27 @@ const licenseController = {
     return ok(res, { license }, { message: 'Licencia reactivada.' });
   }),
 
+  /**
+   * Mueve la licencia a otro producto y avisa al comprador por correo.
+   *
+   * El mensaje nombra los dos productos porque quien lo hace suele estar
+   * moviendo varias licencias seguidas, y «Licencia actualizada» a secas no
+   * deja ver si se equivocó de fila.
+   */
+  changeProduct: asyncHandler(async (req, res) => {
+    const { license, anterior } = await licenseService.changeProduct({
+      id: req.params.id,
+      productCode: req.body.productCode,
+      byId: req.user.id,
+    });
+
+    return ok(
+      res,
+      { license },
+      { message: `Licencia movida de ${anterior} a ${license.productCode}. Le avisamos por correo.` },
+    );
+  }),
+
   /** Borrado de verdad. Para limpiar pruebas; a un cliente se le revoca. */
   eliminar: asyncHandler(async (req, res) => {
     await licenseService.eliminar({ id: req.params.id, adminId: req.user.id });

@@ -12,7 +12,12 @@ const paymentSelect = {
   createdAt: true,
   paidAt: true,
   reviewNote: true,
-  plan: { select: { code: true, name: true, words: true, durationDays: true } },
+  // `productCode` además de `code`: son cosas distintas y el panel necesita la
+  // primera. Varios planes pueden vender el mismo producto —uno suelto y otro
+  // en oferta—, y lo que decide qué capítulos ve el comprador es el producto.
+  plan: {
+    select: { code: true, productCode: true, name: true, words: true, durationDays: true },
+  },
 };
 
 const paymentRepository = {
@@ -202,6 +207,9 @@ const paymentRepository = {
       where: { provider, status: { not: 'IN_REVIEW' } },
       select: {
         ...paymentSelect,
+        // Para poder mover esa licencia de producto desde el historial de
+        // accesos, que es donde se mira quién compró qué.
+        licenseId: true,
         operationCode: true,
         discountCents: true,
         proofPath: true,
@@ -221,6 +229,7 @@ const paymentRepository = {
     return prisma.payment.findMany({
       select: {
         ...paymentSelect,
+        licenseId: true,
         providerCaptureId: true,
         payerEmail: true,
         errorCode: true,

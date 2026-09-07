@@ -34,6 +34,22 @@ const revokeSchema = z.object({
   reason: z.string().trim().max(255).optional(),
 });
 
+/**
+ * Mover una licencia a otro producto.
+ *
+ * Es el `productCode`, no el `code` del plan: varios planes pueden vender el
+ * mismo producto —uno suelto y otro en oferta— y lo que decide qué capítulos ve
+ * el comprador es el producto.
+ */
+const changeProductSchema = z.object({
+  productCode: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .min(2, 'Dime a qué producto la muevo.')
+    .max(40),
+});
+
 const idParamSchema = z.object({
   id: z.string().uuid('Identificador no válido.'),
 });
@@ -48,6 +64,7 @@ module.exports = {
   generateCodesSchema,
   redeemSchema,
   revokeSchema,
+  changeProductSchema,
   idParamSchema,
   listQuerySchema,
 };

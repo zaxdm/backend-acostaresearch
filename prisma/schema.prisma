@@ -909,3 +909,45 @@ model ReferenceSync {
 
   @@map("reference_sync")
 }
+
+/// Un video de la página de tutoriales.
+///
+/// Vive en la base y no en el código por una razón práctica: quien graba los
+/// videos no despliega. Tenerlos escritos en un archivo obligaba a editar
+/// TypeScript y empujar a git para publicar una URL de YouTube, que es pedirle
+/// a alguien que aprenda git para hacer su trabajo.
+///
+/// Todo lo que se ve en la tarjeta se edita desde el panel: el título, la
+/// duración, el texto y los puntos. Los puntos son texto con un salto de línea
+/// por punto, no JSON, porque se escriben en un cuadro de texto normal y a nadie
+/// le apetece cerrar corchetes para añadir una viñeta.
+model Tutorial {
+  id String @id @default(uuid()) @db.Char(36)
+
+  /// En qué orden salen. Tienen orden de verdad: el primero se ve una vez y el
+  /// segundo es el que hay que ver.
+  orden Int
+
+  titulo   String @db.VarChar(160)
+  /// «5 min». Para que se sepa si hay tiempo de verlo ahora o hay que dejarlo.
+  duracion String @db.VarChar(24)
+  /// Qué problema resuelve, en una o dos frases.
+  entrada  String @db.VarChar(600)
+  /// Lo que se ve, un punto por línea. Es también el guion de la grabación.
+  puntos   String @db.Text
+
+  /// Enlace de YouTube. VACÍO = todavía no está grabado, y la tarjeta lo dice
+  /// en lugar de dejar un hueco negro.
+  videoUrl String @default("") @db.VarChar(500)
+
+  /// Apagado se queda fuera de la página pública pero no se pierde. Sirve para
+  /// retirar un video que quedó viejo —la interfaz de Claude cambia— mientras
+  /// se regraba, en vez de borrarlo y volver a escribirlo todo.
+  active Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orden])
+  @@map("tutorials")
+}

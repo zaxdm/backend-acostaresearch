@@ -3,6 +3,23 @@
 const { z } = require('zod');
 
 /**
+ * El identificador de un video de YouTube, venga como venga el enlace.
+ *
+ * Devuelve null si no hay ninguno, y ese null es el punto: antes se daba por
+ * hecho que lo que no encajara ya era un identificador suelto, y así una URL de
+ * Studio de 165 caracteres pasó por identificador y produjo un reproductor roto.
+ */
+function idDeYouTube(enlace) {
+  const texto = String(enlace ?? '').trim();
+
+  // Un identificador pelado, tal cual.
+  if (/^[\w-]{11}$/.test(texto)) return texto;
+
+  const encontrado = /(?:v=|youtu\.be\/|embed\/|shorts\/|live\/)([\w-]{11})/.exec(texto);
+  return encontrado ? encontrado[1] : null;
+}
+
+/**
  * Lo que se puede escribir en un tutorial.
  *
  * `videoUrl` acepta vacío a propósito: una tarjeta sin grabar es un estado
@@ -16,7 +33,23 @@ const tutorialBodySchema = z.object({
   entrada: z.string().trim().max(600).optional().default(''),
   /** Un punto por línea. Se guarda tal cual se escribe. */
   puntos: z.string().trim().max(4000).optional().default(''),
-  videoUrl: z.string().trim().max(500).optional().default(''),
+  videoUrl: z
+    .string()
+    .trim()
+    .max(500)
+    .optional()
+    .default('')
+    // Se comprueba aquí y no solo al pintar: la equivocación natural es copiar
+    // la URL de la BARRA DEL NAVEGADOR de Studio —que es la página donde uno
+    // está— en vez del «Vínculo del video». Sin esta comprobación se guardaba
+    // tan ricamente y el fallo aparecía después, como un reproductor en negro
+    // con un error de YouTube que no dice nada de lo que pasó.
+    .refine((valor) => valor === '' || idDeYouTube(valor) !== null, {
+      message:
+        'Eso no parece un enlace de YouTube. Copia el del recuadro «Vínculo del video» de ' +
+        'Studio (empieza por youtu.be/ o youtube.com/watch), no la dirección de la barra ' +
+        'del navegador.',
+    }),
   active: z.boolean().optional().default(true),
 });
 
@@ -27,4 +60,4 @@ const idParamSchema = z.object({
   id: z.string().uuid('Identificador no válido.'),
 });
 
-module.exports = { tutorialBodySchema, tutorialPatchSchema, idParamSchema };
+module.exports = { tutorialBodySchema, tutorialPatchSchema, idParamSchema, idDeYouTube };

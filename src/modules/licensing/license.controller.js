@@ -101,8 +101,15 @@ const licenseController = {
       await licenseService.ensureForAdmin(req.user.id);
     }
 
-    const licenses = await licenseService.listForUser(req.user.id);
-    return ok(res, { licenses });
+    // El progreso viaja con las licencias y no en su propia ruta: el panel las
+    // pide juntas y siempre a la vez, así que partirlo en dos serían dos viajes
+    // para pintar una sola pantalla.
+    const [licenses, progreso] = await Promise.all([
+      licenseService.listForUser(req.user.id),
+      licenseService.progresoDeArranque(req.user.id),
+    ]);
+
+    return ok(res, { licenses, progreso });
   }),
 
   list: asyncHandler(async (req, res) => {

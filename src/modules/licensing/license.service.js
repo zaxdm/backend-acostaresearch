@@ -804,6 +804,71 @@ const licenseService = {
   },
 
   /**
+   * Por dónde va el comprador en su puesta en marcha.
+   *
+   * NO ES UNA GUÍA, ES UN ESTADO. Cada paso se marca porque ocurrió de verdad,
+   * no porque alguien pulsara «entendido». Esa es toda la diferencia: una lista
+   * que hay que ir tachando a mano se queda desactualizada el primer día y deja
+   * de mirarse; una que se marca sola le dice al comprador dónde está y nos dice
+   * a nosotros dónde se atasca la gente.
+   *
+   * Y hace falta. De dieciséis licencias repartidas en una semana, TRES no
+   * llegaron a llamar al conector ni una vez. Nadie lo supo hasta que se miró la
+   * base a mano; el comprador tampoco tenía en pantalla nada que le dijera que
+   * se había quedado a medias.
+   *
+   * El paso de «conectado» se da por hecho con CUALQUIER llamada, y es la señal
+   * más fiable que hay: si este servidor oyó algo de esa licencia, la URL se
+   * pegó bien en Claude. No hace falta preguntarle a nadie.
+   */
+  async progresoDeArranque(userId) {
+    const [usuario, licencias] = await Promise.all([
+      prisma.user.findUnique({
+        where: { id: userId },
+        select: { emailVerifiedAt: true, googleId: true },
+      }),
+      prisma.license.findMany({
+        where: { userId },
+        select: { id: true, status: true, expiresAt: true, callsTotal: true },
+      }),
+    ]);
+
+    const vigente = (l) =>
+      l.status === 'ACTIVE' && (l.expiresAt === null || new Date(l.expiresAt) > new Date());
+
+    const tieneAcceso = licencias.some(vigente);
+    const conectado = licencias.some((l) => l.callsTotal > 0);
+
+    // Las herramientas usadas, solo si ya llamó alguna vez. Sin esto sería una
+    // consulta más por cada visita al panel para responder siempre que no.
+    let capitulo = false;
+    let fuentes = false;
+
+    if (conectado) {
+      const usos = await prisma.licenseUsage.groupBy({
+        by: ['tool'],
+        where: { licenseId: { in: licencias.map((l) => l.id) } },
+      });
+
+      // `entregar:` y `redactar` son las dos formas en que se ha servido un
+      // capítulo; las dos cuentan como haber trabajado uno de verdad, a
+      // diferencia de `listar_capitulos`, que es solo asomarse al índice.
+      capitulo = usos.some((u) => /^(entregar|redactar)[:$]?/.test(u.tool));
+      fuentes = usos.some((u) => u.tool === 'buscar_fuentes');
+    }
+
+    return {
+      // Quien entró con Google llega verificado por Google: pedirle que
+      // confirme un correo que ya confirmó Google sería un paso inventado.
+      cuenta: Boolean(usuario?.emailVerifiedAt || usuario?.googleId),
+      acceso: tieneAcceso,
+      conectado,
+      capitulo,
+      fuentes,
+    };
+  },
+
+  /**
    * Licencias del comprador con su consumo ya normalizado.
    *
    * El contador guardado puede ser de ayer; aquí se traduce a lo que de verdad

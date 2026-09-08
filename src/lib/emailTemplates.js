@@ -412,6 +412,7 @@ function enMayuscula(frase) {
 function licenseReady({ firstName, planName, connectorUrl, expiresAt, via }) {
   const panel = `${appUrl()}/perfil`;
   const guia = guiaUrl();
+  const videos = `${appUrl()}/tutoriales`;
   const vence = fecha(expiresAt);
   const vigencia = vence ? `Lo tienes hasta el ${vence}.` : 'No caduca.';
   const confirmacion = confirmacionDePago(via, planName);
@@ -438,6 +439,7 @@ function licenseReady({ firstName, planName, connectorUrl, expiresAt, via }) {
       '  2. Pulsa «Añadir conector personalizado» y pega la URL de arriba.',
       '  3. Escríbele «trabajemos mi tesis» y pídele que use el conector.',
       '',
+      `Videos: cómo conectarlo y cómo trabajar tu primer capítulo: ${videos}`,
       `Guía de instalación con capturas (PDF): ${guia}`,
       `Tu panel: ${panel}`,
       '',
@@ -477,6 +479,13 @@ function licenseReady({ firstName, planName, connectorUrl, expiresAt, via }) {
            <td>Escríbele «trabajemos mi tesis» y pídele que use el conector.</td>
          </tr>
        </table>
+
+       <p style="margin:0 0 14px;padding:14px 16px;background:#eef4ff;border-radius:10px;
+                 font-size:14px;line-height:1.6;color:#1a3a8f">
+         <strong>¿Prefieres verlo hecho?</strong>
+         <a href="${videos}" style="color:#1a56db">Mira los videos</a>: conectarlo, tu primer
+         capítulo entero, y qué hacer si algo no funciona.
+       </p>
 
        <p style="margin:0 0 10px;font-size:14px">
          <a href="${guia}" style="color:#1a56db">Descargar la guía de instalación (PDF)</a>

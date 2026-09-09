@@ -116,7 +116,9 @@ router.post(
     limit: MAXIMO_BYTES,
   }),
   asyncHandler(async (req, res) => {
-    const nombre = String(req.get('X-Nombre-Archivo') ?? '').slice(0, 200) || null;
+    // Viene codificado porque una cabecera HTTP solo admite Latin-1 y estos
+    // archivos se llaman «Plantilla de tesis UNMSM (versión final).docx».
+    const nombre = decodificar(req.get('X-Nombre-Archivo'));
 
     try {
       const { estilos } = await projectService.guardarPlantilla({

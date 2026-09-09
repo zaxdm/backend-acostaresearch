@@ -408,6 +408,21 @@ function enMayuscula(frase) {
  * El aviso de «guárdala» no es una fórmula de cortesía: del token solo se
  * guarda su SHA-256, así que este correo es —junto al Claude del comprador— el
  * único sitio del mundo donde esa URL existe.
+ *
+ * EL ORDEN NO ES ESTÉTICO
+ * -----------------------
+ * Primero la URL, porque es lo irrecuperable. Y justo después los VIDEOS, por
+ * delante de los tres pasos escritos y del PDF.
+ *
+ * La razón está en las cuentas: de dieciséis licencias repartidas, tres no
+ * llegaron a abrir el conector nunca. A ese comprador no lo rescata un
+ * documento —el PDF ya existía cuando se perdieron— ni un enlace más abajo,
+ * después de que el correo ya haya dicho tres cosas. Los videos suben a botón y
+ * la guía baja a enlace secundario: no porque la guía sobre, sino porque quien
+ * la iba a leer la encuentra igual, y quien no, necesitaba otra cosa.
+ *
+ * Si alguien reordena esto, que sea con un número que diga que el orden nuevo
+ * funciona mejor. Este viene de los tres que se perdieron.
  */
 function licenseReady({ firstName, planName, connectorUrl, expiresAt, via }) {
   const panel = `${appUrl()}/perfil`;
@@ -434,12 +449,15 @@ function licenseReady({ firstName, planName, connectorUrl, expiresAt, via }) {
       // una línea partida a mano no se encuentra al buscar en la bandeja.
       'GUÁRDALA. Por seguridad no la almacenamos en claro, así que no podemos volver a enviártela. Si la pierdes, genera una nueva desde tu panel.',
       '',
-      'Cómo conectarla a Claude:',
+      'EMPIEZA POR AQUÍ — los videos, de cinco minutos:',
+      videos,
+      'Conectarlo, tu primer capítulo entero, y qué hacer si algo no funciona.',
+      '',
+      'Si prefieres leerlo, son tres pasos:',
       '  1. Abre Claude y entra en Configuración → Conectores.',
       '  2. Pulsa «Añadir conector personalizado» y pega la URL de arriba.',
       '  3. Escríbele «trabajemos mi tesis» y pídele que use el conector.',
       '',
-      `Videos: cómo conectarlo y cómo trabajar tu primer capítulo: ${videos}`,
       `Guía de instalación con capturas (PDF): ${guia}`,
       `Tu panel: ${panel}`,
       '',
@@ -463,9 +481,30 @@ function licenseReady({ firstName, planName, connectorUrl, expiresAt, via }) {
          volver a enviártela. Si la pierdes, generas una nueva desde tu panel en un segundo.
        </p>
 
-       <p style="margin:0 0 10px;font-size:15px;font-weight:650">Cómo conectarla a Claude</p>
+       <p style="margin:0 0 10px;font-size:15px;font-weight:650">Empieza por aquí</p>
+       <!-- Solo se enumera lo que existe de verdad en /tutoriales. La lista de
+            videos vive en la base de datos y la lleva el administrador, así que
+            prometer aquí uno que aún no está subido convierte este correo en la
+            primera decepción del producto. Al añadir el de las fuentes de
+            Scopus, esta línea y su gemela del texto plano se amplían. -->
+       <p style="margin:0 0 14px;font-size:14px;line-height:1.6;color:#52606d">
+         Cinco minutos de video: conectarlo, tu primer capítulo entero, y qué hacer si algo no
+         funciona.
+       </p>
+       <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 26px">
+         <tr>
+           <td style="border-radius:10px;background:#1a56db">
+             <a href="${videos}" style="display:inline-block;padding:13px 26px;font-size:15px;
+                       font-weight:650;color:#ffffff;text-decoration:none">Ver los videos</a>
+           </td>
+         </tr>
+       </table>
+
+       <p style="margin:0 0 10px;font-size:14px;font-weight:650;color:#52606d">
+         ¿Prefieres leerlo? Son tres pasos
+       </p>
        <table role="presentation" cellpadding="0" cellspacing="0" border="0"
-              style="margin:0 0 24px;font-size:14px;line-height:1.6;color:#52606d">
+              style="margin:0 0 22px;font-size:14px;line-height:1.6;color:#52606d">
          <tr>
            <td style="padding:0 10px 8px 0;color:#1a56db;font-weight:700">1</td>
            <td style="padding:0 0 8px">Abre Claude y entra en <strong>Configuración → Conectores</strong>.</td>
@@ -480,18 +519,11 @@ function licenseReady({ firstName, planName, connectorUrl, expiresAt, via }) {
          </tr>
        </table>
 
-       <p style="margin:0 0 14px;padding:14px 16px;background:#eef4ff;border-radius:10px;
-                 font-size:14px;line-height:1.6;color:#1a3a8f">
-         <strong>¿Prefieres verlo hecho?</strong>
-         <a href="${videos}" style="color:#1a56db">Mira los videos</a>: conectarlo, tu primer
-         capítulo entero, y qué hacer si algo no funciona.
+       <p style="margin:0 0 10px;font-size:13.5px">
+         <a href="${guia}" style="color:#8b95a6">Guía de instalación en PDF, con capturas</a>
        </p>
-
-       <p style="margin:0 0 10px;font-size:14px">
-         <a href="${guia}" style="color:#1a56db">Descargar la guía de instalación (PDF)</a>
-       </p>
-       <p style="margin:0 0 22px;font-size:14px">
-         <a href="${panel}" style="color:#1a56db">Abrir mi panel</a>
+       <p style="margin:0 0 22px;font-size:13.5px">
+         <a href="${panel}" style="color:#8b95a6">Abrir mi panel</a>
        </p>
 
        <p style="margin:0;font-size:13px;line-height:1.6;color:#8b95a6">

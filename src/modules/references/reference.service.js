@@ -190,6 +190,14 @@ async function correr({ completa }) {
     trabajo.activo = false;
     trabajo.fase = null;
     trabajo.terminado = new Date();
+
+    // El turno se suelta pase lo que pase. Un cerrojo que se queda puesto porque
+    // la pasada falló bloquearía la de mañana, que es justo la que haría falta.
+    try {
+      await referenceRepository.soltarElTurno();
+    } catch (fallo) {
+      logger.error({ err: fallo }, 'No se pudo soltar el turno de sincronización');
+    }
   }
 }
 
@@ -200,12 +208,23 @@ async function correr({ completa }) {
  * cuatrocientas peticiones a Zotero y varios minutos, y ninguna petición HTTP
  * sobrevive a eso —ni el proxy de delante, ni el navegador—. El panel pregunta
  * por el estado cada pocos segundos.
+ *
+ * Hay dos guardias, y hacen falta los dos. `trabajo.activo` es de este proceso y
+ * responde al instante. El turno en la base es el que ve al otro proceso: desde
+ * que la sincronización también se lanza sola por la noche, la variable en
+ * memoria del proceso web no sabe nada de lo que hace la tarea programada.
  */
-function sincronizar({ completa = false } = {}) {
+async function sincronizar({ completa = false } = {}) {
   exigirConfiguracion();
 
   if (trabajo.activo) {
     throw new ConflictError('Ya hay una sincronización en marcha. Espera a que termine.');
+  }
+
+  if (!(await referenceRepository.tomarElTurno())) {
+    throw new ConflictError(
+      'Hay otra sincronización en marcha fuera del panel —seguramente la nocturna—. Espera a que termine.',
+    );
   }
 
   Object.assign(trabajo, {

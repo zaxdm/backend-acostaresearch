@@ -26,7 +26,7 @@ const referenceController = {
    * aguanta eso. El panel pregunta por `/estado` cada pocos segundos.
    */
   sync: asyncHandler(async (req, res) => {
-    const trabajo = referenceService.sincronizar(req.body);
+    const trabajo = await referenceService.sincronizar(req.body);
 
     const mensaje = trabajo.completa
       ? 'Leyendo la biblioteca entera. Con 24.000 fuentes esto tarda varios minutos; ' +

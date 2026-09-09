@@ -954,6 +954,11 @@ model ReferenceSync {
   lastRunAt      DateTime?
   /// Cuántas fuentes quedaron tras la última pasada. Es lo que enseña el panel.
   lastCount      Int       @default(0)
+  /// Cerrojo entre procesos: cuándo entró quien está sincronizando ahora mismo.
+  /// Nulo = no hay nadie dentro. Lo toma un UPDATE condicional, que es atómico,
+  /// así que el panel y la tarea nocturna no pueden solaparse. Guarda la hora y
+  /// no un sí/no para poder soltarlo si el proceso murió a media pasada.
+  runningSince   DateTime?
 
   @@map("reference_sync")
 }

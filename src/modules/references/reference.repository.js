@@ -68,6 +68,44 @@ function guardarSync({ libraryVersion, lastCount }) {
 }
 
 /**
+ * Horas tras las cuales se da por muerto un cerrojo y se puede pisar.
+ *
+ * Una pasada completa de 48.000 fuentes ronda los veinte minutos. Tres horas
+ * son de sobra para la más lenta y lo bastante poco para que un proceso que
+ * murió a media noche no bloquee la sincronización del día siguiente.
+ */
+const TURNO_CADUCA_HORAS = 3;
+
+/**
+ * Toma el turno para sincronizar, si no lo tiene nadie.
+ *
+ * Es un UPDATE condicional a propósito: leer y luego escribir deja un hueco
+ * entre las dos operaciones por el que se cuelan dos procesos a la vez. Así la
+ * decisión la toma MySQL en una sola sentencia, y el que llega segundo ve cero
+ * filas cambiadas.
+ *
+ * Devuelve `true` solo si lo consiguió. Quien lo consigue está OBLIGADO a
+ * soltarlo, pase lo que pase.
+ */
+async function tomarElTurno() {
+  await estadoSync();
+
+  const cambiadas = await prisma.$executeRaw`
+    UPDATE reference_sync
+       SET runningSince = NOW(3)
+     WHERE id = 1
+       AND (runningSince IS NULL
+            OR runningSince < DATE_SUB(NOW(3), INTERVAL ${TURNO_CADUCA_HORAS} HOUR))
+  `;
+
+  return cambiadas === 1;
+}
+
+function soltarElTurno() {
+  return prisma.referenceSync.update({ where: { id: 1 }, data: { runningSince: null } });
+}
+
+/**
  * Guarda un lote de fuentes.
  *
  * Va en SQL crudo y no por Prisma porque `upsert` no sabe hacer esto en una
@@ -358,6 +396,8 @@ module.exports = {
   sinRepetidos,
   estadoSync,
   guardarSync,
+  tomarElTurno,
+  soltarElTurno,
   guardarLote,
   escribirGrupos,
   aplicarNotas,

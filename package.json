@@ -29,7 +29,8 @@
     "deploy": "git push && ssh acosta /opt/acostaresearch/desplegar.sh",
     "licenses:trimestre": "node scripts/pasar-a-trimestre.js",
     "backup:traer": "node scripts/traer-respaldo.js",
-    "licencias:avisar": "node scripts/avisar-caducidad.js"
+    "licencias:avisar": "node scripts/avisar-caducidad.js",
+    "corpus:sincronizar": "node scripts/sincronizar-zotero.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.123.0",

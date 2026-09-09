@@ -179,6 +179,19 @@ const ESQUEMA_GUARDAR_CAPITULO = fromJsonSchema({
   additionalProperties: false,
 });
 
+const ESQUEMA_REVISAR_EVIDENCIA = fromJsonSchema({
+  type: 'object',
+  properties: {
+    capitulo: {
+      type: 'string',
+      description:
+        'Clave del capítulo a revisar. Si lo omites se revisa todo lo escrito, que es lo ' +
+        'que conviene antes de entregar.',
+    },
+  },
+  additionalProperties: false,
+});
+
 const ESQUEMA_REDACTAR = fromJsonSchema({
   type: 'object',
   properties: {
@@ -529,6 +542,82 @@ function construirServidor(licencia) {
     },
   );
 
+  server.registerTool(
+    'revisar_evidencia',
+    {
+      title: 'Qué sostiene cada afirmación',
+      description:
+        'Repasa lo que el tesista lleva escrito y dice qué afirmaciones tienen fuente y ' +
+        'cuáles no. ÚSALA ANTES DE REDACTAR LA DISCUSIÓN: ahí es donde se contrasta lo ' +
+        'encontrado con la literatura, y contrastarlo de memoria es como se cuelan los ' +
+        'autores que no dijeron eso. También sirve como repaso antes de entregar. ' +
+        'Sin argumentos revisa todo; con "capitulo", solo ese.',
+      inputSchema: ESQUEMA_REVISAR_EVIDENCIA,
+    },
+    async ({ capitulo }) => {
+      await licenseService.recordUsage({ licenseId: licencia.id, tool: 'revisar_evidencia' });
+
+      const informe = await projectService.revisarEvidencia(
+        licencia.user.id,
+        licencia.productCode,
+        { capitulo: capitulo || null },
+      );
+
+      if (!informe) {
+        return texto(
+          'Todavía no hay ningún capítulo escrito que revisar. ' +
+            'Guarda lo redactado con "guardar_capitulo" y vuelve a intentarlo.',
+        );
+      }
+
+      const bloques = [];
+
+      for (const c of informe.capitulos) {
+        const lineas = [`── ${c.titulo}`];
+
+        lineas.push(`   Con fuente: ${c.conRespaldo.length} afirmaciones.`);
+
+        // Las citas escritas a mano van PRIMERO, aunque sean menos. Son las
+        // graves: parecen respaldadas y no lo están, así que ni el tesista ni
+        // el jurado tienen motivo para mirarlas dos veces.
+        if (c.citasAMano.length > 0) {
+          lineas.push('', `   CITAS SIN ENLAZAR (${c.citasAMano.length}) — revísalas una a una:`);
+          for (const a of c.citasAMano) lineas.push(`     · ${a.frase}`);
+        }
+
+        if (c.sinRespaldo.length > 0) {
+          lineas.push('', `   AFIRMACIONES SIN FUENTE (${c.sinRespaldo.length}):`);
+          for (const a of c.sinRespaldo) lineas.push(`     · ${a.frase}`);
+        }
+
+        bloques.push(lineas.join('\n'));
+      }
+
+      const t = informe.total;
+      const cierre =
+        t.citasAMano > 0
+          ? '\n\nLAS CITAS SIN ENLAZAR SON LO PRIMERO. Están escritas como «(Autor, año)» pero ' +
+            'no salen de ninguna ficha del servidor, así que nadie ha comprobado que existan. ' +
+            'Busca cada una con "buscar_fuentes": si aparece, cámbiala por su clave entre ' +
+            'corchetes y vuelve a guardar el capítulo. SI NO APARECE, DÍSELO AL TESISTA: puede ' +
+            'que esa referencia no exista, y un DOI que no lleva a ninguna parte lo comprueba ' +
+            'un jurado en diez segundos.'
+          : t.sinRespaldo > 0
+            ? '\n\nPara cada afirmación sin fuente: o le buscas una con "buscar_fuentes", o la ' +
+              'reescribes para que no afirme más de lo que podéis sostener. No la dejes como ' +
+              'está.'
+            : '\n\nTodo lo que afirma algo tiene de dónde agarrarse.';
+
+      return texto(
+        `Revisión de lo escrito:\n\n${bloques.join('\n\n')}\n\n` +
+          `Total: ${t.conRespaldo} con fuente · ${t.sinRespaldo} sin fuente · ` +
+          `${t.citasAMano} citas sin enlazar.${cierre}\n\n` +
+          'Esto dice si una afirmación tiene de dónde agarrarse. NO dice si es cierta, ni si ' +
+          'la fuente dice lo que la frase le atribuye: eso hay que leerlo.',
+      );
+    },
+  );
+
   // ── Redacción de un capítulo ─────────────────────────────────────────────
   server.registerTool(
     'redactar',
@@ -864,8 +953,14 @@ function construirServidor(licencia) {
           });
 
           return texto(
-            `En la biblioteca de Acosta no hay nada sobre «${tema}», así que busqué en el ` +
-              `catálogo abierto con «${enEspanol}»:\n\n${deFuera.join('\n\n')}\n\n` +
+            // «Ni en la de Acosta ni en la tuya», no «en la biblioteca»: si el
+            // tesista tiene fuentes subidas, tiene derecho a saber que también
+            // se miraron las suyas. Y evita que el asistente aprenda que «la
+            // biblioteca» significa siempre «la de Acosta», que es de donde
+            // salía luego atribuirle a Acosta fuentes que no había revisado.
+            `No hay nada sobre «${tema}» ni en la biblioteca de Acosta ni en la que subió el ` +
+              `tesista, así que busqué en el catálogo abierto con «${enEspanol}»:` +
+              `\n\n${deFuera.join('\n\n')}\n\n` +
               'AVISA DE QUE ESTAS NO ESTÁN REVISADAS POR ACOSTA: vienen de un catálogo ' +
               'abierto donde entra de todo, preprints y repositorios incluidos. El tesista ' +
               'debería comprobar dónde se publicó cada una antes de citarla. ' +
@@ -889,8 +984,37 @@ function construirServidor(licencia) {
           return lineas.join('\n');
         });
 
+        /**
+         * De dónde salió el conjunto, dicho en la PRIMERA línea.
+         *
+         * La marca por ficha —`[de tu biblioteca]`— no basta y se comprobó en
+         * uso: el encabezado decía «Fuentes de la biblioteca» y el mensaje de
+         * cuando no hay nada dice «la biblioteca de Acosta no tenía…», así que
+         * el asistente concluye que «la biblioteca» es la de Acosta y presenta
+         * como «revisada por Acosta» una fuente que subió el propio tesista de
+         * su export de Scopus.
+         *
+         * Eso no es un matiz de redacción: le atribuye a una fuente sin revisar
+         * la garantía por la que pagó. Se corrige en el encabezado, que es lo
+         * que el modelo usa para narrar el conjunto.
+         */
+        const propias = fuentes.filter((f) => f.propia).length;
+        const deLaCasa = fuentes.length - propias;
+
+        const procedencia =
+          propias > 0 && deLaCasa > 0
+            ? `${propias} de las que subió el tesista y ${deLaCasa} de la biblioteca de Acosta`
+            : propias > 0
+              ? 'de la biblioteca que subió EL PROPIO TESISTA, no de la de Acosta'
+              : 'de la biblioteca curada de Acosta';
+
         return texto(
-          `Fuentes de la biblioteca sobre «${tema}»:\n\n${fichas.join('\n\n')}\n\n` +
+          `Fuentes sobre «${tema}» (${procedencia}):\n\n${fichas.join('\n\n')}\n\n` +
+            'RESPETA LA PROCEDENCIA DE CADA UNA, que va marcada bajo su ficha. Las que dicen ' +
+            '«de tu biblioteca» las eligió y subió el tesista: son suyas y NO están revisadas ' +
+            'por Acosta, así que no se las presentes como si lo estuvieran. Las que dicen ' +
+            '«biblioteca de Acosta» sí pasaron por su criterio, y eso es justo lo que las ' +
+            'distingue.\n\n' +
             'CÓMO SE CITAN. Al redactar el capítulo, escribe la clave entre corchetes donde ' +
             'vaya la cita —así: «…afecta al rendimiento [AR97D22F86].»— y guarda el capítulo ' +
             'con esa marca puesta. Al armar el Word, el servidor la cambia por la cita en ' +

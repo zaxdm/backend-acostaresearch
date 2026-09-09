@@ -19,6 +19,7 @@ const almacen = require('./project.storage');
 const documento = require('./project.docx');
 const citas = require('./project.citas');
 const etapas = require('./project.etapas');
+const evidencia = require('./project.evidencia');
 const skillService = require('../skills/skill.service');
 const referenceService = require('../references/reference.service');
 const { guardarAvanceSchema, guardarCapituloSchema } = require('./project.schema');
@@ -291,6 +292,46 @@ async function armarWord(userId, productCode) {
 }
 
 /**
+ * Qué sostiene cada afirmación de la tesis.
+ *
+ * Lee los capítulos escritos y devuelve, por cada uno, qué se afirma con fuente
+ * y qué se afirma sin ella. `capitulo` acota a uno solo; sin él se revisa todo
+ * lo escrito.
+ */
+async function revisarEvidencia(userId, productCode, { capitulo = null } = {}) {
+  const [proyecto, catalogo] = await Promise.all([
+    projectRepository.buscar(userId, productCode),
+    skillService.listCatalog(productCode),
+  ]);
+
+  if (!proyecto) return null;
+
+  const conTexto = new Set(
+    proyecto.stages.filter((e) => (e.palabras ?? 0) > 0).map((e) => e.skillCode),
+  );
+
+  const capitulos = [];
+  for (const skill of catalogo) {
+    if (!conTexto.has(skill.code)) continue;
+    if (capitulo && skill.code !== capitulo) continue;
+
+    const texto = await almacen.leer(proyecto.id, skill.code);
+    if (texto && texto.trim() !== '') capitulos.push({ titulo: skill.displayName, texto });
+  }
+
+  if (capitulos.length === 0) return null;
+
+  // Se buscan las fuentes para poder decir CUÁL respalda cada afirmación, no
+  // solo que hay una. «Respaldado por la clave AR97D22F86» no le dice nada a
+  // nadie; «respaldado por Tinto (1975)» sí.
+  const claves = [...new Set(capitulos.flatMap((c) => citas.clavesDe(c.texto)))];
+  const fuentes = await referenceService.porClaves(claves, userId);
+  const porClave = new Map(fuentes.map((f) => [f.ref, f]));
+
+  return evidencia.revisar(capitulos, porClave);
+}
+
+/**
  * Los proyectos del comprador, ya cruzados con el catálogo.
  *
  * El cruce se hace aquí y no en la web a propósito: la web no tiene por qué
@@ -343,6 +384,7 @@ module.exports = {
   guardarAvance,
   guardarCapitulo,
   armarWord,
+  revisarEvidencia,
   siguientePaso,
   deUsuario,
 };

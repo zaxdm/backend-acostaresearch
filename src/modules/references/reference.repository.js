@@ -319,7 +319,31 @@ async function buscar({ palabras, productCode, ownerUserId = null, limite = 8 })
     ? 'AND (r.ownerUserId IS NULL OR r.ownerUserId = ?) '
     : 'AND r.ownerUserId IS NULL ';
 
-  const consulta = palabras.map((palabra) => '+' + palabra + '*').join(' ');
+  /**
+   * Dos formas de preguntar lo mismo, y se usan en este orden.
+   *
+   * ESTRICTA: `+cada* +palabra*` exige TODAS. Es la buena cuando acierta, porque
+   * lo que devuelve va del tema y no de una palabra suelta.
+   *
+   * FLOJA: sin los `+`, MySQL trata las palabras como opcionales y puntúa por
+   * cuántas y cuáles aparecen. Devuelve de más, así que solo se usa si la
+   * estricta se queda a cero.
+   *
+   * POR QUÉ HACE FALTA LA SEGUNDA
+   * -----------------------------
+   * Con las 24.000 fichas del fondo de la casa, exigirlas todas se sostiene:
+   * siempre hay algo que cumple. Con las trescientas que sube un tesista, no.
+   * Un tesista pide «employability of computer science graduates» —cuatro
+   * palabras— contra cinco fuentes suyas de las que ninguna lleva las cuatro, y
+   * la biblioteca responde cero pese a tener justo lo que buscaba.
+   *
+   * Y ese cero no es inofensivo: el conector sale entonces al catálogo abierto y
+   * le sirve fuentes SIN REVISAR, avisándole de que las verifique, teniendo en
+   * casa las que él mismo eligió. Es el peor desenlace posible del producto, y
+   * ocurría por una palabra de cuatro.
+   */
+  const consultaEstricta = palabras.map((palabra) => '+' + palabra + '*').join(' ');
+  const consultaFloja = palabras.map((palabra) => palabra + '*').join(' ');
 
   // La expresión va dos veces: una para filtrar y otra para puntuar. Ordenar
   // solo por año devolvía lo más reciente de entre lo que coincidía, y con seis
@@ -330,27 +354,37 @@ async function buscar({ palabras, productCode, ownerUserId = null, limite = 8 })
   // repetidas: con el límite justo, una respuesta de seis podría quedarse en
   // tres. El triple cubre de sobra lo que se ha visto duplicado.
   const margen = limite * 3;
-  const parametros = [
-    consulta,
-    consulta,
-    ...(productCode ? [productCode] : []),
-    ...(ownerUserId ? [ownerUserId] : []),
-    margen,
-  ];
 
-  const porIndice = await prisma.$queryRawUnsafe(
-    'SELECT r.*, MATCH(r.busqueda) AGAINST (? IN BOOLEAN MODE) AS relevancia ' +
-      'FROM `references` r ' +
-      'WHERE MATCH(r.busqueda) AGAINST (? IN BOOLEAN MODE) ' +
-      filtroProducto +
-      filtroDueño +
-      // Las suyas primero: es su tema y las eligió él. Después las de la casa,
-      // que llevan nota. Dentro de cada grupo manda la relevancia.
-      'ORDER BY (r.ownerUserId IS NULL), relevancia DESC, r.year DESC LIMIT ?',
-    ...parametros,
-  );
+  const porIndice = (consulta) =>
+    prisma.$queryRawUnsafe(
+      'SELECT r.*, MATCH(r.busqueda) AGAINST (? IN BOOLEAN MODE) AS relevancia ' +
+        'FROM `references` r ' +
+        'WHERE MATCH(r.busqueda) AGAINST (? IN BOOLEAN MODE) ' +
+        filtroProducto +
+        filtroDueño +
+        // Las suyas primero: es su tema y las eligió él. Después las de la casa,
+        // que llevan nota. Dentro de cada grupo manda la relevancia.
+        'ORDER BY (r.ownerUserId IS NULL), relevancia DESC, r.year DESC LIMIT ?',
+      consulta,
+      consulta,
+      ...(productCode ? [productCode] : []),
+      ...(ownerUserId ? [ownerUserId] : []),
+      margen,
+    );
 
-  if (porIndice.length > 0) return sinRepetidos(porIndice, limite);
+  const exactas = await porIndice(consultaEstricta);
+  if (exactas.length > 0) return sinRepetidos(exactas, limite);
+
+  // Nada cumplía con todas. Se repite pidiendo menos ANTES de darse por vencido:
+  // el siguiente paso, arriba en el conector, es salir al catálogo abierto, y
+  // hacerlo teniendo fuentes propias sin usar sería el peor cambio posible.
+  //
+  // Solo con dos palabras o más. Con una sola, la floja y la estricta preguntan
+  // lo mismo y esto sería repetir la consulta para nada.
+  if (palabras.length > 1) {
+    const aproximadas = await porIndice(consultaFloja);
+    if (aproximadas.length > 0) return sinRepetidos(aproximadas, limite);
+  }
 
   const porTexto = await prisma.reference.findMany({
     where: {

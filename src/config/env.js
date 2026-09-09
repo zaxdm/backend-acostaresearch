@@ -178,6 +178,14 @@ const schema = z.object({
   // Biblioteca de grupo, si el corpus vive en una en vez de en la personal.
   // Con valor, manda sobre ZOTERO_USER_ID.
   ZOTERO_GROUP_ID: vacioComoAusente(z.string().regex(/^[0-9]+$/, 'ZOTERO_GROUP_ID es numérico')),
+
+  // ── Búsqueda abierta en OpenAlex ────────────────────────────────────────
+  // El correo con el que se identifica el conector al buscar. No es cortesía:
+  // sin él, OpenAlex atiende por la cola lenta y una búsqueda tarda lo bastante
+  // como para que el tesista crea que el conector se colgó.
+  //
+  // Vacío = se usa MAIL_FROM, que ya es una dirección nuestra y real.
+  OPENALEX_MAILTO: vacioComoAusente(z.string()),
 });
 
 const parsed = schema.safeParse(process.env);

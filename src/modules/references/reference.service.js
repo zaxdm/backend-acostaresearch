@@ -4,6 +4,7 @@ const env = require('../../config/env');
 const logger = require('../../config/logger');
 const { ValidationError, ConflictError } = require('../../shared/errors/AppError');
 const zotero = require('./zotero.client');
+const openalex = require('./openalex.client');
 const mapper = require('./zotero.mapper');
 const referenceRepository = require('./reference.repository');
 
@@ -303,4 +304,64 @@ async function buscarParaLicencia({ tema, productCode, ownerUserId = null, cuant
 
 const listarParaPanel = (opciones) => referenceRepository.listarParaPanel(opciones);
 
-module.exports = { sincronizar, estado, buscarParaLicencia, listarParaPanel, cita };
+/**
+ * Busca en la literatura abierta, en vivo.
+ *
+ * QUÉ RESUELVE QUE NO RESOLVÍA EL FONDO DE LA CASA
+ * ------------------------------------------------
+ * El fondo cubre lo que se ha curado, y es casi todo en inglés porque sale de
+ * exportaciones de Scopus. Un tesista que pide antecedentes sobre su tema en el
+ * Perú recibía «no hay nada», y no porque no exista: porque no estaba ahí.
+ *
+ * Esto busca en OpenAlex: 327 millones de trabajos, en cualquier idioma, con
+ * filtro por país. Es la respuesta a la pregunta que hace un jurado —«¿y qué se
+ * ha estudiado sobre esto aquí?»— que antes no se podía contestar.
+ *
+ * NO SUSTITUYE AL FONDO, LO COMPLETA. Lo de la casa lleva la nota de Acosta y
+ * está revisado; esto es abierto y entra de todo, incluidos repositorios y
+ * preprints. Por eso la respuesta dice siempre de dónde viene cada cosa: si esa
+ * diferencia se difumina, el diferencial del producto se difumina con ella.
+ */
+async function buscarEnLaLiteratura({ tema, idioma, pais, desdeAnio, cuantas }) {
+  if (!tema || String(tema).trim().length < 3) {
+    throw new ValidationError('Dime sobre qué buscar, con al menos una palabra.');
+  }
+
+  const limite = Math.min(Math.max(Number(cuantas) || 6, 1), 15);
+
+  const { fuentes, total, caida } = await openalex.buscar({
+    tema: String(tema).trim(),
+    idioma: idioma || null,
+    pais: pais || null,
+    desdeAnio: desdeAnio || null,
+    cuantas: limite,
+  });
+
+  return {
+    caida,
+    total,
+    fuentes: fuentes.map((f) => ({
+      ...f,
+      // La cita se arma aquí y con los mismos campos separados que las del
+      // fondo: formatearla de memoria es donde se cuelan el año que no era y
+      // el DOI que no existe.
+      cita: cita({
+        authors: f.autores,
+        year: f.anio,
+        title: f.titulo,
+        source: f.revista,
+        doi: f.doi,
+        url: f.pdfLibre,
+      }),
+    })),
+  };
+}
+
+module.exports = {
+  sincronizar,
+  estado,
+  buscarParaLicencia,
+  buscarEnLaLiteratura,
+  listarParaPanel,
+  cita,
+};

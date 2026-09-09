@@ -44,6 +44,46 @@ const ESQUEMA_FUENTES = fromJsonSchema({
   additionalProperties: false,
 });
 
+const ESQUEMA_LITERATURA = fromJsonSchema({
+  type: 'object',
+  properties: {
+    tema: {
+      type: 'string',
+      minLength: 3,
+      description:
+        'Sobre qué buscar. AQUÍ SÍ VALE EL ESPAÑOL: esta base indexa Scielo, Redalyc y ' +
+        'repositorios latinoamericanos. Escribe el tema como lo diría el tesista.',
+    },
+    idioma: {
+      type: 'string',
+      enum: ['es', 'en', 'pt'],
+      description:
+        'Acota el idioma de los trabajos. Úsalo con «es» cuando el tesista quiera fuentes ' +
+        'que pueda leer sin traducir. Si lo omites, entran todos los idiomas.',
+    },
+    pais: {
+      type: 'string',
+      description:
+        'Código de dos letras del país de los autores: «pe» Perú, «co» Colombia, «mx» ' +
+        'México, «cl» Chile. ES LO QUE PIDE UN JURADO cuando pregunta qué se ha estudiado ' +
+        'sobre esto en el país. Sin él, entra la producción de todo el mundo.',
+    },
+    desdeAnio: {
+      type: 'integer',
+      minimum: 1900,
+      description: 'Solo trabajos publicados desde ese año. Útil para «los últimos cinco años».',
+    },
+    cuantas: {
+      type: 'integer',
+      minimum: 1,
+      maximum: 15,
+      description: 'Cuántas fuentes quieres. Por omisión, seis.',
+    },
+  },
+  required: ['tema'],
+  additionalProperties: false,
+});
+
 const ESQUEMA_REDACTAR = fromJsonSchema({
   type: 'object',
   properties: {
@@ -454,10 +494,14 @@ function construirServidor(licencia) {
           'ÚSALA SIEMPRE que haga falta citar: antecedentes, marco teórico, metodología o ' +
           'discusión. NO cites de memoria: los datos bibliográficos que no salen de aquí ' +
           'suelen tener el año o el DOI equivocados, y eso lo comprueba un jurado en segundos. ' +
-          'BUSCA EN INGLÉS: la biblioteca son artículos indexados en Scopus y Web of Science, ' +
-          'y sus títulos y resúmenes están en inglés. El tesista te escribe en español, así que ' +
-          'traduce tú el tema antes de buscar («validez de constructo» → «construct validity»). ' +
-          'Si en inglés no sale nada, prueba con sinónimos antes de darlo por perdido.',
+          'BUSCA AQUÍ EN INGLÉS: esta biblioteca son artículos indexados en Scopus y Web of ' +
+          'Science, y sus títulos y resúmenes están en inglés. El tesista te escribe en español, ' +
+          'así que traduce tú el tema antes de buscar («validez de constructo» → «construct ' +
+          'validity»). ' +
+          'Si aquí no hay nada, o el tesista pide antecedentes de su país o en español, usa ' +
+          '"buscar_en_la_literatura", que consulta 327 millones de trabajos en abierto y sí ' +
+          'entiende el español. Las de aquí llevan el criterio de Acosta; las de allí no, y eso ' +
+          'se dice.',
         inputSchema: ESQUEMA_FUENTES,
       },
       async ({ tema, cuantas }) => {
@@ -521,6 +565,104 @@ function construirServidor(licencia) {
       },
     );
   }
+
+  // ── Literatura abierta, en vivo ──────────────────────────────────────────
+  //
+  // POR QUÉ NO ES LA API DE SCOPUS
+  // ------------------------------
+  // Porque no se puede desde aquí. Elsevier ata el acceso real a la RED de una
+  // institución suscrita: desde la IP de este servidor no hay suscripción que
+  // valga, y lo que devolvería es metadato recortado o nada.
+  //
+  // OpenAlex cubre el mismo terreno sin clave ni cuota institucional, e indexa
+  // Scielo, Redalyc y repositorios latinoamericanos que Scopus ni tiene. Para
+  // un tesista peruano que necesita antecedentes nacionales eso no es un
+  // consuelo: es mejor que Scopus.
+  //
+  // Va siempre disponible, con corpus configurado o sin él: no depende de la
+  // biblioteca de la casa.
+  server.registerTool(
+    'buscar_en_la_literatura',
+    {
+      title: 'Buscar en la literatura publicada',
+      description:
+        'Busca en OpenAlex, el catálogo abierto de 327 millones de trabajos publicados. ' +
+        'EN VIVO, no en una biblioteca guardada. ' +
+        'ÚSALA cuando "buscar_fuentes" no encuentre nada, cuando el tesista pida ' +
+        'ANTECEDENTES DE SU PAÍS, o cuando quiera fuentes en español: aquí sí valen, porque ' +
+        'esta base indexa Scielo, Redalyc y repositorios latinoamericanos. ' +
+        'Devuelve autor, año, revista, DOI real, cuántas veces se ha citado y si hay PDF ' +
+        'gratis. NO cites de memoria ni completes datos que no vengan de aquí. ' +
+        'ESTAS FUENTES NO ESTÁN REVISADAS POR ACOSTA: el catálogo es abierto y entra de todo, ' +
+        'incluidos repositorios y preprints. Dilo al presentarlas, y recuerda que las de ' +
+        '"buscar_fuentes" sí llevan ese criterio.',
+      inputSchema: ESQUEMA_LITERATURA,
+    },
+    async ({ tema, idioma, pais, desdeAnio, cuantas }) => {
+      await licenseService.recordUsage({
+        licenseId: licencia.id,
+        tool: 'buscar_en_la_literatura',
+        prompt: tema,
+      });
+
+      const { fuentes, total, caida } = await referenceService.buscarEnLaLiteratura({
+        tema,
+        idioma,
+        pais,
+        desdeAnio,
+        cuantas,
+      });
+
+      // La búsqueda abierta de OpenAlex se pausa a veces mientras su servidor se
+      // recupera. No es culpa del tesista ni un fallo del conector, y decirlo
+      // así evita que se ponga a probar cosas creyendo que hizo algo mal.
+      if (caida) {
+        return texto(
+          'El catálogo abierto no está respondiendo ahora mismo. No es nada que hayas hecho ' +
+            'tú ni te falte configurar: es su servidor.\n\n' +
+            'Prueba de nuevo en un rato, o busca mientras en la biblioteca de Acosta con ' +
+            '"buscar_fuentes", traduciendo el tema al inglés.',
+        );
+      }
+
+      if (fuentes.length === 0) {
+        const acotado = [idioma ? 'idioma ' + idioma : null, pais ? 'país ' + pais : null]
+          .filter(Boolean)
+          .join(' y ');
+
+        return texto(
+          `No hay trabajos sobre «${tema}»${acotado ? ' con ' + acotado : ''}.${N}${N}` +
+            'Antes de darlo por perdido: quita el filtro de país o de idioma y vuelve a ' +
+            'buscar, o prueba con sinónimos. Si de verdad no hay nada, DÍSELO AL TESISTA ' +
+            'TAL CUAL: que su tema esté poco estudiado es un hallazgo que va en la ' +
+            'justificación, no un problema que se tape citando de memoria.',
+        );
+      }
+
+      const fichas = fuentes.map((f, i) => {
+        const lineas = [`${i + 1}. ${f.cita}`];
+
+        const señas = [];
+        if (f.citas > 0) señas.push(`citado ${f.citas} veces`);
+        if (f.pdfLibre) señas.push('PDF gratis');
+        if (f.idioma) señas.push(`en ${f.idioma}`);
+        if (señas.length > 0) lineas.push(`   [${señas.join(' · ')}]`);
+
+        if (f.resumen) lineas.push(`   Resumen: ${f.resumen.slice(0, 400)}`);
+        return lineas.join('\n');
+      });
+
+      const cuantosHay = total > fuentes.length ? ` (hay ${total} en total)` : '';
+
+      return texto(
+        `Literatura publicada sobre «${tema}»${cuantosHay}:\n\n${fichas.join('\n\n')}\n\n` +
+          'Cita EXACTAMENTE como están escritas, sin cambiar años, autores ni DOIs, y sin ' +
+          'traducir los títulos: en la bibliografía va el título original. ' +
+          'Y DI DE DÓNDE VIENEN: son del catálogo abierto, no de la biblioteca revisada de ' +
+          'Acosta. El tesista debería comprobar dónde se publicó cada una antes de citarla.',
+      );
+    },
+  );
 
   return server;
 }

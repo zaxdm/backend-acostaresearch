@@ -67,7 +67,24 @@ const propiasService = {
    * comprador sin saber si funcionó.
    */
   async importar({ userId, buffer }) {
-    if (!buffer || buffer.length === 0) {
+    /**
+     * Un tipo que no sabemos leer no llega como archivo vacío: no llega.
+     *
+     * `express.raw` solo construye el Buffer si el `Content-Type` está en la
+     * lista; con cualquier otro deja `req.body` como un objeto normal y aquí no
+     * hay nada que mirar. El caso real es el PDF —quien tiene una carpeta de
+     * artículos prueba a soltar uno, que es lo razonable— y decirle «el archivo
+     * llegó vacío» le hace pensar que su PDF está roto.
+     */
+    if (!Buffer.isBuffer(buffer)) {
+      throw new ValidationError(
+        'Ese tipo de archivo todavía no lo leemos. Aquí van los EXPORTS de la base de datos ' +
+          '—CSV, RIS o BibTeX—, no los PDF de los artículos: en Scopus es el botón «Export», ' +
+          'no «Download».',
+      );
+    }
+
+    if (buffer.length === 0) {
       throw new ValidationError('El archivo llegó vacío.');
     }
 

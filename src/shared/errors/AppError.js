@@ -18,9 +18,35 @@ class AppError extends Error {
   }
 }
 
+/**
+ * Datos que no valen, con statusCode 422.
+ *
+ * ADMITE LAS DOS FORMAS DE LLAMARLO, y no por comodidad.
+ *
+ * Nació para el middleware de validación, que tiene una LISTA de problemas por
+ * campo y ningún mensaje que escribir, así que `details` quedó primero. Pero
+ * casi todo el que lo usa a mano tiene lo contrario: una sola frase escrita para
+ * que la lea una persona —«eso es un .doc antiguo, guárdalo como .docx»— y
+ * ningún detalle por campo.
+ *
+ * Esos escribían `new ValidationError('su frase')` y la frase aterrizaba en
+ * `details`, donde nadie la lee: al tesista le salía «Los datos enviados no son
+ * válidos», que no dice qué pasó ni qué hacer. Siete sitios del código lo hacían
+ * —había hasta un comentario prometiendo que el mensaje «se pasa tal cual»— y
+ * ninguno fallaba de forma visible: el error salía, solo que mudo.
+ *
+ * Se arregla aquí y no en los siete porque la firma era la trampa. Una cadena
+ * suelta es un mensaje; un array o un objeto son detalles.
+ */
 class ValidationError extends AppError {
-  constructor(details, message = 'Los datos enviados no son válidos.') {
-    super(message, { statusCode: 422, code: ERROR_CODES.VALIDATION_ERROR, details });
+  constructor(detallesOMensaje, message) {
+    const esMensaje = typeof detallesOMensaje === 'string';
+
+    super(message ?? (esMensaje ? detallesOMensaje : 'Los datos enviados no son válidos.'), {
+      statusCode: 422,
+      code: ERROR_CODES.VALIDATION_ERROR,
+      details: esMensaje ? undefined : detallesOMensaje,
+    });
   }
 }
 

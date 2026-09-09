@@ -200,6 +200,21 @@ const discountService = {
       discountUsdCents: rebajaDolares,
       finalPriceCents: plan.priceCents - rebajaSoles,
       finalPriceUsdCents: plan.priceUsdCents ? plan.priceUsdCents - rebajaDolares : null,
+      /**
+       * Hasta cuándo vale, y cuántos canjes le quedan.
+       *
+       * Se devuelven para que el comprador vea el plazo mientras decide. Es la
+       * única urgencia que se le puede enseñar sin mentirle: no la marca un
+       * reloj de la pantalla, la marcan estas dos columnas, y cuando se cumplen
+       * este mismo método deja de resolver el código. Un contador que cuenta
+       * hacia algo que de verdad ocurre.
+       *
+       * Nulos cuando no hay plazo: el modal entonces no enseña nada, que es lo
+       * correcto. Inventarle una cuenta atrás a un código que no caduca sería
+       * exactamente lo que esto viene a evitar.
+       */
+      expiresAt: registro.expiresAt,
+      usesLeft: registro.maxUses > 0 ? registro.maxUses - registro.usedCount : null,
     };
   },
 

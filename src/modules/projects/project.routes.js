@@ -12,6 +12,24 @@ const { PlantillaNoValida, MAXIMO_BYTES } = require('./project.plantilla');
 const router = Router();
 
 /**
+ * El nombre del archivo que subió, para poder enseñárselo.
+ *
+ * Nunca se usa para escribir en disco —eso va por el identificador del
+ * proyecto—, así que aquí no hay riesgo de ruta; lo único que importa es que un
+ * nombre mal codificado no tumbe la subida de una plantilla que sí es válida.
+ */
+function decodificar(cabecera) {
+  const bruto = String(cabecera ?? '').slice(0, 400);
+  if (bruto === '') return null;
+
+  try {
+    return decodeURIComponent(bruto).slice(0, 200);
+  } catch {
+    return bruto.slice(0, 200);
+  }
+}
+
+/**
  * El proyecto es de quien lo escribe.
  *
  * Todas las rutas trabajan sobre `req.user.id` y ninguna acepta de quién por

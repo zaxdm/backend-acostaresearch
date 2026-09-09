@@ -122,6 +122,20 @@ const schema = z.object({
   // son la prueba de un cobro y hay que poder releerlos meses después.
   PROOFS_DIR: z.string().default(path.resolve(__dirname, '../../storage/comprobantes')),
 
+  // ── Los capítulos escritos ──────────────────────────────────────────────
+  // Dónde se guarda el texto de la tesis de cada comprador.
+  //
+  // EN DISCO Y NO EN LA BASE DE DATOS, y no es una preferencia. La base va por
+  // el plan Dev de un proveedor compartido y ya pesa 171 MB, de los cuales 170
+  // son el corpus bibliográfico. Una tesis completa ronda el medio mega; dos
+  // centenares de tesistas serían cien megas más, encima de una base que ya
+  // está donde está. En disco hay 34 GB libres.
+  //
+  // Vacío = al lado de los comprobantes, que en producción es
+  // /var/lib/acostaresearch. Eso lo mete en el respaldo diario sin tener que
+  // acordarse de nada.
+  CAPITULOS_DIR: vacioComoAusente(z.string()),
+
   // ── Guía de instalación ─────────────────────────────────────────────────
   // Dónde está el PDF que se le enlaza al comprador, y con qué dirección se le
   // enlaza.
@@ -263,6 +277,11 @@ const env = Object.freeze({
     titular: raw.YAPE_TITULAR ?? null,
     numero: raw.YAPE_NUMERO ?? null,
   },
+  // Se cuelga de donde estén los comprobantes en vez de pedir otra variable.
+  // Así, el día que se mueva el almacenamiento persistente, esto se mueve con
+  // él y nadie tiene que acordarse de que existía una segunda ruta.
+  capitulosDir:
+    raw.CAPITULOS_DIR ?? path.join(path.dirname(raw.PROOFS_DIR), 'capitulos'),
   // El corpus solo se activa con clave y con una biblioteca a la que apuntar.
   zoteroEnabled: Boolean(raw.ZOTERO_API_KEY && (raw.ZOTERO_GROUP_ID || raw.ZOTERO_USER_ID)),
   // La ruta de la biblioteca dentro de la API. Un grupo manda sobre la cuenta

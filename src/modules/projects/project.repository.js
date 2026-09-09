@@ -17,6 +17,8 @@ const etapaSelect = {
   estado: true,
   resumen: true,
   datos: true,
+  palabras: true,
+  textoAt: true,
   updatedAt: true,
 };
 
@@ -66,11 +68,17 @@ async function asegurar(userId, productCode, cambios = {}) {
  * marca el capítulo como LISTO sin mandar resumen no puede llevarse por delante
  * el resumen que había.
  */
-async function guardarEtapa(projectId, skillCode, { estado, resumen, datos } = {}) {
+async function guardarEtapa(
+  projectId,
+  skillCode,
+  { estado, resumen, datos, palabras, textoAt } = {},
+) {
   const limpio = {};
   if (estado !== undefined && estado !== null) limpio.estado = estado;
   if (resumen !== undefined && resumen !== null) limpio.resumen = resumen;
   if (datos !== undefined && datos !== null) limpio.datos = datos;
+  if (palabras !== undefined && palabras !== null) limpio.palabras = palabras;
+  if (textoAt !== undefined && textoAt !== null) limpio.textoAt = textoAt;
 
   return prisma.projectStage.upsert({
     where: { projectId_skillCode: { projectId, skillCode } },
@@ -92,4 +100,14 @@ function listarDeUsuario(userId) {
   });
 }
 
-module.exports = { buscar, asegurar, guardarEtapa, listarDeUsuario };
+/** El nombre del tesista, para la portada del Word. */
+async function nombreDe(userId) {
+  const usuario = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { firstName: true, lastName: true },
+  });
+  if (!usuario) return null;
+  return [usuario.firstName, usuario.lastName].filter(Boolean).join(' ') || null;
+}
+
+module.exports = { buscar, asegurar, guardarEtapa, listarDeUsuario, nombreDe };

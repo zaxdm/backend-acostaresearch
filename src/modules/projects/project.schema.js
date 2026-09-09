@@ -33,4 +33,32 @@ const guardarAvanceSchema = z.object({
   universidad: z.string().trim().max(160).optional(),
 });
 
-module.exports = { guardarAvanceSchema, ESTADOS };
+/**
+ * Cuánto texto de capítulo entra en una sola llamada.
+ *
+ * El cuerpo de toda petición está limitado a 100 KB en `app.js`, y ese límite
+ * protege al servidor de que le manden cualquier cosa. Un capítulo de tesis
+ * puede pasar de ahí, así que se manda por partes en vez de abrir el límite: un
+ * tope más alto valdría para todo el que llame a la puerta, y esto solo lo
+ * necesita el que ya pagó.
+ *
+ * Treinta mil caracteres son unas cinco mil palabras: un capítulo entero de los
+ * normales cabe en una sola llamada, y los largos, en dos o tres.
+ */
+const MAXIMO_POR_LLAMADA = 30_000;
+
+const guardarCapituloSchema = z.object({
+  capitulo: z.string().trim().min(1).max(64),
+  texto: z
+    .string()
+    .min(1, 'No mandaste texto.')
+    .max(
+      MAXIMO_POR_LLAMADA,
+      `Cada envío admite ${MAXIMO_POR_LLAMADA} caracteres. Manda el capítulo por partes: ` +
+        'la primera sin «anadir», y las siguientes con «anadir» en verdadero.',
+    ),
+  /** Verdadero = va detrás de lo que ya había. Falso o ausente = lo reemplaza. */
+  anadir: z.boolean().optional(),
+});
+
+module.exports = { guardarAvanceSchema, guardarCapituloSchema, ESTADOS, MAXIMO_POR_LLAMADA };

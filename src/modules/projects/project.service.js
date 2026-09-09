@@ -14,8 +14,10 @@
  */
 
 const projectRepository = require('./project.repository');
+const almacen = require('./project.storage');
+const documento = require('./project.docx');
 const skillService = require('../skills/skill.service');
-const { guardarAvanceSchema } = require('./project.schema');
+const { guardarAvanceSchema, guardarCapituloSchema } = require('./project.schema');
 
 /** Cómo se ve cada estado en el texto que recibe el asistente. */
 const MARCAS = {
@@ -118,6 +120,77 @@ async function siguientePaso(userId, productCode) {
 }
 
 /**
+ * Guarda el texto de un capítulo.
+ *
+ * El texto va a disco y en la base solo queda cuánto ocupa y de cuándo es. Ver
+ * `project.storage` para el porqué.
+ */
+async function guardarCapitulo({ userId, productCode, ...entrada }) {
+  const datos = guardarCapituloSchema.parse(entrada);
+
+  const proyecto = await projectRepository.asegurar(userId, productCode);
+  const { palabras } = await almacen.guardar(proyecto.id, datos.capitulo, datos.texto, {
+    anadir: datos.anadir === true,
+  });
+
+  // El capítulo pasa a EN_CURSO por escribir en él, pero nunca a LISTO: darlo
+  // por bueno es del tesista. Y si ya estaba LISTO no se rebaja, porque volver
+  // a tocar un capítulo cerrado para corregir una coma no lo reabre.
+  const etapaActual = await projectRepository.buscar(userId, productCode);
+  const previa = (etapaActual?.stages ?? []).find((e) => e.skillCode === datos.capitulo);
+
+  const etapa = await projectRepository.guardarEtapa(proyecto.id, datos.capitulo, {
+    estado: previa?.estado === 'LISTO' ? undefined : 'EN_CURSO',
+    palabras,
+    textoAt: new Date(),
+  });
+
+  return { palabras: etapa.palabras ?? palabras };
+}
+
+/**
+ * El Word con todo lo escrito hasta ahora.
+ *
+ * Solo entran los capítulos que tienen texto, en el orden del método. Devuelve
+ * null si no hay ni uno: un documento con la portada y nada más parece un fallo
+ * del servidor y no lo es.
+ */
+async function armarWord(userId, productCode) {
+  const [proyecto, catalogo, nombre] = await Promise.all([
+    projectRepository.buscar(userId, productCode),
+    skillService.listCatalog(productCode),
+    projectRepository.nombreDe(userId),
+  ]);
+
+  if (!proyecto) return null;
+
+  const conTexto = new Set(
+    proyecto.stages.filter((e) => (e.palabras ?? 0) > 0).map((e) => e.skillCode),
+  );
+
+  const capitulos = [];
+  for (const skill of catalogo) {
+    if (!conTexto.has(skill.code)) continue;
+    const texto = await almacen.leer(proyecto.id, skill.code);
+    if (texto && texto.trim() !== '') {
+      capitulos.push({ titulo: skill.displayName, texto });
+    }
+  }
+
+  if (capitulos.length === 0) return null;
+
+  const buffer = await documento.armar({
+    tema: proyecto.tema,
+    carrera: proyecto.carrera,
+    universidad: proyecto.universidad,
+    nombre,
+    capitulos,
+  });
+
+  return { buffer, nombreArchivo: documento.nombreDeArchivo(proyecto.tema), capitulos: capitulos.length };
+}
+
+/**
  * Los proyectos del comprador, ya cruzados con el catálogo.
  *
  * El cruce se hace aquí y no en la web a propósito: la web no tiene por qué
@@ -140,6 +213,7 @@ async function deUsuario(userId) {
           displayName: skill.displayName,
           estado: etapa?.estado ?? 'PENDIENTE',
           resumen: etapa?.resumen ?? null,
+          palabras: etapa?.palabras ?? 0,
           updatedAt: etapa?.updatedAt ?? null,
         };
       });
@@ -163,4 +237,11 @@ async function deUsuario(userId) {
   );
 }
 
-module.exports = { contexto, guardarAvance, siguientePaso, deUsuario };
+module.exports = {
+  contexto,
+  guardarAvance,
+  guardarCapitulo,
+  armarWord,
+  siguientePaso,
+  deUsuario,
+};

@@ -137,6 +137,35 @@ const ESQUEMA_GUARDAR_AVANCE = fromJsonSchema({
   additionalProperties: false,
 });
 
+const ESQUEMA_GUARDAR_CAPITULO = fromJsonSchema({
+  type: 'object',
+  properties: {
+    capitulo: {
+      type: 'string',
+      description: 'Clave del capítulo, tal como aparece en listar_capitulos.',
+    },
+    texto: {
+      type: 'string',
+      minLength: 1,
+      maxLength: 30000,
+      description:
+        'El texto del capítulo tal y como va a la tesis, en Markdown: ## para los ' +
+        'subtítulos y párrafos separados por una línea en blanco. NADA de comentarios ' +
+        'tuyos, ni «aquí tienes», ni notas entre corchetes: esto se convierte en el Word ' +
+        'que el tesista entrega. Si pasa de 30.000 caracteres, mándalo por partes.',
+    },
+    anadir: {
+      type: 'boolean',
+      description:
+        'Verdadero para pegarlo detrás de lo que ya había, en vez de reemplazarlo. ' +
+        'Úsalo para las partes segunda y siguientes de un capítulo largo. ' +
+        'Si el tesista corrigió el capítulo entero, mándalo completo SIN esta marca.',
+    },
+  },
+  required: ['capitulo', 'texto'],
+  additionalProperties: false,
+});
+
 const ESQUEMA_REDACTAR = fromJsonSchema({
   type: 'object',
   properties: {
@@ -426,6 +455,59 @@ function construirServidor(licencia) {
             (error?.issues?.[0]?.message ?? 'error del servidor') +
             '. Vuelve a intentarlo; si insiste, sigue trabajando y avísale de que este ' +
             'avance no ha quedado guardado.',
+        );
+      }
+    },
+  );
+
+  server.registerTool(
+    'guardar_capitulo',
+    {
+      title: 'Guardar el capítulo escrito',
+      description:
+        'Guarda el texto de un capítulo en el servidor, para que el tesista se lo pueda ' +
+        'descargar en Word con todos los demás, en orden y con su portada. ' +
+        'GUÁRDALO EN CUANTO el tesista dé por bueno lo redactado, sin que te lo pida: no ' +
+        'sabe que esto existe, y lo que no se guarde aquí lo tendrá que copiar y pegar él. ' +
+        'Manda el texto limpio, sin comentarios tuyos.',
+      inputSchema: ESQUEMA_GUARDAR_CAPITULO,
+    },
+    async (entrada) => {
+      await licenseService.recordUsage({ licenseId: licencia.id, tool: 'guardar_capitulo' });
+
+      const skill = await skillService.findByCode(entrada.capitulo);
+      if (!skill || !skillService.perteneceAlGrupo(skill, licencia.productCode)) {
+        return texto(
+          `No existe ningún capítulo con la clave "${entrada.capitulo}". ` +
+            'Usa listar_capitulos para ver las claves válidas. No se ha guardado nada.',
+        );
+      }
+
+      try {
+        const { palabras } = await projectService.guardarCapitulo({
+          userId: licencia.user.id,
+          productCode: licencia.productCode,
+          ...entrada,
+        });
+
+        return texto(
+          `Guardado. «${skill.displayName}» lleva ${palabras} palabras.\n\n` +
+            'Dile que ya puede descargar su tesis en Word desde su panel, en ' +
+            'acostaresearch.com/perfil, y que sale con todos los capítulos que llevéis.',
+        );
+      } catch (error) {
+        logger.error(
+          { err: error, licenseId: licencia.id },
+          'No se pudo guardar el texto del capítulo',
+        );
+        // Decirle «guardado» cuando no se guardó sería lo peor que puede pasar
+        // aquí: el tesista cerraría la conversación creyendo que su capítulo
+        // está a salvo.
+        return texto(
+          'NO se pudo guardar: ' +
+            (error?.issues?.[0]?.message ?? 'error del servidor') +
+            '. AVÍSALE de que este capítulo no ha quedado guardado en el servidor y que ' +
+            'no cierre la conversación sin copiarlo.',
         );
       }
     },

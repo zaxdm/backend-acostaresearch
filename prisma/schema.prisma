@@ -1089,6 +1089,14 @@ model ProjectStage {
   /// Lo mismo pero estructurado, cuando lo haya.
   datos   Json?
 
+  /// Cuántas palabras tiene el capítulo escrito, y cuándo se guardó.
+  ///
+  /// El TEXTO no está aquí: vive en disco, porque esta base va en un plan
+  /// compartido que ya pesa 171 MB. Aquí solo queda lo que hace falta para
+  /// enseñarlo en el panel sin abrir un archivo por capítulo.
+  palabras Int       @default(0)
+  textoAt  DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

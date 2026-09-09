@@ -141,7 +141,12 @@ const ESQUEMA_GUARDAR_AVANCE = fromJsonSchema({
         'los campos se usan.\n\n' +
         'tema-y-delimitacion: tema, poblacion, ambito, periodo.\n' +
         'problema-y-objetivos: problemaGeneral, objetivoGeneral, objetivosEspecificos ' +
-        '(lista), hipotesis (lista), variables (lista).\n\n' +
+        '(lista), hipotesis (lista), variables (lista).\n' +
+        'metodologia: enfoque, diseno, nivel, muestra, muestreo, tecnica, instrumento, ' +
+        'analisis (lista).\n' +
+        'instrumento-investigacion: nombre, dimensiones (lista), items, escala, validez, ' +
+        'confiabilidad.\n' +
+        'analisis-datos-rstudio: pruebas (lista), software, hallazgos (lista).\n\n' +
         'Los capítulos que no salen aquí no llevan campos: para esos basta el resumen. ' +
         'Manda solo lo que se haya fijado; lo que no mandes se queda como estaba.',
       additionalProperties: true,

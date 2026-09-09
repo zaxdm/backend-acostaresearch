@@ -201,3 +201,82 @@ test('un objetivo hecho solo de palabras vacías no se marca', () => {
   // cotejar. Marcarlo sería inventarse un hallazgo.
   assert.equal(auditoria.apareceEn('Determinar', 'cualquier texto'), true);
 });
+
+// ── La cadena metodología → instrumento → análisis ──────────────────────────
+//
+// Es la que un jurado recorre entera, y la que más se rompe por el medio:
+// cada capítulo se escribe semanas después del anterior.
+
+function conDatos(porEtapa) {
+  return auditar({
+    etapas: Object.entries(porEtapa).map(([skillCode, datos]) => ({
+      skillCode,
+      estado: 'LISTO',
+      palabras: 500,
+      datos,
+    })),
+    capitulos: Object.keys(porEtapa).map((code) => ({ code, titulo: code, texto: 'Texto.' })),
+  });
+}
+
+test('una variable que el instrumento no mide se señala', () => {
+  const r = conDatos({
+    'problema-y-objetivos': {
+      objetivoGeneral: 'Determinar los factores económicos y el clima institucional',
+      variables: ['factores económicos', 'clima institucional'],
+    },
+    'instrumento-investigacion': {
+      nombre: 'Cuestionario de deserción',
+      dimensiones: ['factores económicos familiares'],
+    },
+  });
+
+  assert.match(mensajes(r), /clima institucional.*no aparece entre las dimensiones/);
+  assert.ok(!/«factores económicos» no aparece entre las dimensiones/.test(mensajes(r)));
+});
+
+test('un enfoque cualitativo con pruebas estadísticas es grave', () => {
+  const r = conDatos({
+    metodologia: { enfoque: 'Cualitativo', analisis: [] },
+    'analisis-datos-rstudio': { pruebas: ['Alfa de Cronbach', 'Regresión lineal'] },
+  });
+
+  assert.equal(r.graves, 1);
+  assert.match(mensajes(r), /Una de las dos cosas no es la que se hizo/);
+});
+
+test('un enfoque cuantitativo con pruebas estadísticas no dice nada', () => {
+  const r = conDatos({
+    metodologia: { enfoque: 'Cuantitativo', analisis: ['Regresión lineal'] },
+    'analisis-datos-rstudio': { pruebas: ['Regresión lineal múltiple'] },
+  });
+
+  assert.equal(r.graves, 0);
+});
+
+test('una prueba prometida y no realizada se señala', () => {
+  const r = conDatos({
+    metodologia: { enfoque: 'Cuantitativo', analisis: ['Regresión logística', 'Alfa de Cronbach'] },
+    'analisis-datos-rstudio': { pruebas: ['Alfa de Cronbach'] },
+  });
+
+  assert.match(mensajes(r), /Regresión logística.*no aparece entre las pruebas/);
+});
+
+test('el instrumento llamado de dos maneras distintas se señala', () => {
+  const r = conDatos({
+    metodologia: { enfoque: 'Cuantitativo', instrumento: 'Cuestionario de deserción académica' },
+    'instrumento-investigacion': { nombre: 'Escala de clima institucional' },
+  });
+
+  assert.match(mensajes(r), /llámalo igual en los dos sitios/);
+});
+
+test('el mismo instrumento nombrado igual no dice nada', () => {
+  const r = conDatos({
+    metodologia: { enfoque: 'Cuantitativo', instrumento: 'Cuestionario de deserción académica' },
+    'instrumento-investigacion': { nombre: 'Cuestionario de deserción académica (versión final)' },
+  });
+
+  assert.equal(r.hallazgos.length, 0);
+});

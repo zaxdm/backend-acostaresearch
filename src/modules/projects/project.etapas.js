@@ -83,6 +83,103 @@ const ETAPAS = {
      */
     necesita: [{ etapa: 'tema-y-delimitacion', campos: ['tema', 'poblacion'] }],
   },
+
+  metodologia: {
+    campos: {
+      enfoque: {
+        titulo: 'Enfoque',
+        pista: 'Cuantitativo, cualitativo o mixto. Tal cual, sin adornos.',
+      },
+      diseno: {
+        titulo: 'Diseño',
+        pista: 'No experimental, cuasiexperimental, fenomenológico…',
+      },
+      nivel: {
+        titulo: 'Nivel o alcance',
+        pista: 'Descriptivo, correlacional, explicativo.',
+      },
+      muestra: {
+        titulo: 'Muestra',
+        pista: 'Cuántos y de dónde. «120 estudiantes de la Facultad de Educación».',
+      },
+      muestreo: {
+        titulo: 'Muestreo',
+        pista: 'Probabilístico, por conveniencia, por saturación…',
+      },
+      tecnica: {
+        titulo: 'Técnica',
+        pista: 'Encuesta, entrevista, observación, análisis documental.',
+      },
+      instrumento: {
+        titulo: 'Instrumento previsto',
+        pista: 'Cómo se llama lo que se va a aplicar: «cuestionario de deserción».',
+      },
+      analisis: {
+        titulo: 'Análisis previsto',
+        lista: true,
+        pista: 'Qué pruebas se piensan hacer. Una por línea.',
+      },
+    },
+    /**
+     * La metodología sin objetivos ni variables se escribe a ciegas: se acaba
+     * eligiendo un diseño que no sirve para responder lo que se preguntó.
+     */
+    necesita: [
+      { etapa: 'tema-y-delimitacion', campos: ['poblacion'] },
+      { etapa: 'problema-y-objetivos', campos: ['objetivoGeneral', 'variables'] },
+    ],
+  },
+
+  'instrumento-investigacion': {
+    campos: {
+      nombre: {
+        titulo: 'Nombre del instrumento',
+        pista: 'El mismo que se anunció en metodología.',
+      },
+      dimensiones: {
+        titulo: 'Dimensiones',
+        lista: true,
+        pista: 'Las que mide. Deberían cubrir las variables declaradas.',
+      },
+      items: {
+        titulo: 'Número de ítems',
+        pista: 'Cuántas preguntas o reactivos tiene.',
+      },
+      escala: {
+        titulo: 'Escala',
+        pista: 'Likert de cinco puntos, dicotómica, abierta…',
+      },
+      validez: {
+        titulo: 'Validez',
+        pista: 'Cómo se validó: juicio de expertos, V de Aiken…',
+      },
+      confiabilidad: {
+        titulo: 'Confiabilidad',
+        pista: 'La prueba y su valor: «alfa de Cronbach 0,87».',
+      },
+    },
+    necesita: [{ etapa: 'metodologia', campos: ['enfoque', 'tecnica'] }],
+  },
+
+  'analisis-datos-rstudio': {
+    campos: {
+      pruebas: {
+        titulo: 'Pruebas realizadas',
+        lista: true,
+        pista: 'Las que de verdad se corrieron, no las que se pensaban correr.',
+      },
+      software: {
+        titulo: 'Software',
+        pista: 'R, SPSS, JASP…',
+      },
+      hallazgos: {
+        titulo: 'Hallazgos principales',
+        lista: true,
+        pista: 'Uno por objetivo específico, en una línea cada uno.',
+      },
+    },
+    necesita: [{ etapa: 'metodologia', campos: ['enfoque', 'analisis'] }],
+  },
 };
 
 /** Los campos que admite una etapa, o null si esa etapa no está registrada. */

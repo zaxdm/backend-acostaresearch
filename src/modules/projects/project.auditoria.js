@@ -149,6 +149,68 @@ function auditar({ proyecto, catalogo, etapas, capitulos, evidencia, citasRotas 
     });
   }
 
+  // ── 2b. Metodología → instrumento → análisis ───────────────────────────
+  //
+  // La cadena que un jurado recorre entera: se dijo que se iba a medir X con
+  // tal técnica, el instrumento tiene que medir X, y el análisis tiene que ser
+  // el que corresponde a ese enfoque. Se rompe por el medio con una facilidad
+  // sorprendente, porque cada capítulo se escribe semanas después del anterior.
+  const metodo = datos.get('metodologia') ?? {};
+  const instrumento = datos.get('instrumento-investigacion') ?? {};
+  const analisis = datos.get('analisis-datos-rstudio') ?? {};
+
+  if (metodo.instrumento && instrumento.nombre && !apareceEn(metodo.instrumento, instrumento.nombre)) {
+    hallazgos.push(
+      aviso(
+        `En metodología se anuncia «${metodo.instrumento}» y el instrumento guardado es ` +
+          `«${instrumento.nombre}». Si son el mismo, llámalo igual en los dos sitios.`,
+      ),
+    );
+  }
+
+  // Una variable que el instrumento no mide es una variable que no se va a
+  // poder responder, y no se descubre hasta los resultados.
+  const dimensiones = (instrumento.dimensiones ?? []).join(' ');
+  if (dimensiones && variables.length > 0) {
+    for (const variable of variables) {
+      if (!apareceEn(variable, dimensiones)) {
+        hallazgos.push(
+          aviso(
+            `La variable «${variable}» no aparece entre las dimensiones del instrumento. ` +
+              'Si no se mide, no se va a poder responder en los resultados.',
+          ),
+        );
+      }
+    }
+  }
+
+  // Un enfoque cualitativo con pruebas estadísticas encima es de los descuadres
+  // que se ven a un metro de distancia.
+  const ESTADISTICAS = /\b(chi|cuadrado|pearson|spearman|anova|regresi[óo]n|t de student|cronbach|kolmog[óo]rov|shapiro)\b/i;
+  const pruebas = (analisis.pruebas ?? []).join(' ');
+  if (/cualitativ/i.test(metodo.enfoque ?? '') && ESTADISTICAS.test(pruebas)) {
+    hallazgos.push(
+      grave(
+        `El enfoque declarado es «${metodo.enfoque}» y las pruebas realizadas son estadísticas. ` +
+          'Una de las dos cosas no es la que se hizo.',
+      ),
+    );
+  }
+
+  // Lo que se prometió analizar y no aparece entre lo analizado.
+  if ((metodo.analisis ?? []).length > 0 && pruebas) {
+    for (const previsto of metodo.analisis) {
+      if (!apareceEn(previsto, pruebas)) {
+        hallazgos.push(
+          aviso(
+            `En metodología se anunció «${previsto}» y no aparece entre las pruebas ` +
+              'realizadas. O se hizo y falta anotarlo, o hay que explicar por qué no.',
+          ),
+        );
+      }
+    }
+  }
+
   // ── 3. Requisitos sin cubrir ───────────────────────────────────────────
   for (const etapa of etapas) {
     if (etapa.estado === 'PENDIENTE' && (etapa.palabras ?? 0) === 0) continue;

@@ -284,6 +284,18 @@ function texto(contenido) {
 function construirServidor(licencia) {
   const server = new McpServer({ name: NOMBRE_SERVIDOR, version: VERSION_SERVIDOR });
 
+  /**
+   * Cómo se llama lo que está escribiendo este comprador.
+   *
+   * El servidor se construye por licencia, así que el producto se sabe aquí y
+   * las herramientas pueden hablar en sus términos. Decirle «tu tesis» a quien
+   * está escribiendo un artículo para una revista no es un detalle de estilo:
+   * es el asistente demostrando que no sabe qué está haciendo, en la primera
+   * frase.
+   */
+  const esArticulo = licencia.productCode?.startsWith('ARTICULO') === true;
+  const SU_OBRA = esArticulo ? 'su artículo' : 'su tesis';
+
   // ── Catálogo ─────────────────────────────────────────────────────────────
   server.registerTool(
     'listar_capitulos',
@@ -526,7 +538,7 @@ function construirServidor(licencia) {
 
         return texto(
           `Guardado. «${skill.displayName}» lleva ${palabras} palabras.\n\n` +
-            'Dile que ya puede descargar su tesis en Word desde su panel, en ' +
+            `Dile que ya puede descargar ${SU_OBRA} en Word desde su panel, en ` +
             'acostaresearch.com/perfil, y que sale con todos los capítulos que llevéis.',
         );
       } catch (error) {
@@ -624,11 +636,11 @@ function construirServidor(licencia) {
   );
 
   server.registerTool(
-    'revisar_la_tesis',
+    esArticulo ? 'revisar_el_articulo' : 'revisar_la_tesis',
     {
       title: 'Repaso antes de entregar',
       description:
-        'Coteja la tesis consigo misma y devuelve lo que no cuadra: capítulos dados por ' +
+        `Coteja ${esArticulo ? 'el artículo' : 'la tesis'} consigo mismo y devuelve lo que no cuadra: capítulos dados por ` +
         'buenos sin texto, variables que no aparecen en ningún objetivo, objetivos sin ' +
         'conclusión, citas rotas y afirmaciones sin fuente. ' +
         'ÚSALA CUANDO EL TESISTA VAYA A ENTREGAR, y ofrécesela tú si ves que está cerrando ' +
@@ -672,7 +684,7 @@ function construirServidor(licencia) {
       }
 
       return texto(
-        `Repaso de la tesis:\n\n${partes.join('\n')}\n\n` +
+        `Repaso de ${esArticulo ? 'tu artículo' : 'tu tesis'}:\n\n${partes.join('\n')}\n\n` +
           'LO QUE ESTE REPASO NO MIRA, y hay que mirar aparte: si los números del texto ' +
           'cuadran con los de las tablas, y si cada fuente dice de verdad lo que la frase le ' +
           'atribuye. Ninguna de las dos cosas se puede comprobar sin leer. ' +

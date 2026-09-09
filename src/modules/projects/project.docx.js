@@ -119,7 +119,15 @@ function portada({ tema, carrera, universidad, nombre }) {
  * índice con capítulos vacíos haría creer que el documento está más avanzado de
  * lo que está.
  */
-async function armar({ tema, carrera, universidad, nombre, capitulos, referencias = [] }) {
+async function armar({
+  tema,
+  carrera,
+  universidad,
+  nombre,
+  capitulos,
+  referencias = [],
+  estilos = null,
+}) {
   const cuerpo = [
     ...portada({ tema, carrera, universidad, nombre }),
     new Paragraph({ text: '', pageBreakBefore: true }),
@@ -173,10 +181,20 @@ async function armar({ tema, carrera, universidad, nombre, capitulos, referencia
     );
   }
 
+  /**
+   * Los estilos de su facultad mandan sobre los nuestros.
+   *
+   * Cuando el tesista ha subido su plantilla, se usa la hoja de estilos de ese
+   * documento y no la de aquí abajo: «Título 1» pasa a ser el Título 1 de su
+   * universidad, con su fuente y su espaciado. Los dos no pueden convivir —Word
+   * solo admite una definición por estilo—, y entre la suya y una que nos
+   * inventamos, manda la suya.
+   */
   const documento = new Document({
     creator: 'Acosta | IA & Research',
     title: tema ?? 'Tesis',
-    styles: {
+    ...(estilos ? { externalStyles: estilos } : {}),
+    ...(estilos ? {} : { styles: {
       default: {
         document: { run: { font: 'Times New Roman', size: 24 } },
         heading1: {
@@ -192,7 +210,7 @@ async function armar({ tema, carrera, universidad, nombre, capitulos, referencia
           paragraph: { spacing: { before: 200, after: 120 } },
         },
       },
-    },
+    } }),
     sections: [
       {
         properties: {

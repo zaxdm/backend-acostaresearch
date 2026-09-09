@@ -4,6 +4,8 @@ const prisma = require('../../lib/prisma');
 
 const proyectoSelect = {
   id: true,
+  plantillaAt: true,
+  plantillaNombre: true,
   productCode: true,
   tema: true,
   carrera: true,
@@ -100,6 +102,14 @@ function listarDeUsuario(userId) {
   });
 }
 
+/** Deja constancia de que subió (o quitó) la plantilla de su facultad. */
+function marcarPlantilla(projectId, nombre) {
+  return prisma.project.update({
+    where: { id: projectId },
+    data: { plantillaAt: nombre === null ? null : new Date(), plantillaNombre: nombre },
+  });
+}
+
 /** El nombre del tesista, para la portada del Word. */
 async function nombreDe(userId) {
   const usuario = await prisma.user.findUnique({
@@ -110,4 +120,4 @@ async function nombreDe(userId) {
   return [usuario.firstName, usuario.lastName].filter(Boolean).join(' ') || null;
 }
 
-module.exports = { buscar, asegurar, guardarEtapa, listarDeUsuario, nombreDe };
+module.exports = { buscar, asegurar, guardarEtapa, listarDeUsuario, nombreDe, marcarPlantilla };

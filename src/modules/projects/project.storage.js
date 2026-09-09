@@ -154,6 +154,45 @@ async function leerAnalisis(projectId, skillCode, tipo) {
   }
 }
 
+/**
+ * La hoja de estilos de la plantilla del tesista.
+ *
+ * Un archivo por proyecto, al lado de sus capítulos. No lleva el nombre del
+ * capítulo porque la plantilla es del proyecto entero: la universidad no cambia
+ * a mitad de la tesis.
+ */
+function rutaDePlantilla(projectId) {
+  if (!SEGURO.test(projectId)) throw new Error('Identificador de proyecto no válido');
+  return path.join(env.capitulosDir, projectId, 'plantilla-estilos.xml');
+}
+
+async function guardarPlantilla(projectId, xml) {
+  const ruta = rutaDePlantilla(projectId);
+  await fs.mkdir(path.dirname(ruta), { recursive: true });
+  const temporal = `${ruta}.parcial`;
+  await fs.writeFile(temporal, xml, 'utf8');
+  await fs.rename(temporal, ruta);
+}
+
+async function leerPlantilla(projectId) {
+  try {
+    return await fs.readFile(rutaDePlantilla(projectId), 'utf8');
+  } catch (error) {
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
+async function borrarPlantilla(projectId) {
+  try {
+    await fs.unlink(rutaDePlantilla(projectId));
+    return true;
+  } catch (error) {
+    if (error.code === 'ENOENT') return false;
+    throw error;
+  }
+}
+
 module.exports = {
   guardar,
   leer,
@@ -163,4 +202,7 @@ module.exports = {
   rutaDe,
   guardarAnalisis,
   leerAnalisis,
+  guardarPlantilla,
+  leerPlantilla,
+  borrarPlantilla,
 };

@@ -18,8 +18,10 @@ const projectRepository = require('./project.repository');
 const almacen = require('./project.storage');
 const documento = require('./project.docx');
 const citas = require('./project.citas');
+const bibtex = require('./project.bibtex');
 const etapas = require('./project.etapas');
 const evidencia = require('./project.evidencia');
+const plantilla = require('./project.plantilla');
 const auditoria = require('./project.auditoria');
 const skillService = require('../skills/skill.service');
 const referenceService = require('../references/reference.service');
@@ -296,6 +298,10 @@ async function armarWord(userId, productCode) {
     );
   }
 
+  // Los estilos de su facultad, si los subió. Sin ellos sale el formato de
+  // tesis por defecto, que es lo que había hasta ahora.
+  const estilos = await almacen.leerPlantilla(proyecto.id).catch(() => null);
+
   const buffer = await documento.armar({
     tema: proyecto.tema,
     carrera: proyecto.carrera,
@@ -303,6 +309,7 @@ async function armarWord(userId, productCode) {
     nombre,
     capitulos,
     referencias: citas.bibliografia([...usadas.values()]),
+    estilos,
   });
 
   return {
@@ -311,6 +318,62 @@ async function armarWord(userId, productCode) {
     capitulos: capitulos.length,
     referencias: usadas.size,
     citasPerdidas: [...perdidas],
+  };
+}
+
+/**
+ * La bibliografía en BibTeX, para quien escribe en LaTeX.
+ *
+ * SALE DE LAS MISMAS CITAS QUE EL WORD, y eso es lo que garantiza que las dos
+ * salidas no puedan discrepar: se leen las claves de los capítulos, se resuelven
+ * contra las fuentes y se escribe lo que se usó. Ni una fuente de más —una
+ * bibliografía con lo que no se citó es un error de bulto— ni una de menos.
+ *
+ * Devuelve null cuando no hay ni una cita resuelta. Un `.bib` vacío compila y no
+ * imprime nada, así que el tesista descubriría el problema al final, mirando una
+ * bibliografía en blanco sin saber por qué.
+ */
+async function armarBibtex(userId, productCode) {
+  const [proyecto, catalogo] = await Promise.all([
+    projectRepository.buscar(userId, productCode),
+    skillService.listCatalog(productCode),
+  ]);
+
+  if (!proyecto) return null;
+
+  const conTexto = new Set(
+    proyecto.stages.filter((e) => (e.palabras ?? 0) > 0).map((e) => e.skillCode),
+  );
+
+  const textos = [];
+  for (const skill of catalogo) {
+    if (!conTexto.has(skill.code)) continue;
+    const texto = await almacen.leer(proyecto.id, skill.code);
+    if (texto && texto.trim() !== '') textos.push(texto);
+  }
+
+  const claves = [...new Set(textos.flatMap((texto) => citas.clavesDe(texto)))];
+  if (claves.length === 0) return null;
+
+  const fuentes = await referenceService.porClaves(claves, userId);
+  if (fuentes.length === 0) return null;
+
+  // Las claves que no resuelven se anotan pero no cortan la descarga: es el
+  // mismo criterio que el Word, donde salen como «CITA SIN LOCALIZAR». Aquí no
+  // se pueden marcar dentro del archivo —un `.bib` no tiene dónde— así que se
+  // devuelven aparte para que quien llame decida cómo decirlo.
+  const encontradas = new Set(fuentes.map((f) => f.ref));
+  const perdidas = claves.filter((clave) => !encontradas.has(clave));
+
+  if (perdidas.length > 0) {
+    logger.warn({ userId, productCode, perdidas }, 'Citas sin fuente al armar el BibTeX');
+  }
+
+  return {
+    contenido: bibtex.armar(fuentes),
+    nombreArchivo: documento.nombreDeArchivo(proyecto.tema).replace(/\.docx$/i, '.bib'),
+    referencias: fuentes.length,
+    citasPerdidas: perdidas,
   };
 }
 
@@ -352,6 +415,32 @@ async function revisarEvidencia(userId, productCode, { capitulo = null } = {}) {
   const porClave = new Map(fuentes.map((f) => [f.ref, f]));
 
   return evidencia.revisar(capitulos, porClave);
+}
+
+/**
+ * Guarda la plantilla de la facultad del tesista.
+ *
+ * Del .docx solo se queda la hoja de estilos. Ver `project.plantilla` para el
+ * porqué: lo que no se guarda no se puede filtrar, y esos archivos suelen venir
+ * con la tesis de otro dentro.
+ */
+async function guardarPlantilla({ userId, productCode, buffer, nombre }) {
+  const xml = plantilla.extraerEstilos(buffer);
+
+  const proyecto = await projectRepository.asegurar(userId, productCode);
+  await almacen.guardarPlantilla(proyecto.id, xml);
+  await projectRepository.marcarPlantilla(proyecto.id, nombre ?? null);
+
+  return { estilos: plantilla.estilosQueTrae(xml) };
+}
+
+async function quitarPlantilla(userId, productCode) {
+  const proyecto = await projectRepository.buscar(userId, productCode);
+  if (!proyecto) return false;
+
+  await almacen.borrarPlantilla(proyecto.id);
+  await projectRepository.marcarPlantilla(proyecto.id, null);
+  return true;
 }
 
 /**
@@ -479,6 +568,9 @@ async function deUsuario(userId) {
         tema: proyecto.tema,
         carrera: proyecto.carrera,
         universidad: proyecto.universidad,
+        plantilla: proyecto.plantillaAt
+          ? { nombre: proyecto.plantillaNombre, desde: proyecto.plantillaAt }
+          : null,
         updatedAt: proyecto.updatedAt,
         etapas,
         avance: { listos, total: etapas.length },
@@ -496,8 +588,11 @@ module.exports = {
   guardarAvance,
   guardarCapitulo,
   armarWord,
+  armarBibtex,
   revisarEvidencia,
   guardarAnalisis,
+  guardarPlantilla,
+  quitarPlantilla,
   auditar,
   siguientePaso,
   deUsuario,

@@ -1058,6 +1058,11 @@ model Project {
   carrera     String? @db.VarChar(160)
   universidad String? @db.VarChar(160)
 
+  /// Cuándo subió la plantilla de su facultad, y cómo se llamaba el archivo.
+  /// La hoja de estilos vive en disco; aquí solo la marca de que existe.
+  plantillaAt     DateTime?
+  plantillaNombre String?   @db.VarChar(200)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

@@ -595,6 +595,47 @@ function construirServidor(licencia) {
   );
 
   server.registerTool(
+    'continuar',
+    {
+      title: 'Seguir por donde toca',
+      description:
+        'Abre el capítulo que le toca al tesista, sin tener que saber su clave. ' +
+        'ÚSALA cuando diga «sigamos», «¿qué sigue?», «continuemos con la tesis» o cualquier ' +
+        'cosa parecida. Es el camino normal: "redactar" con una clave concreta es para ' +
+        'cuando quiere saltar a un capítulo determinado.',
+      inputSchema: SIN_ARGUMENTOS,
+    },
+    async () => {
+      await licenseService.recordUsage({ licenseId: licencia.id, tool: 'continuar' });
+
+      const siguiente = await projectService.siguientePaso(
+        licencia.user.id,
+        licencia.productCode,
+      );
+
+      if (!siguiente) {
+        return texto(
+          `Tiene todos los capítulos dados por buenos. Si quiere revisar ${SU_OBRA} antes de ` +
+            `entregarla, usa "${esArticulo ? 'revisar_el_articulo' : 'revisar_la_tesis'}".`,
+        );
+      }
+
+      const falta = await projectService.loQueFalta(
+        licencia.user.id,
+        licencia.productCode,
+        siguiente.code,
+      );
+
+      return texto(
+        `Le toca: ${siguiente.displayName}\n\n` +
+          (falta ? `${falta}\n\n` : '') +
+          `Ábrelo con "redactar" y la clave ${siguiente.code}. ` +
+          'Díselo antes de empezar, para que sepa en qué punto está.',
+      );
+    },
+  );
+
+  server.registerTool(
     'guardar_analisis',
     {
       title: 'Guardar el análisis y sus cifras',

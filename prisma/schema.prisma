@@ -508,6 +508,10 @@ model License {
   revokedReason String?   @db.VarChar(255)
   /// Caducidad del acceso. Nula = mientras no se revoque.
   expiresAt     DateTime?
+  /// Cuándo se avisó al comprador de que su acceso estaba por caducar. Guarda
+  /// la fecha y no un booleano para que se vea, meses después, si el aviso
+  /// salió a tiempo o el día antes.
+  expiryWarnedAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

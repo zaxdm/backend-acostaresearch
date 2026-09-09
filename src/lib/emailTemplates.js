@@ -543,6 +543,67 @@ function licenseReady({ firstName, planName, connectorUrl, expiresAt, via }) {
  * aquí —aunque fuera la misma— le haría pensar que la que tiene dejó de
  * servir, y acabaría reinstalando sin necesidad.
  */
+/**
+ * Al comprador, unos días antes de que su acceso caduque.
+ *
+ * Dos cosas importan más que el aviso en sí. La primera es decirle qué NO
+ * pierde: sus fuentes son suyas y están atadas a su cuenta, no a la licencia,
+ * así que siguen ahí aunque el acceso caduque. Un correo de caducidad que no
+ * aclara eso asusta más de lo que avisa.
+ *
+ * La segunda es no sonar a cobro. El tesista que va por el capítulo IV no
+ * necesita que le metan prisa; necesita saber la fecha para organizarse.
+ */
+function licenseExpiring({ firstName, planName, expiresAt, dias }) {
+  const vence = fecha(expiresAt);
+  const planes = `${appUrl()}/planes`;
+  const panel = `${appUrl()}/perfil`;
+  const cuando = dias === 1 ? 'mañana' : `dentro de ${dias} días`;
+
+  return {
+    subject: `Tu acceso al método caduca ${cuando} · Acosta Research`,
+    text: [
+      `Hola ${firstName}:`,
+      '',
+      `Tu acceso a ${planName} caduca ${cuando}${vence ? `, el ${vence}` : ''}.`,
+      '',
+      'A partir de esa fecha, la URL que tienes puesta en Claude deja de responder. No hace falta que borres nada: si renuevas, la misma URL vuelve a funcionar sola.',
+      '',
+      'Las fuentes que hayas subido tú no se pierden. Están guardadas en tu cuenta, no en la licencia, y siguen ahí cuando vuelvas.',
+      '',
+      `Renovar: ${planes}`,
+      `Tu panel: ${panel}`,
+    ].join('\n'),
+    html: layout(
+      `Tu acceso caduca ${cuando}`,
+      `<p style="margin:0 0 18px;font-size:15px;line-height:1.6">Hola ${firstName}:
+         tu acceso a <strong>${planName}</strong> caduca ${cuando}${vence ? `, el <strong>${vence}</strong>` : ''}.</p>
+
+       <p style="margin:0 0 18px;font-size:15px;line-height:1.6">
+         A partir de esa fecha, la URL que tienes puesta en Claude deja de responder.
+         No hace falta que borres nada: si renuevas, <strong>la misma URL vuelve a
+         funcionar sola</strong>.
+       </p>
+
+       <p style="margin:0 0 22px;padding:14px 16px;background:#e7f6ef;border-radius:10px;
+                 font-size:14px;line-height:1.6;color:#12734b">
+         <strong>Tus fuentes no se pierden.</strong> Las que subiste tú están guardadas en
+         tu cuenta, no en la licencia, y siguen ahí cuando vuelvas.
+       </p>
+
+       <p style="margin:0 0 14px;font-size:14px">
+         <a href="${planes}" style="display:inline-block;padding:11px 20px;background:#1a56db;
+            color:#ffffff;border-radius:9px;text-decoration:none;font-weight:600">Renovar mi acceso</a>
+       </p>
+
+       <p style="margin:0;font-size:14px">
+         <a href="${panel}" style="color:#1a56db">Abrir mi panel</a>
+       </p>`,
+      { preheader: `Caduca ${cuando}. Tus fuentes se quedan; la URL vuelve a funcionar si renuevas.` },
+    ),
+  };
+}
+
 function licenseRenewed({ firstName, planName, expiresAt, via }) {
   const panel = `${appUrl()}/perfil`;
   const vence = fecha(expiresAt);
@@ -834,6 +895,8 @@ module.exports = {
   licenseReady,
   licenseRenewed,
   licenseProductChanged,
+  // Este no sale de una compra, sino del aviso diario de caducidades.
+  licenseExpiring,
   wordsReady,
   manualPaymentRejected,
   // Al comprador que pagó fuera de la web y todavía no tiene cuenta.

@@ -33,6 +33,21 @@ const ESQUEMA_FUENTES = fromJsonSchema({
         '«construct validity», «convenience sampling», «Cronbach alpha». ' +
         'Tradúcelo tú: el tesista escribe en español y la biblioteca está en inglés.',
     },
+    temaOriginal: {
+      type: 'string',
+      description:
+        'El mismo tema EN ESPAÑOL, tal como lo dijo el tesista. Mándalo siempre. ' +
+        'Si en la biblioteca no hay nada, esta herramienta sale sola al catálogo abierto ' +
+        'usando estas palabras, y ahí el español encuentra lo que el inglés no: Scielo, ' +
+        'Redalyc y los repositorios latinoamericanos.',
+    },
+    pais: {
+      type: 'string',
+      description:
+        'Código de dos letras del país del tesista: «pe» Perú, «co» Colombia, «mx» México. ' +
+        'Solo se usa si hay que salir al catálogo abierto, y sirve para traerle ' +
+        'ANTECEDENTES NACIONALES, que es lo que le va a pedir su jurado.',
+    },
     cuantas: {
       type: 'integer',
       minimum: 1,
@@ -498,13 +513,14 @@ function construirServidor(licencia) {
           'Science, y sus títulos y resúmenes están en inglés. El tesista te escribe en español, ' +
           'así que traduce tú el tema antes de buscar («validez de constructo» → «construct ' +
           'validity»). ' +
-          'Si aquí no hay nada, o el tesista pide antecedentes de su país o en español, usa ' +
-          '"buscar_en_la_literatura", que consulta 327 millones de trabajos en abierto y sí ' +
-          'entiende el español. Las de aquí llevan el criterio de Acosta; las de allí no, y eso ' +
-          'se dice.',
+          'MANDA SIEMPRE "temaOriginal" con el tema en español y "pais" con el del tesista: ' +
+          'si aquí no hay nada, esta misma herramienta sale al catálogo abierto con esas ' +
+          'palabras y no te deja sin fuentes. ' +
+          'Las de la biblioteca llevan el criterio de Acosta; las que vengan del catálogo ' +
+          'abierto no, y la respuesta te lo dirá para que lo adviertas.',
         inputSchema: ESQUEMA_FUENTES,
       },
-      async ({ tema, cuantas }) => {
+      async ({ tema, temaOriginal, pais, cuantas }) => {
         await licenseService.recordUsage({
           licenseId: licencia.id,
           tool: 'buscar_fuentes',
@@ -523,19 +539,55 @@ function construirServidor(licencia) {
           ownerUserId: licencia.userId,
         });
 
+        // ── Sin nada en la biblioteca: NO se vuelve con las manos vacías ────
+        //
+        // Antes esto devolvía un muro de instrucciones y cero fuentes. El
+        // tesista se quedaba igual que empezó, y lo peor: la salida que le
+        // quedaba era que el asistente citara de memoria.
+        //
+        // Ahora sale al catálogo abierto en la misma llamada. Con las palabras
+        // EN ESPAÑOL del tesista, que es lo que encuentra Scielo y Redalyc: el
+        // término en inglés que sirve para la biblioteca de la casa no
+        // encuentra un artículo peruano publicado en español.
         if (fuentes.length === 0) {
+          const enEspanol = (temaOriginal || '').trim() || tema;
+          const abierta = await referenceService.buscarEnLaLiteratura({
+            tema: enEspanol,
+            pais: pais || null,
+            cuantas,
+          });
+
+          if (abierta.fuentes.length === 0) {
+            return texto(
+              `No hay nada sobre «${tema}» ni en la biblioteca de Acosta ni en el catálogo ` +
+                `abierto.\n\n` +
+                'DÍSELO AL TESISTA TAL CUAL y sigue sin citar ahí. Que su tema esté poco ' +
+                'estudiado es un hallazgo que va en la justificación, no un problema que se ' +
+                'tape citando de memoria.\n\n' +
+                'Y dile que puede subir SU PROPIO export de Scopus, Web of Science o SciELO ' +
+                'desde su perfil, en «Método de tesis → Mis fuentes»: desde ese momento estas ' +
+                'búsquedas también leen de ahí.',
+            );
+          }
+
+          const deFuera = abierta.fuentes.map((f, i) => {
+            const lineas = [`${i + 1}. ${f.cita}`];
+            const señas = [];
+            if (f.citas > 0) señas.push(`citado ${f.citas} veces`);
+            if (f.pdfLibre) señas.push('PDF gratis');
+            if (f.idioma) señas.push(`en ${f.idioma}`);
+            if (señas.length > 0) lineas.push(`   [${señas.join(' · ')}]`);
+            if (f.resumen) lineas.push(`   Resumen: ${f.resumen.slice(0, 400)}`);
+            return lineas.join('\n');
+          });
+
           return texto(
-            `No hay ninguna fuente sobre «${tema}» en la biblioteca.\n\n` +
-              'Antes de rendirte: ¿lo buscaste EN INGLÉS? La biblioteca son artículos de ' +
-              'Scopus y Web of Science. Prueba una vez más con el tema traducido, o con ' +
-              'sinónimos del término.\n\n' +
-              'Si aun así no hay nada, DÍSELO AL TESISTA TAL CUAL y sigue sin citar ahí. Y ' +
-              'dile esto, que es lo que de verdad lo resuelve: puede subir SU PROPIO export ' +
-              'de Scopus, Web of Science o SciELO desde su perfil, en «Método de tesis → Mis ' +
-              'fuentes», y desde ese momento estas búsquedas también leen de ahí. Es la vía ' +
-              'para los temas que la biblioteca de la casa no cubre.\n\n' +
-              'NO rellenes el hueco con referencias de memoria: es donde se cuelan los datos ' +
-              'inventados.',
+            `En la biblioteca de Acosta no hay nada sobre «${tema}», así que busqué en el ` +
+              `catálogo abierto con «${enEspanol}»:\n\n${deFuera.join('\n\n')}\n\n` +
+              'AVISA DE QUE ESTAS NO ESTÁN REVISADAS POR ACOSTA: vienen de un catálogo ' +
+              'abierto donde entra de todo, preprints y repositorios incluidos. El tesista ' +
+              'debería comprobar dónde se publicó cada una antes de citarla. ' +
+              'Cita EXACTAMENTE como están, sin traducir los títulos.',
           );
         }
 

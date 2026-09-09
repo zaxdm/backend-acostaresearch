@@ -41,8 +41,15 @@ const env = require('../src/config/env');
 const prisma = require('../src/lib/prisma');
 const referenceService = require('../src/modules/references/reference.service');
 
-/** Cada cuánto se mira si terminó, y cuánto se espera como mucho. */
-const SONDEO_MS = 5000;
+/**
+ * Cada cuánto se mira si terminó, y cuánto se espera como mucho.
+ *
+ * El sondeo no consulta la base: lee el estado en memoria del propio proceso.
+ * Preguntarle a la base cómo va la sincronización, cada pocos segundos y desde
+ * el mismo grupo de conexiones que la sincronización está usando, es lo que
+ * tumbó la primera prueba de esto.
+ */
+const SONDEO_MS = 15_000;
 const LIMITE_MINUTOS = 45;
 
 const espera = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -68,7 +75,7 @@ async function principal() {
   // proceso terminase aquí, se cortaría a media pasada.
   while (Date.now() - empezado < LIMITE_MINUTOS * 60_000) {
     await espera(SONDEO_MS);
-    const { trabajo } = await referenceService.estado();
+    const trabajo = referenceService.progreso();
     if (!trabajo.activo) {
       const minutos = ((Date.now() - empezado) / 60_000).toFixed(1);
 

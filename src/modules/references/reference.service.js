@@ -376,9 +376,23 @@ async function buscarEnLaLiteratura({ tema, idioma, pais, desdeAnio, cuantas }) 
   };
 }
 
+/**
+ * Cómo va la pasada en curso, sin tocar la base de datos.
+ *
+ * `estado()` sirve al panel y hace dos consultas, que para una pantalla que se
+ * refresca cada pocos segundos está bien. No lo está para quien vigila su propia
+ * sincronización: son consultas contra el mismo grupo de conexiones que está
+ * usando el trabajo, y con cinco conexiones en total eso llegó a tumbar la
+ * pasada que pretendía vigilar.
+ */
+function progreso() {
+  return { ...trabajo };
+}
+
 module.exports = {
   sincronizar,
   estado,
+  progreso,
   buscarParaLicencia,
   buscarEnLaLiteratura,
   listarParaPanel,

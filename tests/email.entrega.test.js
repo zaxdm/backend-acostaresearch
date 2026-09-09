@@ -39,7 +39,7 @@ test('avisa de que la URL no se puede reenviar', () => {
   const mail = plantillas.licenseReady({
     firstName: 'María',
     planName: PLAN,
-    connectorUrl: URL_CONECTOR, 
+    connectorUrl: URL_CONECTOR,
     expiresAt: VENCE,
     via: 'yape',
   });

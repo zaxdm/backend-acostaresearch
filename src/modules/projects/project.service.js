@@ -18,6 +18,7 @@ const projectRepository = require('./project.repository');
 const almacen = require('./project.storage');
 const documento = require('./project.docx');
 const citas = require('./project.citas');
+const etapas = require('./project.etapas');
 const skillService = require('../skills/skill.service');
 const referenceService = require('../references/reference.service');
 const { guardarAvanceSchema, guardarCapituloSchema } = require('./project.schema');
@@ -63,6 +64,9 @@ async function contexto(userId, productCode) {
     const etapa = porCapitulo.get(skill.code);
     const estado = etapa?.estado ?? 'PENDIENTE';
     lineas.push(`${MARCAS[estado]} ${skill.displayName}  (clave: ${skill.code})`);
+    // Los campos van antes que el resumen: son lo exacto, y el resumen es el
+    // matiz. Al revés, el asistente lee la prosa primero y ya no mira el dato.
+    lineas.push(...etapas.comoTexto(skill.code, etapa?.datos));
     if (etapa?.resumen) lineas.push(`      quedó así: ${etapa.resumen}`);
   }
 
@@ -78,6 +82,29 @@ async function contexto(userId, productCode) {
 }
 
 /**
+ * El aviso de que a un capítulo le faltan cosas de los anteriores.
+ *
+ * Se comprueba al empezar el capítulo, que es el único momento en que sirve de
+ * algo: después, el tesista ya ha escrito. Devuelve null cuando no falta nada, y
+ * también cuando esa etapa no declara requisitos — no se inventan.
+ */
+async function loQueFalta(userId, productCode, skillCode) {
+  const proyecto = await projectRepository.buscar(userId, productCode);
+  if (!proyecto) return null;
+
+  const porEtapa = new Map(proyecto.stages.map((e) => [e.skillCode, e.datos ?? {}]));
+  const faltan = etapas.queFalta(skillCode, porEtapa);
+  if (faltan.length === 0) return null;
+
+  return (
+    `ANTES DE REDACTAR: falta fijar ${faltan.join(', ')}.\n` +
+    'Eso viene de un capítulo anterior y este se apoya en ello. Pregúntaselo al tesista y ' +
+    'guárdalo con "guardar_avance" antes de seguir. Si redactáis sin eso, el capítulo no ' +
+    'va a cuadrar con los de antes y habrá que rehacerlo.'
+  );
+}
+
+/**
  * Guarda lo que quedó decidido.
  *
  * Crea el proyecto si hacía falta: se crea cuando hay algo que recordar, no al
@@ -90,14 +117,34 @@ async function guardarAvance({ userId, productCode, ...entrada }) {
   const proyecto = await projectRepository.asegurar(userId, productCode, datos);
 
   let etapa = null;
+  let camposGuardados = [];
+
   if (datos.capitulo) {
+    /**
+     * Los datos sueltos se fusionan con los que ya había.
+     *
+     * Un asistente que corrige los objetivos específicos no puede borrar de
+     * paso el problema general solo porque esa llamada no lo mencionaba. Es la
+     * misma regla que gobierna el resto de la memoria.
+     */
+    let paraGuardar;
+    const limpio = etapas.limpiar(datos.capitulo, datos.datos);
+
+    if (limpio) {
+      const actual = await projectRepository.buscar(userId, productCode);
+      const previa = (actual?.stages ?? []).find((e) => e.skillCode === datos.capitulo);
+      paraGuardar = etapas.fusionar(previa?.datos, limpio);
+      camposGuardados = Object.keys(limpio);
+    }
+
     etapa = await projectRepository.guardarEtapa(proyecto.id, datos.capitulo, {
       estado: datos.estado,
       resumen: datos.resumen,
+      datos: paraGuardar,
     });
   }
 
-  return { proyecto, etapa };
+  return { proyecto, etapa, camposGuardados };
 }
 
 /**
@@ -280,6 +327,7 @@ async function deUsuario(userId) {
 
 module.exports = {
   contexto,
+  loQueFalta,
   guardarAvance,
   guardarCapitulo,
   armarWord,

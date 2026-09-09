@@ -31,6 +31,16 @@ const guardarAvanceSchema = z.object({
   tema: z.string().trim().max(500).optional(),
   carrera: z.string().trim().max(160).optional(),
   universidad: z.string().trim().max(160).optional(),
+  /**
+   * Lo mismo que el resumen, pero por campos.
+   *
+   * Aquí solo se comprueba la forma —un objeto, no un texto suelto—; qué campos
+   * valen para cada capítulo lo decide `project.etapas`, que es donde se declara
+   * y donde se añaden los siguientes. Lo que no esté declarado se descarta ahí
+   * en silencio, sin tumbar la llamada: si el asistente se inventa un campo, lo
+   * que importa es que se guarde bien lo demás.
+   */
+  datos: z.record(z.string(), z.unknown()).optional(),
 });
 
 /**

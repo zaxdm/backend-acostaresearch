@@ -133,6 +133,19 @@ const ESQUEMA_GUARDAR_AVANCE = fromJsonSchema({
     },
     carrera: { type: 'string', description: 'La carrera del tesista.' },
     universidad: { type: 'string', description: 'Su universidad.' },
+    datos: {
+      type: 'object',
+      description:
+        'Lo mismo que el resumen pero por campos, para los capítulos que los tienen. ' +
+        'Mándalo SIEMPRE que se fije uno de estos, además del resumen: el resumen se lee, ' +
+        'los campos se usan.\n\n' +
+        'tema-y-delimitacion: tema, poblacion, ambito, periodo.\n' +
+        'problema-y-objetivos: problemaGeneral, objetivoGeneral, objetivosEspecificos ' +
+        '(lista), hipotesis (lista), variables (lista).\n\n' +
+        'Los capítulos que no salen aquí no llevan campos: para esos basta el resumen. ' +
+        'Manda solo lo que se haya fijado; lo que no mandes se queda como estaba.',
+      additionalProperties: true,
+    },
   },
   additionalProperties: false,
 });
@@ -421,7 +434,7 @@ function construirServidor(licencia) {
       }
 
       try {
-        const { etapa } = await projectService.guardarAvance({
+        const { etapa, camposGuardados } = await projectService.guardarAvance({
           userId: licencia.user.id,
           productCode: licencia.productCode,
           ...entrada,
@@ -437,6 +450,9 @@ function construirServidor(licencia) {
               (etapa.estado === 'LISTO' ? ', que queda dado por bueno' : ''),
           );
         }
+        // Se dice CUÁLES se guardaron, no cuántos. Si el asistente mandó un
+        // campo con otro nombre, así lo ve en vez de dar por hecho que entró.
+        if (camposGuardados?.length > 0) guardado.push(camposGuardados.join(', '));
 
         return texto(
           guardado.length > 0
@@ -653,19 +669,27 @@ function construirServidor(licencia) {
          */
         const primerTramo = !referencia && !hilo.lastSection;
         if (primerTramo) {
-          const memoria = await projectService
-            .contexto(licencia.user.id, licencia.productCode)
-            .catch((error) => {
-              // Que falle la memoria no puede dejar sin capítulo a nadie: el
-              // método es el producto, esto es la ayuda.
-              logger.error(
-                { err: error, licenseId: licencia.id },
-                'No se pudo leer la memoria del proyecto',
-              );
-              return null;
-            });
+          const [memoria, falta] = await Promise.all([
+            projectService.contexto(licencia.user.id, licencia.productCode),
+            projectService.loQueFalta(licencia.user.id, licencia.productCode, skill.code),
+          ]).catch((error) => {
+            // Que falle la memoria no puede dejar sin capítulo a nadie: el
+            // método es el producto, esto es la ayuda.
+            logger.error(
+              { err: error, licenseId: licencia.id },
+              'No se pudo leer la memoria del proyecto',
+            );
+            return [null, null];
+          });
 
-          if (memoria) return texto(`${memoria}\n\n───────────\n\n${contenido.texto}`);
+          // El aviso va ARRIBA DEL TODO, por delante del método.
+          //
+          // Quien empieza metodología sin haber fijado su población va a
+          // redactar un capítulo III que no cuadra con el I, y hoy nadie se lo
+          // dice hasta que se lo dice su asesor. Puesto detrás del método, el
+          // asistente ya se ha lanzado a redactar antes de llegar a leerlo.
+          const partes = [falta, memoria, contenido.texto].filter(Boolean);
+          if (partes.length > 1) return texto(partes.join('\n\n───────────\n\n'));
         }
 
         return texto(contenido.texto);

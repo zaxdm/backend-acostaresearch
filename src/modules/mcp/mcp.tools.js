@@ -10,6 +10,7 @@ const licenseService = require('../licensing/license.service');
 const { analizarIntencion, RESPUESTA_RECHAZO } = require('../licensing/license.guard');
 const prisma = require('../../lib/prisma');
 const referenceService = require('../references/reference.service');
+const projectService = require('../projects/project.service');
 
 /**
  * Los esquemas de las herramientas van en JSON Schema, no en Zod.
@@ -96,6 +97,43 @@ const ESQUEMA_LITERATURA = fromJsonSchema({
     },
   },
   required: ['tema'],
+  additionalProperties: false,
+});
+
+const ESQUEMA_GUARDAR_AVANCE = fromJsonSchema({
+  type: 'object',
+  properties: {
+    capitulo: {
+      type: 'string',
+      description:
+        'Clave del capítulo sobre el que quedó algo decidido, tal como aparece en ' +
+        'listar_capitulos. Omítelo si solo estás guardando el tema o la universidad.',
+    },
+    estado: {
+      type: 'string',
+      enum: ['PENDIENTE', 'EN_CURSO', 'LISTO'],
+      description:
+        'Cómo queda ese capítulo. Marca LISTO SOLO si el tesista ha dicho que lo da por ' +
+        'bueno. No lo decidas tú porque hayáis escrito mucho: un capítulo que se da por ' +
+        'cerrado sin que él lo cierre es el que luego no se sostiene ante el jurado.',
+    },
+    resumen: {
+      type: 'string',
+      maxLength: 1500,
+      description:
+        'Qué quedó decidido, en dos o tres frases y en concreto: los objetivos que se ' +
+        'fijaron, la población que se eligió, el diseño acordado. NO el texto del ' +
+        'capítulo — esto es la memoria de lo acordado, no el documento. Lo leerá el ' +
+        'asistente que atienda al tesista la próxima vez, que no habrá visto esta ' +
+        'conversación.',
+    },
+    tema: {
+      type: 'string',
+      description: 'El tema de la tesis ya delimitado, si se ha fijado o ha cambiado.',
+    },
+    carrera: { type: 'string', description: 'La carrera del tesista.' },
+    universidad: { type: 'string', description: 'Su universidad.' },
+  },
   additionalProperties: false,
 });
 
@@ -282,6 +320,117 @@ function construirServidor(licencia) {
     },
   );
 
+  // ── La memoria del proyecto ──────────────────────────────────────────────
+  //
+  // Estas dos son la diferencia entre un conector que contesta y uno que
+  // acompaña una tesis. Van fuera de cualquier condición: no dependen de que
+  // haya corpus, ni de cómo se entregue el método.
+
+  server.registerTool(
+    'mi_proyecto',
+    {
+      title: 'Por dónde va su tesis',
+      description:
+        'Lo que este servidor recuerda del proyecto del tesista: su tema, su universidad y ' +
+        'en qué punto está cada capítulo. LLÁMALA AL EMPEZAR CUALQUIER CONVERSACIÓN NUEVA, ' +
+        'antes de preguntarle nada. Si ya lo sabemos, preguntárselo otra vez es hacerle ' +
+        'repetir lo que ya contó.',
+      inputSchema: SIN_ARGUMENTOS,
+    },
+    async () => {
+      await licenseService.recordUsage({ licenseId: licencia.id, tool: 'mi_proyecto' });
+
+      const contexto = await projectService.contexto(licencia.user.id, licencia.productCode);
+
+      if (!contexto) {
+        return texto(
+          'Todavía no hay nada guardado de este proyecto.\n\n' +
+            'Según vayáis fijando cosas —el tema, los objetivos, la metodología— guárdalas ' +
+            'con "guardar_avance". No lo dejes para el final de la conversación: si se corta, ' +
+            'se pierde, y el tesista tendrá que contarlo todo otra vez.',
+        );
+      }
+
+      const siguiente = await projectService.siguientePaso(
+        licencia.user.id,
+        licencia.productCode,
+      );
+
+      return texto(
+        contexto +
+          (siguiente
+            ? `\n\nLo siguiente que le tocaría: ${siguiente.displayName} (clave: ${siguiente.code}).`
+            : '\n\nTiene todos los capítulos dados por buenos.'),
+      );
+    },
+  );
+
+  server.registerTool(
+    'guardar_avance',
+    {
+      title: 'Recordar lo que quedó decidido',
+      description:
+        'Guarda en el servidor lo que se ha acordado, para que siga estando la próxima vez ' +
+        'aunque sea en otra conversación. Úsala EN CUANTO se fije algo —el tema, los ' +
+        'objetivos, la población, el diseño—, no al terminar. Guarda lo acordado en dos o ' +
+        'tres frases, nunca el texto del capítulo.',
+      inputSchema: ESQUEMA_GUARDAR_AVANCE,
+    },
+    async (entrada) => {
+      await licenseService.recordUsage({ licenseId: licencia.id, tool: 'guardar_avance' });
+
+      // Guardar el avance de un capítulo que no es suyo escribiría en la
+      // memoria del proyecto una clave que después nadie sabe interpretar.
+      if (entrada.capitulo) {
+        const skill = await skillService.findByCode(entrada.capitulo);
+        if (!skill || !skillService.perteneceAlGrupo(skill, licencia.productCode)) {
+          return texto(
+            `No existe ningún capítulo con la clave "${entrada.capitulo}". ` +
+              'Usa listar_capitulos para ver las claves válidas. No se ha guardado nada.',
+          );
+        }
+      }
+
+      try {
+        const { etapa } = await projectService.guardarAvance({
+          userId: licencia.user.id,
+          productCode: licencia.productCode,
+          ...entrada,
+        });
+
+        const guardado = [];
+        if (entrada.tema) guardado.push('el tema');
+        if (entrada.carrera) guardado.push('la carrera');
+        if (entrada.universidad) guardado.push('la universidad');
+        if (etapa) {
+          guardado.push(
+            `el capítulo ${etapa.skillCode}` +
+              (etapa.estado === 'LISTO' ? ', que queda dado por bueno' : ''),
+          );
+        }
+
+        return texto(
+          guardado.length > 0
+            ? `Guardado: ${guardado.join(', ')}. Estará aquí la próxima vez que abra una conversación.`
+            : 'No mandaste nada que guardar.',
+        );
+      } catch (error) {
+        // Un fallo al guardar no puede parecer un éxito: el asistente daría por
+        // recordado algo que se perdió, y nadie lo sabría hasta semanas después.
+        logger.error(
+          { err: error, licenseId: licencia.id },
+          'No se pudo guardar el avance del proyecto',
+        );
+        return texto(
+          'No se pudo guardar eso: ' +
+            (error?.issues?.[0]?.message ?? 'error del servidor') +
+            '. Vuelve a intentarlo; si insiste, sigue trabajando y avísale de que este ' +
+            'avance no ha quedado guardado.',
+        );
+      }
+    },
+  );
+
   // ── Redacción de un capítulo ─────────────────────────────────────────────
   server.registerTool(
     'redactar',
@@ -409,6 +558,33 @@ function construirServidor(licencia) {
           costCents: 0,
           cuentaParaElTope: true,
         });
+
+        /**
+         * La memoria del proyecto viaja con el primer tramo del capítulo.
+         *
+         * Va aquí y no en una herramienta aparte porque delegar en que el
+         * asistente se acuerde de consultarla es exactamente lo que no
+         * funciona: no se acuerda, y el tesista cuenta su tema por cuarta vez.
+         *
+         * Solo en el primero. Repetir el contexto en cada tramo engordaría cada
+         * respuesta con lo mismo, y lo que se repite se acaba ignorando.
+         */
+        const primerTramo = !referencia && !hilo.lastSection;
+        if (primerTramo) {
+          const memoria = await projectService
+            .contexto(licencia.user.id, licencia.productCode)
+            .catch((error) => {
+              // Que falle la memoria no puede dejar sin capítulo a nadie: el
+              // método es el producto, esto es la ayuda.
+              logger.error(
+                { err: error, licenseId: licencia.id },
+                'No se pudo leer la memoria del proyecto',
+              );
+              return null;
+            });
+
+          if (memoria) return texto(`${memoria}\n\n───────────\n\n${contenido.texto}`);
+        }
 
         return texto(contenido.texto);
       }

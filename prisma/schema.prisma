@@ -70,6 +70,8 @@ model User {
   /// Las fuentes que subió de su propio export de Scopus. Se van con la cuenta.
   references    Reference[]
   accountCodes  AccountCode[]
+  /// Su tesis, y su artículo si también lo compró. Ver `Project`.
+  projects      Project[]
 
   @@map("users")
 }
@@ -1003,4 +1005,94 @@ model Tutorial {
 
   @@index([orden])
   @@map("tutorials")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// El proyecto del tesista
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * En qué punto está una etapa.
+ *
+ * Solo tres, y el salto de EN_CURSO a LISTO lo da el tesista, no el asistente.
+ * Que un capítulo se dé por bueno solo porque se escribió mucho es exactamente
+ * lo que produce una tesis que no se sostiene ante el jurado.
+ */
+enum StageState {
+  PENDIENTE
+  EN_CURSO
+  LISTO
+}
+
+/**
+ * La memoria de una tesis, o de un artículo.
+ *
+ * Hasta ahora el conector respondía y olvidaba: cada conversación empezaba de
+ * cero y el tesista volvía a contar su tema, sus objetivos y su metodología. Si
+ * abría un chat nuevo, había perdido el hilo. Esto es lo que faltaba para que
+ * «sigue con mi tesis» signifique algo.
+ *
+ * Uno por comprador y producto. Un tesista tiene UNA tesis; si además compra la
+ * ruta del artículo, eso es otro proyecto y no debe mezclarse con el primero.
+ * No se permiten dos tesis a la vez a propósito: es la forma más rápida de que
+ * alguien escriba el capítulo IV de la que no era.
+ */
+model Project {
+  id     String @id @default(uuid()) @db.Char(36)
+  userId String @db.Char(36)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Qué método sigue este proyecto. Mismo código que la licencia.
+  productCode String @db.VarChar(40)
+
+  /// El tema, tal y como el tesista lo tiene delimitado ahora mismo. Cambia:
+  /// se guarda el vigente, no el histórico.
+  tema        String? @db.VarChar(500)
+  carrera     String? @db.VarChar(160)
+  universidad String? @db.VarChar(160)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  stages ProjectStage[]
+
+  /// Un proyecto por comprador y método.
+  @@unique([userId, productCode])
+  @@map("projects")
+}
+
+/**
+ * Lo que quedó decidido en un capítulo.
+ *
+ * `resumen` es prosa corta y es lo que de verdad se usa: se le entrega al
+ * asistente al empezar el capítulo siguiente para que no pregunte lo que ya se
+ * habló. `datos` queda para cuando las Skills devuelvan estado estructurado
+ * —variables, población, diseño— y todavía no lo hacen; existe para que ese
+ * trabajo tenga dónde caer sin otra migración.
+ *
+ * No guarda el texto del capítulo. Esto es la memoria de lo acordado, no el
+ * documento: el documento es otra etapa y otro problema.
+ */
+model ProjectStage {
+  id        String  @id @default(uuid()) @db.Char(36)
+  projectId String  @db.Char(36)
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  /// La clave del capítulo, la misma que usa `redactar`. No es clave foránea
+  /// contra `skills` porque un capítulo retirado del catálogo no puede borrar
+  /// el avance de nadie.
+  skillCode String @db.VarChar(64)
+
+  estado  StageState @default(PENDIENTE)
+  /// Qué quedó decidido, en dos o tres frases.
+  resumen String?    @db.Text
+  /// Lo mismo pero estructurado, cuando lo haya.
+  datos   Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([projectId, skillCode])
+  @@index([projectId, estado])
+  @@map("project_stages")
 }

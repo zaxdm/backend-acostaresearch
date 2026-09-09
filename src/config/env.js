@@ -140,6 +140,11 @@ const schema = z.object({
   // Techo de la captura. Una foto de pantalla de móvil no pasa de 2-3 MB.
   PROOF_MAX_BYTES: z.coerce.number().int().positive().default(6 * 1024 * 1024),
 
+  // Techo del export bibliográfico que sube un comprador. Un CSV de Scopus con
+  // resúmenes ronda los tres kilobytes por fuente, así que ocho megas cubren de
+  // sobra las mil largas que caben en el tope por usuario.
+  IMPORT_MAX_BYTES: z.coerce.number().int().positive().default(8 * 1024 * 1024),
+
   // ── Conector MCP (licencias) ────────────────────────────────────────────
   // Base pública de la URL que el comprador pega en Claude. Tiene que ser
   // HTTPS y estar accesible desde internet: Claude llama desde la nube de

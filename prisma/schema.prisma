@@ -2,7 +2,7 @@
 // Docs: https://pris.ly/d/prisma-schema
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
   // El motor de consultas es un binario compilado para una arquitectura
   // concreta. "native" cubre el equipo donde se desarrolla (Windows x64) y el
   // segundo, el servidor: Ubuntu x86-64 con OpenSSL 3, que es lo que da un
@@ -67,6 +67,8 @@ model User {
   wordPacks     WordPack[]
   payments      Payment[]
   licenses      License[]
+  /// Las fuentes que subió de su propio export de Scopus. Se van con la cuenta.
+  references    Reference[]
   accountCodes  AccountCode[]
 
   @@map("users")
@@ -139,7 +141,7 @@ enum RewriteStatus {
 
 /// Nivel de intervención sobre el texto original.
 enum RewriteMode {
-  LIGERO   // corrige y pule, respeta al máximo la redacción original
+  LIGERO // corrige y pule, respeta al máximo la redacción original
   ESTANDAR // reescribe para claridad y registro académico
   PROFUNDO // reorganiza la sintaxis y la progresión de las ideas
 }
@@ -160,10 +162,10 @@ model Rewrite {
   resultText  String? @db.MediumText
   sourceWords Int
 
-  model        String @db.VarChar(60)
-  inputTokens  Int    @default(0)
-  outputTokens Int    @default(0)
-  cachedTokens Int    @default(0)
+  model        String  @db.VarChar(60)
+  inputTokens  Int     @default(0)
+  outputTokens Int     @default(0)
+  cachedTokens Int     @default(0)
   /// Coste estimado en USD con las tarifas del modelo usado.
   costUsd      Decimal @default(0) @db.Decimal(10, 6)
 
@@ -198,7 +200,7 @@ enum McpDelivery {
 
 /// Qué entrega un plan al pagarlo.
 enum PlanKind {
-  WORDS   // una bolsa de palabras para el humanizador
+  WORDS // una bolsa de palabras para el humanizador
   LICENSE // una licencia del conector MCP (el método de las 9 skills)
 }
 
@@ -218,9 +220,9 @@ model Plan {
 
   /// Qué recibe el comprador. Un plan LICENSE ignora `words` y `durationDays`
   /// se aplica a la licencia en vez de a la bolsa.
-  kind PlanKind @default(WORDS)
+  kind        PlanKind @default(WORDS)
   /// Para los planes LICENSE: qué producto se licencia.
-  productCode String? @db.VarChar(40)
+  productCode String?  @db.VarChar(40)
 
   /// Topes del conector, por licencia. 0 = sin tope.
   ///
@@ -301,11 +303,11 @@ model WordPack {
 /// Estados de un cobro. No hay "reembolsado" todavía: cuando haga falta se
 /// añade aquí y se refleja revocando la bolsa correspondiente.
 enum PaymentStatus {
-  PENDING   // orden creada en la pasarela; el usuario aún no ha pagado nada
+  PENDING // orden creada en la pasarela; el usuario aún no ha pagado nada
   IN_REVIEW // pago manual con comprobante enviado, a la espera de que el administrador lo mire
-  PAID      // cobro confirmado y bolsa entregada
-  FAILED    // la pasarela rechazó el cobro o devolvió algo que no cuadra
-  REJECTED  // el administrador revisó el comprobante y no lo dio por bueno
+  PAID // cobro confirmado y bolsa entregada
+  FAILED // la pasarela rechazó el cobro o devolvió algo que no cuadra
+  REJECTED // el administrador revisó el comprobante y no lo dio por bueno
   CANCELLED // el usuario cerró la ventana sin llegar a pagar
 }
 
@@ -351,8 +353,8 @@ model Payment {
   /// Rebaja en céntimos de la moneda del cobro, ya restada de `amountCents`.
   discountCents  Int           @default(0)
 
-  payerEmail String? @db.VarChar(255)
-  errorCode  String? @db.VarChar(60)
+  payerEmail  String? @db.VarChar(255)
+  errorCode   String? @db.VarChar(60)
   /// Respuesta cruda de la pasarela, para poder reclamar con pruebas.
   rawResponse String? @db.MediumText
 
@@ -360,19 +362,19 @@ model Payment {
   /// Ruta del comprobante en disco, relativa al directorio de comprobantes. La
   /// imagen NO se guarda en la base de datos: son capturas de pantalla de un
   /// megabyte largo y aquí solo estorban a cada consulta de la tabla.
-  proofPath String? @db.VarChar(255)
-  proofMime String? @db.VarChar(40)
+  proofPath     String?   @db.VarChar(255)
+  proofMime     String?   @db.VarChar(40)
   /// Número de operación que muestra Yape. Es lo que permite cuadrar el
   /// comprobante con el extracto real sin fiarse de la captura.
-  operationCode String? @db.VarChar(40)
+  operationCode String?   @db.VarChar(40)
   /// Quién revisó el comprobante y qué decidió. Como el `createdById` de los
   /// códigos, va sin relación: es un apunte de auditoría, no algo que se
   /// navegue desde el usuario.
-  reviewedById String?   @db.Char(36)
-  reviewedAt   DateTime?
+  reviewedById  String?   @db.Char(36)
+  reviewedAt    DateTime?
   /// Motivo del rechazo. Se le enseña al comprador tal cual, así que se
   /// escribe pensando en que lo va a leer él.
-  reviewNote String? @db.VarChar(255)
+  reviewNote    String?   @db.VarChar(255)
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -390,8 +392,8 @@ model Payment {
 
 enum ActivationCodeStatus {
   AVAILABLE // generado y aún sin canjear
-  REDEEMED  // ya se cambió por una licencia
-  VOID      // anulado a mano antes de usarse
+  REDEEMED // ya se cambió por una licencia
+  VOID // anulado a mano antes de usarse
 }
 
 /// Código de un solo uso que se entrega al comprador tras la venta.
@@ -458,7 +460,7 @@ model ActivationCode {
 enum LicenseStatus {
   ACTIVE
   SUSPENDED // parada temporalmente, se puede reactivar
-  REVOKED   // cancelada; el token no vuelve a servir
+  REVOKED // cancelada; el token no vuelve a servir
 }
 
 /// El acceso vivo de un comprador al conector MCP.
@@ -513,9 +515,9 @@ model License {
   usages   LicenseUsage[]
   alerts   LicenseAlert[]
   sessions McpSession[]
-  counter LicenseCounter?
+  counter  LicenseCounter?
   /// Cobro que la originó, si se compró por la web en vez de canjear un código.
-  payment Payment?
+  payment  Payment?
 
   @@index([userId, status])
   @@map("licenses")
@@ -534,7 +536,7 @@ model LicenseUsage {
   licenseId String  @db.Char(36)
   license   License @relation(fields: [licenseId], references: [id], onDelete: Cascade)
 
-  tool String @db.VarChar(60)
+  tool       String  @db.VarChar(60)
   /// SHA-256 del texto de la consulta. Permite comparar si dos llamadas
   /// seguidas hablan de lo mismo sin conservar lo que escribió el tesista.
   promptHash String? @db.Char(64)
@@ -659,9 +661,9 @@ model LicenseCounter {
 
 /// Qué clase de llamada fue. Alimenta tanto los límites como la detección.
 enum UsageKind {
-  NORMAL             // consulta legítima
+  NORMAL // consulta legítima
   EXTRACTION_ATTEMPT // intento de sacar las instrucciones internas
-  BLOCKED_LIMIT      // rechazada por haber agotado el tope
+  BLOCKED_LIMIT // rechazada por haber agotado el tope
 }
 
 enum AlertKind {
@@ -766,10 +768,10 @@ model McpSession {
   containerId String?   @db.VarChar(120)
   expiresAt   DateTime?
 
-  turns     Int      @default(0)
+  turns       Int @default(0)
   /// Último tramo del método entregado, en las licencias de entrega.
   /// Permite servir el paso siguiente sin que el cliente lleve la cuenta.
-  lastSection Int    @default(0)
+  lastSection Int @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -828,12 +830,44 @@ model AccountCode {
 model Reference {
   id String @id @default(uuid()) @db.Char(36)
 
-  /// La clave del ítem en Zotero. Es la identidad de la fuente: al sincronizar
-  /// se actualiza por ella, de modo que corregir una ficha en Zotero corrige
-  /// la fila y no crea una segunda.
-  zoteroKey String @unique @db.VarChar(16)
-  /// Versión del ítem en Zotero, para pedir solo lo modificado.
+  /// La clave del ítem en Zotero. Es la identidad de la fuente EN EL FONDO DE
+  /// LA CASA: al sincronizar se actualiza por ella, de modo que corregir una
+  /// ficha en Zotero corrige la fila y no crea una segunda.
+  ///
+  /// NULA en lo que sube un comprador desde Scopus: eso no viene de Zotero y no
+  /// tiene clave que traer. MySQL admite tantos nulos como quiera en un índice
+  /// único, así que la columna sigue siendo única para las que sí la tienen y
+  /// no estorba a las que no. Esa es toda la migración que hizo falta.
+  zoteroKey String? @unique @db.VarChar(16)
+  /// Versión del ítem en Zotero, para pedir solo lo modificado. 0 en lo importado.
   version   Int
+
+  /// De quién es esta fuente.
+  ///
+  /// NULA = del fondo de la casa, que es lo que ven todas las licencias. Con
+  /// valor, es de ese comprador y NO LA VE NADIE MÁS. Es el filtro que no puede
+  /// fallar: un descuido aquí enseña el material de un tesista a otro.
+  ///
+  /// Va en la fila y no como etiqueta a propósito. El export de Scopus lo
+  /// descargó él con la suscripción de su universidad: es suyo, se borra con su
+  /// cuenta, y no se funde con el corpus que se sirve a los demás.
+  ownerUserId String? @db.Char(36)
+  owner       User?   @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+
+  /// De dónde salió: ZOTERO (la casa) o SCOPUS (subida por un comprador).
+  ///
+  /// Se guarda porque cambia lo que se le dice al asistente: lo de la casa lleva
+  /// la nota de Acosta y lo importado no, y esa diferencia tiene que llegarle al
+  /// conector para que no las presente como si fueran lo mismo.
+  origin ReferenceOrigin @default(ZOTERO)
+
+  /// Identidad de una fuente importada: su DOI, o el EID de Scopus, o el título
+  /// normalizado si no trae ninguno de los dos. Nula en el fondo de la casa,
+  /// que se identifica por su clave de Zotero.
+  ///
+  /// Junto con el dueño forma la clave que evita duplicados: volver a subir el
+  /// mismo export no crea una segunda copia de nada.
+  sourceRef String? @db.VarChar(200)
 
   itemType String  @db.VarChar(40)
   title    String  @db.VarChar(500)
@@ -869,8 +903,18 @@ model Reference {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@unique([ownerUserId, sourceRef])
+  @@index([ownerUserId])
   @@index([year])
   @@map("references")
+}
+
+/// De dónde salió una fuente. Ver el campo `origin` de `Reference`.
+enum ReferenceOrigin {
+  /// La biblioteca curada de la casa, espejada desde Zotero. Lleva nota.
+  ZOTERO
+  /// Un export que subió un comprador. Trae resumen, no lleva nota.
+  SCOPUS
 }
 
 /// A qué productos pertenece una fuente. Mismo trato que `SkillGroup`.

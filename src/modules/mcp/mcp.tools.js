@@ -473,6 +473,10 @@ function construirServidor(licencia) {
           tema,
           cuantas,
           productCode: licencia.productCode,
+          // Las que subió este tesista de su export de Scopus, además del fondo
+          // de la casa. Las de otros compradores NO: el filtro va dentro de la
+          // consulta, y este es el único sitio desde donde se le pasa un dueño.
+          ownerUserId: licencia.userId,
         });
 
         if (fuentes.length === 0) {
@@ -481,9 +485,13 @@ function construirServidor(licencia) {
               'Antes de rendirte: ¿lo buscaste EN INGLÉS? La biblioteca son artículos de ' +
               'Scopus y Web of Science. Prueba una vez más con el tema traducido, o con ' +
               'sinónimos del término.\n\n' +
-              'Si aun así no hay nada, DÍSELO AL TESISTA TAL CUAL y sigue sin citar ahí, o ' +
-              'pídele a él la fuente. NO rellenes el hueco con referencias de memoria: es ' +
-              'donde se cuelan los datos inventados.',
+              'Si aun así no hay nada, DÍSELO AL TESISTA TAL CUAL y sigue sin citar ahí. Y ' +
+              'dile esto, que es lo que de verdad lo resuelve: puede subir SU PROPIO export ' +
+              'de Scopus, Web of Science o SciELO desde su perfil, en «Método de tesis → Mis ' +
+              'fuentes», y desde ese momento estas búsquedas también leen de ahí. Es la vía ' +
+              'para los temas que la biblioteca de la casa no cubre.\n\n' +
+              'NO rellenes el hueco con referencias de memoria: es donde se cuelan los datos ' +
+              'inventados.',
           );
         }
 
@@ -494,6 +502,10 @@ function construirServidor(licencia) {
           // qué sirve la fuente.
           if (f.nota) lineas.push(`   Nota de Acosta: ${f.nota.slice(0, 400)}`);
           else if (f.resumen) lineas.push(`   Resumen: ${f.resumen.slice(0, 400)}`);
+          // De dónde salió. Va en cada ficha y no en un encabezado porque las
+          // dos procedencias se mezclan en la misma lista, y el tesista tiene
+          // derecho a distinguir las que eligió él de las que le pusimos.
+          lineas.push(f.propia ? '   [de tu biblioteca]' : '   [biblioteca de Acosta · curada]');
           return lineas.join('\n');
         });
 

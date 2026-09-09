@@ -267,7 +267,7 @@ function cita(fuente) {
  * todas las fichas, así que exigirlas no filtra nada y en cambio dejan fuera una
  * fuente cuyo título las escribió de otro modo.
  */
-async function buscarParaLicencia({ tema, productCode, cuantas }) {
+async function buscarParaLicencia({ tema, productCode, ownerUserId = null, cuantas }) {
   const palabras = mapper
     .normalizar(tema)
     .split(/[^a-z0-9]+/)
@@ -278,7 +278,7 @@ async function buscarParaLicencia({ tema, productCode, cuantas }) {
   }
 
   const limite = Math.min(Math.max(Number(cuantas) || POR_BUSQUEDA, 1), MAXIMO_POR_BUSQUEDA);
-  const fuentes = await referenceRepository.buscar({ palabras, productCode, limite });
+  const fuentes = await referenceRepository.buscar({ palabras, productCode, ownerUserId, limite });
 
   return fuentes.map((fuente) => ({
     titulo: fuente.title,
@@ -289,6 +289,15 @@ async function buscarParaLicencia({ tema, productCode, cuantas }) {
     resumen: fuente.abstract,
     nota: fuente.notes,
     etiquetas: fuente.tags,
+    /**
+     * De quién es. El conector lo enseña.
+     *
+     * No es un adorno: las de la casa llevan la nota que explica para qué sirve
+     * cada una, y las que subió el tesista traen el resumen que escribió la
+     * revista. Presentarlas como si fueran lo mismo diluye justo aquello por lo
+     * que pagó, y además le impide saber cuál eligió él y cuál no.
+     */
+    propia: fuente.ownerUserId !== null,
   }));
 }
 

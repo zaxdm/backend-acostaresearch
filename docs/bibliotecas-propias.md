@@ -1,8 +1,22 @@
-# Bibliotecas propias — diseño, sin código todavía
+# Bibliotecas propias — la vía cara, descartada
 
-Que cada comprador conecte su Zotero y que `buscar_fuentes` lea también de ahí.
-
-Esto es un plan para revisar. Nada de lo que sigue está implementado.
+> **NO SE HIZO ASÍ, y conviene saber por qué antes de retomarlo.**
+>
+> Este documento diseñaba que cada comprador conectara su **Zotero por API**.
+> Funciona, pero exige credenciales de terceros cifradas en reposo, una cola de
+> sincronización, un marcador de versión por biblioteca y convivir con claves
+> que el tesista puede revocar sin avisar.
+>
+> Lo que se implementó es otra cosa, mucho más corta: **sube su export de
+> Scopus** —un archivo—. Sin credenciales, sin cola, sin claves. Vive en
+> `scopus.parser.js`, `propias.service.js` y `propias.repository.js`, y está
+> explicado en `fuentes-propias.md`.
+>
+> Lo de aquí sigue valiendo si algún día hace falta que la biblioteca del
+> comprador se mantenga sola, sin que él vuelva a subir nada. Ese es el único
+> caso en que compensa el coste. Y ojo: la parte del esquema ya no aplica —al
+> final `zoteroKey` se hizo NULA en vez de cambiar su índice único, que resultó
+> ser una migración bastante menor de la que aquí se anticipaba.
 
 ## El problema, dicho con precisión
 

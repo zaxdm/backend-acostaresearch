@@ -200,10 +200,16 @@ async function aplicarNotas(porClavePadre) {
 
 function borrarPorClaves(claves) {
   if (claves.length === 0) return { count: 0 };
-  return prisma.reference.deleteMany({ where: { zoteroKey: { in: claves } } });
+  // Acotado al fondo de la casa. Hoy lo importado lleva `zoteroKey` nulo y no
+  // podría coincidir, pero esto se ejecuta en la fase de retiradas de cada
+  // sincronización y borra sin preguntar: el día que una fuente importada tenga
+  // clave por lo que sea, la diferencia entre estas dos versiones es que una se
+  // lleva por delante la biblioteca de un tesista y la otra no.
+  return prisma.reference.deleteMany({ where: { zoteroKey: { in: claves }, ownerUserId: null } });
 }
 
-const contar = () => prisma.reference.count();
+/** Solo el fondo de la casa: es lo que enseña el panel del administrador. */
+const contar = () => prisma.reference.count({ where: { ownerUserId: null } });
 
 /**
  * Busca en el corpus.
@@ -253,7 +259,7 @@ function sinRepetidos(filas, limite) {
   return unicas;
 }
 
-async function buscar({ palabras, productCode, limite = 8 }) {
+async function buscar({ palabras, productCode, ownerUserId = null, limite = 8 }) {
   // Una fuente sin grupos la ven todas las licencias; con grupos, solo las de
   // su producto. Es el mismo criterio que el catálogo de capítulos.
   const filtroProducto = productCode
@@ -261,6 +267,19 @@ async function buscar({ palabras, productCode, limite = 8 }) {
       'OR EXISTS (SELECT 1 FROM `reference_groups` g WHERE g.referenceId = r.id ' +
       'AND g.productCode = ?)) '
     : '';
+
+  // EL FILTRO QUE NO PUEDE FALLAR.
+  //
+  // El fondo de la casa lleva `ownerUserId` nulo y lo ve todo el mundo; lo que
+  // sube un comprador solo lo ve él. Sin la segunda mitad de esta condición, la
+  // búsqueda de un tesista devolvería las fuentes que subió otro, que es lo
+  // único de este módulo que no admite un fallo.
+  //
+  // Va escrito así —y no como un parámetro opcional que se pueda olvidar— para
+  // que quien lea la consulta vea la regla entera de un vistazo.
+  const filtroDueño = ownerUserId
+    ? 'AND (r.ownerUserId IS NULL OR r.ownerUserId = ?) '
+    : 'AND r.ownerUserId IS NULL ';
 
   const consulta = palabras.map((palabra) => '+' + palabra + '*').join(' ');
 
@@ -273,14 +292,23 @@ async function buscar({ palabras, productCode, limite = 8 }) {
   // repetidas: con el límite justo, una respuesta de seis podría quedarse en
   // tres. El triple cubre de sobra lo que se ha visto duplicado.
   const margen = limite * 3;
-  const parametros = [consulta, consulta, ...(productCode ? [productCode] : []), margen];
+  const parametros = [
+    consulta,
+    consulta,
+    ...(productCode ? [productCode] : []),
+    ...(ownerUserId ? [ownerUserId] : []),
+    margen,
+  ];
 
   const porIndice = await prisma.$queryRawUnsafe(
     'SELECT r.*, MATCH(r.busqueda) AGAINST (? IN BOOLEAN MODE) AS relevancia ' +
       'FROM `references` r ' +
       'WHERE MATCH(r.busqueda) AGAINST (? IN BOOLEAN MODE) ' +
       filtroProducto +
-      'ORDER BY relevancia DESC, r.year DESC LIMIT ?',
+      filtroDueño +
+      // Las suyas primero: es su tema y las eligió él. Después las de la casa,
+      // que llevan nota. Dentro de cada grupo manda la relevancia.
+      'ORDER BY (r.ownerUserId IS NULL), relevancia DESC, r.year DESC LIMIT ?',
     ...parametros,
   );
 
@@ -293,9 +321,13 @@ async function buscar({ palabras, productCode, limite = 8 }) {
         productCode
           ? { OR: [{ groups: { none: {} } }, { groups: { some: { productCode } } }] }
           : {},
+        // La misma regla de dueño que arriba. Este camino es el de reserva
+        // —cuando el índice de texto completo no encuentra nada— y saltárselo
+        // aquí filtraría bien en la consulta rápida y mal en la lenta.
+        ownerUserId ? { OR: [{ ownerUserId: null }, { ownerUserId }] } : { ownerUserId: null },
       ],
     },
-    orderBy: [{ year: 'desc' }, { title: 'asc' }],
+    orderBy: [{ ownerUserId: 'desc' }, { year: 'desc' }, { title: 'asc' }],
     take: margen,
   });
 

@@ -62,6 +62,40 @@ router.get(
 );
 
 /**
+ * La bibliografía en BibTeX, para quien escribe la tesis en LaTeX.
+ *
+ * Sale de las MISMAS citas que el Word, así que las dos salidas no pueden
+ * discrepar. Y las claves del `.bib` son las que ya están entre corchetes en sus
+ * capítulos: `[AR97D22F86]` en el texto es `\cite{AR97D22F86}` en LaTeX.
+ */
+router.get(
+  '/:productCode/bib',
+  asyncHandler(async (req, res) => {
+    const archivo = await projectService.armarBibtex(req.user.id, req.params.productCode);
+
+    if (!archivo) {
+      // Un `.bib` vacío compila y no imprime nada, así que el tesista lo
+      // descubriría al final mirando una bibliografía en blanco. Y se dice qué
+      // falta exactamente: no es que no haya capítulos, es que no hay ninguna
+      // cita puesta en ellos, que se arregla de otra manera.
+      return res.status(404).json({
+        success: false,
+        message:
+          'Todavía no hay ninguna cita en tus capítulos, así que no hay bibliografía que ' +
+          'exportar. Pídele fuentes a Claude mientras redactas y volverá a haber algo aquí.',
+      });
+    }
+
+    // El `charset` va explícito porque el archivo lleva tildes y eñes: sin
+    // declararlo, quien lo abra en un editor que suponga Latin-1 ve los
+    // apellidos rotos, y los apellidos son justo lo que no puede salir mal.
+    res.setHeader('Content-Type', 'text/x-bibtex; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${archivo.nombreArchivo}"`);
+    return res.send(archivo.contenido);
+  }),
+);
+
+/**
  * La plantilla de su facultad.
  *
  * El cuerpo va en crudo y con su propio techo, como el comprobante de Yape y el

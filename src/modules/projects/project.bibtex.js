@@ -43,13 +43,21 @@ const ESCAPES = {
   '^': '\\textasciicircum{}',
 };
 
+/**
+ * UNA SOLA PASADA, y esto no es una optimización.
+ *
+ * En dos pasadas —primero la barra invertida, luego el resto— la segunda vuelve
+ * a mirar lo que escribió la primera: `\textbackslash{}` lleva llaves, y salen
+ * escapadas otra vez como `\textbackslash\{\}`. En el orden contrario pasa lo
+ * mismo con las barras. Cualquier reparto en dos pasos se muerde la cola.
+ *
+ * Con una sola expresión, cada carácter del original se sustituye exactamente
+ * una vez y lo que sale de la sustitución ya no se vuelve a leer.
+ */
 function escapar(valor) {
   if (valor === null || valor === undefined) return '';
-  // La barra invertida va primero: si se sustituyera después, escaparía las
-  // barras que acaban de introducir las demás sustituciones.
   return String(valor)
-    .replace(/\\/g, ESCAPES['\\'])
-    .replace(/[{}$&%#_~^]/g, (c) => ESCAPES[c])
+    .replace(/[\\{}$&%#_~^]/g, (c) => ESCAPES[c])
     .replace(/\s+/g, ' ')
     .trim();
 }

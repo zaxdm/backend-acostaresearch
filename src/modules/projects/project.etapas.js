@@ -177,6 +177,19 @@ const ETAPAS = {
         lista: true,
         pista: 'Uno por objetivo específico, en una línea cada uno.',
       },
+      /**
+       * Los números que devolvió el análisis, tal cual.
+       *
+       * De aquí sale la comprobación de que ninguna cifra del capítulo de
+       * resultados se haya escrito sola. Ver `project.cifras`.
+       */
+      resultados: {
+        titulo: 'Cifras obtenidas',
+        lista: true,
+        pista:
+          'Un número por línea, con su etiqueta y tal como lo devolvió el análisis: ' +
+          '«alfa de Cronbach = 0.87», «R2 = 0.4231», «p = 0.003».',
+      },
     },
     necesita: [{ etapa: 'metodologia', campos: ['enfoque', 'analisis'] }],
   },

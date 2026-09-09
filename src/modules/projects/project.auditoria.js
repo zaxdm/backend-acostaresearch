@@ -26,9 +26,25 @@
  */
 
 const { normalizar } = require('../references/zotero.mapper');
+const cifras = require('./project.cifras');
 
 /** Capítulos donde no citar nada es, casi siempre, un olvido. */
 const EXIGEN_FUENTES = new Set(['marco-teorico', 'discusion', 'articulo-fase3-revision-literatura']);
+
+/**
+ * Capítulos donde un número es un resultado de este estudio.
+ *
+ * En el planteamiento del problema también hay porcentajes, pero vienen de una
+ * fuente citada, no de las pruebas propias. Comprobarlos contra el análisis
+ * marcaría como sospechoso justo lo que está bien hecho.
+ */
+const REPORTAN_CIFRAS = new Set([
+  'analisis-datos-rstudio',
+  'discusion',
+  'conclusiones-abstract',
+  'articulo-fase5-resultados',
+  'articulo-fase6-discusion',
+]);
 
 /**
  * Palabras que no distinguen un objetivo de otro.
@@ -205,6 +221,31 @@ function auditar({ proyecto, catalogo, etapas, capitulos, evidencia, citasRotas 
           aviso(
             `En metodología se anunció «${previsto}» y no aparece entre las pruebas ` +
               'realizadas. O se hizo y falta anotarlo, o hay que explicar por qué no.',
+          ),
+        );
+      }
+    }
+  }
+
+  // ── 2c. Las cifras del texto contra las del análisis ───────────────────
+  //
+  // El control que el brief daba por imposible sin ejecutar R (§4.8). No hace
+  // falta ejecutarlo: basta con que el tesista haya pegado lo que le devolvió
+  // su RStudio. El cálculo lo sigue haciendo él; lo que aporta esto es que
+  // nadie pueda escribir un número que no esté ahí.
+  const guardadas = analisis.resultados ?? [];
+  if (guardadas.length > 0) {
+    for (const capitulo of capitulos) {
+      // Solo donde se reportan resultados. Un porcentaje en el planteamiento
+      // del problema viene de una fuente, no de las pruebas de este estudio.
+      if (!REPORTAN_CIFRAS.has(capitulo.code)) continue;
+
+      for (const suelta of cifras.sinRespaldo(capitulo.texto, guardadas)) {
+        hallazgos.push(
+          grave(
+            `En «${nombre(capitulo.code)}» aparece ${suelta.bruto} y no está entre las cifras ` +
+              `guardadas del análisis. Contexto: «…${suelta.contexto}…». ` +
+              'O falta anotarla, o ese número no lo devolvió ninguna prueba.',
           ),
         );
       }

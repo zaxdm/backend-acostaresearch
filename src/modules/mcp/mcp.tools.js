@@ -184,6 +184,41 @@ const ESQUEMA_GUARDAR_CAPITULO = fromJsonSchema({
   additionalProperties: false,
 });
 
+const ESQUEMA_GUARDAR_ANALISIS = fromJsonSchema({
+  type: 'object',
+  properties: {
+    capitulo: {
+      type: 'string',
+      description:
+        'Clave del capítulo de resultados. Normalmente «analisis-datos-rstudio» en tesis o ' +
+        '«articulo-fase5-resultados» en artículo.',
+    },
+    script: {
+      type: 'string',
+      maxLength: 30000,
+      description:
+        'El script de R que le pasaste al tesista, tal cual. Se guarda sin ejecutarlo: sirve ' +
+        'para poder responder dentro de un año de dónde salió cada número.',
+    },
+    salida: {
+      type: 'string',
+      maxLength: 30000,
+      description: 'Lo que le devolvió la consola de R, pegado tal cual, sin resumir.',
+    },
+    resultados: {
+      type: 'array',
+      items: { type: 'string' },
+      description:
+        'Las cifras que van a aparecer en el texto, una por línea y con su etiqueta: ' +
+        '«alfa de Cronbach = 0.87», «R2 = 0.4231», «p = 0.003», «beta = -0.31». ' +
+        'SÁCALAS DE LA SALIDA que pegó el tesista, no de memoria. A partir de aquí, cualquier ' +
+        'número que escribas en el capítulo y no esté en esta lista sale marcado en el repaso.',
+    },
+  },
+  required: ['capitulo'],
+  additionalProperties: false,
+});
+
 const ESQUEMA_REVISAR_EVIDENCIA = fromJsonSchema({
   type: 'object',
   properties: {
@@ -554,6 +589,66 @@ function construirServidor(licencia) {
             (error?.issues?.[0]?.message ?? 'error del servidor') +
             '. AVÍSALE de que este capítulo no ha quedado guardado en el servidor y que ' +
             'no cierre la conversación sin copiarlo.',
+        );
+      }
+    },
+  );
+
+  server.registerTool(
+    'guardar_analisis',
+    {
+      title: 'Guardar el análisis y sus cifras',
+      description:
+        'Guarda el script de R, lo que devolvió la consola y las cifras obtenidas. ' +
+        'ESTE SERVIDOR NO EJECUTA R: el tesista corre el análisis en su propio RStudio, con ' +
+        'sus datos, y te pega el resultado. Guárdalo EN CUANTO te lo pegue.\n\n' +
+        'Por qué importa: a partir de ese momento, cualquier cifra que aparezca en el ' +
+        'capítulo de resultados y no esté entre las guardadas sale marcada en el repaso. ' +
+        'Es lo que impide que un número se escriba solo porque ahí pegaba un número.',
+      inputSchema: ESQUEMA_GUARDAR_ANALISIS,
+    },
+    async ({ capitulo, script, salida, resultados }) => {
+      await licenseService.recordUsage({ licenseId: licencia.id, tool: 'guardar_analisis' });
+
+      const skill = await skillService.findByCode(capitulo);
+      if (!skill || !skillService.perteneceAlGrupo(skill, licencia.productCode)) {
+        return texto(
+          `No existe ningún capítulo con la clave "${capitulo}". ` +
+            'Usa listar_capitulos para ver las claves válidas. No se ha guardado nada.',
+        );
+      }
+
+      try {
+        const { escritos, guardadas } = await projectService.guardarAnalisis({
+          userId: licencia.user.id,
+          productCode: licencia.productCode,
+          capitulo,
+          script,
+          salida,
+          resultados,
+        });
+
+        const partes = [];
+        if (escritos.includes('script')) partes.push('el script');
+        if (escritos.includes('salida')) partes.push('la salida de la consola');
+        if (guardadas > 0) partes.push(`${guardadas} cifras`);
+
+        if (partes.length === 0) return texto('No mandaste nada que guardar.');
+
+        return texto(
+          `Guardado: ${partes.join(', ')}.\n\n` +
+            (guardadas > 0
+              ? 'A partir de ahora, cualquier número del capítulo de resultados que no esté ' +
+                'entre esas cifras saldrá marcado en el repaso. Si vas a escribir uno que ' +
+                'falte, guárdalo antes.'
+              : 'No guardaste ninguna cifra. Sin ellas no se puede comprobar que los números ' +
+                'del texto salgan del análisis, que es de lo que más se aprovecha aquí.'),
+        );
+      } catch (error) {
+        logger.error({ err: error, licenseId: licencia.id }, 'No se pudo guardar el análisis');
+        return texto(
+          'NO se pudo guardar el análisis. AVÍSALE al tesista de que no ha quedado guardado ' +
+            'y de que no cierre la conversación sin copiar su script.',
         );
       }
     },

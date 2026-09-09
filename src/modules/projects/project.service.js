@@ -355,6 +355,40 @@ async function revisarEvidencia(userId, productCode, { capitulo = null } = {}) {
 }
 
 /**
+ * Guarda el análisis: el script, lo que devolvió, y las cifras.
+ *
+ * NO SE EJECUTA NADA AQUÍ, y es a propósito. El tesista corre su análisis en su
+ * propio RStudio, con sus datos, y pega el resultado. Ejecutar R de terceros en
+ * este servidor sería un problema de seguridad, no una función.
+ *
+ * Lo que aporta guardarlo: el script queda para poder responder, dentro de un
+ * año, «¿de dónde salió este 0,42?», y las cifras quedan para que el repaso
+ * pueda comprobar que ningún número del capítulo se escribió solo.
+ */
+async function guardarAnalisis({ userId, productCode, capitulo, script, salida, resultados }) {
+  const proyecto = await projectRepository.asegurar(userId, productCode);
+
+  const escritos = await almacen.guardarAnalisis(proyecto.id, capitulo, { script, salida });
+
+  let guardadas = 0;
+  if (Array.isArray(resultados) && resultados.length > 0) {
+    const actual = await projectRepository.buscar(userId, productCode);
+    const previa = (actual?.stages ?? []).find((e) => e.skillCode === capitulo);
+    const limpio = etapas.limpiar(capitulo, { resultados });
+
+    if (limpio?.resultados) {
+      await projectRepository.guardarEtapa(proyecto.id, capitulo, {
+        datos: etapas.fusionar(previa?.datos, limpio),
+        estado: (previa?.estado ?? 'PENDIENTE') === 'PENDIENTE' ? 'EN_CURSO' : undefined,
+      });
+      guardadas = limpio.resultados.length;
+    }
+  }
+
+  return { escritos, guardadas };
+}
+
+/**
  * El repaso completo antes de entregar.
  *
  * Reúne en un sitio lo que ya saben los otros módulos —qué está escrito, qué
@@ -463,6 +497,7 @@ module.exports = {
   guardarCapitulo,
   armarWord,
   revisarEvidencia,
+  guardarAnalisis,
   auditar,
   siguientePaso,
   deUsuario,

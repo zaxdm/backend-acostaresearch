@@ -107,4 +107,60 @@ async function borrarProyecto(projectId) {
   await fs.rm(path.join(env.capitulosDir, projectId), { recursive: true, force: true });
 }
 
-module.exports = { guardar, leer, borrar, borrarProyecto, palabrasDe, rutaDe };
+/**
+ * El script de R y su salida, tal cual.
+ *
+ * Se guardan sin tocarlos y sin interpretarlos, por reproducibilidad: dentro de
+ * un año, «¿de dónde salió este 0,42?» se responde abriendo el script que lo
+ * produjo. Es lo que pide el §4.6 del brief y lo único de todo el análisis
+ * estadístico que se puede garantizar sin ejecutar nada.
+ *
+ * `tipo` es «script» o «salida», y nada más: la extensión la decide este módulo
+ * y no lo que venga de fuera.
+ */
+const EXTENSIONES = { script: 'R', salida: 'txt' };
+
+function rutaDeAnalisis(projectId, skillCode, tipo) {
+  const extension = EXTENSIONES[tipo];
+  if (!extension) throw new Error('Tipo de archivo de análisis no válido');
+  if (!SEGURO.test(projectId) || !SEGURO.test(skillCode)) {
+    throw new Error('Identificador de análisis no válido');
+  }
+  return path.join(env.capitulosDir, projectId, `analisis-${skillCode}.${extension}`);
+}
+
+async function guardarAnalisis(projectId, skillCode, { script, salida } = {}) {
+  const escritos = [];
+
+  for (const [tipo, contenido] of Object.entries({ script, salida })) {
+    if (!contenido) continue;
+    const ruta = rutaDeAnalisis(projectId, skillCode, tipo);
+    await fs.mkdir(path.dirname(ruta), { recursive: true });
+    const temporal = `${ruta}.parcial`;
+    await fs.writeFile(temporal, contenido, 'utf8');
+    await fs.rename(temporal, ruta);
+    escritos.push(tipo);
+  }
+
+  return escritos;
+}
+
+async function leerAnalisis(projectId, skillCode, tipo) {
+  try {
+    return await fs.readFile(rutaDeAnalisis(projectId, skillCode, tipo), 'utf8');
+  } catch (error) {
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
+module.exports = {
+  guardar,
+  leer,
+  borrar,
+  borrarProyecto,
+  palabrasDe,
+  rutaDe,
+  guardarAnalisis,
+  leerAnalisis,
+};

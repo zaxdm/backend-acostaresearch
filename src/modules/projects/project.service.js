@@ -20,6 +20,7 @@ const documento = require('./project.docx');
 const citas = require('./project.citas');
 const etapas = require('./project.etapas');
 const evidencia = require('./project.evidencia');
+const auditoria = require('./project.auditoria');
 const skillService = require('../skills/skill.service');
 const referenceService = require('../references/reference.service');
 const { guardarAvanceSchema, guardarCapituloSchema } = require('./project.schema');
@@ -332,6 +333,61 @@ async function revisarEvidencia(userId, productCode, { capitulo = null } = {}) {
 }
 
 /**
+ * El repaso completo antes de entregar.
+ *
+ * Reúne en un sitio lo que ya saben los otros módulos —qué está escrito, qué
+ * campos hay, qué citas resuelven, qué afirmaciones tienen respaldo— y coteja la
+ * tesis consigo misma. No lee la tesis: la compara con lo que ella misma dice
+ * que iba a hacer.
+ */
+async function auditar(userId, productCode) {
+  const [proyecto, catalogo] = await Promise.all([
+    projectRepository.buscar(userId, productCode),
+    skillService.listCatalog(productCode),
+  ]);
+
+  if (!proyecto) return null;
+
+  const conTexto = new Set(
+    proyecto.stages.filter((e) => (e.palabras ?? 0) > 0).map((e) => e.skillCode),
+  );
+
+  const capitulos = [];
+  for (const skill of catalogo) {
+    if (!conTexto.has(skill.code)) continue;
+    const texto = await almacen.leer(proyecto.id, skill.code);
+    if (texto && texto.trim() !== '') {
+      capitulos.push({ code: skill.code, titulo: skill.displayName, texto });
+    }
+  }
+
+  const claves = [...new Set(capitulos.flatMap((c) => citas.clavesDe(c.texto)))];
+  const fuentes = await referenceService.porClaves(claves, userId);
+  const porClave = new Map(fuentes.map((f) => [f.ref, f]));
+  const citasRotas = claves.filter((clave) => !porClave.has(clave));
+
+  const informe =
+    capitulos.length > 0 ? evidencia.revisar(capitulos, porClave) : { capitulos: [], total: {} };
+
+  // A cada etapa se le adjunta lo que le falta de las anteriores, para que la
+  // auditoría no tenga que volver a saber cómo se calcula eso.
+  const porEtapa = new Map(proyecto.stages.map((e) => [e.skillCode, e.datos ?? {}]));
+  const conFaltas = proyecto.stages.map((e) => ({
+    ...e,
+    faltan: etapas.queFalta(e.skillCode, porEtapa),
+  }));
+
+  return auditoria.auditar({
+    proyecto,
+    catalogo,
+    etapas: conFaltas,
+    capitulos,
+    evidencia: informe,
+    citasRotas,
+  });
+}
+
+/**
  * Los proyectos del comprador, ya cruzados con el catálogo.
  *
  * El cruce se hace aquí y no en la web a propósito: la web no tiene por qué
@@ -385,6 +441,7 @@ module.exports = {
   guardarCapitulo,
   armarWord,
   revisarEvidencia,
+  auditar,
   siguientePaso,
   deUsuario,
 };

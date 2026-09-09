@@ -618,6 +618,65 @@ function construirServidor(licencia) {
     },
   );
 
+  server.registerTool(
+    'revisar_la_tesis',
+    {
+      title: 'Repaso antes de entregar',
+      description:
+        'Coteja la tesis consigo misma y devuelve lo que no cuadra: capítulos dados por ' +
+        'buenos sin texto, variables que no aparecen en ningún objetivo, objetivos sin ' +
+        'conclusión, citas rotas y afirmaciones sin fuente. ' +
+        'ÚSALA CUANDO EL TESISTA VAYA A ENTREGAR, y ofrécesela tú si ves que está cerrando ' +
+        'capítulos: nadie sabe que esto existe y es lo último que se revisa a mano.',
+      inputSchema: SIN_ARGUMENTOS,
+    },
+    async () => {
+      await licenseService.recordUsage({ licenseId: licencia.id, tool: 'revisar_la_tesis' });
+
+      const informe = await projectService.auditar(licencia.user.id, licencia.productCode);
+
+      if (!informe) {
+        return texto(
+          'Todavía no hay proyecto que revisar. Esto se usa cuando ya hay capítulos escritos.',
+        );
+      }
+
+      const partes = [];
+
+      if (informe.hallazgos.length === 0) {
+        partes.push('No he encontrado nada que no cuadre.');
+      } else {
+        // Lo grave primero. Un listado donde lo importante está en la posición
+        // catorce es un listado que se lee hasta la cuarta.
+        const graves = informe.hallazgos.filter((h) => h.nivel === 'grave');
+        const avisos = informe.hallazgos.filter((h) => h.nivel === 'aviso');
+
+        if (graves.length > 0) {
+          partes.push(`HAY QUE ARREGLAR (${graves.length}):`);
+          partes.push(graves.map((h) => `  · ${h.mensaje}`).join('\n'));
+        }
+        if (avisos.length > 0) {
+          partes.push(`\nPARA MIRAR (${avisos.length}):`);
+          partes.push(avisos.map((h) => `  · ${h.mensaje}`).join('\n'));
+        }
+      }
+
+      partes.push(`\nCapítulos con texto guardado: ${informe.escritos}.`);
+      if (informe.sinEscribir.length > 0) {
+        partes.push(`Sin escribir todavía: ${informe.sinEscribir.join(', ')}.`);
+      }
+
+      return texto(
+        `Repaso de la tesis:\n\n${partes.join('\n')}\n\n` +
+          'LO QUE ESTE REPASO NO MIRA, y hay que mirar aparte: si los números del texto ' +
+          'cuadran con los de las tablas, y si cada fuente dice de verdad lo que la frase le ' +
+          'atribuye. Ninguna de las dos cosas se puede comprobar sin leer. ' +
+          'Y nada de lo de arriba es una sentencia: puede haber buenas razones para todo. ' +
+          'Repásalo con el tesista en vez de cambiarlo por tu cuenta.',
+      );
+    },
+  );
+
   // ── Redacción de un capítulo ─────────────────────────────────────────────
   server.registerTool(
     'redactar',

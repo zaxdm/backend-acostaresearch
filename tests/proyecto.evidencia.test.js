@@ -116,3 +116,31 @@ test('una frase larguísima se recorta para poder enseñarla', () => {
   assert.ok(r.sinRespaldo[0].frase.length <= 205);
   assert.match(r.sinRespaldo[0].frase, /…$/);
 });
+
+test('la prosa de estructura no se marca, aunque nombre la literatura', () => {
+  // Salió en la primera prueba contra el servidor: esta frase saltaba como
+  // «sin fuente» y no afirma nada. Una tesis está llena de frases así, y un
+  // detector que marca la mitad del capítulo se cierra y no se vuelve a abrir.
+  const r = revisar(
+    'En este capítulo se organiza la revisión de la literatura en tres apartados, ' +
+      'siguiendo el orden de los objetivos específicos planteados.',
+  );
+
+  assert.equal(r.sinRespaldo.length, 0);
+});
+
+test('pero atribuir algo a la literatura sí se marca', () => {
+  const r = revisar(
+    'Según la literatura reciente, el acompañamiento tutorial reduce el abandono en el primer año.',
+  );
+
+  assert.equal(r.sinRespaldo.length, 1);
+});
+
+test('«diversos autores señalan» sigue saltando por el verbo', () => {
+  const r = revisar(
+    'Diversos autores coinciden y señalan que el primer ciclo concentra la mayor parte del abandono.',
+  );
+
+  assert.equal(r.sinRespaldo.length, 1);
+});

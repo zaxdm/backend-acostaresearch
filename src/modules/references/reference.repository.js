@@ -383,7 +383,25 @@ async function buscar({ palabras, productCode, ownerUserId = null, limite = 8 })
   // lo mismo y esto sería repetir la consulta para nada.
   if (palabras.length > 1) {
     const aproximadas = await porIndice(consultaFloja);
-    if (aproximadas.length > 0) return sinRepetidos(aproximadas, limite);
+
+    // DOS PALABRAS COMO MÍNIMO, y esta es la línea que separa «aflojar» de
+    // «devolver cualquier cosa».
+    //
+    // Sin ella, «employability of computer science graduates» daría por buena
+    // una fuente cuyo único parecido es la palabra «science», y el tesista
+    // recibiría como pertinente algo que no lo es. Peor que no encontrar nada:
+    // cuando la biblioteca dice que no hay, él lo sabe y busca en otro lado;
+    // cuando le da un resultado malo, se lo cree.
+    //
+    // Se cuenta aquí y no en SQL porque MySQL no sabe exigir «al menos N de
+    // estas» en modo booleano, y contar sobre las filas que ya volvieron es
+    // exacto y cuesta nada: son como mucho tres docenas.
+    const suficientes = aproximadas.filter((fila) => {
+      const texto = fila.busqueda ?? '';
+      return palabras.filter((palabra) => texto.includes(palabra)).length >= 2;
+    });
+
+    if (suficientes.length > 0) return sinRepetidos(suficientes, limite);
   }
 
   const porTexto = await prisma.reference.findMany({

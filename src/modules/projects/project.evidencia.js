@@ -43,12 +43,28 @@ const CITA_A_MANO = /\([A-ZÁÉÍÓÚÑ][^()]{1,60},\s*(?:19|20)\d{2}[a-z]?\)/;
 const PIDE_FUENTE = [
   // Verbos de reporte: se está atribuyendo algo a alguien.
   /\b(demuestran?|evidencian?|revelan?|indican?|señalan?|sostienen?|concluyen?|afirman?)\b/i,
-  /\b(seg[úu]n|de acuerdo con|tal como|estudios?|investigaciones?|autores?|la literatura)\b/i,
   /\bse ha (demostrado|encontrado|observado|reportado|documentado)\b/i,
+  /\b(seg[úu]n|de acuerdo con)\b/i,
   // Cifras: un porcentaje o una proporción sin fuente es lo primero que se mira.
   /\d+(?:[.,]\d+)?\s*%/,
   /\b(la mayor[íi]a|un tercio|la mitad|dos de cada|uno de cada)\b/i,
 ];
+
+/*
+ * Lo que se quitó de esta lista, y por qué.
+ *
+ * Estaban también «estudios», «investigaciones», «autores» y «la literatura»
+ * sueltos. Saltaban con esta frase, que salió en la primera prueba de verdad:
+ *
+ *   «En este capítulo se organiza la revisión de la literatura en tres
+ *    apartados, siguiendo el orden de los objetivos específicos.»
+ *
+ * Eso no afirma nada: es prosa de estructura, y una tesis está llena. Los
+ * nombres solos no atribuyen; lo que atribuye es el verbo. Y no se pierde nada,
+ * porque «diversos autores señalan» sigue saltando por «señalan», y «según la
+ * literatura» por «según». Un detector que marca la mitad del capítulo se cierra
+ * y no se vuelve a abrir.
+ */
 
 /** Encabezados y líneas sueltas: no son afirmaciones. */
 function esProsa(frase) {

@@ -1,0 +1,10 @@
+[Unit]
+Description=Aviso de caducidad de licencias de Acosta Research
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=acosta
+Group=acosta
+WorkingDirectory=/opt/acostaresearch/app
+ExecStart=/usr/bin/node /opt/acostaresearch/app/scripts/avisar-caducidad.js

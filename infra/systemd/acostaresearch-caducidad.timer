@@ -1,0 +1,13 @@
+[Unit]
+Description=Aviso diario de caducidad de licencias
+
+[Timer]
+# 13:00 UTC son las 8 de la manana en Lima. Lejos del respaldo de las 3:30 y
+# de cualquier sincronizacion de Zotero: el plan de la base da cinco
+# conexiones y no sobra ninguna.
+OnCalendar=*-*-* 13:00:00
+Persistent=true
+RandomizedDelaySec=600
+
+[Install]
+WantedBy=timers.target

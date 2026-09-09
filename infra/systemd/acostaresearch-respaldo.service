@@ -1,0 +1,6 @@
+[Unit]
+Description=Respaldo de la base de datos, skills, comprobantes y configuración
+
+[Service]
+Type=oneshot
+ExecStart=/opt/acostaresearch/respaldar.sh

@@ -12,8 +12,9 @@
  * de Lima. Nunca a la vez que el respaldo ni que una sincronización de Zotero:
  * el plan de la base de datos da cinco conexiones y no sobra ninguna.
  *
- * Uso:  npm run licencias:avisar          manda los correos
- *       npm run licencias:avisar -- --ver   enseña a quién avisaría y no manda
+ * Uso:  npm run licencias:avisar                    manda los correos
+ *       npm run licencias:avisar -- --ver           enseña a quién avisaría
+ *       npm run licencias:avisar -- --ver --dias=90 lo mismo, mirando más lejos
  */
 
 const prisma = require('../src/lib/prisma');
@@ -32,6 +33,23 @@ const DIAS_DE_AVISO = 15;
 const DIA_MS = 24 * 60 * 60 * 1000;
 const soloVer = process.argv.includes('--ver');
 
+/**
+ * Ventana a mirar. Se puede ampliar con --dias para comprobar que la consulta
+ * encuentra a alguien: un día en que no caduca nadie, «cero avisados» y «la
+ * consulta está mal» se ven exactamente igual.
+ *
+ * Solo se acepta en modo prueba. Ampliar la ventana en la pasada de verdad
+ * mandaría el aviso con meses de antelación, y una sola vez, que es peor que no
+ * mandarlo.
+ */
+function ventanaEnDias() {
+  const arg = process.argv.find((a) => a.startsWith('--dias='));
+  if (!arg || !soloVer) return DIAS_DE_AVISO;
+
+  const n = Number.parseInt(arg.slice('--dias='.length), 10);
+  return Number.isFinite(n) && n > 0 ? n : DIAS_DE_AVISO;
+}
+
 /** El nombre que reconoce el comprador, no el código interno. */
 async function nombresDeProducto() {
   const planes = await prisma.plan.findMany({
@@ -46,7 +64,8 @@ async function nombresDeProducto() {
 
 async function principal() {
   const ahora = new Date();
-  const limite = new Date(ahora.getTime() + DIAS_DE_AVISO * DIA_MS);
+  const dentroDe = ventanaEnDias();
+  const limite = new Date(ahora.getTime() + dentroDe * DIA_MS);
 
   const licencias = await prisma.license.findMany({
     where: {
@@ -65,7 +84,7 @@ async function principal() {
   });
 
   if (licencias.length === 0) {
-    console.log(`${ahora.toISOString().slice(0, 19)}  nadie caduca en los próximos ${DIAS_DE_AVISO} días`);
+    console.log(`${ahora.toISOString().slice(0, 19)}  nadie caduca en los próximos ${dentroDe} días`);
     return;
   }
 

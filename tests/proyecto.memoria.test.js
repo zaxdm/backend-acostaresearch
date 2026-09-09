@@ -175,3 +175,37 @@ test('un estado inventado no se guarda', async () => {
     }),
   );
 });
+
+test('anotar algo de un capítulo lo pone en curso', async () => {
+  // Un capítulo con el tema y el periodo fijados no está «sin empezar», y el
+  // panel diciendo que sí es sencillamente falso.
+  repo.guardados = [];
+  conProyecto({ stages: [] });
+
+  await projectService.guardarAvance({
+    userId: 'u1',
+    productCode: 'METODO_9_SKILLS',
+    capitulo: 'tema-y-delimitacion',
+    resumen: 'Se acotó a primer ciclo.',
+  });
+
+  const etapa = repo.guardados.find((g) => g.tipo === 'etapa');
+  assert.equal(etapa.datos.estado, 'EN_CURSO');
+});
+
+test('pero no rebaja un capítulo que ya estaba dado por bueno', async () => {
+  repo.guardados = [];
+  conProyecto({
+    stages: [{ skillCode: 'tema-y-delimitacion', estado: 'LISTO', resumen: 'Cerrado.' }],
+  });
+
+  await projectService.guardarAvance({
+    userId: 'u1',
+    productCode: 'METODO_9_SKILLS',
+    capitulo: 'tema-y-delimitacion',
+    resumen: 'Una coma corregida.',
+  });
+
+  const etapa = repo.guardados.find((g) => g.tipo === 'etapa');
+  assert.equal(etapa.datos.estado, undefined, 'no se toca el estado');
+});

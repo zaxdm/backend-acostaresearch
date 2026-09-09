@@ -127,18 +127,30 @@ async function guardarAvance({ userId, productCode, ...entrada }) {
      * paso el problema general solo porque esa llamada no lo mencionaba. Es la
      * misma regla que gobierna el resto de la memoria.
      */
+    const actual = await projectRepository.buscar(userId, productCode);
+    const previa = (actual?.stages ?? []).find((e) => e.skillCode === datos.capitulo);
+
     let paraGuardar;
     const limpio = etapas.limpiar(datos.capitulo, datos.datos);
 
     if (limpio) {
-      const actual = await projectRepository.buscar(userId, productCode);
-      const previa = (actual?.stages ?? []).find((e) => e.skillCode === datos.capitulo);
       paraGuardar = etapas.fusionar(previa?.datos, limpio);
       camposGuardados = Object.keys(limpio);
     }
 
+    /**
+     * Anotar algo de un capítulo lo pone en curso.
+     *
+     * Un capítulo con el tema, la población y el periodo ya fijados no está
+     * «sin empezar», y el panel diciendo que sí es sencillamente falso. Sube
+     * solo desde PENDIENTE: no rebaja un capítulo cerrado, y no pisa el estado
+     * que venga dicho a propósito en esta misma llamada.
+     */
+    const anota = Boolean(limpio || datos.resumen);
+    const arranca = anota && !datos.estado && (previa?.estado ?? 'PENDIENTE') === 'PENDIENTE';
+
     etapa = await projectRepository.guardarEtapa(proyecto.id, datos.capitulo, {
-      estado: datos.estado,
+      estado: datos.estado ?? (arranca ? 'EN_CURSO' : undefined),
       resumen: datos.resumen,
       datos: paraGuardar,
     });

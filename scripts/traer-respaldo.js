@@ -7,9 +7,11 @@
  * pero no de que el disco muera o de que alguien destruya la máquina. Un
  * respaldo que vive en el mismo sitio que el original no es un respaldo.
  *
- * Dentro van los 31 bundles, los comprobantes de Yape y el .env de producción.
- * Es decir: SECRETOS. La carpeta de destino está en .gitignore, y aun así
- * conviene no dejarla en sitios compartidos.
+ * Dentro va la base de datos entera —cuentas, licencias, pagos y las fuentes
+ * que ha subido cada comprador—, los 31 bundles, los comprobantes de Yape y el
+ * .env de producción. Es decir: SECRETOS, y además datos personales de los
+ * clientes. La carpeta de destino está en .gitignore, y aun así conviene no
+ * dejarla en sitios compartidos ni subirla a ninguna nube.
  *
  * Uso:  npm run backup:traer
  */

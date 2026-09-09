@@ -17,6 +17,14 @@
  *      semanas. Si un token que venía haciendo 4 llamadas al día hace 40 en un
  *      día, no es que el tesista se haya vuelto más aplicado.
  *
+ *      Esta señal EXIGE que exista ese histórico. Sin él la mediana vale cero,
+ *      todo se compara contra el suelo, y cualquiera que estrene su licencia y
+ *      la use con ganas queda marcado. No es hipotético: de las doce primeras
+ *      alertas del sistema, siete decían literalmente "su mediana diaria es 0"
+ *      y todas eran de licencias con menos de tres días de vida. Un comprador
+ *      recién llegado no tiene con qué compararse, y decir eso en voz alta es
+ *      más útil que inventarse una sospecha.
+ *
  *   2. SESIONES SOLAPADAS. Dos conversaciones distintas vivas a la vez sobre el
  *      mismo token. Una persona no sostiene dos chats en paralelo minuto a
  *      minuto; dos personas sí. Es la señal más difícil de disimular.
@@ -45,6 +53,25 @@ const SUELO_DIARIO = 12;
 /** Multiplicadores sobre la mediana histórica del propio comprador. */
 const FACTOR_ALERTA = 3;
 const FACTOR_SOSPECHA = 5;
+
+/**
+ * Días de uso previo que hacen falta para que el volumen signifique algo.
+ *
+ * Por debajo de esto no se emite ninguna señal de volumen, por muchas llamadas
+ * que haya: no hay contra qué compararlas. Siete días es aproximadamente una
+ * semana de trabajo del tesista, que ya deja ver si es de sentarse de golpe o
+ * de ir a ratos.
+ */
+const MINIMO_DIAS_HISTORICO = 7;
+
+/**
+ * Pares de consultas incoherentes en 24 h antes de sospechar.
+ *
+ * Estaba en uno, y uno es ruido: un tesista que pregunta por el capítulo II y
+ * acto seguido por el IV produce exactamente esa señal. Tres pares en un día ya
+ * cuesta más de explicar con una sola persona.
+ */
+const INCOHERENTES_SOSPECHA = 3;
 
 /** Sesiones distintas en 24 h a partir de las cuales salta cada nivel. */
 const SESIONES_ALERTA = 3;
@@ -140,18 +167,25 @@ function analizar(usos, { ahora = new Date() } = {}) {
 
   const senales = [];
 
-  if (llamadas24 >= umbralSospecha) {
-    senales.push({
-      codigo: 'VOLUMEN_DISPARADO',
-      detalle: `${llamadas24} llamadas en 24 h; su mediana diaria es ${medianaDiaria}.`,
-      peso: 'alto',
-    });
-  } else if (llamadas24 >= umbralAlerta) {
-    senales.push({
-      codigo: 'VOLUMEN_ALTO',
-      detalle: `${llamadas24} llamadas en 24 h; su mediana diaria es ${medianaDiaria}.`,
-      peso: 'medio',
-    });
+  // Sin días suficientes detrás, la mediana no describe a nadie y el volumen
+  // solo mide entusiasmo. Se calla la señal entera en vez de rebajarla: media
+  // sospecha sobre un cliente que acaba de pagar no vale nada y ofende.
+  const hayConQueComparar = diario.length >= MINIMO_DIAS_HISTORICO && medianaDiaria > 0;
+
+  if (hayConQueComparar) {
+    if (llamadas24 >= umbralSospecha) {
+      senales.push({
+        codigo: 'VOLUMEN_DISPARADO',
+        detalle: `${llamadas24} llamadas en 24 h; su mediana diaria es ${medianaDiaria}.`,
+        peso: 'alto',
+      });
+    } else if (llamadas24 >= umbralAlerta) {
+      senales.push({
+        codigo: 'VOLUMEN_ALTO',
+        detalle: `${llamadas24} llamadas en 24 h; su mediana diaria es ${medianaDiaria}.`,
+        peso: 'medio',
+      });
+    }
   }
 
   if (sesiones24.size >= SESIONES_SOSPECHA) {
@@ -176,7 +210,7 @@ function analizar(usos, { ahora = new Date() } = {}) {
     });
   }
 
-  if (incoherentes > 0) {
+  if (incoherentes >= INCOHERENTES_SOSPECHA) {
     senales.push({
       codigo: 'CONSULTAS_INCOHERENTES',
       detalle: `${incoherentes} pares de consultas en el mismo minuto sobre temas distintos.`,
@@ -192,13 +226,17 @@ function analizar(usos, { ahora = new Date() } = {}) {
   return {
     nivel,
     senales,
-    // Sin identificador de sesión solo queda el volumen, que por sí solo se
-    // confunde con un tesista en semana de entrega.
-    fiabilidad: sesiones24.size > 0 ? 'normal' : 'limitada',
+    // Hacen falta las dos familias de señal para fiarse: el volumen sin
+    // histórico no dice nada, y sin identificador de sesión solo queda el
+    // volumen, que por sí solo se confunde con un tesista en semana de entrega.
+    fiabilidad: sesiones24.size > 0 && hayConQueComparar ? 'normal' : 'limitada',
     metricas: {
       llamadas24,
       medianaDiaria,
       diasConHistorico: diario.length,
+      // Se expone para que el panel pueda explicar por qué no hay señal de
+      // volumen, en lugar de dejar pensar que el comprador es intachable.
+      hayConQueComparar,
       sesionesDistintas24: sesiones24.size,
       solapes,
       incoherentes,

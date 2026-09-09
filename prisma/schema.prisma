@@ -836,6 +836,13 @@ model AccountCode {
 model Reference {
   id String @id @default(uuid()) @db.Char(36)
 
+  /// La clave con la que se cita esta fuente: AR + ocho caracteres.
+  ///
+  /// La CALCULA MySQL a partir de `id`, y por eso ninguna vía de entrada tiene
+  /// que acordarse de rellenarla. Nunca se escribe desde aquí; si algún día se
+  /// intentara, la base lo rechaza.
+  ref String? @unique @db.VarChar(12)
+
   /// La clave del ítem en Zotero. Es la identidad de la fuente EN EL FONDO DE
   /// LA CASA: al sincronizar se actualiza por ella, de modo que corregir una
   /// ficha en Zotero corrige la fila y no crea una segunda.

@@ -301,6 +301,13 @@ async function buscarParaLicencia({ tema, productCode, ownerUserId = null, cuant
   const fuentes = await referenceRepository.buscar({ palabras, productCode, ownerUserId, limite });
 
   return fuentes.map((fuente) => ({
+    /**
+     * Con esta clave se cita. Ver `project.citas`.
+     *
+     * Va la primera porque es lo que el asistente tiene que copiar al texto, y
+     * lo que va primero es lo que se copia.
+     */
+    clave: fuente.ref,
     titulo: fuente.title,
     cita: cita(fuente),
     doi: fuente.doi,
@@ -322,6 +329,9 @@ async function buscarParaLicencia({ tema, productCode, ownerUserId = null, cuant
 }
 
 const listarParaPanel = (opciones) => referenceRepository.listarParaPanel(opciones);
+
+/** Las fuentes de unas claves de cita, para armar la bibliografía del Word. */
+const porClaves = (claves, ownerUserId) => referenceRepository.porClaves(claves, ownerUserId);
 
 /**
  * Busca en la literatura abierta, en vivo.
@@ -396,5 +406,6 @@ module.exports = {
   buscarParaLicencia,
   buscarEnLaLiteratura,
   listarParaPanel,
+  porClaves,
   cita,
 };

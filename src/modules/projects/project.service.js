@@ -13,10 +13,13 @@
  * las dos cosas convertiría esto en un almacén de párrafos que nadie relee.
  */
 
+const logger = require('../../config/logger');
 const projectRepository = require('./project.repository');
 const almacen = require('./project.storage');
 const documento = require('./project.docx');
+const citas = require('./project.citas');
 const skillService = require('../skills/skill.service');
+const referenceService = require('../references/reference.service');
 const { guardarAvanceSchema, guardarCapituloSchema } = require('./project.schema');
 
 /** Cómo se ve cada estado en el texto que recibe el asistente. */
@@ -179,15 +182,53 @@ async function armarWord(userId, productCode) {
 
   if (capitulos.length === 0) return null;
 
+  /**
+   * Las citas se resuelven ahora, no al escribir el capítulo.
+   *
+   * Así, si una ficha se corrige en Zotero —el año que estaba mal, el DOI que
+   * faltaba—, la siguiente descarga sale corregida en el texto Y en la lista de
+   * referencias a la vez. Guardar la cita ya montada dentro del capítulo
+   * congelaría el error para siempre.
+   */
+  const claves = [...new Set(capitulos.flatMap((c) => citas.clavesDe(c.texto)))];
+  const fuentes = await referenceService.porClaves(claves, userId);
+  const porClave = new Map(fuentes.map((f) => [f.ref, f]));
+
+  const usadas = new Map();
+  const perdidas = new Set();
+
+  for (const capitulo of capitulos) {
+    const resuelto = citas.resolver(capitulo.texto, porClave);
+    capitulo.texto = resuelto.texto;
+    for (const [clave, fuente] of resuelto.usadas) usadas.set(clave, fuente);
+    for (const clave of resuelto.perdidas) perdidas.add(clave);
+  }
+
+  if (perdidas.size > 0) {
+    // No se corta la descarga: el tesista tiene derecho a su documento aunque
+    // una cita esté mal. Pero queda anotado, y en el Word se ve.
+    logger.warn(
+      { userId, productCode, perdidas: [...perdidas] },
+      'Citas del Word que no corresponden a ninguna fuente',
+    );
+  }
+
   const buffer = await documento.armar({
     tema: proyecto.tema,
     carrera: proyecto.carrera,
     universidad: proyecto.universidad,
     nombre,
     capitulos,
+    referencias: citas.bibliografia([...usadas.values()]),
   });
 
-  return { buffer, nombreArchivo: documento.nombreDeArchivo(proyecto.tema), capitulos: capitulos.length };
+  return {
+    buffer,
+    nombreArchivo: documento.nombreDeArchivo(proyecto.tema),
+    capitulos: capitulos.length,
+    referencias: usadas.size,
+    citasPerdidas: [...perdidas],
+  };
 }
 
 /**

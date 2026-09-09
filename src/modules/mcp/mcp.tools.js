@@ -850,7 +850,9 @@ function construirServidor(licencia) {
         }
 
         const fichas = fuentes.map((f, i) => {
-          const lineas = [`${i + 1}. ${f.cita}`];
+          // La clave va primero, pegada al número, porque es lo que hay que
+          // copiar al texto. Lo que va delante es lo que se copia.
+          const lineas = [`${i + 1}. [${f.clave}]  ${f.cita}`];
           // La nota vale más que el resumen: el resumen lo escribió la revista
           // para vender su artículo; la nota la escribió Acosta diciendo para
           // qué sirve la fuente.
@@ -865,11 +867,16 @@ function construirServidor(licencia) {
 
         return texto(
           `Fuentes de la biblioteca sobre «${tema}»:\n\n${fichas.join('\n\n')}\n\n` +
-            'Cita EXACTAMENTE como están escritas, sin cambiar años, autores ni DOIs. ' +
-            'NO TRADUZCAS LOS TÍTULOS: en la bibliografía va el título original, en el ' +
-            'idioma en que se publicó. Puedes explicar en español de qué va cada fuente, ' +
-            'pero la referencia se copia tal cual. Un título traducido no lo encuentra ' +
-            'nadie al comprobarlo, y eso es lo primero que hace un jurado. ' +
+            'CÓMO SE CITAN. Al redactar el capítulo, escribe la clave entre corchetes donde ' +
+            'vaya la cita —así: «…afecta al rendimiento [AR97D22F86].»— y guarda el capítulo ' +
+            'con esa marca puesta. Al armar el Word, el servidor la cambia por la cita en ' +
+            'APA y añade la fuente a la lista de Referencias, las dos cosas sacadas de la ' +
+            'misma ficha. No montes tú la bibliografía: sale sola, y así no puede discrepar ' +
+            'de lo que dice el texto.\n\n' +
+            'Al hablar con el tesista, cítalas en APA normal; la clave es para el texto que ' +
+            'guardes. Y NO TRADUZCAS LOS TÍTULOS: en la bibliografía va el original, en el ' +
+            'idioma en que se publicó. Un título traducido no lo encuentra nadie al ' +
+            'comprobarlo, y eso es lo primero que hace un jurado. ' +
             'Si ninguna sirve para lo que estabas escribiendo, dilo en vez de forzarla.',
         );
       },

@@ -119,7 +119,7 @@ function portada({ tema, carrera, universidad, nombre }) {
  * índice con capítulos vacíos haría creer que el documento está más avanzado de
  * lo que está.
  */
-async function armar({ tema, carrera, universidad, nombre, capitulos }) {
+async function armar({ tema, carrera, universidad, nombre, capitulos, referencias = [] }) {
   const cuerpo = [
     ...portada({ tema, carrera, universidad, nombre }),
     new Paragraph({ text: '', pageBreakBefore: true }),
@@ -143,6 +143,33 @@ async function armar({ tema, carrera, universidad, nombre, capitulos }) {
         spacing: { after: 240 },
       }),
       ...comoParrafos(capitulo.texto),
+    );
+  }
+
+  /**
+   * Referencias, con sangría francesa.
+   *
+   * La segunda línea y siguientes van sangradas y la primera no: es lo que pide
+   * APA y lo que un jurado busca de un vistazo para saber si la lista está bien
+   * hecha. En OOXML se consigue sangrando el párrafo entero y devolviendo la
+   * primera línea con un valor negativo.
+   */
+  if (referencias.length > 0) {
+    cuerpo.push(
+      new Paragraph({
+        text: 'Referencias',
+        heading: HeadingLevel.HEADING_1,
+        pageBreakBefore: true,
+        spacing: { after: 240 },
+      }),
+      ...referencias.map(
+        (entrada) =>
+          new Paragraph({
+            children: [new TextRun(entrada)],
+            spacing: { line: DOBLE },
+            indent: { left: SANGRIA, hanging: SANGRIA },
+          }),
+      ),
     );
   }
 

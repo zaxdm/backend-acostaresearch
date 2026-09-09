@@ -372,6 +372,35 @@ async function buscar({ palabras, productCode, ownerUserId = null, limite = 8 })
   return sinRepetidos(porTexto, limite);
 }
 
+/**
+ * Las fuentes de una lista de claves de cita.
+ *
+ * El filtro de dueño es el mismo que en la búsqueda y por el mismo motivo: el
+ * fondo de la casa lo ve todo el mundo, y lo que subió un comprador solo lo ve
+ * él. Aquí la clave la escribe el asistente en el texto, así que hay que
+ * comprobarlo igual —adivinar ocho caracteres es improbable, no imposible, y
+ * «improbable» no es un permiso—.
+ */
+function porClaves(claves, ownerUserId = null) {
+  if (claves.length === 0) return Promise.resolve([]);
+
+  return prisma.reference.findMany({
+    where: {
+      ref: { in: claves },
+      OR: ownerUserId ? [{ ownerUserId: null }, { ownerUserId }] : [{ ownerUserId: null }],
+    },
+    select: {
+      ref: true,
+      title: true,
+      authors: true,
+      year: true,
+      source: true,
+      doi: true,
+      url: true,
+    },
+  });
+}
+
 /** Lo que enseña el panel: página a página, con el buscador del administrador. */
 async function listarParaPanel({ pagina = 1, tamano = 20, texto = '' }) {
   const where = texto ? { busqueda: { contains: texto } } : {};
@@ -404,5 +433,6 @@ module.exports = {
   borrarPorClaves,
   contar,
   buscar,
+  porClaves,
   listarParaPanel,
 };

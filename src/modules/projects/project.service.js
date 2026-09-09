@@ -84,6 +84,29 @@ async function contexto(userId, productCode) {
 }
 
 /**
+ * Los datos de cada etapa, con el tema del proyecto puesto donde corresponde.
+ *
+ * El tema vive en dos sitios y son el mismo dato: `Project.tema`, que es lo que
+ * se enseña arriba de todo y en el panel, y el campo `tema` de la etapa de
+ * delimitación. Sin unirlos aquí, un tesista que ya dijo su tema recibía
+ * «falta fijar Tema delimitado», que es sencillamente falso y le haría
+ * responder algo que ya había respondido.
+ *
+ * Se une al leer y no al escribir a propósito: dos copias del mismo dato acaban
+ * discrepando, y entonces hay que decidir cuál manda.
+ */
+function datosPorEtapa(proyecto) {
+  const porEtapa = new Map(proyecto.stages.map((e) => [e.skillCode, e.datos ?? {}]));
+
+  if (proyecto.tema) {
+    const delimitacion = porEtapa.get('tema-y-delimitacion') ?? {};
+    porEtapa.set('tema-y-delimitacion', { tema: proyecto.tema, ...delimitacion });
+  }
+
+  return porEtapa;
+}
+
+/**
  * El aviso de que a un capítulo le faltan cosas de los anteriores.
  *
  * Se comprueba al empezar el capítulo, que es el único momento en que sirve de
@@ -94,8 +117,7 @@ async function loQueFalta(userId, productCode, skillCode) {
   const proyecto = await projectRepository.buscar(userId, productCode);
   if (!proyecto) return null;
 
-  const porEtapa = new Map(proyecto.stages.map((e) => [e.skillCode, e.datos ?? {}]));
-  const faltan = etapas.queFalta(skillCode, porEtapa);
+  const faltan = etapas.queFalta(skillCode, datosPorEtapa(proyecto));
   if (faltan.length === 0) return null;
 
   return (
@@ -371,7 +393,7 @@ async function auditar(userId, productCode) {
 
   // A cada etapa se le adjunta lo que le falta de las anteriores, para que la
   // auditoría no tenga que volver a saber cómo se calcula eso.
-  const porEtapa = new Map(proyecto.stages.map((e) => [e.skillCode, e.datos ?? {}]));
+  const porEtapa = datosPorEtapa(proyecto);
   const conFaltas = proyecto.stages.map((e) => ({
     ...e,
     faltan: etapas.queFalta(e.skillCode, porEtapa),

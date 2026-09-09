@@ -17,6 +17,15 @@ si algún día divergen, manda el servidor.
 | `respaldar.sh` | `/opt/acostaresearch/respaldar.sh` | Vuelca la base de datos entera y empaqueta las skills, los comprobantes de Yape y el `.env`. Se niega a rotar los respaldos viejos si el volcado sale a medias |
 | `systemd/acostaresearch-respaldo.*` | `/etc/systemd/system/` | Lanza el respaldo cada día a las 3:30 UTC |
 | `systemd/acostaresearch-caducidad.*` | `/etc/systemd/system/` | Lanza el aviso de caducidad cada día a las 13:00 UTC, las 8 de la mañana en Lima |
+| `systemd/acostaresearch-corpus.*` | `/etc/systemd/system/` | Sincroniza el corpus con Zotero cada noche a las 04:30 UTC, las 23:30 en Lima |
+
+## Las tres horas
+
+| Hora UTC | Hora en Lima | Qué corre |
+|---|---|---|
+| 03:30 | 22:30 | Respaldo |
+| 04:30 | 23:30 | Sincronización del corpus |
+| 13:00 | 08:00 | Aviso de caducidad |
 
 ## Por qué las horas están separadas
 

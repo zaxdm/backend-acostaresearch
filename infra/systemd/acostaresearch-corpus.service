@@ -1,0 +1,11 @@
+[Unit]
+Description=Sincronizacion nocturna del corpus con Zotero
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=acosta
+Group=acosta
+WorkingDirectory=/opt/acostaresearch/app
+ExecStart=/usr/bin/node /opt/acostaresearch/app/scripts/sincronizar-zotero.js
+TimeoutStartSec=3600

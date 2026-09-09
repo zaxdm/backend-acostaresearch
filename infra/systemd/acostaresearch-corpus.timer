@@ -1,0 +1,13 @@
+[Unit]
+Description=Sincronizacion nocturna del corpus
+
+[Timer]
+# 04:30 UTC son las 23:30 en Lima: nadie esta en el panel y el respaldo de
+# las 3:30 lleva una hora terminado. El plan de la base da cinco conexiones
+# y ninguna tarea debe coincidir con otra.
+OnCalendar=*-*-* 04:30:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

@@ -68,10 +68,34 @@ function contar(userId) {
   return prisma.reference.count({ where: { ownerUserId: userId } });
 }
 
-/** Lo que enseña su panel: cuántas hay y de cuándo es la última. */
+/**
+ * Cuántas de las suyas se guardaron sin resumen.
+ *
+ * Es el síntoma de haber exportado de Scopus sin marcar «Abstract & keywords»,
+ * que no viene marcado por defecto. Una ficha sin resumen se puede citar
+ * perfectamente, pero para BUSCARLA solo queda el título, y eso reduce a casi
+ * nada las posibilidades de que aparezca cuando hace falta.
+ *
+ * Se cuenta contra la biblioteca entera y no contra el archivo recién subido
+ * porque es un estado, no un suceso: el aviso tiene que seguir ahí mañana, y
+ * desaparecer solo cuando el tesista vuelva a exportar bien.
+ */
+function contarSinResumen(userId) {
+  return prisma.reference.count({
+    where: {
+      ownerUserId: userId,
+      // Nulo o vacío: el parser guarda null, pero una columna de texto admite
+      // las dos cosas y contar solo una dejaría el aviso apagado a medias.
+      OR: [{ abstract: null }, { abstract: '' }],
+    },
+  });
+}
+
+/** Lo que enseña su panel: cuántas hay, de cuándo es la última y si están completas. */
 async function resumen(userId) {
-  const [total, ultima] = await Promise.all([
+  const [total, sinResumen, ultima] = await Promise.all([
     contar(userId),
+    contarSinResumen(userId),
     prisma.reference.findFirst({
       where: { ownerUserId: userId },
       orderBy: { createdAt: 'desc' },
@@ -79,7 +103,12 @@ async function resumen(userId) {
     }),
   ]);
 
-  return { total, ultimaCarga: ultima?.createdAt ?? null, tope: TOPE_POR_USUARIO };
+  return {
+    total,
+    sinResumen,
+    ultimaCarga: ultima?.createdAt ?? null,
+    tope: TOPE_POR_USUARIO,
+  };
 }
 
 /**
@@ -97,4 +126,4 @@ async function vaciar(userId) {
   return count;
 }
 
-module.exports = { guardarLote, contar, resumen, vaciar, TOPE_POR_USUARIO };
+module.exports = { guardarLote, contar, contarSinResumen, resumen, vaciar, TOPE_POR_USUARIO };

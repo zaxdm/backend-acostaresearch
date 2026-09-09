@@ -95,8 +95,24 @@ const propiasService = {
 
     const { guardadas, repetidas } = await propiasRepository.guardarLote(userId, filas);
 
+    /**
+     * Cuántas del archivo venían sin resumen.
+     *
+     * Es el único error que este flujo permite cometer SIN ENTERARSE. En la
+     * ventana de Export de Scopus, «Abstract & keywords» no viene marcado: si no
+     * se marca, el CSV llega con la cita completa y sin una línea de contenido.
+     * El import entonces funciona —guarda, cuenta, dice que fue bien— y lo único
+     * que falla es la búsqueda, semanas después, cuando el tesista no entiende
+     * por qué no aparece nada de lo que subió.
+     *
+     * Todo lo demás de esta pantalla falla de frente: un archivo que no se
+     * entiende se rechaza, uno equivocado se ve. Esto no, así que se cuenta y se
+     * dice.
+     */
+    const sinResumenEnElArchivo = filas.filter((fila) => !fila.abstract).length;
+
     logger.info(
-      { userId, formato, leidas, guardadas, repetidas, descartadas },
+      { userId, formato, leidas, guardadas, repetidas, descartadas, sinResumenEnElArchivo },
       'Fuentes propias importadas desde un export bibliográfico',
     );
 
@@ -110,7 +126,18 @@ const propiasService = {
       repetidas,
       /** Filas sin título utilizable. Casi siempre, relleno del export. */
       descartadas,
+      /** De este archivo, cuántas llegaron sin resumen. Ver la nota de arriba. */
+      sinResumen: sinResumenEnElArchivo,
       total: tiene + guardadas,
+      /**
+       * Y cuántas hay así en TODA su biblioteca.
+       *
+       * Va aparte del número del archivo porque la corrección es distinta: si
+       * este vino mal pero el resto está bien, se vuelve a exportar ese; si toda
+       * la biblioteca está sin resúmenes, se rehace entera. Con un solo número
+       * no se puede saber cuál de las dos.
+       */
+      sinResumenEnTotal: await propiasRepository.contarSinResumen(userId),
     };
   },
 };

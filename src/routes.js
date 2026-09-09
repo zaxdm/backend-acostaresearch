@@ -11,6 +11,7 @@ const skillRoutes = require('./modules/skills/skill.routes');
 const referenceRoutes = require('./modules/references/reference.routes');
 const propiasRoutes = require('./modules/references/propias.routes');
 const tutorialRoutes = require('./modules/tutorials/tutorial.routes');
+const projectRoutes = require('./modules/projects/project.routes');
 
 const router = Router();
 
@@ -30,5 +31,6 @@ router.use('/skills', skillRoutes);
 router.use('/mis-fuentes', propiasRoutes);
 router.use('/referencias', referenceRoutes);
 router.use('/tutoriales', tutorialRoutes);
+router.use('/proyectos', projectRoutes);
 
 module.exports = router;

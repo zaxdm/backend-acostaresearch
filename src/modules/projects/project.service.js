@@ -117,8 +117,50 @@ async function siguientePaso(userId, productCode) {
   return catalogo.find((s) => !listos.has(s.code)) ?? null;
 }
 
-function deUsuario(userId) {
-  return projectRepository.listarDeUsuario(userId);
+/**
+ * Los proyectos del comprador, ya cruzados con el catálogo.
+ *
+ * El cruce se hace aquí y no en la web a propósito: la web no tiene por qué
+ * saber qué capítulos trae cada método ni en qué orden van, y hacerle pedir dos
+ * cosas para pintar una sola pantalla es cómo se acaba enseñando una lista
+ * incompleta mientras carga la otra.
+ */
+async function deUsuario(userId) {
+  const proyectos = await projectRepository.listarDeUsuario(userId);
+
+  return Promise.all(
+    proyectos.map(async (proyecto) => {
+      const catalogo = await skillService.listCatalog(proyecto.productCode);
+      const porCapitulo = new Map(proyecto.stages.map((e) => [e.skillCode, e]));
+
+      const etapas = catalogo.map((skill) => {
+        const etapa = porCapitulo.get(skill.code);
+        return {
+          code: skill.code,
+          displayName: skill.displayName,
+          estado: etapa?.estado ?? 'PENDIENTE',
+          resumen: etapa?.resumen ?? null,
+          updatedAt: etapa?.updatedAt ?? null,
+        };
+      });
+
+      const listos = etapas.filter((e) => e.estado === 'LISTO').length;
+
+      return {
+        id: proyecto.id,
+        productCode: proyecto.productCode,
+        tema: proyecto.tema,
+        carrera: proyecto.carrera,
+        universidad: proyecto.universidad,
+        updatedAt: proyecto.updatedAt,
+        etapas,
+        avance: { listos, total: etapas.length },
+        // El primero que no esté dado por bueno. Nulo cuando ya no queda
+        // ninguno, que es lo que distingue «terminó» de «no ha empezado».
+        siguiente: etapas.find((e) => e.estado !== 'LISTO') ?? null,
+      };
+    }),
+  );
 }
 
 module.exports = { contexto, guardarAvance, siguientePaso, deUsuario };

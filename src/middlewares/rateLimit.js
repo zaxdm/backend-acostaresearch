@@ -63,6 +63,20 @@ const paymentLimiter = build({
 });
 
 /**
+ * Recoger un conector de un enlace de prueba.
+ *
+ * Holgado a propósito: un taller entero sale a internet por la wifi de la
+ * universidad, con UNA sola IP, y los treinta pulsan en el mismo minuto. Esto no
+ * protege los cupos —de eso se ocupa el tope del enlace—, solo frena a un script
+ * que vacíe enlaces a ráfagas.
+ */
+const trialClaimLimiter = build({
+  windowMs: 10 * 60 * 1000,
+  max: 60,
+  message: 'Se han pedido demasiados conectores desde esta conexión. Espera unos minutos.',
+});
+
+/**
  * Límite del conector MCP, contado POR LICENCIA y no por IP.
  *
  * Es obligatorio que sea así: Claude llama desde la infraestructura de
@@ -91,5 +105,6 @@ module.exports = {
   emailLimiter,
   rewriteLimiter,
   paymentLimiter,
+  trialClaimLimiter,
   mcpLimiter,
 };

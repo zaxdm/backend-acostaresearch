@@ -98,13 +98,14 @@ async function comprobar(licencia, ahora = new Date()) {
   // El total va primero: si se agotó, decírselo es más útil que hablarle del
   // cupo de hoy, porque mañana seguirá agotado.
   if (licencia.callsLimitTotal > 0 && contador.callsLifetime >= licencia.callsLimitTotal) {
-    return {
-      permitido: false,
-      motivo:
-        `Has usado las ${licencia.callsLimitTotal} consultas incluidas en tu compra. ` +
-        'Tu acceso sigue activo: escríbenos para ampliarlo y sigues donde lo dejaste.',
-      contador,
-    };
+    // Un invitado no compró nada: hablarle de «tu compra» le confunde, y lo
+    // que le sirve saber es por dónde se sigue.
+    const motivo = licencia.user?.trialLink
+      ? `Has usado las ${licencia.callsLimitTotal} consultas de esta prueba. ` +
+        'Si quieres seguir, tienes los planes en acostaresearch.com/planes.'
+      : `Has usado las ${licencia.callsLimitTotal} consultas incluidas en tu compra. ` +
+        'Tu acceso sigue activo: escríbenos para ampliarlo y sigues donde lo dejaste.';
+    return { permitido: false, motivo, contador };
   }
 
   if (

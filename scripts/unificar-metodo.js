@@ -56,6 +56,9 @@ async function main() {
   }
 
   const licencias = await prisma.license.findMany({
+    // Sin los conectores de prueba: esto les quitaría la caducidad y los topes
+    // que puso el administrador al crear el enlace.
+    where: { user: { trialLinkId: null } },
     select: {
       id: true,
       tokenHint: true,

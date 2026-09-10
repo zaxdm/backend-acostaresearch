@@ -685,6 +685,16 @@ const licenseService = {
       });
     }
 
+    // Conector de prueba con el enlace apagado. Se mira aquí, en cada llamada,
+    // y no revocando las licencias una a una: así el administrador corta a los
+    // treinta de golpe, y si vuelve a encender el enlace vuelven como estaban.
+    if (licencia.user.trialLink && !licencia.user.trialLink.active) {
+      throw new AppError(
+        'Esta prueba del conector terminó. Si quieres seguir, tienes los planes en acostaresearch.com/planes.',
+        { statusCode: 403, code: ERROR_CODES.LICENSE_REVOKED },
+      );
+    }
+
     return licencia;
   },
 
@@ -1162,3 +1172,8 @@ module.exports = licenseService;
 // es la que decide si una venta se apunta o se pierde, así que conviene poder
 // probarla sin una base de datos delante.
 module.exports.pagoDelCodigo = pagoDelCodigo;
+
+// Los enlaces de prueba emiten licencias por su cuenta, sin código ni cobro, y
+// tienen que montar la URL y leer el plan exactamente igual que aquí.
+module.exports.urlDelConector = urlDelConector;
+module.exports.contratoDelProducto = contratoDelProducto;

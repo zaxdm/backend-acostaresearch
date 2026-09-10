@@ -46,15 +46,19 @@ const userRepository = {
   async paginate({ page, perPage, search }) {
     // Sin mode: insensitive, que no existe en MySQL. No hace falta, porque la
     // colación por defecto de MySQL/MariaDB (utf8mb4_..._ci) ya ignora mayúsculas.
-    const where = search
-      ? {
-          OR: [
-            { email: { contains: search } },
-            { firstName: { contains: search } },
-            { lastName: { contains: search } },
-          ],
-        }
-      : {};
+    //
+    // Los invitados de los enlaces de prueba no salen: no son cuentas de nadie,
+    // solo el titular de relleno de un conector. Se ven en su propia sección.
+    const where = {
+      trialLinkId: null,
+      ...(search && {
+        OR: [
+          { email: { contains: search } },
+          { firstName: { contains: search } },
+          { lastName: { contains: search } },
+        ],
+      }),
+    };
 
     const [items, total] = await Promise.all([
       prisma.user.findMany({

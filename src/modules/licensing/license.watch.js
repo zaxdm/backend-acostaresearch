@@ -114,10 +114,17 @@ async function evaluar(licenseId, { forzar = false } = {}) {
   try {
     const licencia = await prisma.license.findUnique({
       where: { id: licenseId },
-      include: { user: { select: { email: true, firstName: true, role: true } } },
+      include: {
+        user: { select: { email: true, firstName: true, role: true, trialLinkId: true } },
+      },
     });
 
     if (!licencia || licencia.status !== 'ACTIVE') return null;
+
+    // Tampoco los conectores de prueba. Su titular no existe —el correo es de
+    // relleno—, así que no hay a quién avisar, y el gasto ya lo acotan sus
+    // topes y el interruptor del enlace, que el administrador tiene a mano.
+    if (licencia.user?.trialLinkId) return null;
 
     // La licencia del administrador no se vigila. Es la única del sistema que
     // no se vendió: la usa el dueño para probar y para enseñar el producto, y

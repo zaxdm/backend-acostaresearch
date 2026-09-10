@@ -12,6 +12,7 @@ const referenceRoutes = require('./modules/references/reference.routes');
 const propiasRoutes = require('./modules/references/propias.routes');
 const tutorialRoutes = require('./modules/tutorials/tutorial.routes');
 const projectRoutes = require('./modules/projects/project.routes');
+const trialRoutes = require('./modules/trials/trial.routes');
 
 const router = Router();
 
@@ -32,5 +33,6 @@ router.use('/mis-fuentes', propiasRoutes);
 router.use('/referencias', referenceRoutes);
 router.use('/tutoriales', tutorialRoutes);
 router.use('/proyectos', projectRoutes);
+router.use('/pruebas', trialRoutes);
 
 module.exports = router;

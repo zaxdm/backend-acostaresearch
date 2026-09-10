@@ -1,0 +1,50 @@
+'use strict';
+
+const { z } = require('zod');
+
+/**
+ * Alta de un enlace de prueba.
+ *
+ * Los topes van con techo a propósito: cada consulta del conector se paga en
+ * tokens, y un cero de más tecleado con prisa en un enlace que se reparte a un
+ * grupo entero no se nota hasta que llega la factura. 0 = sin tope, como en
+ * las licencias.
+ */
+const createTrialSchema = z.object({
+  name: z
+    .string({ required_error: 'Ponle un nombre: para quién es la prueba.' })
+    .trim()
+    .min(3, 'El nombre necesita al menos 3 caracteres.')
+    .max(120),
+  productCode: z.string({ required_error: 'Elige el producto.' }).trim().toUpperCase().max(40),
+  seats: z.coerce
+    .number()
+    .int()
+    .min(1, 'Al menos un cupo.')
+    .max(500, 'Como mucho 500 cupos por enlace.')
+    .default(30),
+  accessDays: z.coerce
+    .number({ required_error: 'Indica cuántos días dura cada conector.' })
+    .int()
+    .min(1, 'Al menos un día de acceso.')
+    .max(365, 'Como mucho 365 días.'),
+  callsPerDay: z.coerce.number().int().min(0).max(1000).default(0),
+  callsLimitTotal: z.coerce.number().int().min(0).max(10000).default(0),
+});
+
+const updateTrialSchema = z.object({
+  active: z.boolean({ required_error: 'Indica si el enlace queda encendido o apagado.' }),
+});
+
+const idParamSchema = z.object({ id: z.string().uuid('Identificador no válido.') });
+
+/** El trozo aleatorio de la URL pública. Ver `generarSlug`. */
+const slugParamSchema = z.object({
+  slug: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .regex(/^[a-z0-9]{6,40}$/, 'Este enlace de prueba no existe. Revisa que esté bien copiado.'),
+});
+
+module.exports = { createTrialSchema, updateTrialSchema, idParamSchema, slugParamSchema };

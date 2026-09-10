@@ -73,7 +73,77 @@ model User {
   /// Su tesis, y su artículo si también lo compró. Ver `Project`.
   projects      Project[]
 
+  /// Enlace de prueba del que salió esta cuenta. Nulo en toda cuenta real.
+  ///
+  /// Con valor, NO es una persona registrada: es el titular de relleno de un
+  /// conector de prueba, sin contraseña ni Google, con un correo que no existe.
+  /// Hace falta porque todo lo del conector —la licencia, el proyecto, los
+  /// capítulos guardados— cuelga de un usuario, y cada invitado necesita el
+  /// suyo para no escribir en la tesis del de al lado. Ver `TrialLink`.
+  ///
+  /// En cascada: borrar el enlace se lleva a sus invitados y, con ellos, sus
+  /// licencias y proyectos. No son clientes; no queda nada que conservar.
+  trialLinkId String?    @db.Char(36)
+  trialLink   TrialLink? @relation(fields: [trialLinkId], references: [id], onDelete: Cascade)
+
+  @@index([trialLinkId])
   @@map("users")
+}
+
+/// Enlace de prueba del conector, para un grupo.
+///
+/// El administrador crea uno y lo comparte —en un taller, en un grupo de
+/// WhatsApp—. Cada persona que lo abre recibe SU PROPIO conector de prueba, sin
+/// registrarse, hasta agotar los cupos.
+///
+/// POR QUÉ NO ES UNA SOLA URL DE CONECTOR PARA TODOS
+/// --------------------------------------------------
+/// Porque se colapsa y se mezcla. El límite de ráfaga del conector va por token
+/// —30 llamadas por minuto—, así que treinta personas sobre el mismo token se lo
+/// comen en segundos. Y el proyecto de tesis cuelga del titular de la licencia:
+/// con un solo titular, los treinta escribirían en la misma tesis. Tampoco hay
+/// forma de separarlos después: Claude llama desde la infraestructura de
+/// Anthropic y todas las peticiones llegan iguales, sea quien sea quien pregunta.
+///
+/// Va aparte de los códigos de activación a propósito: aquello es una venta o
+/// una cortesía para una persona con cuenta, y esto no es ninguna de las dos.
+/// No deja pagos, no entra en las cifras y sus conectores no se vigilan como
+/// los de un comprador.
+model TrialLink {
+  id String @id @default(uuid()) @db.Char(36)
+
+  /// Lo que va en la URL pública: /prueba/<slug>. Aleatorio: quien no tenga el
+  /// enlace no puede adivinarlo y gastar los cupos.
+  slug String @unique @db.VarChar(40)
+  /// Para quién es: «Taller UNMSM». Solo lo ve el administrador… y el invitado
+  /// en la página del enlace, que así sabe que ha llegado al sitio correcto.
+  name String @db.VarChar(120)
+
+  productCode String @db.VarChar(40)
+
+  /// Cuántos conectores entrega, y cuántos lleva entregados.
+  seats   Int @default(30)
+  claimed Int @default(0)
+
+  /// Días que dura cada conector, contados desde que lo recibe cada invitado.
+  accessDays Int
+
+  /// Topes de cada conector. 0 = sin tope, como en las licencias.
+  callsPerDay     Int @default(0)
+  callsLimitTotal Int @default(0)
+
+  /// Encendido o apagado. Apagado corta a la vez TODOS sus conectores y deja de
+  /// entregar nuevos. Se comprueba al autenticar cada llamada, así que el corte
+  /// es inmediato y volver a encenderlo los recupera tal como estaban.
+  active Boolean @default(true)
+
+  createdById String?  @db.Char(36)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  guests User[]
+
+  @@map("trial_links")
 }
 
 /// Refresh tokens rotativos.

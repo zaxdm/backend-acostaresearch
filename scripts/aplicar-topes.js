@@ -50,6 +50,9 @@ async function main() {
         // Sin tope total es como decir «uso ilimitado de por vida».
         callsLimitTotal: 0,
         costCentsLimitTotal: 0,
+        // Los de prueba llevan los topes que eligió el administrador al crear el
+        // enlace, cero incluido: no son los del plan.
+        user: { trialLinkId: null },
       },
       select: { id: true, tokenHint: true, callsPerDay: true, user: { select: { email: true } } },
     });

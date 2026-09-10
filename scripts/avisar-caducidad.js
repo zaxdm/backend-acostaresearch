@@ -73,6 +73,8 @@ async function principal() {
       expiryWarnedAt: null,
       // Ya caducadas, no: a esas el aviso llega tarde y suena a burla.
       expiresAt: { gt: ahora, lte: limite },
+      // Los conectores de prueba tampoco: su correo es de relleno y no existe.
+      user: { trialLinkId: null },
     },
     select: {
       id: true,

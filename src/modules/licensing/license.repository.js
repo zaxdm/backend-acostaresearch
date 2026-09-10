@@ -219,7 +219,17 @@ const licenseRepository = {
       select: {
         ...licenseSelect,
         userId: true,
-        user: { select: { id: true, email: true, status: true, firstName: true } },
+        user: {
+          select: {
+            id: true,
+            email: true,
+            status: true,
+            firstName: true,
+            // Si es un conector de prueba, el enlace del que salió: apagarlo
+            // tiene que cortar este token en la llamada siguiente.
+            trialLink: { select: { id: true, name: true, active: true } },
+          },
+        },
       },
     });
   },
@@ -257,9 +267,15 @@ const licenseRepository = {
     });
   },
 
+  /**
+   * Las licencias de los compradores, para el panel y la revisión.
+   *
+   * Sin los conectores de prueba: no son clientes, tienen su propia sección, y
+   * treinta invitados de un taller enterrarían a los compradores de verdad.
+   */
   listAll({ status, limit = 100 } = {}) {
     return prisma.license.findMany({
-      where: status ? { status } : {},
+      where: { ...(status && { status }), user: { trialLinkId: null } },
       select: {
         ...licenseSelect,
         user: { select: { id: true, email: true, firstName: true, lastName: true } },

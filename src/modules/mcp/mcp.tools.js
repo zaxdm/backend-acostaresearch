@@ -425,8 +425,14 @@ function construirServidor(licencia) {
       // probar sin levantar medio servidor.
       const cupo = licenseService.describirCupo(uso);
 
+      // El titular de un conector de prueba es de relleno: su correo no existe
+      // y enseñarlo solo haría pensar que alguien se equivocó de cuenta.
+      const titular = licencia.user.trialLink
+        ? `Conector de prueba de «${licencia.user.trialLink.name}».`
+        : `Licencia activa a nombre de ${licencia.user.firstName} (${licencia.user.email}).`;
+
       return texto(
-        `Licencia activa a nombre de ${licencia.user.firstName} (${licencia.user.email}).\n` +
+        `${titular}\n` +
           `Producto: ${licencia.productCode}\n` +
           `Consultas realizadas en total: ${licencia.callsTotal}\n` +
           (cupo.length > 0 ? `${cupo.join('\n')}\n` : '') +

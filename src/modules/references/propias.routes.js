@@ -50,6 +50,31 @@ router.post(
   }),
 );
 
+/**
+ * Fuentes a partir de los DOIs que el navegador sacó de unos PDFs.
+ *
+ * Llega JSON y no un archivo, así que va por el parser normal y su límite de
+ * 100 KB sobra: sesenta DOIs son dos kilobytes. El PDF se queda en el equipo
+ * del tesista, que es la mitad del valor de hacerlo así.
+ */
+router.post(
+  '/doi',
+  asyncHandler(async (req, res) => {
+    const resultado = await propiasService.importarPorDoi({
+      userId: req.user.id,
+      dois: req.body?.dois,
+    });
+
+    const partes = [`Guardamos ${resultado.guardadas} fuentes nuevas`];
+    if (resultado.repetidas > 0) partes.push(`${resultado.repetidas} ya las tenías`);
+    if (resultado.noEncontrados.length > 0) {
+      partes.push(`${resultado.noEncontrados.length} no aparecen en el catálogo abierto`);
+    }
+
+    return ok(res, resultado, { message: `${partes.join(', ')}.` });
+  }),
+);
+
 router.delete(
   '/',
   asyncHandler(async (req, res) => {

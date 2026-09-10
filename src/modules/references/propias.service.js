@@ -4,7 +4,53 @@ const logger = require('../../config/logger');
 const { AppError, ValidationError } = require('../../shared/errors/AppError');
 const { ERROR_CODES } = require('../../config/constants');
 const parser = require('./scopus.parser');
+const openalex = require('./openalex.client');
+const { normalizar } = require('./zotero.mapper');
 const propiasRepository = require('./propias.repository');
+
+const recortar = (valor, largo) => {
+  const texto = String(valor ?? '').trim();
+  return texto ? texto.slice(0, largo) : null;
+};
+
+/**
+ * De ficha de OpenAlex a fila de la tabla.
+ *
+ * Es la misma forma que produce el lector de exports —mismas columnas, misma
+ * identidad por DOI, mismo `busqueda` normalizado—, y a propósito: las dos vías
+ * entran a la misma tabla y tienen que ser indistinguibles una vez dentro. Si
+ * no lo fueran, buscar encontraría unas y otras no según por dónde entraron.
+ */
+function comoFila(ficha) {
+  const etiquetas = recortar(ficha.tags, 500) ?? '';
+
+  const fila = {
+    zoteroKey: null,
+    version: 0,
+    origin: 'SCOPUS',
+    sourceRef: `doi:${ficha.doi.toLowerCase()}`.slice(0, 200),
+    itemType: recortar(ficha.itemType, 40) ?? 'article',
+    title: recortar(ficha.title, 500) ?? '(sin título)',
+    authors: recortar(ficha.authors, 500) ?? '',
+    year: ficha.year ?? null,
+    source: recortar(ficha.source, 300),
+    doi: recortar(ficha.doi, 200),
+    url: recortar(ficha.url, 500),
+    abstract: ficha.abstract || null,
+    // Sin nota, como todo lo que no escribió Acosta. El conector se apoya en esa
+    // diferencia para no presentarlas como material curado.
+    notes: null,
+    tags: etiquetas,
+  };
+
+  fila.busqueda = normalizar(
+    [fila.title, fila.authors, fila.source, fila.year, fila.abstract, etiquetas]
+      .filter(Boolean)
+      .join(' '),
+  );
+
+  return fila;
+}
 
 /**
  * La biblioteca propia de cada comprador.
@@ -41,11 +87,101 @@ const TIPOS = [
   'application/octet-stream',
 ];
 
+/** Cuántos DOIs se aceptan de una tacada. Cada uno es una consulta a OpenAlex. */
+const MAXIMO_DOIS = 60;
+
 const propiasService = {
   TIPOS,
+  MAXIMO_DOIS,
 
   resumen(userId) {
     return propiasRepository.resumen(userId);
+  },
+
+  /**
+   * Fuentes a partir de los DOIs que el navegador sacó de unos PDFs.
+   *
+   * POR QUÉ LLEGAN DOIs Y NO PDFs
+   * -----------------------------
+   * El PDF se lee en el navegador del tesista y no sale de su equipo. De él solo
+   * viaja el DOI: veinte caracteres en vez de tres megas. Eso ahorra a la vez el
+   * ancho de banda, el almacenamiento, el trabajo de este servidor y —lo que más
+   * pesa— tener aquí copias de artículos con copyright que él descargó con el
+   * acceso de su universidad.
+   *
+   * PARA QUÉ SIRVE, EN TOKENS
+   * -------------------------
+   * Un artículo de 40 páginas dentro de una conversación de Claude son unos
+   * 25.000 tokens. La ficha equivalente son 250. Cien veces menos, y por seis
+   * fuentes es la diferencia entre caber en una conversación y no caber.
+   *
+   * LO QUE NO RESUELVE, DICHO AQUÍ PARA QUE NO SE OLVIDE
+   * ---------------------------------------------------
+   * Esto sirve para CITAR un artículo, no para que el asistente lo LEA. El
+   * resumen no dice con qué muestra se hizo ni qué prueba estadística se aplicó.
+   * Para eso sigue haciendo falta el texto completo, que es otra decisión y no
+   * está tomada.
+   */
+  async importarPorDoi({ userId, dois }) {
+    const lista = [...new Set((dois ?? []).map((d) => String(d).trim()).filter(Boolean))];
+
+    if (lista.length === 0) {
+      throw new ValidationError('No llegó ningún DOI que buscar.');
+    }
+
+    if (lista.length > MAXIMO_DOIS) {
+      throw new ValidationError(
+        `Son demasiados de una vez: el máximo es ${MAXIMO_DOIS}. Sube los PDF en dos tandas.`,
+      );
+    }
+
+    const tiene = await propiasRepository.contar(userId);
+    if (tiene + lista.length > propiasRepository.TOPE_POR_USUARIO) {
+      throw new AppError(
+        `Tu biblioteca admite ${propiasRepository.TOPE_POR_USUARIO} fuentes y con esas pasarías ` +
+          `de ahí (tienes ${tiene}).`,
+        { statusCode: 409, code: ERROR_CODES.VALIDATION_ERROR },
+      );
+    }
+
+    const filas = [];
+    const noEncontrados = [];
+
+    // De una en una y no en paralelo: son consultas a un servicio ajeno y
+    // gratuito, y lanzarle sesenta a la vez es la forma de que empiece a
+    // rechazarlas. Sesenta secuenciales son unos segundos.
+    for (const doi of lista) {
+      const ficha = await openalex.porDoi(doi);
+      if (!ficha) {
+        noEncontrados.push(doi);
+        continue;
+      }
+      filas.push(comoFila(ficha));
+    }
+
+    if (filas.length === 0) {
+      throw new ValidationError(
+        'No encontramos ninguno de esos DOI en el catálogo abierto. Comprueba que estén bien ' +
+          'copiados, o añade esas fuentes desde el export de tu base de datos.',
+      );
+    }
+
+    const { guardadas, repetidas } = await propiasRepository.guardarLote(userId, filas);
+
+    logger.info(
+      { userId, pedidos: lista.length, guardadas, repetidas, sinFicha: noEncontrados.length },
+      'Fuentes propias importadas por DOI',
+    );
+
+    return {
+      pedidos: lista.length,
+      guardadas,
+      repetidas,
+      /** Los que OpenAlex no conoce. Se devuelven para poder nombrarlos. */
+      noEncontrados,
+      total: tiene + guardadas,
+      sinResumenEnTotal: await propiasRepository.contarSinResumen(userId),
+    };
   },
 
   vaciar(userId) {

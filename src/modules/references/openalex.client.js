@@ -133,4 +133,78 @@ async function buscar({ tema, idioma = null, pais = null, desdeAnio = null, cuan
   return { fuentes, total: datos.meta?.count ?? fuentes.length, caida: false };
 }
 
-module.exports = { buscar, resumenDelIndice };
+/** Un DOI limpio, venga como identificador o como enlace. */
+function limpiarDoi(crudo) {
+  const valor = String(crudo ?? '')
+    .trim()
+    .replace(/^https?:\/\/(dx\.)?doi\.org\//i, '')
+    .replace(/^doi:\s*/i, '');
+
+  // La forma de un DOI es estable desde hace veinte años: 10.registro/sufijo.
+  return /^10\.\d{4,9}\/\S+$/.test(valor) ? valor : null;
+}
+
+/**
+ * La ficha de UN trabajo, por su DOI.
+ *
+ * Es lo que convierte «tengo una carpeta de PDFs» en fuentes citables: del
+ * archivo solo hace falta sacar el DOI —veinte caracteres— y los metadatos
+ * buenos llegan de aquí. Nadie interpreta el maquetado a dos columnas de un
+ * artículo, ni adivina dónde acaba el título, ni pelea con las ligaduras.
+ *
+ * Y el resumen viene de OpenAlex, no del archivo. Por esta vía no existe el
+ * problema de «Abstract & keywords» del export de Scopus: no hay ninguna
+ * casilla que el tesista pueda olvidar marcar.
+ *
+ * Devuelve null cuando el DOI no está indexado, que es raro pero pasa. Quien
+ * llame tiene que decírselo al tesista, no callarlo: un archivo que desaparece
+ * sin explicación es peor que uno que se rechaza.
+ */
+async function porDoi(crudo) {
+  const doi = limpiarDoi(crudo);
+  if (!doi) return null;
+
+  const url = new URL(`${BASE}/doi:${encodeURIComponent(doi)}`);
+  url.searchParams.set('mailto', contacto());
+
+  const res = await fetch(url, { signal: AbortSignal.timeout(TIEMPO_LIMITE_MS) }).catch(
+    (error) => {
+      logger.warn({ err: error, doi }, 'OpenAlex no respondió al pedir un DOI');
+      return null;
+    },
+  );
+
+  // El 404 es información, no un fallo: ese DOI no está en OpenAlex y no lo va
+  // a estar por reintentar. Se distingue de una caída para que quien llame
+  // pueda decir cosas distintas.
+  if (!res) return null;
+  if (res.status === 404) return null;
+
+  if (!res.ok) {
+    logger.warn({ estado: res.status, doi }, 'OpenAlex rechazó la consulta por DOI');
+    return null;
+  }
+
+  const w = await res.json().catch(() => null);
+  if (!w || !w.title) return null;
+
+  return {
+    doi,
+    title: w.title,
+    authors: autores(w.authorships) || '',
+    year: w.publication_year ?? null,
+    source: w.primary_location?.source?.display_name ?? null,
+    url: w.best_oa_location?.pdf_url ?? w.doi ?? null,
+    abstract: resumenDelIndice(w.abstract_inverted_index),
+    /** Las asigna un clasificador, no el autor. Sirven para buscar, no para citar. */
+    tags: (w.keywords ?? [])
+      .map((k) => k.display_name)
+      .filter(Boolean)
+      .slice(0, 12)
+      .join(', '),
+    /** El tipo tal como lo dice OpenAlex, para que el `.bib` lo traduzca. */
+    itemType: w.type ?? 'article',
+  };
+}
+
+module.exports = { buscar, porDoi, limpiarDoi, resumenDelIndice };

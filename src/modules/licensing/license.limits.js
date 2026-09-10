@@ -226,4 +226,47 @@ async function resumen(licencia) {
   };
 }
 
-module.exports = { comprobar, registrar, estado, resumen, selloDia, selloMes };
+/**
+ * El cupo, dicho de forma que no se pueda leer al revés.
+ *
+ * Antes esto decía «Hoy llevas 0 de 500 consultas». El dato era correcto —el
+ * tope es diario— pero la frase no pone la palabra «día» al lado del número, y
+ * quien la resume se queda con «límite de 500 consultas» y le atribuye el
+ * periodo que le parece. En software lo habitual es mensual, así que se lee
+ * mensual. Pasó de verdad: el asistente le dijo al comprador que tenía «500
+ * consultas al mes» teniendo 500 al día.
+ *
+ * Ahora el periodo va pegado al número y en la misma frase. La cantidad y su
+ * unidad no se separan nunca: es la regla que evita este error entero.
+ */
+function describirCupo(uso) {
+  const lineas = [];
+  const { limits } = uso;
+
+  if (limits.callsPerDay > 0) {
+    lineas.push(
+      `Puede hacer ${limits.callsPerDay} consultas CADA DÍA. ` +
+        `Hoy lleva ${uso.callsToday} de esas ${limits.callsPerDay}.`,
+    );
+  }
+
+  if (limits.callsPerMonth > 0) {
+    lineas.push(
+      `Puede hacer ${limits.callsPerMonth} consultas CADA MES. ` +
+        `Este mes lleva ${uso.callsMonth} de esas ${limits.callsPerMonth}.`,
+    );
+  }
+
+  // El tope de por vida no se mencionaba nunca, ni existiendo. Alguien podía
+  // agotarlo sin haber visto jamás que estaba ahí.
+  if (limits.callsLimitTotal > 0) {
+    lineas.push(
+      `Tope total de la licencia: ${limits.callsLimitTotal} consultas en toda su vida. ` +
+        `Lleva ${uso.callsLifetime}.`,
+    );
+  }
+
+  return lineas;
+}
+
+module.exports = { comprobar, registrar, estado, resumen, describirCupo, selloDia, selloMes };

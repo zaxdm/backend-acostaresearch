@@ -747,6 +747,11 @@ const licenseService = {
     return limites.resumen(licencia);
   },
 
+  /** El cupo en palabras, con el periodo pegado al número. */
+  describirCupo(uso) {
+    return limites.describirCupo(uso);
+  },
+
   listAlerts(licenseId) {
     return watch.listarAlertas(licenseId);
   },

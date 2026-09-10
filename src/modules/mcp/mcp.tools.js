@@ -407,14 +407,10 @@ function construirServidor(licencia) {
         : 'Sin fecha de caducidad.';
 
       // El cupo solo se menciona si existe: decirle «0 de 0» a quien no tiene
-      // tope no informa de nada y preocupa.
-      const cupo = [];
-      if (uso.limits.callsPerDay > 0) {
-        cupo.push(`Hoy llevas ${uso.callsToday} de ${uso.limits.callsPerDay} consultas.`);
-      }
-      if (uso.limits.callsPerMonth > 0) {
-        cupo.push(`Este mes llevas ${uso.callsMonth} de ${uso.limits.callsPerMonth}.`);
-      }
+      // tope no informa de nada y preocupa. La redacción vive en
+      // `license.limits` porque es donde está el porqué, y porque así se puede
+      // probar sin levantar medio servidor.
+      const cupo = licenseService.describirCupo(uso);
 
       return texto(
         `Licencia activa a nombre de ${licencia.user.firstName} (${licencia.user.email}).\n` +

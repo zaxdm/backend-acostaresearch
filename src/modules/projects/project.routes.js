@@ -5,7 +5,8 @@ const express = require('express');
 const authenticate = require('../../middlewares/authenticate');
 const asyncHandler = require('../../shared/http/asyncHandler');
 const { ok } = require('../../shared/http/apiResponse');
-const { ValidationError } = require('../../shared/errors/AppError');
+const { ForbiddenError, ValidationError } = require('../../shared/errors/AppError');
+const licenseService = require('../licensing/license.service');
 const projectService = require('./project.service');
 const { PlantillaNoValida, MAXIMO_BYTES } = require('./project.plantilla');
 
@@ -172,6 +173,71 @@ router.delete(
       message: quitada
         ? 'Plantilla quitada. Las próximas descargas saldrán con el formato de tesis por defecto.'
         : 'No había ninguna plantilla puesta.',
+    });
+  }),
+);
+
+/**
+ * El análisis de la página de R, al proyecto del tesista.
+ *
+ * Es lo que hace que Claude lo vea: se guarda donde guarda «guardar_analisis», y
+ * «mi_proyecto» avisa de que hay uno sin leer. Sin esto, el tesista tenía que
+ * copiar la consola y pegársela a Claude a mano, y lo que se copia a mano se
+ * copia a medias.
+ *
+ * Solo con licencia vigente de ESE método. Es la única entrada al proyecto que
+ * no pasa por el conector —que es donde se comprueba siempre—, y sin esto
+ * cualquiera con cuenta podría crearse el proyecto de un método que no compró.
+ *
+ * El techo es el mismo que el de «guardar_analisis»: lo que se guarda por un
+ * lado tiene que poder guardarse por el otro.
+ */
+const MAXIMO_ANALISIS = 30000;
+
+router.post(
+  '/:productCode/analisis',
+  asyncHandler(async (req, res) => {
+    const { productCode } = req.params;
+    const script = typeof req.body?.script === 'string' ? req.body.script : '';
+    const salida = typeof req.body?.salida === 'string' ? req.body.salida : '';
+
+    if (script.trim() === '' && salida.trim() === '') {
+      throw new ValidationError('No hay nada que enviar: ejecuta tu análisis primero.');
+    }
+    if (script.length > MAXIMO_ANALISIS || salida.length > MAXIMO_ANALISIS) {
+      throw new ValidationError(
+        `El script y la salida admiten hasta ${MAXIMO_ANALISIS} caracteres cada uno. Limpia ` +
+          'la consola y vuelve a ejecutar solo lo que vaya al capítulo.',
+      );
+    }
+
+    const ahora = new Date();
+    const licencias = await licenseService.listForUser(req.user.id);
+    const vigente = licencias.some(
+      (l) =>
+        l.productCode === productCode &&
+        l.status === 'ACTIVE' &&
+        (!l.expiresAt || new Date(l.expiresAt) > ahora),
+    );
+    if (!vigente) {
+      throw new ForbiddenError(
+        'Necesitas una licencia vigente de este método para enviar tu análisis al conector.',
+      );
+    }
+
+    const recibido = await projectService.recibirAnalisis({
+      userId: req.user.id,
+      productCode,
+      script,
+      salida,
+    });
+
+    if (!recibido) {
+      throw new ValidationError('Este método no tiene un capítulo de resultados donde guardarlo.');
+    }
+
+    return ok(res, recibido, {
+      message: 'Enviado a tu conector. Dile a Claude «revisa mi análisis» y lo leerá.',
     });
   }),
 );

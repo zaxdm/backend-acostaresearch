@@ -35,6 +35,58 @@ const MARCAS = {
 };
 
 /**
+ * El capítulo donde se reportan los resultados, en cada método.
+ *
+ * Es donde cae el análisis que llega de la página de R: el tesista no elige
+ * capítulo, porque solo hay uno donde tiene sentido. Se busca en el catálogo del
+ * producto en vez de casar producto y clave a mano, para que un método nuevo
+ * que use cualquiera de las dos funcione sin tocar esto.
+ */
+const CAPITULOS_DE_RESULTADOS = ['analisis-datos-rstudio', 'articulo-fase5-resultados'];
+
+async function capituloDeResultados(productCode) {
+  const catalogo = await skillService.listCatalog(productCode);
+  const claves = new Set(catalogo.map((skill) => skill.code));
+  return CAPITULOS_DE_RESULTADOS.find((clave) => claves.has(clave)) ?? null;
+}
+
+/**
+ * El aviso de que hay un análisis que el asistente todavía no ha leído.
+ *
+ * Guardado no sirve de nada si Claude no se entera, y no se va a enterar solo:
+ * no pregunta por lo que no sabe que existe. Así que va en el bloque que lee al
+ * empezar cada conversación.
+ *
+ * Se calla en cuanto hay cifras guardadas en ese capítulo, que es la señal de
+ * que alguien ya lo leyó y sacó los números. Y no dice de dónde vino el
+ * análisis: puede haber llegado de la web o pegado desde RStudio, y en los dos
+ * casos lo que falta es lo mismo.
+ */
+async function avisoDeAnalisis(proyecto, porCapitulo) {
+  for (const capitulo of CAPITULOS_DE_RESULTADOS) {
+    const cifras = porCapitulo.get(capitulo)?.datos?.resultados ?? [];
+    if (cifras.length > 0) continue;
+
+    let fecha = null;
+    try {
+      fecha = await almacen.fechaDeAnalisis(proyecto.id, capitulo);
+    } catch {
+      // Un aviso que no se puede comprobar no puede tumbar «mi_proyecto».
+      continue;
+    }
+    if (!fecha) continue;
+
+    return (
+      'HAY UN ANÁLISIS SIN LEER: el tesista guardó su script de R y la salida de la consola ' +
+      `(${fecha.toISOString().slice(0, 10)}), y todavía no se han sacado sus cifras. Léelo ` +
+      'con "ver_analisis" ANTES de redactar los resultados, y guarda las cifras que vayan al ' +
+      'texto con "guardar_analisis".'
+    );
+  }
+  return null;
+}
+
+/**
  * Lo que el asistente lee sobre el proyecto, en texto plano.
  *
  * Va dentro de la respuesta de las herramientas en lugar de esperar a que el
@@ -50,8 +102,12 @@ async function contexto(userId, productCode) {
   if (!proyecto) return null;
 
   const porCapitulo = new Map(proyecto.stages.map((e) => [e.skillCode, e]));
+  // El aviso cuenta como avance: quien solo ha mandado su análisis desde la web
+  // tiene un proyecto sin tema ni capítulos, y sin esto el bloque saldría vacío
+  // y el aviso con él.
+  const aviso = await avisoDeAnalisis(proyecto, porCapitulo);
   const hayAvance = proyecto.tema || proyecto.stages.some((e) => e.estado !== 'PENDIENTE');
-  if (!hayAvance) return null;
+  if (!hayAvance && !aviso) return null;
 
   const cabecera = [];
   if (proyecto.tema) cabecera.push(`Tema: ${proyecto.tema}`);
@@ -80,6 +136,7 @@ async function contexto(userId, productCode) {
     '',
     ...lineas,
     '',
+    ...(aviso ? [aviso, ''] : []),
     'Da esto por sabido: NO se lo vuelvas a preguntar. Si algo de aquí ya no es ' +
       'cierto porque lo han cambiado hablando, corrígelo con "guardar_avance".',
   ].join('\n');
@@ -478,6 +535,53 @@ async function guardarAnalisis({ userId, productCode, capitulo, script, salida, 
 }
 
 /**
+ * El análisis que el tesista manda desde la página de R.
+ *
+ * Es `guardarAnalisis` con dos diferencias. El capítulo lo decide el método,
+ * no quien lo manda. Y no llegan cifras: la web no sabe cuáles de todos los
+ * números de la consola van al texto —eso lo decide Claude al leerlo, y las
+ * guarda él—.
+ *
+ * Quién puede mandarlo NO se comprueba aquí sino en la ruta, contra sus
+ * licencias. Este servicio no carga el de licencias a propósito: lo usan una
+ * docena de pruebas que no tienen base de datos.
+ */
+async function recibirAnalisis({ userId, productCode, script, salida }) {
+  const capitulo = await capituloDeResultados(productCode);
+  if (!capitulo) return null;
+
+  const { escritos } = await guardarAnalisis({ userId, productCode, capitulo, script, salida });
+  return { capitulo, escritos };
+}
+
+/**
+ * El análisis guardado de un capítulo, para dárselo al asistente.
+ *
+ * Sin capítulo, el de resultados del método, que es donde cae lo que llega de
+ * la web. Van también las cifras ya guardadas, para que sepa qué le falta por
+ * sacar y no vuelva a guardar las que ya estaban.
+ *
+ * Devuelve null si no hay nada: un análisis vacío presentado como tal invitaría
+ * a redactar resultados sin números.
+ */
+async function leerAnalisis(userId, productCode, capitulo) {
+  const clave = capitulo || (await capituloDeResultados(productCode));
+  if (!clave) return null;
+
+  const proyecto = await projectRepository.buscar(userId, productCode);
+  if (!proyecto) return null;
+
+  const [script, salida] = await Promise.all([
+    almacen.leerAnalisis(proyecto.id, clave, 'script'),
+    almacen.leerAnalisis(proyecto.id, clave, 'salida'),
+  ]);
+  if (!script && !salida) return null;
+
+  const etapa = proyecto.stages.find((e) => e.skillCode === clave);
+  return { capitulo: clave, script, salida, cifras: etapa?.datos?.resultados ?? [] };
+}
+
+/**
  * El repaso completo antes de entregar.
  *
  * Reúne en un sitio lo que ya saben los otros módulos —qué está escrito, qué
@@ -591,6 +695,8 @@ module.exports = {
   armarBibtex,
   revisarEvidencia,
   guardarAnalisis,
+  recibirAnalisis,
+  leerAnalisis,
   guardarPlantilla,
   quitarPlantilla,
   auditar,

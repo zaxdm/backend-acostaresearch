@@ -219,6 +219,19 @@ const ESQUEMA_GUARDAR_ANALISIS = fromJsonSchema({
   additionalProperties: false,
 });
 
+const ESQUEMA_VER_ANALISIS = fromJsonSchema({
+  type: 'object',
+  properties: {
+    capitulo: {
+      type: 'string',
+      description:
+        'Clave del capítulo. Déjala vacía para el de resultados del método, que es donde ' +
+        'cae lo que el tesista manda desde la página de análisis.',
+    },
+  },
+  additionalProperties: false,
+});
+
 const ESQUEMA_REVISAR_EVIDENCIA = fromJsonSchema({
   type: 'object',
   properties: {
@@ -637,8 +650,10 @@ function construirServidor(licencia) {
       title: 'Guardar el análisis y sus cifras',
       description:
         'Guarda el script de R, lo que devolvió la consola y las cifras obtenidas. ' +
-        'ESTE SERVIDOR NO EJECUTA R: el tesista corre el análisis en su propio RStudio, con ' +
-        'sus datos, y te pega el resultado. Guárdalo EN CUANTO te lo pegue.\n\n' +
+        'ESTE SERVIDOR NO EJECUTA R: el tesista corre el análisis en su propio RStudio o en ' +
+        'la página de análisis de la web. Si te pega el resultado, guárdalo EN CUANTO te lo ' +
+        'pegue. Si lo mandó desde la web, el script y la salida ya están guardados: léelos ' +
+        'con "ver_analisis" y usa esta herramienta solo para las cifras.\n\n' +
         'Por qué importa: a partir de ese momento, cualquier cifra que aparezca en el ' +
         'capítulo de resultados y no esté entre las guardadas sale marcada en el repaso. ' +
         'Es lo que impide que un número se escriba solo porque ahí pegaba un número.',
@@ -688,6 +703,64 @@ function construirServidor(licencia) {
             'y de que no cierre la conversación sin copiar su script.',
         );
       }
+    },
+  );
+
+  server.registerTool(
+    'ver_analisis',
+    {
+      title: 'Leer el análisis del tesista',
+      description:
+        'Devuelve el script de R y lo que devolvió la consola, tal como el tesista los ' +
+        'guardó —normalmente desde la página de análisis de la web, con el botón «Enviar a ' +
+        'mi conector»—. LLÁMALA ANTES DE REDACTAR LOS RESULTADOS y cada vez que el tesista ' +
+        'diga que ya corrió su análisis: cada cifra del capítulo tiene que salir de aquí.\n\n' +
+        'Después guarda con "guardar_analisis" (campo resultados) las cifras que vayas a ' +
+        'usar en el texto. Sin eso, el repaso no puede comprobar que ningún número se ' +
+        'escribió solo.',
+      inputSchema: ESQUEMA_VER_ANALISIS,
+    },
+    async ({ capitulo }) => {
+      await licenseService.recordUsage({ licenseId: licencia.id, tool: 'ver_analisis' });
+
+      // Una clave de otro método leería un archivo que no es de este proyecto.
+      if (capitulo) {
+        const skill = await skillService.findByCode(capitulo);
+        if (!skill || !skillService.perteneceAlGrupo(skill, licencia.productCode)) {
+          return texto(
+            `No existe ningún capítulo con la clave "${capitulo}". Déjala vacía para el de ` +
+              'resultados, o usa listar_capitulos para ver las claves válidas.',
+          );
+        }
+      }
+
+      const leido = await projectService.leerAnalisis(
+        licencia.user.id,
+        licencia.productCode,
+        capitulo,
+      );
+
+      if (!leido) {
+        return texto(
+          'Todavía no hay ningún análisis guardado. Pídele al tesista que lo corra en la ' +
+            'página de análisis de la web (acostaresearch.com/analisis) y pulse «Enviar a mi ' +
+            'conector», o que te pegue aquí el script y la salida de su RStudio.',
+        );
+      }
+
+      const cifras =
+        leido.cifras.length > 0
+          ? `Cifras ya guardadas (${leido.cifras.length}):\n` +
+            leido.cifras.map((c) => `  - ${c}`).join('\n')
+          : 'Todavía no hay ninguna cifra guardada de este análisis. Saca de la salida las ' +
+            'que vayan al capítulo y guárdalas con "guardar_analisis" antes de redactar.';
+
+      return texto(
+        `ANÁLISIS GUARDADO · capítulo ${leido.capitulo}\n\n` +
+          `SCRIPT DE R\n${leido.script ?? '(no se guardó el script)'}\n\n` +
+          `SALIDA DE LA CONSOLA\n${leido.salida ?? '(no se guardó la salida)'}\n\n` +
+          cifras,
+      );
     },
   );
 

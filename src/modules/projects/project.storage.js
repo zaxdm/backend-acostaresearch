@@ -155,6 +155,23 @@ async function leerAnalisis(projectId, skillCode, tipo) {
 }
 
 /**
+ * Cuándo se guardó la salida de un análisis, o null si no hay ninguna.
+ *
+ * Solo la fecha, sin abrir el archivo: se pregunta en cada «mi_proyecto» para
+ * saber si hay un análisis por leer, y leer treinta mil caracteres para
+ * contestar sí o no sería tirar la lectura.
+ */
+async function fechaDeAnalisis(projectId, skillCode) {
+  try {
+    const { mtime } = await fs.stat(rutaDeAnalisis(projectId, skillCode, 'salida'));
+    return mtime;
+  } catch (error) {
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
+/**
  * La hoja de estilos de la plantilla del tesista.
  *
  * Un archivo por proyecto, al lado de sus capítulos. No lleva el nombre del
@@ -202,6 +219,7 @@ module.exports = {
   rutaDe,
   guardarAnalisis,
   leerAnalisis,
+  fechaDeAnalisis,
   guardarPlantilla,
   leerPlantilla,
   borrarPlantilla,

@@ -250,6 +250,16 @@ model Plan {
   /// (seguirá activándose a mano por Yape).
   priceUsdCents Int?
 
+  /// Lo que costaba antes de la oferta, solo para enseñarlo tachado al lado del
+  /// precio vigente. Nulo = no hay oferta y no se tacha nada.
+  ///
+  /// Lo que se cobra es SIEMPRE `priceCents`, aquí y en las pasarelas: este
+  /// campo no entra en ningún cálculo. Rebajar consiste en bajar `priceCents`
+  /// y dejar aquí el importe anterior, así que no puede pasar que la tarjeta
+  /// anuncie una rebaja y el cobro salga por el precio viejo. Un valor que no
+  /// supere al vigente no es una rebaja y no se guarda.
+  listPriceCents Int?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

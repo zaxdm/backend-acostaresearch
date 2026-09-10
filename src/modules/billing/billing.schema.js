@@ -72,6 +72,9 @@ const createProductSchema = z.object({
   // redondeo mal hecho se convierte en un cobro mal hecho.
   priceCents: z.coerce.number({ required_error: 'Indica el precio.' }).int().min(0).max(1000000),
   priceUsdCents: z.coerce.number().int().min(0).max(1000000).optional(),
+  // Lo que costaba antes, para tacharlo. Solo es un rótulo: el cobro sale de
+  // `priceCents`. El servicio descarta el que no supere al precio vigente.
+  listPriceCents: z.coerce.number().int().min(0).max(1000000).nullable().optional(),
   // 0 = sin caducidad. Cualquier otro valor son días de acceso.
   durationDays: z.coerce.number().int().min(0).max(3650).default(90),
   mcpCallsPerDay: z.coerce.number().int().min(0).max(100000).optional(),
@@ -85,6 +88,7 @@ const updateProductSchema = z
     description: z.string().trim().max(255).nullable().optional(),
     priceCents: z.coerce.number().int().min(0).max(1000000).optional(),
     priceUsdCents: z.coerce.number().int().min(0).max(1000000).nullable().optional(),
+    listPriceCents: z.coerce.number().int().min(0).max(1000000).nullable().optional(),
     durationDays: z.coerce.number().int().min(0).max(3650).optional(),
     mcpCallsPerDay: z.coerce.number().int().min(0).max(100000).optional(),
     active: z.boolean().optional(),

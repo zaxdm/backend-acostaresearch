@@ -29,6 +29,7 @@ const grupoSelect = {
   description: true,
   priceCents: true,
   priceUsdCents: true,
+  listPriceCents: true,
   currency: true,
   durationDays: true,
   active: true,
@@ -40,6 +41,21 @@ const grupoSelect = {
   mcpCostCentsTotal: true,
   mcpDelivery: true,
 };
+
+/**
+ * El precio anterior que se va a guardar, ya comprobado.
+ *
+ * Solo se guarda si de verdad es una rebaja: un «antes» igual o menor que lo
+ * que se cobra hoy no tacha nada, tacha una mentira. En ese caso se guarda
+ * nulo, que es como se dice «este producto no está de oferta».
+ *
+ * `null` explícito es quitar la oferta; `undefined` es no tocarla.
+ */
+function precioAnterior(valor, precioVigente) {
+  if (valor === undefined) return undefined;
+  if (valor === null) return null;
+  return valor > precioVigente ? valor : null;
+}
 
 /**
  * Cuántos capítulos tiene cada grupo, para enseñarlo en el panel.
@@ -100,6 +116,7 @@ const productService = {
         description: datos.description?.trim() || null,
         priceCents: datos.priceCents,
         priceUsdCents: datos.priceUsdCents ?? null,
+        listPriceCents: precioAnterior(datos.listPriceCents ?? null, datos.priceCents),
         currency: 'PEN',
         durationDays: datos.durationDays,
         active: datos.active ?? true,
@@ -131,9 +148,18 @@ const productService = {
   async update(code, cambios) {
     const existente = await prisma.plan.findFirst({
       where: { code, kind: 'LICENSE' },
-      select: { id: true, code: true, productCode: true },
+      select: { id: true, code: true, productCode: true, priceCents: true, listPriceCents: true },
     });
     if (!existente) throw new NotFoundError('Ese grupo no existe.');
+
+    // El «antes» se revisa en cada edición, no solo cuando llega uno nuevo:
+    // subir el precio sin tocarlo dejaría guardada una oferta al revés, con el
+    // tachado por debajo de lo que se cobra.
+    const vigente = cambios.priceCents ?? existente.priceCents;
+    const anterior = precioAnterior(
+      cambios.listPriceCents === undefined ? existente.listPriceCents : cambios.listPriceCents,
+      vigente,
+    );
 
     const grupo = await prisma.plan.update({
       where: { id: existente.id },
@@ -144,6 +170,10 @@ const productService = {
           : { description: cambios.description?.trim() || null }),
         ...(cambios.priceCents === undefined ? {} : { priceCents: cambios.priceCents }),
         ...(cambios.priceUsdCents === undefined ? {} : { priceUsdCents: cambios.priceUsdCents }),
+        // Contra el precio que VA A QUEDAR, no contra el que había: bajar el
+        // precio y poner el «antes» en la misma edición es justo lo que se hace
+        // al montar una oferta.
+        listPriceCents: anterior,
         ...(cambios.durationDays === undefined ? {} : { durationDays: cambios.durationDays }),
         ...(cambios.active === undefined ? {} : { active: cambios.active }),
         ...(cambios.mcpCallsPerDay === undefined ? {} : { mcpCallsPerDay: cambios.mcpCallsPerDay }),
@@ -220,3 +250,6 @@ const productService = {
 };
 
 module.exports = productService;
+// Se exporta aparte para poder probarla sin base de datos: decide qué precio
+// se tacha en la tarjeta de venta y equivocarla anuncia rebajas falsas.
+module.exports.precioAnterior = precioAnterior;

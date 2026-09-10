@@ -13,6 +13,7 @@ const planSelect = {
   priceCents: true,
   currency: true,
   priceUsdCents: true,
+  listPriceCents: true,
   durationDays: true,
 };
 

@@ -88,10 +88,17 @@ const PLANES = [
     productCode: 'METODO_9_SKILLS',
     // Un plan de licencia no entrega palabras; el campo existe por el esquema.
     words: 0,
-    priceCents: 19900,
-    // S/199 son unos $54; se cobra algo más para absorber la comisión
+    // OFERTA. Se cobra S/159 y se enseña tachado el precio de lista, S/199, que
+    // es el que vuelve al quitarla. Las dos cifras viven juntas a propósito: lo
+    // que se cobra sale SIEMPRE de `priceCents`, y `listPriceCents` es solo el
+    // número tachado de la tarjeta, sin peso en ningún cálculo.
+    //
+    //   node scripts/precio-de-oferta.js --quitar --aplicar   ← vuelve a S/199
+    priceCents: 15900,
+    listPriceCents: 19900,
+    // S/159 son unos $43; se cobra algo más para absorber la comisión
     // internacional de PayPal y que lo que llega se acerque al precio anunciado.
-    priceUsdCents: 5790,
+    priceUsdCents: 4690,
     // Tres meses de acceso. Es el tiempo de un ciclo de tesis: el tesista
     // trabaja con el método el trimestre que lo necesita, y quien tarde más
     // renueva. Renovar alarga la MISMA licencia, así que no tiene que volver a
@@ -204,6 +211,7 @@ async function sembrarPlanes() {
         mcpDelivery: plan.mcpDelivery ?? 'EXECUTED',
         priceCents: plan.priceCents,
         priceUsdCents: plan.priceUsdCents ?? null,
+        listPriceCents: plan.listPriceCents ?? null,
         durationDays: plan.durationDays,
         sortOrder: plan.sortOrder,
       },

@@ -750,6 +750,15 @@ model DiscountCode {
   expiresAt DateTime?
   note      String?   @db.VarChar(255)
 
+  /// Si se anuncia en la página de precios, junto a su plan.
+  ///
+  /// NACE EN FALSO Y SE PUBLICA A PROPÓSITO. Un código de campaña que se
+  /// reparte en TikTok y uno negociado con una persona concreta se guardan
+  /// igual y se resuelven igual; lo único que los distingue es esto. Con el
+  /// valor por defecto al revés, cualquier código creado con prisa acabaría
+  /// anunciado en la portada.
+  publico Boolean @default(false)
+
   createdById String?  @db.Char(36)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

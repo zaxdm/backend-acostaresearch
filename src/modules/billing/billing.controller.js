@@ -48,8 +48,24 @@ const billingController = {
     return ok(res, { discounts });
   }),
 
+  /**
+   * Los códigos que se anuncian en la página de precios.
+   *
+   * Sin sesión a propósito: el que mira los precios todavía no tiene cuenta, y
+   * es justo a quien hay que enseñarle que hay un código. `publicos()` decide
+   * qué sale, y sale lo justo.
+   */
+  promos: asyncHandler(async (_req, res) => {
+    return ok(res, { promos: await discountService.publicos() });
+  }),
+
   toggleDiscount: asyncHandler(async (req, res) => {
-    const discount = await discountService.setActive(req.params.id, req.body.active !== false);
+    // Cada interruptor solo se toca si viene: apagar un código no puede
+    // despublicarlo de rebote, ni publicarlo encenderlo.
+    const discount = await discountService.setActive(req.params.id, {
+      active: typeof req.body.active === 'boolean' ? req.body.active : undefined,
+      publico: typeof req.body.publico === 'boolean' ? req.body.publico : undefined,
+    });
     return ok(res, { discount });
   }),
 

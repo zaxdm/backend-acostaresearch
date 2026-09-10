@@ -21,6 +21,15 @@ const router = Router();
 // Los planes son públicos: la web de venta los necesita sin sesión.
 router.get('/plans', billingController.plans);
 
+/**
+ * Los códigos que se anuncian junto a cada plan.
+ *
+ * Pública, como los precios y por lo mismo: quien mira cuánto cuesta todavía no
+ * tiene cuenta, y es exactamente a quien hay que enseñarle que existe un código.
+ * Solo salen los marcados como públicos y que además se pueden usar hoy.
+ */
+router.get('/promos', billingController.promos);
+
 router.get('/balance', authenticate, billingController.balance);
 
 // Activación manual tras confirmar un Yape. Cuando haya pasarela, el webhook

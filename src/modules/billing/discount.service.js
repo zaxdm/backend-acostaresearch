@@ -41,8 +41,22 @@ const codigoSelect = {
   active: true,
   expiresAt: true,
   note: true,
+  publico: true,
   createdAt: true,
 };
+
+/**
+ * Un código utilizable HOY: activo, sin caducar y sin agotarse.
+ *
+ * Es la misma comprobación que hace `resolve` antes de aplicar una rebaja, pero
+ * escrita como filtro para poder listar. Van juntas a propósito: si algún día
+ * cambia la condición de «utilizable», tiene que cambiar en los dos sitios o la
+ * página anunciaría códigos que el cobro rechaza.
+ */
+const utilizableHoy = () => ({
+  active: true,
+  OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+});
 
 function generarCodigo(largo = 8) {
   let codigo = '';
@@ -69,7 +83,16 @@ const discountService = {
    * Crea un código. Si no se indica uno, se inventa: teclearlo es cosa del
    * comprador, así que se usa el alfabeto sin caracteres confundibles.
    */
-  async create({ code, amountCents, planCode, maxUses, expiresAt, note, createdById }) {
+  async create({
+    code,
+    amountCents,
+    planCode,
+    maxUses,
+    expiresAt,
+    note,
+    publico = false,
+    createdById,
+  }) {
     if (amountCents < DESCUENTO_MINIMO_CENTS) {
       throw new AppError(
         `El descuento mínimo es de S/ ${(DESCUENTO_MINIMO_CENTS / 100).toFixed(2)}.`,
@@ -95,6 +118,7 @@ const discountService = {
         maxUses: maxUses ?? 0,
         expiresAt: expiresAt ?? null,
         note: note ?? null,
+        publico,
         createdById,
       },
       select: codigoSelect,
@@ -112,11 +136,49 @@ const discountService = {
     });
   },
 
-  async setActive(id, active) {
+  /**
+   * Los códigos que se anuncian en la página de precios.
+   *
+   * ESTA LISTA SALE SIN SESIÓN, así que se devuelve lo justo: el código, cuánto
+   * rebaja y a qué plan. Ni cuántos usos le quedan —invitaría a correr—, ni la
+   * nota, que es para el administrador y suele decir de qué campaña salió.
+   *
+   * Se filtra por `publico` y además por utilizable: un código agotado o
+   * caducado seguiría siendo público, y anunciarlo llevaría al comprador a
+   * teclear algo que el cobro va a rechazar. Es mejor no enseñar nada que
+   * enseñar una rebaja que no se le va a aplicar.
+   */
+  async publicos() {
+    const codigos = await prisma.discountCode.findMany({
+      where: { publico: true, ...utilizableHoy() },
+      select: { code: true, amountCents: true, planCode: true, maxUses: true, usedCount: true },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return codigos
+      .filter((c) => c.maxUses === 0 || c.usedCount < c.maxUses)
+      .map((c) => ({ code: c.code, amountCents: c.amountCents, planCode: c.planCode }));
+  },
+
+  /**
+   * Enciende o apaga un código, y de paso lo publica o lo esconde.
+   *
+   * Los dos interruptores viven en la misma llamada porque en el panel están en
+   * la misma fila, y porque cada uno se manda solo si viene: apagar un código no
+   * puede despublicarlo de rebote ni al revés.
+   */
+  async setActive(id, { active, publico }) {
     const existe = await prisma.discountCode.findUnique({ where: { id }, select: { id: true } });
     if (!existe) throw new NotFoundError('No encontramos ese código de descuento.');
 
-    return prisma.discountCode.update({ where: { id }, data: { active }, select: codigoSelect });
+    return prisma.discountCode.update({
+      where: { id },
+      data: {
+        ...(active === undefined ? {} : { active }),
+        ...(publico === undefined ? {} : { publico }),
+      },
+      select: codigoSelect,
+    });
   },
 
   /**

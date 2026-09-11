@@ -644,8 +644,22 @@ async function auditar(userId, productCode) {
  * cosas para pintar una sola pantalla es cómo se acaba enseñando una lista
  * incompleta mientras carga la otra.
  */
+/**
+ * ¿Es una herramienta de apoyo y no una fase del método?
+ *
+ * Las fases se nombran con su número —«7 · Capítulo IV · Resultados», «Fase 3B —
+ * Mapeo bibliométrico»— y las herramientas no: «Humanizador académico». Se
+ * separan porque se usan cuando hacen falta, no en orden; contarlas en el avance
+ * dejaba a quien terminó los nueve capítulos en «9 de 11», y ponerlas en la fila
+ * dejaba al humanizador como «lo siguiente» antes de la fase 0.
+ */
+function esApoyo(displayName) {
+  return !/^\s*(\d|fase\s)/i.test(displayName ?? '');
+}
+
 async function deUsuario(userId) {
   const proyectos = await projectRepository.listarDeUsuario(userId);
+  const nombres = await projectRepository.nombresDeProducto(proyectos.map((p) => p.productCode));
 
   return Promise.all(
     proyectos.map(async (proyecto) => {
@@ -657,6 +671,7 @@ async function deUsuario(userId) {
         return {
           code: skill.code,
           displayName: skill.displayName,
+          apoyo: esApoyo(skill.displayName),
           estado: etapa?.estado ?? 'PENDIENTE',
           resumen: etapa?.resumen ?? null,
           palabras: etapa?.palabras ?? 0,
@@ -664,11 +679,15 @@ async function deUsuario(userId) {
         };
       });
 
-      const listos = etapas.filter((e) => e.estado === 'LISTO').length;
+      // El avance es de las fases. Las herramientas de apoyo van aparte.
+      const fases = etapas.filter((e) => !e.apoyo);
+      const listos = fases.filter((e) => e.estado === 'LISTO').length;
 
       return {
         id: proyecto.id,
         productCode: proyecto.productCode,
+        /** El nombre de venta. Si ningún plan lo nombra, el código: feo pero cierto. */
+        productName: nombres.get(proyecto.productCode) ?? proyecto.productCode,
         tema: proyecto.tema,
         carrera: proyecto.carrera,
         universidad: proyecto.universidad,
@@ -677,10 +696,15 @@ async function deUsuario(userId) {
           : null,
         updatedAt: proyecto.updatedAt,
         etapas,
-        avance: { listos, total: etapas.length },
-        // El primero que no esté dado por bueno. Nulo cuando ya no queda
-        // ninguno, que es lo que distingue «terminó» de «no ha empezado».
-        siguiente: etapas.find((e) => e.estado !== 'LISTO') ?? null,
+        avance: { listos, total: fases.length },
+        // La fase en curso, si hay una: es donde lo dejó, aunque haya alguna
+        // anterior sin cerrar. Si no, la primera que no esté dada por buena.
+        // Nulo cuando ya no queda ninguna, que es lo que distingue «terminó» de
+        // «no ha empezado».
+        siguiente:
+          fases.find((e) => e.estado === 'EN_CURSO') ??
+          fases.find((e) => e.estado !== 'LISTO') ??
+          null,
       };
     }),
   );
@@ -702,4 +726,5 @@ module.exports = {
   auditar,
   siguientePaso,
   deUsuario,
+  esApoyo,
 };

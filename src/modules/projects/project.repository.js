@@ -120,4 +120,33 @@ async function nombreDe(userId) {
   return [usuario.firstName, usuario.lastName].filter(Boolean).join(' ') || null;
 }
 
-module.exports = { buscar, asegurar, guardarEtapa, listarDeUsuario, nombreDe, marcarPlantilla };
+/**
+ * El nombre de venta de cada producto, por su código.
+ *
+ * Gana el plan activo: un producto puede arrastrar planes viejos con nombres
+ * antiguos, y el bueno es el del que está a la venta. Es el mismo criterio que
+ * usa el panel para las licencias, para que la pestaña y la licencia se llamen
+ * igual.
+ */
+async function nombresDeProducto(codigos) {
+  const planes = await prisma.plan.findMany({
+    where: { kind: 'LICENSE', productCode: { in: codigos } },
+    select: { productCode: true, name: true, active: true },
+  });
+
+  const nombres = new Map();
+  for (const plan of planes) {
+    if (plan.active || !nombres.has(plan.productCode)) nombres.set(plan.productCode, plan.name);
+  }
+  return nombres;
+}
+
+module.exports = {
+  buscar,
+  asegurar,
+  guardarEtapa,
+  listarDeUsuario,
+  nombreDe,
+  marcarPlantilla,
+  nombresDeProducto,
+};

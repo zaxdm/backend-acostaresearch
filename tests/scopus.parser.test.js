@@ -194,6 +194,177 @@ test('BibTeX', async (t) => {
   });
 });
 
+test('el «Plain text» de Scopus (.txt)', async (t) => {
+  const TXT = [
+    'Scopus',
+    'EXPORT DATE: 10 September 2026',
+    '',
+    'Hernández R., Fernández C.',
+    'AUTHOR FULL NAMES: Hernández, Roberto (57200000000); Fernández, Carlos (57200000001)',
+    'Construct validity revisited',
+    '(2021) Journal of Testing, Measurement and Evaluation, 12 (3), pp. 45-67. Cited 3 times.',
+    'https://www.scopus.com/inward/record.uri?eid=2-s2.0-85012345678&doi=10.1000%2fabc&partnerID=40',
+    '',
+    'DOI: 10.1000/abc',
+    '',
+    'ABSTRACT: Un resumen, con coma.',
+    'AUTHOR KEYWORDS: validity; testing',
+    'DOCUMENT TYPE: Article',
+    'PUBLICATION STAGE: Final',
+    'SOURCE: Scopus',
+    '',
+    '[No author name available]',
+    'TEACHING: A REVIEW',
+    '(2019) Otra Revista, art. no. 5.',
+    'SOURCE: Scopus',
+  ].join('\n');
+
+  await t.test('se reconoce por su contenido', () => {
+    assert.equal(leer(buffer(TXT)).formato, 'scopus txt');
+  });
+
+  await t.test('las líneas sueltas se reparten por su forma', () => {
+    const { filas } = leer(buffer(TXT));
+
+    assert.equal(filas.length, 2);
+    assert.equal(filas[0].title, 'Construct validity revisited');
+    assert.equal(filas[0].authors, 'Hernández, R.; Fernández, C.');
+    assert.equal(filas[0].year, 2021);
+    assert.equal(filas[0].doi, '10.1000/abc');
+    assert.equal(filas[0].abstract, 'Un resumen, con coma.');
+  });
+
+  await t.test('la revista conserva sus comas y pierde el volumen', () => {
+    const { filas } = leer(buffer(TXT));
+
+    assert.equal(filas[0].source, 'Journal of Testing, Measurement and Evaluation');
+  });
+
+  await t.test('un título en mayúsculas con dos puntos no se toma por etiqueta', () => {
+    const { filas } = leer(buffer(TXT));
+
+    assert.equal(filas[1].title, 'TEACHING: A REVIEW');
+    assert.equal(filas[1].authors, '');
+    assert.equal(filas[1].source, 'Otra Revista');
+  });
+});
+
+test('el «Plain text file» de Web of Science (.txt)', async (t) => {
+  const TXT = [
+    'FN Clarivate Analytics Web of Science',
+    'VR 1.0',
+    'PT J',
+    'AU Hernandez, R',
+    '   Fernandez, C',
+    'TI Construct validity revisited in a',
+    '   second line',
+    'SO JOURNAL OF TESTING',
+    'DE validity; testing',
+    'AB Un resumen.',
+    'PY 2021',
+    'DI 10.1000/abc',
+    'UT WOS:000123456700001',
+    'ER',
+    '',
+    'EF',
+  ].join('\n');
+
+  await t.test('se reconoce por su contenido', () => {
+    assert.equal(leer(buffer(TXT)).formato, 'wos txt');
+  });
+
+  await t.test('la continuación de AU es otro autor; la del título, el mismo título', () => {
+    const { filas } = leer(buffer(TXT));
+
+    assert.equal(filas.length, 1);
+    assert.equal(filas[0].authors, 'Hernandez, R; Fernandez, C');
+    assert.equal(filas[0].title, 'Construct validity revisited in a second line');
+  });
+
+  await t.test('el resto de campos aterriza en su sitio', () => {
+    const { filas } = leer(buffer(TXT));
+
+    assert.equal(filas[0].year, 2021);
+    assert.equal(filas[0].source, 'JOURNAL OF TESTING');
+    assert.equal(filas[0].sourceRef, 'doi:10.1000/abc');
+  });
+});
+
+test('el «Tab-delimited» de Web of Science (.txt)', async (t) => {
+  const TSV = [
+    'PT\tAU\tTI\tSO\tPY\tDI\tUT',
+    'J\tHernandez, R; Fernandez, C\tEl concepto de "validez", revisado\tJOURNAL OF TESTING\t2021\t10.1000/abc\tWOS:1',
+  ].join('\r\n');
+
+  await t.test('se reconoce aunque el título lleve comas y comillas', () => {
+    const { filas, formato } = leer(buffer(TSV));
+
+    assert.equal(formato, 'wos tsv');
+    assert.equal(filas[0].title, 'El concepto de "validez", revisado');
+    assert.equal(filas[0].year, 2021);
+    assert.equal(filas[0].doi, '10.1000/abc');
+  });
+
+  await t.test('en UTF-16, como lo descarga la opción «Win», también', () => {
+    const utf16 = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(TSV, 'utf16le')]);
+    const { filas } = leer(utf16);
+
+    assert.equal(filas.length, 1);
+    assert.equal(filas[0].source, 'JOURNAL OF TESTING');
+  });
+});
+
+test('el MEDLINE de PubMed (.txt)', async (t) => {
+  const TXT = [
+    'PMID- 12345678',
+    'TI  - Construct validity revisited in a',
+    '      second line.',
+    'LID - S0000-0000(21)00001-1 [pii]',
+    'LID - 10.1000/abc [doi]',
+    'AB  - Un resumen.',
+    'FAU - Hernández, Roberto',
+    'AU  - Hernández R',
+    'FAU - Fernández, Carlos',
+    'AU  - Fernández C',
+    'DP  - 2021 Mar 5',
+    'JT  - Journal of testing',
+    'OT  - validity',
+    'OT  - testing',
+    '',
+    'PMID- 87654321',
+    'TI  - Sin DOI.',
+    'AU  - Doe J',
+    'DP  - 2019',
+  ].join('\n');
+
+  await t.test('se reconoce, y no se confunde con RIS', () => {
+    assert.equal(leer(buffer(TXT)).formato, 'pubmed');
+  });
+
+  await t.test('el DOI se saca de la variante marcada [doi], no del PII', () => {
+    const { filas } = leer(buffer(TXT));
+
+    assert.equal(filas[0].doi, '10.1000/abc');
+    assert.equal(filas[0].title, 'Construct validity revisited in a second line.');
+  });
+
+  await t.test('los autores salen del nombre completo cuando lo hay', () => {
+    const { filas } = leer(buffer(TXT));
+
+    assert.equal(filas[0].authors, 'Hernández, Roberto; Fernández, Carlos');
+    assert.equal(filas[0].year, 2021);
+    assert.equal(filas[0].source, 'Journal of testing');
+  });
+
+  await t.test('sin DOI, la identidad es el PMID', () => {
+    const { filas } = leer(buffer(TXT));
+
+    assert.equal(filas[1].sourceRef, 'eid:pmid:87654321');
+    // Sin FAU queda el AU corto, llevado al formato de cita de la casa.
+    assert.equal(filas[1].authors, 'Doe, J');
+  });
+});
+
 test('un archivo que no es un export devuelve cero fuentes, no basura', () => {
   const { filas } = leer(buffer('esto no es un csv ni nada parecido\nsolo texto suelto'));
 

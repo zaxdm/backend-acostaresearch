@@ -9,6 +9,11 @@ const { normalizar } = require('./zotero.mapper');
  * RIS y BibTeX. El comprador descarga lo que su base le dé y lo sube; adivinar
  * el formato aquí cuesta veinte líneas y le ahorra tener que saber cuál eligió.
  *
+ * Y los de texto plano, que se descargan como `.txt`: el «Plain text» de Scopus,
+ * el «Plain text file» y el «Tab-delimited» de Web of Science, y el MEDLINE de
+ * PubMed. Son lo que sale al pulsar la opción que parece más sencilla, y hasta
+ * ahora acababan en «no encontramos ninguna fuente» sin más explicación.
+ *
  * POR QUÉ EL CSV NO SE PARTE POR COMAS
  * ------------------------------------
  * Es la trampa que hunde estos importadores, y no avisa: falla en silencio y
@@ -124,7 +129,11 @@ function indicesDeCabecera(cabecera) {
 }
 
 function desdeCsv(texto) {
-  const filas = leerCsv(texto);
+  return filasAFichas(leerCsv(texto));
+}
+
+/** De una tabla ya partida —cabecera y filas— a fichas. Vale para CSV y tabulado. */
+function filasAFichas(filas) {
   if (filas.length < 2) return [];
 
   const indices = indicesDeCabecera(filas[0]);
@@ -301,20 +310,319 @@ function desdeBibtex(texto) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Tabulado (el «Tab-delimited» de Web of Science)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Parte por tabuladores, SIN tratar las comillas.
+ *
+ * Web of Science no entrecomilla nada en este formato: un título con una cita
+ * dentro lleva sus comillas tal cual. Pasarlo por el lector de CSV abriría un
+ * campo entrecomillado ahí y se tragaría el resto del archivo.
+ */
+function desdeTabulado(texto) {
+  const filas = texto
+    .split(/\r?\n/)
+    .filter((linea) => linea.trim() !== '')
+    .map((linea) => linea.split('\t'));
+
+  return filasAFichas(filas);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Etiquetado (el «Plain text file» de Web of Science y el MEDLINE de PubMed)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const fichaVacia = () => ({
+  title: '',
+  authors: '',
+  year: '',
+  source: '',
+  doi: '',
+  url: '',
+  abstract: '',
+  keywords: '',
+  eid: '',
+  itemType: '',
+});
+
+/**
+ * Lee un formato de etiquetas con líneas de continuación.
+ *
+ * Los dos se parecen: una etiqueta al principio de la línea y, si el valor no
+ * cabe, líneas siguientes con sangría. Cambian la forma de la etiqueta, con qué
+ * etiqueta empieza cada ficha y qué significa la continuación: en WoS, la
+ * continuación de `AU` es OTRO autor; la de un resumen es el mismo párrafo.
+ */
+function desdeEtiquetas(texto, { linea, empieza, termina, porLinea, poner }) {
+  const fichas = [];
+  let actual = null;
+  let ultima = null;
+
+  for (const cruda of texto.split(/\r?\n/)) {
+    const encontrada = linea.exec(cruda);
+
+    if (!encontrada) {
+      const resto = cruda.trim();
+      if (actual && ultima && resto) {
+        poner(actual, ultima, resto, !porLinea.has(ultima));
+      }
+      continue;
+    }
+
+    const [, etiqueta, valor] = encontrada;
+
+    if (etiqueta === empieza) {
+      actual = fichaVacia();
+      fichas.push(actual);
+    }
+    if (etiqueta === termina) {
+      actual = null;
+      ultima = null;
+      continue;
+    }
+    if (!actual) continue;
+
+    poner(actual, etiqueta, (valor ?? '').trim(), false);
+    ultima = etiqueta;
+  }
+
+  return fichas;
+}
+
+/**
+ * Añade un valor a un campo de la ficha.
+ *
+ * `sigue` es una línea de continuación del MISMO valor: se pega con un espacio.
+ * Si no, en autores y palabras clave es uno más de la lista, y en el resto gana
+ * el primero —una segunda etiqueta de título es otra variante, no una suma—.
+ */
+function anadir(ficha, campo, valor, sigue) {
+  if (!valor) return;
+
+  if (sigue) {
+    ficha[campo] = ficha[campo] ? `${ficha[campo]} ${valor}` : valor;
+  } else if (campo === 'authors' || campo === 'keywords') {
+    ficha[campo] = ficha[campo] ? `${ficha[campo]}; ${valor}` : valor;
+  } else if (!ficha[campo]) {
+    ficha[campo] = valor;
+  }
+}
+
+/** Las etiquetas de Web of Science que interesan. */
+const WOS = {
+  TI: 'title',
+  AU: 'authors',
+  PY: 'year',
+  SO: 'source',
+  DI: 'doi',
+  AB: 'abstract',
+  DE: 'keywords',
+  ID: 'keywords',
+  UT: 'eid',
+  DT: 'itemType',
+};
+
+function desdeWos(texto) {
+  return desdeEtiquetas(texto, {
+    // «AU Hernandez, R» — dos caracteres, un espacio, el valor. «ER» va solo.
+    linea: /^([A-Z][A-Z0-9])(?: (.*))?$/,
+    empieza: 'PT',
+    termina: 'ER',
+    // Cada línea de continuación de estas es un autor más.
+    porLinea: new Set(['AU']),
+    poner(ficha, etiqueta, valor, sigue) {
+      const campo = WOS[etiqueta];
+      if (!campo) return;
+      // La continuación de AU llega con `sigue` a false: es otro autor.
+      anadir(ficha, campo, valor ?? '', sigue);
+    },
+  });
+}
+
+/** Las etiquetas de MEDLINE que interesan. El DOI y los autores, aparte. */
+const MEDLINE = {
+  TI: 'title',
+  DP: 'year',
+  JT: 'source',
+  AB: 'abstract',
+  OT: 'keywords',
+  PT: 'itemType',
+};
+
+function desdeMedline(texto) {
+  const fichas = desdeEtiquetas(texto, {
+    // «TI  - Un título», «PMID- 12345678». Hasta cuatro letras, rellenas.
+    linea: /^([A-Z]{2,4})\s*- (.*)$/,
+    empieza: 'PMID',
+    termina: null,
+    porLinea: new Set(),
+    poner(ficha, etiqueta, valor, sigue) {
+      if (etiqueta === 'PMID') {
+        ficha.eid = `pmid:${valor}`;
+      } else if (etiqueta === 'FAU') {
+        // «Smith, John». Mejor que «Smith J», que es lo que trae AU.
+        anadir(ficha, 'authors', valor, sigue);
+      } else if (etiqueta === 'AU') {
+        anadir(ficha, 'autoresCortos', valor, sigue);
+      } else if (etiqueta === 'TA') {
+        anadir(ficha, 'revistaCorta', valor, sigue);
+      } else if ((etiqueta === 'LID' || etiqueta === 'AID') && /\[doi\]\s*$/.test(valor)) {
+        // «10.1016/j.x.2023.01.002 [doi]». Las otras variantes son el PII.
+        anadir(ficha, 'doi', valor.replace(/\s*\[doi\]\s*$/, ''), false);
+      } else if (MEDLINE[etiqueta]) {
+        anadir(ficha, MEDLINE[etiqueta], valor, sigue);
+      }
+    },
+  });
+
+  return fichas.map(({ autoresCortos, revistaCorta, ...ficha }) => ({
+    ...ficha,
+    authors: ficha.authors || autoresCortos || '',
+    source: ficha.source || revistaCorta || '',
+  }));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// El «Plain text» de Scopus
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Las etiquetas que Scopus pone ANTES del título.
+ *
+ * Solo esas se reconocen como etiqueta en la cabeza de la ficha. Un título en
+ * mayúsculas con dos puntos —«TEACHING: A REVIEW»— tiene la misma forma que una
+ * etiqueta, y tomarlo por una se comería el título.
+ */
+const ETIQUETAS_DE_CABEZA = new Set(['AUTHOR FULL NAMES', 'AUTHOR(S) ID', 'AUTHORS']);
+
+/** Una línea «ETIQUETA: valor» de Scopus. */
+const ETIQUETA_SCOPUS = /^([A-Z][A-Z0-9 ()/&.-]*[A-Z)]):\s?(.*)$/;
+
+/**
+ * Lee el «Plain text» de Scopus.
+ *
+ * Es el único de los formatos sin una etiqueta en cada campo. La ficha empieza
+ * con líneas sueltas —autores, título, «(2023) Revista, 12 (3), pp. 1-10.», el
+ * enlace— y sigue con etiquetas —DOI:, ABSTRACT:, AUTHOR KEYWORDS:—. Acaba en
+ * «SOURCE: Scopus». Las líneas sueltas se reconocen por su forma: el año entre
+ * paréntesis, el enlace por su http, y de las demás la primera son los autores
+ * y la segunda el título.
+ */
+function desdeScopusTxt(texto) {
+  const fichas = [];
+  let sueltas = [];
+  let actual = fichaVacia();
+  let hayAlgo = false;
+
+  const cerrar = () => {
+    if (hayAlgo) {
+      // Sin autores, Scopus no deja la línea vacía: escribe este aviso.
+      const autores = sueltas[0] ?? '';
+      actual.authors = /^\[No author name available\]$/i.test(autores) ? '' : autores;
+      actual.title = sueltas[1] ?? '';
+      fichas.push(actual);
+    }
+    actual = fichaVacia();
+    sueltas = [];
+    hayAlgo = false;
+  };
+
+  // La cabecera del archivo: «Scopus» y «EXPORT DATE: …». No es una ficha.
+  const lineas = texto.split(/\r?\n/);
+  let i = 0;
+  while (i < lineas.length && (/^\s*(Scopus)?\s*$/.test(lineas[i]) || /^EXPORT DATE:/.test(lineas[i]))) {
+    i += 1;
+  }
+
+  for (; i < lineas.length; i += 1) {
+    const linea = lineas[i].trim();
+    if (!linea) continue;
+
+    const etiqueta = ETIQUETA_SCOPUS.exec(linea);
+    const esEtiqueta =
+      etiqueta && (sueltas.length >= 2 || ETIQUETAS_DE_CABEZA.has(etiqueta[1]));
+
+    if (esEtiqueta) {
+      const [, nombre, valor] = etiqueta;
+      hayAlgo = true;
+
+      if (nombre === 'SOURCE') {
+        cerrar();
+      } else if (nombre === 'DOI') {
+        anadir(actual, 'doi', valor, false);
+      } else if (nombre === 'ABSTRACT') {
+        anadir(actual, 'abstract', valor, false);
+      } else if (nombre === 'AUTHOR KEYWORDS' || nombre === 'INDEX KEYWORDS') {
+        anadir(actual, 'keywords', valor, false);
+      } else if (nombre === 'DOCUMENT TYPE') {
+        anadir(actual, 'itemType', valor, false);
+      }
+      continue;
+    }
+
+    hayAlgo = true;
+    const conAnio = /^\((\d{4})\)\s*(.*)$/.exec(linea);
+
+    if (conAnio) {
+      actual.year = conAnio[1];
+      // «Revista de Educación, 45 (2), pp. 123-145. Cited 3 times.» → la revista.
+      // El nombre puede llevar comas; lo que viene detrás empieza por número.
+      actual.source = conAnio[2]
+        .split(/,\s*(?=\d|pp\.|art\.|Cited)/)[0]
+        .replace(/\.\s*$/, '')
+        .trim();
+    } else if (/^https?:\/\//i.test(linea)) {
+      actual.url = linea;
+      const eid = /[?&]eid=([^&]+)/.exec(linea);
+      if (eid) actual.eid = decodeURIComponent(eid[1]);
+    } else {
+      sueltas.push(linea);
+    }
+  }
+
+  cerrar();
+  return fichas;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * Adivina el formato por su contenido, no por la extensión.
  *
  * La extensión miente a menudo: Scopus descarga el RIS como `.ris` pero muchos
  * gestores lo guardan como `.txt`, y un CSV renombrado a `.xls` es lo más común
- * que se sube. Los tres formatos se reconocen por su primera línea útil.
+ * que se sube. Se reconocen por su primera línea útil.
+ *
+ * El orden importa. MEDLINE va antes que RIS porque sus etiquetas tienen la
+ * misma forma («TI  - »), y el tabulado antes que el CSV porque un título con
+ * comas en una línea con tabuladores no es un CSV.
  */
 function formatoDe(texto) {
   const cabeza = texto.slice(0, 2000);
+  const primera = cabeza.split(/\r?\n/, 1)[0];
+
   if (/^\s*@\w+\s*\{/m.test(cabeza)) return 'bibtex';
+  if (/^PMID- /m.test(cabeza)) return 'pubmed';
   if (/^TY\s{2}-/m.test(cabeza)) return 'ris';
+  if (/^(FN |VR |PT [A-Z])/m.test(cabeza) && /^ER\s*$/m.test(texto)) return 'wos txt';
+  if (/^SOURCE:\s*Scopus\s*$/m.test(texto) || /^EXPORT DATE:/m.test(cabeza)) return 'scopus txt';
+  if ((primera.match(/\t/g) ?? []).length > (primera.match(/,/g) ?? []).length) {
+    return 'wos tsv';
+  }
   return 'csv';
 }
+
+/** Cada formato, con su lector. */
+const LECTORES = {
+  bibtex: desdeBibtex,
+  pubmed: desdeMedline,
+  ris: desdeRis,
+  'wos txt': desdeWos,
+  'scopus txt': desdeScopusTxt,
+  'wos tsv': desdeTabulado,
+  csv: desdeCsv,
+};
 
 /** «Hernández R., Fernández C.» → «Hernández, R.; Fernández, C.» */
 function autoresEnFormatoDeCita(crudo) {
@@ -407,6 +715,18 @@ function aFila(ficha) {
 }
 
 /**
+ * El texto del archivo, en la codificación en que venga.
+ *
+ * El «Tab-delimited (Win)» de Web of Science sale en UTF-16, y leído como UTF-8
+ * es un carácter nulo entre cada letra: ninguna cabecera coincide y el archivo
+ * parece vacío. Lo delata su marca de orden de bytes.
+ */
+function decodificar(buffer) {
+  if (buffer[0] === 0xff && buffer[1] === 0xfe) return buffer.toString('utf16le').slice(1);
+  return buffer.toString('utf8').replace(/^﻿/, '');
+}
+
+/**
  * Lee el archivo entero y devuelve las filas listas para guardar.
  *
  * Las repetidas DENTRO del propio archivo se quitan aquí: exportar dos búsquedas
@@ -414,11 +734,9 @@ function aFila(ficha) {
  * chocaría contra su propio índice único a mitad de camino.
  */
 function leer(buffer) {
-  const texto = buffer.toString('utf8').replace(/^﻿/, '');
+  const texto = decodificar(buffer);
   const formato = formatoDe(texto);
-
-  const fichas =
-    formato === 'bibtex' ? desdeBibtex(texto) : formato === 'ris' ? desdeRis(texto) : desdeCsv(texto);
+  const fichas = LECTORES[formato](texto);
 
   const vistas = new Set();
   const filas = [];

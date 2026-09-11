@@ -215,7 +215,7 @@ const propiasService = {
     if (!Buffer.isBuffer(buffer)) {
       throw new ValidationError(
         'Ese tipo de archivo todavía no lo leemos. Aquí van los EXPORTS de la base de datos ' +
-          '—CSV, RIS o BibTeX—, no los PDF de los artículos: en Scopus es el botón «Export», ' +
+          '—CSV, RIS, BibTeX o TXT—, no los PDF de los artículos: en Scopus es el botón «Export», ' +
           'no «Download».',
       );
     }
@@ -228,8 +228,9 @@ const propiasService = {
 
     if (filas.length === 0) {
       throw new ValidationError(
-        'No encontramos ninguna fuente en ese archivo. Exporta desde Scopus en CSV, RIS o ' +
-          'BibTeX, y asegúrate de marcar al menos el título, los autores y el año.',
+        'No encontramos ninguna fuente en ese archivo. Exporta desde Scopus en CSV, RIS, ' +
+          'BibTeX o texto plano (TXT), y asegúrate de marcar al menos el título, los autores y ' +
+          'el año.',
       );
     }
 

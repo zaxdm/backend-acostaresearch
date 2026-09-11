@@ -28,6 +28,8 @@ function idDeYouTube(enlace) {
  */
 const tutorialBodySchema = z.object({
   orden: z.coerce.number().int().min(0).max(99),
+  grupo: z.string().trim().max(60).optional().default(''),
+  etiqueta: z.string().trim().max(8, 'La etiqueta es corta: «S4», no una frase.').optional().default(''),
   titulo: z.string().trim().min(3, 'Ponle un título.').max(160),
   duracion: z.string().trim().max(24).optional().default(''),
   entrada: z.string().trim().max(600).optional().default(''),

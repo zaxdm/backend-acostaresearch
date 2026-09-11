@@ -1079,6 +1079,12 @@ model Tutorial {
   /// segundo es el que hay que ver.
   orden Int
 
+  /// El bloque en el que sale en la lista: «Para empezar», «Una por Skill».
+  /// Los videos seguidos con el mismo grupo van juntos bajo ese rótulo.
+  grupo    String @default("") @db.VarChar(60)
+  /// Lo que va en el círculo en lugar del número, como «S4». Vacío = su número.
+  etiqueta String @default("") @db.VarChar(8)
+
   titulo   String @db.VarChar(160)
   /// «5 min». Para que se sepa si hay tiempo de verlo ahora o hay que dejarlo.
   duracion String @db.VarChar(24)

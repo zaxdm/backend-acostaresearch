@@ -450,9 +450,15 @@ async function guardarAvance({ userId, productCode, ...entrada }) {
 /**
  * Qué toca ahora, si se puede saber.
  *
- * El primer capítulo del catálogo que no esté LISTO. No adivina más allá de
- * eso: el orden del método es una recomendación, y un tesista que salte al
- * capítulo III porque su asesor se lo pidió no está haciéndolo mal.
+ * La primera FASE del catálogo que no esté LISTA. No adivina más allá de eso:
+ * el orden del método es una recomendación, y un tesista que salte al capítulo
+ * III porque su asesor se lo pidió no está haciéndolo mal.
+ *
+ * Las herramientas de apoyo quedan fuera. Se usan cuando hacen falta, no en
+ * orden, y ponerlas en la fila tenía dos efectos malos: al que cerraba sus
+ * nueve capítulos se le ofrecía «Bajar similitud» como si fuera el décimo, y
+ * nunca llegaba a oír que había terminado. Es la misma regla que ya aplica el
+ * panel en `deUsuario`, y el porqué está en `esApoyo`.
  */
 async function siguientePaso(userId, productCode) {
   const [proyecto, catalogo] = await Promise.all([
@@ -466,7 +472,7 @@ async function siguientePaso(userId, productCode) {
     (proyecto?.stages ?? []).filter((e) => e.estado === 'LISTO').map((e) => e.skillCode),
   );
 
-  return catalogo.find((s) => !listos.has(s.code)) ?? null;
+  return catalogo.find((s) => !esApoyo(s.displayName) && !listos.has(s.code)) ?? null;
 }
 
 /**

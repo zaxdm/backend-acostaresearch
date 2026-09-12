@@ -262,6 +262,27 @@ test('cuando está todo cerrado lo dice, en vez de inventarse un siguiente', asy
   assert.match(t, /Tiene todos los capítulos dados por buenos/);
 });
 
+test('con las FASES cerradas y el apoyo pendiente, también dice que terminó', async () => {
+  // El caso real: nadie cierra «Bajar similitud», así que antes de la Fase 3
+  // el panorama decía «Le toca: Bajar similitud» y el tesista que había
+  // acabado su tesis no se enteraba de que había acabado.
+  conProyecto({
+    tema: 'Un tema',
+    stages: FASES.map((s) => ({ skillCode: s.code, estado: 'LISTO' })),
+  });
+
+  const t = await projectService.resumen('u1', PRODUCTO);
+
+  assert.match(t, /Tiene todos los capítulos dados por buenos/);
+  assert.doesNotMatch(t, /Le toca/);
+  assert.doesNotMatch(t, /Bajar similitud \(clave/);
+
+  // Y siguen listadas: no se han quitado del catálogo, solo del avance.
+  assert.match(t, /\[pendiente\]\s+Bajar similitud\s+\(bajar-similitud\)/);
+  assert.match(t, /\[pendiente\]\s+Humanizador académico\s+\(humanizador-academico\)/);
+  assert.match(t, /4 cerrados · 0 en curso · 0 sin empezar/);
+});
+
 test('sin tema ni carrera, el panorama no empieza por una línea en blanco', async () => {
   // Pasa de verdad: quien manda su análisis desde la web tiene avance antes de
   // haber dicho el tema. La cabecera vacía dejaba la respuesta empezando por un

@@ -77,6 +77,32 @@ const ESQUEMA_FUENTES = fromJsonSchema({
  * Es la diferencia con las otras dos búsquedas y conviene que se note en el
  * esquema: aquí no hay nada que teclear mal.
  */
+/**
+ * Añadir fuentes por DOI desde la conversación.
+ *
+ * El DOI y nada más: el título, los autores y el año se traen del catálogo. Si
+ * se dejara al asistente mandar la ficha entera, la mitad de las fuentes de una
+ * tesis acabarían con el año que le pareció y con un DOI que no resuelve, que
+ * es exactamente lo que este producto existe para evitar.
+ */
+const ESQUEMA_ANADIR = fromJsonSchema({
+  type: 'object',
+  properties: {
+    dois: {
+      type: 'array',
+      minItems: 1,
+      maxItems: 60,
+      items: { type: 'string', minLength: 7 },
+      description:
+        'Los DOI de las fuentes que el tesista quiere guardar, tal como aparecen en la lista ' +
+        'que le enseñaste. NO los inventes ni los completes de memoria: si no tienes el DOI ' +
+        'exacto, no la añadas.',
+    },
+  },
+  required: ['dois'],
+  additionalProperties: false,
+});
+
 const ESQUEMA_BOLA = fromJsonSchema({
   type: 'object',
   properties: {
@@ -1597,8 +1623,63 @@ function construirServidor(licencia) {
           '—cuantas más de tus fuentes las citen, más central—; las de abajo son lo que se ha ' +
           'publicado después, y sirven para que tu marco teórico no se quede viejo. ' +
           'Ninguna está revisada por Acosta y no todas van a servirte: elige tú. ' +
-          'Para tenerlas citables, pega sus DOI en «Mis fuentes» del panel. ' +
+          'PREGÚNTALE CUÁLES QUIERE y guárdaselas con "anadir_a_mis_fuentes" pasando sus DOI; ' +
+          'a partir de ahí se citan como cualquier otra fuente suya. ' +
           'Y cita EXACTAMENTE como están escritas, sin cambiar años, autores ni DOIs.',
+      );
+    },
+  );
+
+  // ── Guardar en su biblioteca lo que acaba de encontrar ───────────────────
+  //
+  // Sin esto, la bola de nieve enseñaba fuentes y las dejaba en el aire: el
+  // tesista tenía que copiar los DOI a mano en el panel, y el panel solo ofrece
+  // ese campo cuando falla la lectura de un PDF. Una función que termina
+  // diciendo «ahora hazlo tú en otro sitio» está a medias.
+  //
+  // Viaja el DOI y solo el DOI. La ficha la trae el catálogo, así que el año y
+  // los autores no pueden salir de la memoria de nadie.
+  server.registerTool(
+    'anadir_a_mis_fuentes',
+    {
+      title: 'Guardar fuentes en la biblioteca del tesista',
+      description:
+        'Guarda en la biblioteca del tesista las fuentes cuyos DOI le pases, para que pueda ' +
+        'citarlas en sus capítulos. ' +
+        'ÚSALA justo después de "ampliar_desde_mis_fuentes" o de "buscar_en_la_literatura", ' +
+        'cuando el tesista diga cuáles quiere: «añade la 1 y la 3», «guárdalas todas». ' +
+        'PREGÚNTASELO ANTES: no guardes lo que no te ha pedido. ' +
+        'PASA SOLO DOI QUE VENGAN DE UNA BÚSQUEDA, nunca uno recordado ni reconstruido: si ' +
+        'no tienes el DOI exacto delante, dilo en vez de inventarlo. ' +
+        'Lo repetido no se duplica y lo que el catálogo no conozca se te dirá por su nombre.',
+      inputSchema: ESQUEMA_ANADIR,
+    },
+    async ({ dois }) => {
+      await licenseService.recordUsage({
+        licenseId: licencia.id,
+        tool: 'anadir_a_mis_fuentes',
+      });
+
+      const parte = await propiasService.importarPorDoi({ userId: licencia.userId, dois });
+
+      const lineas = [];
+      if (parte.guardadas > 0) lineas.push(`${parte.guardadas} fuentes nuevas en su biblioteca.`);
+      if (parte.repetidas > 0) lineas.push(`${parte.repetidas} ya las tenía: se refrescó la ficha.`);
+      if (parte.noEncontrados.length > 0) {
+        lineas.push(
+          `El catálogo abierto no conoce ${parte.noEncontrados.length}: ` +
+            `${parte.noEncontrados.join(', ')}. ` +
+            'Comprueba que el DOI esté bien copiado; si lo está, esa fuente tendrá que entrar ' +
+            'por el export de su base de datos.',
+        );
+      }
+
+      lineas.push(`Ahora tiene ${parte.total} fuentes propias.`);
+
+      return texto(
+        `${lineas.join(N)}${N}${N}` +
+          'Ya se pueden citar: búscalas con "buscar_fuentes" cuando redactes, y usa la clave ' +
+          'AR que te devuelva. NO escribas la cita a mano.',
       );
     },
   );

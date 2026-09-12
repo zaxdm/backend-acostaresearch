@@ -84,6 +84,24 @@ test('las claves vivas se piden en una sola petición y en texto', async (t) => 
   assert.equal(pedidas[0].searchParams.get('itemType'), '-attachment || note');
 });
 
+test('«toda la biblioteca» pide /items, no una colección', async (t) => {
+  const pedidas = espiar(t);
+
+  // eslint-disable-next-line no-empty
+  for await (const _ of cliente.paginasDeItems(CONTEXTO, { collectionKey: '*' })) {
+  }
+  await cliente.clavesDeLaColeccion(CONTEXTO, '*');
+
+  for (const url of pedidas) {
+    assert.equal(
+      url.pathname,
+      `/users/${CONTEXTO.zoteroUserId}/items`,
+      'con el asterisco no hay colección en la ruta: sería /collections/*/items y un 404',
+    );
+    assert.equal(url.searchParams.get('itemType'), '-attachment || note');
+  }
+});
+
 test('se lee la biblioteca de ESE tesista y no otra', async (t) => {
   const pedidas = espiar(t);
 

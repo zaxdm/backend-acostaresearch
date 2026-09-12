@@ -31,6 +31,24 @@ const POR_PAGINA = 100;
  */
 const SOLO_FUENTES = '-attachment || note';
 
+/**
+ * La colección que no es una colección.
+ *
+ * Guardar «toda la biblioteca» como un valor reservado en el mismo campo, en
+ * vez de con una columna aparte, evita el estado imposible: con una bandera
+ * booleana existirían filas que dicen a la vez «toda» y «esta de aquí», y
+ * alguien tendría que decidir cuál gana. Aquí solo hay un campo y no puede
+ * contradecirse.
+ *
+ * El asterisco no colisiona con nada: las claves de Zotero son ocho caracteres
+ * de letras y dígitos.
+ */
+const TODA_LA_BIBLIOTECA = '*';
+
+/** La ruta de los ítems: la biblioteca entera, o los de una colección. */
+const rutaDeItems = (collectionKey) =>
+  collectionKey === TODA_LA_BIBLIOTECA ? '/items' : `/collections/${collectionKey}/items`;
+
 async function respetarEspera(res) {
   const segundos = Number(res.headers.get('backoff') ?? res.headers.get('retry-after') ?? 0);
   if (!Number.isFinite(segundos) || segundos <= 0) return false;
@@ -152,7 +170,7 @@ async function* paginasDeItems(contexto, { collectionKey, desdeVersion = 0 }) {
   let total = null;
 
   for (;;) {
-    const respuesta = await pedir(contexto, `/collections/${collectionKey}/items`, {
+    const respuesta = await pedir(contexto, rutaDeItems(collectionKey), {
       format: 'json',
       limit: POR_PAGINA,
       start: inicio,
@@ -191,7 +209,7 @@ async function* paginasDeItems(contexto, { collectionKey, desdeVersion = 0 }) {
  * hubiera dejado una pasada anterior a medias.
  */
 async function clavesDeLaColeccion(contexto, collectionKey) {
-  const { datos } = await pedir(contexto, `/collections/${collectionKey}/items`, {
+  const { datos } = await pedir(contexto, rutaDeItems(collectionKey), {
     format: 'keys',
     itemType: SOLO_FUENTES,
   });
@@ -202,4 +220,27 @@ async function clavesDeLaColeccion(contexto, collectionKey) {
     .filter(Boolean);
 }
 
-module.exports = { colecciones, paginasDeItems, clavesDeLaColeccion, POR_PAGINA };
+/**
+ * Cuántas fuentes tiene la biblioteca entera, sin traerse ninguna.
+ *
+ * Se enseña junto a la opción de traerla toda. Sin ese número, elegir «toda mi
+ * biblioteca» es firmar en blanco: quien tiene doscientas y quien tiene doce
+ * mil pulsarían el mismo botón sin saber en qué se diferencian.
+ */
+async function cuantasEnLaBiblioteca(contexto) {
+  const { total } = await pedir(contexto, '/items', {
+    format: 'json',
+    limit: 1,
+    itemType: SOLO_FUENTES,
+  });
+  return total;
+}
+
+module.exports = {
+  colecciones,
+  paginasDeItems,
+  clavesDeLaColeccion,
+  cuantasEnLaBiblioteca,
+  TODA_LA_BIBLIOTECA,
+  POR_PAGINA,
+};

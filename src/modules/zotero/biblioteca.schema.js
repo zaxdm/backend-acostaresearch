@@ -13,7 +13,8 @@ const { z } = require('zod');
 const claveDeColeccion = z
   .string({ required_error: 'Falta la colección.' })
   .trim()
-  .regex(/^[A-Z0-9]{8}$/, 'Esa no es una clave de colección de Zotero.');
+  // El asterisco es «toda la biblioteca». Ver `biblioteca.client`.
+  .regex(/^(\*|[A-Z0-9]{8})$/, 'Esa no es una clave de colección de Zotero.');
 
 const elegirColeccionSchema = z.object({ clave: claveDeColeccion });
 

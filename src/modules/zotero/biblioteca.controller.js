@@ -41,7 +41,8 @@ const bibliotecaController = {
   }),
 
   colecciones: asyncHandler(async (req, res) => {
-    return ok(res, { colecciones: await servicio.colecciones(req.user.id) });
+    // Va la lista Y el tamaño de la biblioteca entera, que es una opción más.
+    return ok(res, await servicio.colecciones(req.user.id));
   }),
 
   elegir: asyncHandler(async (req, res) => {

@@ -21,10 +21,11 @@ const repositorio = require('./biblioteca.repository');
  *    ítem de Zotero solo son únicas dentro de su biblioteca, así que dos
  *    tesistas pueden traer la misma y se pisarían.
  *
- * 2. Lo que se sincroniza es UNA COLECCIÓN, no la biblioteca. Y la limpieza se
- *    hace comparando contra las claves vivas de esa colección, no contra lo
- *    borrado en Zotero: sacar una fuente de la colección es lo que hace el
- *    tesista de verdad, y para «lo borrado» eso no ha ocurrido.
+ * 2. Se sincroniza LO QUE ÉL ELIJA: una colección suya, o la biblioteca
+ *    entera para quien no usa carpetas. La limpieza compara contra las claves
+ *    vivas de eso mismo, no contra lo borrado en Zotero: sacar una fuente de la
+ *    colección es lo que hace el tesista de verdad, y para «lo borrado» eso no
+ *    ha ocurrido.
  *
  * 3. La clave nunca sale de la base en claro. Se descifra en memoria para cada
  *    pasada y no se devuelve nunca al panel, ni siquiera enmascarada.
@@ -119,9 +120,27 @@ async function terminar({ token, verificador }) {
 
 // ── Elegir qué se trae ──────────────────────────────────────────────────────
 
+/**
+ * Sus colecciones, y la biblioteca entera como una opción más.
+ *
+ * La entera va primera y con su cuenta de fuentes delante. No es un capricho de
+ * orden: hay tesistas que no usan carpetas —lo tienen todo suelto en la raíz— y
+ * a esos la pantalla anterior les decía «crea una colección y vuelve», que es
+ * mandarles a hacer deberes antes de poder usar lo que pagaron.
+ */
 async function colecciones(userId) {
   const cuenta = await exigirCuenta(userId);
-  return cliente.colecciones(contextoDe(cuenta));
+  const contexto = contextoDe(cuenta);
+
+  const [suyas, enLaBiblioteca] = await Promise.all([
+    cliente.colecciones(contexto),
+    cliente.cuantasEnLaBiblioteca(contexto).catch(() => null),
+  ]);
+
+  return {
+    biblioteca: { clave: cliente.TODA_LA_BIBLIOTECA, cuantas: enLaBiblioteca },
+    colecciones: suyas,
+  };
 }
 
 /**
@@ -135,8 +154,15 @@ async function colecciones(userId) {
 async function elegir(userId, claveColeccion) {
   const cuenta = await exigirCuenta(userId);
 
-  const suyas = await cliente.colecciones(contextoDe(cuenta));
-  const elegida = suyas.find((coleccion) => coleccion.clave === claveColeccion);
+  // «Toda la biblioteca» no se comprueba contra la lista porque no está en
+  // ella: no es una colección suya, es la ausencia de colección.
+  const elegida =
+    claveColeccion === cliente.TODA_LA_BIBLIOTECA
+      ? { clave: cliente.TODA_LA_BIBLIOTECA, nombre: 'Toda tu biblioteca' }
+      : (await cliente.colecciones(contextoDe(cuenta))).find(
+          (coleccion) => coleccion.clave === claveColeccion,
+        );
+
   if (!elegida) throw new NotFoundError('Esa colección no está en tu Zotero.');
 
   await repositorio.elegirColeccion(userId, {

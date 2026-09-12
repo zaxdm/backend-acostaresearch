@@ -86,13 +86,16 @@ sustituir('../src/modules/zotero/biblioteca.repository', repositorio);
 /** Zotero: la colección que hay y lo que devuelve. */
 const zotero = {
   colecciones: [{ clave: 'ABCD1234', nombre: 'Tesis › Antecedentes', cuantas: 2 }],
+  enLaBiblioteca: 214,
   items: [],
   clavesVivas: [],
   revocada: false,
 };
 
 const cliente = {
+  TODA_LA_BIBLIOTECA: '*',
   colecciones: async () => zotero.colecciones,
+  cuantasEnLaBiblioteca: async () => zotero.enLaBiblioteca,
   paginasDeItems: async function* () {
     if (zotero.revocada) {
       const fallo = new Error('Zotero ya no acepta esta conexión.');
@@ -299,6 +302,34 @@ test('elegir colección deja el marcador de versión a cero', async () => {
     0,
     'conservar la versión de la colección anterior deja la nueva a medias',
   );
+});
+
+test('la lista incluye la biblioteca entera, con cuántas fuentes tiene', async () => {
+  empezar();
+
+  const { biblioteca, colecciones } = await servicio.colecciones('u1');
+
+  assert.equal(biblioteca.clave, '*');
+  assert.equal(
+    biblioteca.cuantas,
+    214,
+    'sin el número, elegir «toda mi biblioteca» es firmar en blanco',
+  );
+  assert.equal(colecciones.length, 1);
+});
+
+test('quien no usa carpetas puede traerlo todo, sin crear ninguna', async () => {
+  // Su Zotero está como el de mucha gente: sin una sola colección.
+  empezar({ coleccion: null });
+  zotero.colecciones = [];
+
+  const { coleccion } = await servicio.elegir('u1', '*');
+
+  assert.equal(coleccion.clave, '*');
+  assert.equal(baseDeDatos.cuenta.collectionKey, '*');
+  assert.equal(baseDeDatos.cuenta.collectionName, 'Toda tu biblioteca');
+
+  zotero.colecciones = [{ clave: 'ABCD1234', nombre: 'Tesis › Antecedentes', cuantas: 2 }];
 });
 
 test('sin Zotero conectado, el panel lo dice sin inventarse una cuenta', async () => {

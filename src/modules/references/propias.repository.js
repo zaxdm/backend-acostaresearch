@@ -63,6 +63,25 @@ async function guardarLote(userId, filas) {
   };
 }
 
+/**
+ * Los DOI de sus fuentes, que son las semillas de la bola de nieve.
+ *
+ * Solo las que tienen DOI: sin él no hay forma de preguntarle a nadie a quién
+ * cita esa fuente. Las más recientes primero, porque una bola de nieve que
+ * parte de lo último que le interesó se parece más a su tema de hoy que una que
+ * parte de lo que subió el primer día.
+ */
+async function doisDe(userId, limite) {
+  const filas = await prisma.reference.findMany({
+    where: { ownerUserId: userId, doi: { not: null } },
+    select: { doi: true },
+    orderBy: { createdAt: 'desc' },
+    take: limite,
+  });
+
+  return filas.map((fila) => fila.doi);
+}
+
 /** Cuántas tiene ya. Se consulta antes de importar, para aplicar el tope. */
 function contar(userId) {
   return prisma.reference.count({ where: { ownerUserId: userId } });
@@ -126,4 +145,4 @@ async function vaciar(userId) {
   return count;
 }
 
-module.exports = { guardarLote, contar, contarSinResumen, resumen, vaciar, TOPE_POR_USUARIO };
+module.exports = { guardarLote, doisDe, contar, contarSinResumen, resumen, vaciar, TOPE_POR_USUARIO };

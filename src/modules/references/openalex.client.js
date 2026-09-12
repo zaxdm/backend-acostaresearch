@@ -70,6 +70,43 @@ function paginas(biblio) {
   return desde ? String(desde) : null;
 }
 
+/**
+ * De una obra de OpenAlex a la ficha que usa todo lo demás.
+ *
+ * Una sola función para las cuatro consultas —por DOI, por lote de DOI, por
+ * identificador y «quién cita a»— porque el día que se añada un campo hay que
+ * añadirlo una vez. Ya pasó lo contrario con el formateo de las citas.
+ */
+function comoFicha(w) {
+  return {
+    /** El de OpenAlex. Hace falta para contar cuántas fuentes suyas la citan. */
+    id: w.id,
+    doi: limpiarDoi(w.doi),
+    title: w.title,
+    authors: autores(w.authorships) || '',
+    year: w.publication_year ?? null,
+    source: w.primary_location?.source?.display_name ?? null,
+    // OpenAlex los agrupa en `biblio`, y los da como texto. Vienen vacíos a
+    // menudo —sobre todo en lo recién publicado—; lo que falte se completa
+    // después contra Crossref, que es donde el editor los depositó.
+    volume: w.biblio?.volume ?? null,
+    issue: w.biblio?.issue ?? null,
+    pages: paginas(w.biblio),
+    url: w.best_oa_location?.pdf_url ?? w.doi ?? null,
+    abstract: resumenDelIndice(w.abstract_inverted_index),
+    /** Las asigna un clasificador, no el autor. Sirven para buscar, no para citar. */
+    tags: (w.keywords ?? [])
+      .map((k) => k.display_name)
+      .filter(Boolean)
+      .slice(0, 12)
+      .join(', '),
+    /** El tipo tal como lo dice OpenAlex, para que el `.bib` lo traduzca. */
+    itemType: w.type ?? 'article',
+    /** Cuántas veces la han citado. Ordena la bola de nieve hacia delante. */
+    citas: w.cited_by_count ?? 0,
+  };
+}
+
 function autores(authorships = []) {
   return authorships
     .slice(0, 8)
@@ -196,29 +233,123 @@ async function porDoi(crudo) {
   const w = await res.json().catch(() => null);
   if (!w || !w.title) return null;
 
-  return {
-    doi,
-    title: w.title,
-    authors: autores(w.authorships) || '',
-    year: w.publication_year ?? null,
-    source: w.primary_location?.source?.display_name ?? null,
-    // OpenAlex los agrupa en `biblio`, y los da como texto. Vienen vacíos a
-    // menudo —sobre todo en lo recién publicado—; lo que falte se completa
-    // después contra Crossref, que es donde el editor los depositó.
-    volume: w.biblio?.volume ?? null,
-    issue: w.biblio?.issue ?? null,
-    pages: paginas(w.biblio),
-    url: w.best_oa_location?.pdf_url ?? w.doi ?? null,
-    abstract: resumenDelIndice(w.abstract_inverted_index),
-    /** Las asigna un clasificador, no el autor. Sirven para buscar, no para citar. */
-    tags: (w.keywords ?? [])
-      .map((k) => k.display_name)
-      .filter(Boolean)
-      .slice(0, 12)
-      .join(', '),
-    /** El tipo tal como lo dice OpenAlex, para que el `.bib` lo traduzca. */
-    itemType: w.type ?? 'article',
-  };
+  return comoFicha(w);
 }
 
-module.exports = { buscar, porDoi, limpiarDoi, resumenDelIndice };
+/**
+ * Cuántos valores caben en un filtro con «|».
+ *
+ * OpenAlex admite hasta 50 por grupo. Es lo que convierte la bola de nieve en
+ * tres peticiones en vez de ciento cincuenta.
+ */
+const POR_FILTRO = 50;
+
+const enLotes = (lista, tamano) => {
+  const lotes = [];
+  for (let i = 0; i < lista.length; i += tamano) lotes.push(lista.slice(i, i + tamano));
+  return lotes;
+};
+
+/** Una consulta de lista, con su manejo de caídas. Devuelve [] si no responde. */
+async function consultar(params) {
+  const url = new URL(BASE);
+  for (const [clave, valor] of Object.entries(params)) url.searchParams.set(clave, valor);
+  url.searchParams.set('mailto', contacto());
+
+  const res = await fetch(url, { signal: AbortSignal.timeout(TIEMPO_LIMITE_MS) }).catch(
+    (error) => {
+      logger.warn({ err: error }, 'OpenAlex no respondió a tiempo');
+      return null;
+    },
+  );
+
+  if (!res || !res.ok) {
+    if (res) logger.warn({ estado: res.status }, 'OpenAlex rechazó la consulta');
+    return [];
+  }
+
+  const datos = await res.json().catch(() => null);
+  return datos?.results ?? [];
+}
+
+/**
+ * A quién cita cada una de estas fuentes.
+ *
+ * Se piden en lotes de cincuenta y solo tres campos: con `select` la respuesta
+ * de cincuenta obras son unos kilobytes, y sin él vienen los resúmenes enteros
+ * de todas.
+ */
+async function referenciasDe(dois) {
+  const limpios = dois.map(limpiarDoi).filter(Boolean);
+  const obras = [];
+
+  for (const lote of enLotes(limpios, POR_FILTRO)) {
+    const resultados = await consultar({
+      filter: `doi:${lote.join('|')}`,
+      select: 'id,doi,referenced_works',
+      'per-page': String(POR_FILTRO),
+    });
+
+    for (const w of resultados) {
+      obras.push({
+        id: w.id,
+        doi: limpiarDoi(w.doi),
+        referencias: w.referenced_works ?? [],
+      });
+    }
+  }
+
+  return obras;
+}
+
+/** Las fichas de una lista de identificadores de OpenAlex. */
+async function porIds(ids) {
+  const fichas = [];
+
+  for (const lote of enLotes(ids, POR_FILTRO)) {
+    const resultados = await consultar({
+      filter: `ids.openalex:${lote.map(soloElId).join('|')}`,
+      'per-page': String(POR_FILTRO),
+    });
+    for (const w of resultados) if (w.title) fichas.push(comoFicha(w));
+  }
+
+  return fichas;
+}
+
+/**
+ * Los trabajos que citan a alguna de estas obras, de lo más nuevo a lo más viejo.
+ *
+ * Todas las semillas caben en un solo filtro, así que esto es UNA petición y no
+ * una por fuente. El orden por fecha es el que importa aquí: la bola de nieve
+ * hacia delante sirve para no quedarse en 2019, y para eso lo último es lo
+ * primero.
+ */
+async function citanA(ids, { desdeAnio = null, cuantas = 10 } = {}) {
+  if (ids.length === 0) return [];
+
+  const filtros = [`cites:${ids.slice(0, POR_FILTRO).map(soloElId).join('|')}`];
+  if (desdeAnio) filtros.push(`from_publication_date:${desdeAnio}-01-01`);
+
+  const resultados = await consultar({
+    filter: filtros.join(','),
+    sort: 'publication_date:desc',
+    'per-page': String(Math.min(Math.max(cuantas, 1), 50)),
+  });
+
+  return resultados.filter((w) => w.title).map(comoFicha);
+}
+
+/** «https://openalex.org/W123» → «W123». El filtro quiere el corto. */
+const soloElId = (id) => String(id).replace(/^https?:\/\/openalex\.org\//i, '');
+
+module.exports = {
+  buscar,
+  porDoi,
+  referenciasDe,
+  porIds,
+  citanA,
+  limpiarDoi,
+  resumenDelIndice,
+  soloElId,
+};

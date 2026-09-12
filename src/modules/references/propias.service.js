@@ -94,7 +94,111 @@ const TIPOS = [
 /** Cuántos DOIs se aceptan de una tacada. Cada uno es una consulta a OpenAlex. */
 const MAXIMO_DOIS = 60;
 
+
+/**
+ * Cuántas semillas se usan como mucho, y cuántas hacen falta como mínimo.
+ *
+ * El mínimo no es prudencia: con tres fuentes, «lo que citan en común» es
+ * cualquier cosa que dos de ellas mencionen de pasada, y el resultado es ruido
+ * presentado con autoridad. El máximo son dos peticiones a OpenAlex.
+ */
+const SEMILLAS_MAXIMAS = 100;
+const SEMILLAS_MINIMAS = 5;
+
+/** Cuántas fuentes suyas tienen que citar algo para que merezca aparecer. */
+const CITAS_MINIMAS = 2;
+
+/**
+ * La bola de nieve: qué más leer, a partir de lo que ya tiene.
+ *
+ * POR QUÉ ESTO Y NO OTRA BÚSQUEDA POR PALABRAS
+ * --------------------------------------------
+ * Buscar por palabras solo encuentra lo que sabes nombrar. Un tesista que
+ * escribe «clima organizacional» no da con lo que su campo publica como
+ * «organizational climate» o «psychological safety», que es justo lo que su
+ * jurado espera ver citado. Sus propias fuentes, en cambio, ya están en la
+ * conversación de su campo: preguntando a quién citan y quién las cita se llega
+ * a esos trabajos sin tener que acertar la palabra.
+ *
+ * Es además un método declarable: en metodología de revisión se llama
+ * *snowballing* y tiene guías publicadas, así que puede escribirlo en su
+ * capítulo III en vez de esconderlo.
+ *
+ * HACIA ATRÁS Y HACIA DELANTE, QUE NO SIRVEN PARA LO MISMO
+ * --------------------------------------------------------
+ * Hacia atrás se ordena por CUÁNTAS DE SUS FUENTES lo citan, no por cuántas
+ * citas tiene en el mundo. Eso es lo que distingue al clásico de su tema del
+ * clásico de otro: si doce de sus cuarenta fuentes citan el mismo trabajo, ese
+ * trabajo es fundacional PARA ÉL.
+ *
+ * Hacia delante se ordena por fecha, porque sirve para lo contrario: no quedarse
+ * en 2019 cuando el jurado va a mirar si hay algo de los dos últimos años.
+ */
+async function boladeNieve(userId, { desdeAnio = null, cuantas = 8 } = {}) {
+  const semillas = await propiasRepository.doisDe(userId, SEMILLAS_MAXIMAS);
+
+  if (semillas.length < SEMILLAS_MINIMAS) {
+    throw new ValidationError(
+      `La bola de nieve parte de las fuentes que ya tienes, y ahora mismo tienes ${semillas.length} ` +
+        `con DOI. Con menos de ${SEMILLAS_MINIMAS} lo que sale es ruido. Sube primero un export ` +
+        'de tu búsqueda o conecta tu Zotero.',
+    );
+  }
+
+  const obras = await openalex.referenciasDe(semillas);
+  if (obras.length === 0) return { semillas: 0, atras: [], adelante: [], caida: true };
+
+  // Lo que ya es suyo no puede volver a proponérsele: ni por identificador —las
+  // semillas mismas— ni por DOI, que es como se reconoce la misma fuente
+  // entrada por dos caminos distintos.
+  const suyasPorId = new Set(obras.map((obra) => obra.id));
+  const suyasPorDoi = new Set(semillas.map((doi) => String(doi).toLowerCase()));
+
+  const cuenta = new Map();
+  for (const obra of obras) {
+    for (const referencia of obra.referencias) {
+      if (suyasPorId.has(referencia)) continue;
+      cuenta.set(referencia, (cuenta.get(referencia) ?? 0) + 1);
+    }
+  }
+
+  const masCitadas = [...cuenta.entries()]
+    .filter(([, veces]) => veces >= CITAS_MINIMAS)
+    .sort((a, b) => b[1] - a[1])
+    // Se piden más de las que se van a enseñar: algunas se caerán por no tener
+    // DOI o por ser ya suyas, y quedarse corto obligaría a una segunda vuelta.
+    .slice(0, cuantas * 3);
+
+  const fichas = await openalex.porIds(masCitadas.map(([id]) => id));
+  const porId = new Map(fichas.map((ficha) => [ficha.id, ficha]));
+
+  const atras = masCitadas
+    .map(([id, veces]) => {
+      const ficha = porId.get(id);
+      return ficha ? { ...ficha, tuyasQueLoCitan: veces } : null;
+    })
+    .filter((ficha) => ficha && ficha.doi && !suyasPorDoi.has(ficha.doi.toLowerCase()))
+    .slice(0, cuantas);
+
+  const adelante = (
+    await openalex.citanA(
+      obras.map((obra) => obra.id),
+      { desdeAnio, cuantas: cuantas * 3 },
+    )
+  )
+    .filter((ficha) => ficha.doi && !suyasPorDoi.has(ficha.doi.toLowerCase()))
+    .slice(0, cuantas);
+
+  logger.info(
+    { userId, semillas: obras.length, atras: atras.length, adelante: adelante.length },
+    'Bola de nieve desde las fuentes de un comprador',
+  );
+
+  return { semillas: obras.length, atras, adelante, caida: false };
+}
+
 const propiasService = {
+  boladeNieve,
   TIPOS,
   MAXIMO_DOIS,
 

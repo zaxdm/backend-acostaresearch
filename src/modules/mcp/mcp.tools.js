@@ -10,6 +10,7 @@ const licenseService = require('../licensing/license.service');
 const { analizarIntencion, RESPUESTA_RECHAZO } = require('../licensing/license.guard');
 const prisma = require('../../lib/prisma');
 const referenceService = require('../references/reference.service');
+const propiasService = require('../references/propias.service');
 const projectService = require('../projects/project.service');
 
 /**
@@ -21,6 +22,16 @@ const projectService = require('../projects/project.service');
  * cambiar código que ya funciona; `fromJsonSchema` deja el problema aquí
  * encerrado.
  */
+/**
+ * El salto de línea, con nombre corto.
+ *
+ * Se usaba en un mensaje SIN ESTAR DEFINIDA en ninguna parte: la rama de «no
+ * hay resultados» de buscar_en_la_literatura lanzaba un ReferenceError en vez
+ * de dar la explicación que tiene escrita. No lo cazó nadie porque solo se
+ * llega ahí cuando una búsqueda no devuelve nada.
+ */
+const N = '\n';
+
 const SIN_ARGUMENTOS = fromJsonSchema({ type: 'object', properties: {}, additionalProperties: false });
 
 const ESQUEMA_FUENTES = fromJsonSchema({
@@ -57,6 +68,32 @@ const ESQUEMA_FUENTES = fromJsonSchema({
     },
   },
   required: ['tema'],
+  additionalProperties: false,
+});
+
+/**
+ * La bola de nieve no pide tema: parte de lo que el tesista ya tiene.
+ *
+ * Es la diferencia con las otras dos búsquedas y conviene que se note en el
+ * esquema: aquí no hay nada que teclear mal.
+ */
+const ESQUEMA_BOLA = fromJsonSchema({
+  type: 'object',
+  properties: {
+    desdeAnio: {
+      type: 'integer',
+      minimum: 1900,
+      description:
+        'Solo para lo que viene DESPUÉS: acota desde qué año quieres los trabajos que citan ' +
+        'a los suyos. Útil cuando su marco teórico se ha quedado viejo y busca lo último.',
+    },
+    cuantas: {
+      type: 'integer',
+      minimum: 1,
+      maximum: 15,
+      description: 'Cuántas devolver de cada lado. Por defecto 8.',
+    },
+  },
   additionalProperties: false,
 });
 
@@ -1461,6 +1498,107 @@ function construirServidor(licencia) {
           'traducir los títulos: en la bibliografía va el título original. ' +
           'Y DI DE DÓNDE VIENEN: son del catálogo abierto, no de la biblioteca revisada de ' +
           'Acosta. El tesista debería comprobar dónde se publicó cada una antes de citarla.',
+      );
+    },
+  );
+
+  // ── Qué más leer, a partir de lo que ya tiene ────────────────────────────
+  //
+  // Las otras dos búsquedas parten de PALABRAS, y las palabras solo encuentran
+  // lo que el tesista sabe nombrar. Quien escribe «clima organizacional» no da
+  // con lo que su campo publica como «organizational climate», que es lo que su
+  // jurado espera ver citado.
+  //
+  // Esta parte de sus propias fuentes, que ya están dentro de la conversación de
+  // su campo. Y el orden de lo que devuelve hacia atrás no es por fama: es por
+  // CUÁNTAS DE LAS SUYAS lo citan, que es lo que distingue al clásico de su tema
+  // del clásico de otro.
+  server.registerTool(
+    'ampliar_desde_mis_fuentes',
+    {
+      title: 'Qué más leer, a partir de lo que ya tiene',
+      description:
+        'BOLA DE NIEVE sobre las fuentes que el tesista ya subió: devuelve (a) los trabajos ' +
+        'que MÁS DE UNA de sus fuentes citan y él no tiene, y (b) los trabajos recientes que ' +
+        'citan a las suyas. ' +
+        'ÚSALA en antecedentes y marco teórico, y sobre todo cuando diga que NO SABE QUÉ MÁS ' +
+        'BUSCAR o cuando sus búsquedas por palabras ya no den nada nuevo. ' +
+        'No lleva tema: parte de su biblioteca, así que no hay nada que teclear. ' +
+        'EL NÚMERO QUE IMPORTA es «lo citan N de tus fuentes»: cuanto más alto, más central ' +
+        'es ese trabajo EN SU TEMA. Díselo así, no como «muy citado». ' +
+        'Es un método declarable —se llama snowballing y tiene guías publicadas—, así que ' +
+        'puede escribirlo en su capítulo de metodología. ' +
+        'ESTAS FUENTES NO ESTÁN REVISADAS POR ACOSTA y no todas le van a servir: vienen de ' +
+        'la conversación de su campo, no de su problema concreto. Preséntalas para que él ' +
+        'elija, no como si ya fueran suyas.',
+      inputSchema: ESQUEMA_BOLA,
+    },
+    async ({ desdeAnio, cuantas }) => {
+      await licenseService.recordUsage({
+        licenseId: licencia.id,
+        tool: 'ampliar_desde_mis_fuentes',
+      });
+
+      const { semillas, atras, adelante, caida } = await propiasService.boladeNieve(licencia.userId, {
+        desdeAnio,
+        cuantas,
+      });
+
+      if (caida) {
+        return texto(
+          'El catálogo abierto no está respondiendo ahora mismo. No es nada que hayas hecho ' +
+            'tú: es su servidor. Prueba en un rato.',
+        );
+      }
+
+      if (atras.length === 0 && adelante.length === 0) {
+        return texto(
+          `Partiendo de tus ${semillas} fuentes no aparece nada nuevo.${N}${N}` +
+            'Suele significar una de dos cosas, y las dos son información: o tu biblioteca ya ' +
+            'cubre lo que se cita en tu tema —que es una buena noticia y se puede decir en la ' +
+            'revisión—, o tus fuentes son de campos distintos y no comparten referencias. ' +
+            'Si es lo segundo, sube unas cuantas más del tema exacto de tu tesis y vuelve a ' +
+            'intentarlo.',
+        );
+      }
+
+      const ficha = (f, senal) => {
+        const lineas = [`• ${f.authors || '(Autor no consignado)'} (${f.year ?? 's. f.'}). ${f.title}`];
+        if (f.source) lineas.push(`   ${f.source}`);
+        if (f.doi) lineas.push(`   DOI: ${f.doi}`);
+        if (senal) lineas.push(`   [${senal}]`);
+        if (f.abstract) lineas.push(`   Resumen: ${f.abstract.slice(0, 300)}`);
+        return lineas.join('\n');
+      };
+
+      const bloques = [];
+
+      if (atras.length > 0) {
+        bloques.push(
+          'LO QUE CITAN TUS FUENTES Y TÚ NO TIENES\n' +
+            atras
+              .map((f) =>
+                ficha(f, `lo citan ${f.tuyasQueLoCitan} de tus fuentes${f.citas ? ` · ${f.citas} citas en total` : ''}`),
+              )
+              .join('\n\n'),
+        );
+      }
+
+      if (adelante.length > 0) {
+        bloques.push(
+          'LO QUE HA CITADO A TUS FUENTES DESPUÉS\n' +
+            adelante.map((f) => ficha(f, f.citas ? `${f.citas} citas` : null)).join('\n\n'),
+        );
+      }
+
+      return texto(
+        `Partiendo de ${semillas} fuentes tuyas:${N}${N}${bloques.join(`${N}${N}`)}${N}${N}` +
+          'CÓMO PRESENTARLAS: las de arriba son las que sostienen la conversación de tu tema ' +
+          '—cuantas más de tus fuentes las citen, más central—; las de abajo son lo que se ha ' +
+          'publicado después, y sirven para que tu marco teórico no se quede viejo. ' +
+          'Ninguna está revisada por Acosta y no todas van a servirte: elige tú. ' +
+          'Para tenerlas citables, pega sus DOI en «Mis fuentes» del panel. ' +
+          'Y cita EXACTAMENTE como están escritas, sin cambiar años, autores ni DOIs.',
       );
     },
   );

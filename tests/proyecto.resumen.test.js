@@ -32,12 +32,26 @@ const repo = {
   listarDeUsuario: async () => [],
 };
 
+/**
+ * El catálogo, nombrado como en producción.
+ *
+ * Las fases llevan su número delante y las herramientas de apoyo no: es lo que
+ * mira `esApoyo` para separar el avance del método de lo que se usa cuando hace
+ * falta. Un catálogo de prueba sin numerar no representa a ninguna licencia
+ * real, y fue lo que dejó pasar que los recuentos contaran el humanizador como
+ * un capítulo sin empezar.
+ */
 const CATALOGO = [
-  { code: 'tema-y-delimitacion', displayName: 'Tema y delimitación' },
-  { code: 'problema-y-objetivos', displayName: 'Problema y objetivos' },
-  { code: 'metodologia', displayName: 'Metodología' },
-  { code: 'analisis-datos-rstudio', displayName: 'Análisis de datos en RStudio' },
+  { code: 'tema-y-delimitacion', displayName: '1 · Tema y delimitación' },
+  { code: 'problema-y-objetivos', displayName: '2 · Problema y objetivos' },
+  { code: 'metodologia', displayName: '3 · Metodología' },
+  { code: 'analisis-datos-rstudio', displayName: '4 · Análisis de datos en RStudio' },
+  { code: 'humanizador-academico', displayName: 'Humanizador académico' },
+  { code: 'bajar-similitud', displayName: 'Bajar similitud' },
 ];
+
+/** Las fases del método, sin las herramientas de apoyo. */
+const FASES = CATALOGO.filter((s) => /^\d/.test(s.displayName));
 
 /** Qué capítulos son de qué método. Sin grupos = de todos, como en el real. */
 const GRUPOS = { 'capitulo-de-otro-metodo': ['ARTICULO_SCIENTIFICOS'] };
@@ -146,15 +160,67 @@ test('el panorama dice dónde está: tema, sitio, marcas, claves y recuentos', a
 
   // Las marcas son las de siempre. Dos vocabularios para lo mismo sería peor
   // que uno feo.
-  assert.match(t, /\[hecho\]\s+Tema y delimitación\s+\(tema-y-delimitacion\)/);
-  assert.match(t, /\[en curso\]\s+Metodología\s+\(metodologia\)/);
-  assert.match(t, /\[pendiente\]\s+Análisis de datos en RStudio\s+\(analisis-datos-rstudio\)/);
+  assert.match(t, /\[hecho\]\s+1 · Tema y delimitación\s+\(tema-y-delimitacion\)/);
+  assert.match(t, /\[en curso\]\s+3 · Metodología\s+\(metodologia\)/);
+  assert.match(t, /\[pendiente\]\s+4 · Análisis de datos en RStudio\s+\(analisis-datos-rstudio\)/);
 
   assert.match(t, /2 cerrados · 1 en curso · 1 sin empezar/);
   assert.match(t, /7\.340 palabras guardadas/);
   assert.match(t, /1\.240 palabras/);
 
-  assert.match(t, /Le toca: Metodología \(clave: metodologia\)/);
+  assert.match(t, /Le toca: 3 · Metodología \(clave: metodologia\)/);
+});
+
+test('las herramientas de apoyo se listan pero NO cuentan como avance', async () => {
+  // El avance es de las fases. Contar el humanizador y la bajada de similitud
+  // dejaba en «9 de 11» a quien había terminado los nueve capítulos, que es el
+  // mismo motivo por el que el panel ya las separa con `esApoyo`.
+  aMedias();
+
+  const t = await projectService.resumen('u1', PRODUCTO);
+
+  // Salen en la lista: el tesista las ha comprado y tiene que saber que están.
+  assert.match(t, /\[pendiente\]\s+Humanizador académico\s+\(humanizador-academico\)/);
+  assert.match(t, /\[pendiente\]\s+Bajar similitud\s+\(bajar-similitud\)/);
+
+  // Pero el recuento es de las 4 fases, no de las 6 entradas.
+  assert.equal(FASES.length, 4);
+  assert.equal(CATALOGO.length, 6);
+  assert.match(t, /2 cerrados · 1 en curso · 1 sin empezar/);
+  assert.doesNotMatch(t, /3 sin empezar/, 'contar el apoyo daba 3 en vez de 1');
+});
+
+test('con un solo capítulo cerrado dice «1 cerrado», no «1 cerrados»', async () => {
+  conProyecto({
+    tema: 'Un tema',
+    stages: [
+      { skillCode: 'tema-y-delimitacion', estado: 'LISTO' },
+      { skillCode: 'metodologia', estado: 'EN_CURSO' },
+    ],
+  });
+
+  const t = await projectService.resumen('u1', PRODUCTO);
+
+  assert.match(t, /1 cerrado · 1 en curso · 2 sin empezar/);
+  assert.doesNotMatch(t, /1 cerrados/);
+});
+
+test('con dos o más dice «cerrados», y con cero también', async () => {
+  aMedias();
+  assert.match(await projectService.resumen('u1', PRODUCTO), /2 cerrados/);
+
+  conProyecto({ tema: 'Un tema', stages: [{ skillCode: 'metodologia', estado: 'EN_CURSO' }] });
+  assert.match(await projectService.resumen('u1', PRODUCTO), /0 cerrados · 1 en curso/);
+});
+
+test('«en curso» y «sin empezar» no cambian de forma con el número', async () => {
+  conProyecto({
+    tema: 'Un tema',
+    stages: [{ skillCode: 'tema-y-delimitacion', estado: 'EN_CURSO' }],
+  });
+
+  const t = await projectService.resumen('u1', PRODUCTO);
+  assert.match(t, /0 cerrados · 1 en curso · 3 sin empezar/);
 });
 
 test('el panorama NO arrastra los acuerdos de todos los capítulos', async () => {
@@ -211,7 +277,7 @@ test('sin tema ni carrera, el panorama no empieza por una línea en blanco', asy
 
   assert.doesNotMatch(t, /^\s/, 'no debe empezar por un espacio ni un salto');
   assert.doesNotMatch(t, /\n\n\n/, 'ni dejar secciones en blanco por el medio');
-  assert.match(t, /^\[pendiente\] Tema y delimitación/);
+  assert.match(t, /^\[pendiente\] 1 · Tema y delimitación/);
 });
 
 test('un estado que no esté en MARCAS no tumba el panorama', async () => {
@@ -225,7 +291,7 @@ test('un estado que no esté en MARCAS no tumba el panorama', async () => {
 
   const t = await projectService.resumen('u1', PRODUCTO);
 
-  assert.match(t, /\[pendiente\] Metodología/);
+  assert.match(t, /\[pendiente\] 3 · Metodología/);
   assert.match(t, /0 cerrados · 0 en curso · 4 sin empezar/);
 });
 
@@ -274,7 +340,7 @@ test('el detalle trae el acuerdo, los campos puestos y los que faltan', async ()
 
   assert.match(
     t,
-    /Metodología \(metodologia\) · \[en curso\] · 1\.240 palabras, guardadas el 2026-08-11/,
+    /3 · Metodología \(metodologia\) · \[en curso\] · 1\.240 palabras, guardadas el 2026-08-11/,
   );
 
   assert.match(t, /LO ACORDADO/);
@@ -306,7 +372,7 @@ test('un capítulo sin tocar devuelve sus campos y dice cuáles están sin fijar
 
   const t = await projectService.detalleDeCapitulo('u1', PRODUCTO, 'problema-y-objetivos');
 
-  assert.match(t, /Problema y objetivos \(problema-y-objetivos\)/);
+  assert.match(t, /2 · Problema y objetivos \(problema-y-objetivos\)/);
   assert.match(t, /SIN FIJAR: problemaGeneral, objetivoGeneral, objetivosEspecificos/);
 });
 

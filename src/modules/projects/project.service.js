@@ -231,7 +231,11 @@ async function resumen(userId, productCode) {
     // tres—, pero esto lo lee el asistente al empezar cada conversación y un
     // estado nuevo en la base no puede dejar a nadie sin panorama.
     const estado = MARCAS[etapa?.estado] ? etapa.estado : 'PENDIENTE';
-    cuenta[estado] += 1;
+    // El avance es de las fases: las herramientas de apoyo se listan, pero no
+    // cuentan. Es la misma regla que ya aplica el panel, y por el mismo motivo
+    // que explica `esApoyo`: contarlas dejaba en «9 de 11» a quien había
+    // terminado los nueve capítulos.
+    if (!esApoyo(skill.displayName)) cuenta[estado] += 1;
 
     const palabras = etapa?.palabras ?? 0;
     palabrasTotales += palabras;
@@ -246,7 +250,8 @@ async function resumen(userId, productCode) {
   });
 
   const recuento =
-    `${cuenta.LISTO} cerrados · ${cuenta.EN_CURSO} en curso · ${cuenta.PENDIENTE} sin empezar` +
+    `${cuenta.LISTO} ${cuenta.LISTO === 1 ? 'cerrado' : 'cerrados'} · ` +
+    `${cuenta.EN_CURSO} en curso · ${cuenta.PENDIENTE} sin empezar` +
     (palabrasTotales > 0 ? ` · ${conMiles(palabrasTotales)} palabras guardadas` : '') +
     '.';
 

@@ -12,6 +12,7 @@ const prisma = require('../../lib/prisma');
 const referenceService = require('../references/reference.service');
 const propiasService = require('../references/propias.service');
 const projectService = require('../projects/project.service');
+const etapas = require('../projects/project.etapas');
 const bloquesDeAnalisis = require('../projects/project.bloques');
 
 /**
@@ -276,7 +277,15 @@ const ESQUEMA_GUARDAR_ANALISIS = fromJsonSchema({
         'Las cifras que van a aparecer en el texto, una por línea y con su etiqueta: ' +
         '«alfa de Cronbach = 0.87», «R2 = 0.4231», «p = 0.003», «beta = -0.31». ' +
         'SÁCALAS DE LA SALIDA que pegó el tesista, no de memoria. A partir de aquí, cualquier ' +
-        'número que escribas en el capítulo y no esté en esta lista sale marcado en el repaso.',
+        'número que escribas en el capítulo y no esté en esta lista sale marcado en el repaso. ' +
+        'SE SUMAN a las que ya había: manda solo las que falten, no la lista entera. Caben ' +
+        `${etapas.MAXIMO_CIFRAS} por capítulo, y si pasas se te dice cuáles quedaron fuera.`,
+    },
+    reemplazar: {
+      type: 'boolean',
+      description:
+        'Solo para empezar de cero: borra las cifras guardadas y deja únicamente las de esta ' +
+        'llamada. Úsalo si se guardaron cifras equivocadas. Si no lo pones, se suman.',
     },
   },
   required: ['capitulo'],
@@ -808,7 +817,7 @@ function construirServidor(licencia) {
         'Es lo que impide que un número se escriba solo porque ahí pegaba un número.',
       inputSchema: ESQUEMA_GUARDAR_ANALISIS,
     },
-    async ({ capitulo, script, salida, resultados }) => {
+    async ({ capitulo, script, salida, resultados, reemplazar }) => {
       await licenseService.recordUsage({ licenseId: licencia.id, tool: 'guardar_analisis' });
 
       const skill = await skillService.findByCode(capitulo);
@@ -820,28 +829,54 @@ function construirServidor(licencia) {
       }
 
       try {
-        const { escritos, guardadas } = await projectService.guardarAnalisis({
+        const { escritos, cifras } = await projectService.guardarAnalisis({
           userId: licencia.user.id,
           productCode: licencia.productCode,
           capitulo,
           script,
           salida,
           resultados,
+          reemplazar,
         });
 
         const partes = [];
         if (escritos.includes('script')) partes.push('el script');
         if (escritos.includes('salida')) partes.push('la salida de la consola');
-        if (guardadas > 0) partes.push(`${guardadas} cifras`);
 
-        if (partes.length === 0) return texto('No mandaste nada que guardar.');
+        const lineas = [];
+        if (cifras) {
+          if (cifras.nuevas > 0) partes.push(`${cifras.nuevas} cifras nuevas`);
+          if (cifras.repetidas > 0) {
+            lineas.push(`${cifras.repetidas} ya estaban guardadas y no se duplicaron.`);
+          }
+          if (cifras.sustituidas > 0) {
+            lineas.push(`Sustituyen a las ${cifras.sustituidas} que había, como pediste.`);
+          }
+          lineas.push(`En total hay ${cifras.lista.length} cifras guardadas en este capítulo.`);
 
+          // Lo que no cabe se dice con nombre y apellido. Callarlo fue el
+          // defecto: el asistente mandaba 37, se guardaban 8, y creía que 37.
+          if (cifras.fuera.length > 0) {
+            lineas.push(
+              `NO SE GUARDARON ${cifras.fuera.length}: el máximo es ${cifras.maximo} por ` +
+                `capítulo. Quedaron fuera: ${cifras.fuera.join(' | ')}. ` +
+                'AVÍSALE al tesista. Si no van al texto no hace falta guardarlas; si van, ' +
+                'hay que dejarles sitio.',
+            );
+          }
+        }
+
+        if (partes.length === 0 && lineas.length === 0) return texto('No mandaste nada que guardar.');
+
+        const hayCifras = Boolean(cifras && cifras.lista.length > 0);
         return texto(
-          `Guardado: ${partes.join(', ')}.\n\n` +
-            (guardadas > 0
+          `Guardado: ${partes.length > 0 ? partes.join(', ') : 'nada nuevo'}.` +
+            (lineas.length > 0 ? `\n${lineas.join('\n')}` : '') +
+            '\n\n' +
+            (hayCifras
               ? 'A partir de ahora, cualquier número del capítulo de resultados que no esté ' +
                 'entre esas cifras saldrá marcado en el repaso. Si vas a escribir uno que ' +
-                'falte, guárdalo antes.'
+                'falte, guárdalo antes: se suma a las que ya hay.'
               : 'No guardaste ninguna cifra. Sin ellas no se puede comprobar que los números ' +
                 'del texto salgan del análisis, que es de lo que más se aprovecha aquí.'),
         );

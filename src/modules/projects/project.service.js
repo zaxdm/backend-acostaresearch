@@ -722,27 +722,48 @@ async function quitarPlantilla(userId, productCode) {
  * año, «¿de dónde salió este 0,42?», y las cifras quedan para que el repaso
  * pueda comprobar que ningún número del capítulo se escribió solo.
  */
-async function guardarAnalisis({ userId, productCode, capitulo, script, salida, resultados }) {
+async function guardarAnalisis({
+  userId,
+  productCode,
+  capitulo,
+  script,
+  salida,
+  resultados,
+  reemplazar = false,
+}) {
   const proyecto = await projectRepository.asegurar(userId, productCode);
 
   const escritos = await almacen.guardarAnalisis(proyecto.id, capitulo, { script, salida });
 
+  /**
+   * Las cifras SE SUMAN a las que ya había; no las sustituyen.
+   *
+   * Sustituían, y la propia herramienta pide lo contrario: «si vas a escribir
+   * un número que falte, guárdalo antes». Un asistente que la obedecía borraba
+   * con esa cifra todas las anteriores. Para empezar de cero está `reemplazar`,
+   * y hay que pedirlo.
+   */
   let guardadas = 0;
+  let cifras = null;
+
   if (Array.isArray(resultados) && resultados.length > 0) {
     const actual = await projectRepository.buscar(userId, productCode);
     const previa = (actual?.stages ?? []).find((e) => e.skillCode === capitulo);
-    const limpio = etapas.limpiar(capitulo, { resultados });
+    cifras = etapas.acumular(capitulo, 'resultados', previa?.datos?.resultados, resultados, {
+      reemplazar,
+    });
 
-    if (limpio?.resultados) {
+    // Si todo lo que llegó ya estaba, no hay nada que escribir.
+    if (cifras && (cifras.nuevas > 0 || cifras.sustituidas > 0)) {
       await projectRepository.guardarEtapa(proyecto.id, capitulo, {
-        datos: etapas.fusionar(previa?.datos, limpio),
+        datos: etapas.fusionar(previa?.datos, { resultados: cifras.lista }),
         estado: (previa?.estado ?? 'PENDIENTE') === 'PENDIENTE' ? 'EN_CURSO' : undefined,
       });
-      guardadas = limpio.resultados.length;
     }
+    guardadas = cifras ? cifras.nuevas : 0;
   }
 
-  return { escritos, guardadas };
+  return { escritos, guardadas, cifras };
 }
 
 /**

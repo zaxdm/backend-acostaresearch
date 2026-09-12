@@ -85,3 +85,42 @@ test('las cifras de un texto se detectan aunque vayan pegadas a signos', () => {
   assert.ok(valores.includes('0,01'));
   assert.ok(valores.includes('33,3%'));
 });
+
+// ── El formato APA, la notación científica y las líneas con varias cifras ─────
+//
+// APA 7 escribe sin cero delante lo que no puede pasar de 1: r = .51, p < .001,
+// alfa = .886. Así lo escribe Claude. Antes, esas cifras no se detectaban en el
+// texto —un «r = .73» inventado pasaba el repaso— y al guardarlas «.886» se leía
+// como 886. El control estaba apagado justo para el formato correcto.
+
+test('un decimal sin cero delante es una cifra, y si es inventado se marca', () => {
+  const marcadas = cifras.sinRespaldo('La correlación fue r = .73.', ['r de Pearson = 0.5112']);
+
+  assert.deepEqual(marcadas.map((c) => c.bruto), ['.73']);
+});
+
+test('y si sale del análisis no se marca, se guarde y se escriba como se escriba', () => {
+  assert.deepEqual(cifras.sinRespaldo('Se obtuvo r = .51.', ['r = 0.5112']), []);
+  assert.deepEqual(cifras.sinRespaldo('Se obtuvo r = 0,51.', ['r = .5112']), []);
+});
+
+test('una línea guardada con varias cifras las protege TODAS, no solo la última', () => {
+  // Así guarda un asistente cuando agrupa. Antes solo contaba el .2613, y
+  // «r = .51» salía marcado como inventado aunque estaba en la misma línea.
+  const guardadas = ['Pearson: r = .511, p < .001, IC 95% [.296, .677], r2 = .2613'];
+  const texto = 'La relación fue r = .51 (p < .001), IC 95% [.296, .677], con r2 = .26.';
+
+  assert.deepEqual(cifras.sinRespaldo(texto, guardadas), []);
+});
+
+test('el valor de p en notación científica se lee con su exponente', () => {
+  // R escribe «p-value = 2.996e-05». Antes esa cifra se guardaba como -5.
+  assert.ok(cifras.valoresGuardados(['p = 2.996e-05']).includes(2.996e-5));
+  assert.deepEqual(cifras.sinRespaldo('Fue significativa, p = 3e-05.', ['p = 2.996e-05']), []);
+});
+
+test('una media que parece un año no se tira como si fuera una cita', () => {
+  // «M = 20.13» es una edad media corriente. Quitándole el punto se convertía
+  // en 2013 y se descartaba.
+  assert.deepEqual(cifras.cifrasDe('La edad media fue M = 20.13 años.').map((c) => c.bruto), ['20.13']);
+});

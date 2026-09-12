@@ -27,6 +27,35 @@
 const MAXIMO_TEXTO = 600;
 const MAXIMO_POR_LISTA = 8;
 
+/**
+ * Las cifras de un análisis llevan su propio máximo.
+ *
+ * Ocho está bien para objetivos o hipótesis, que en una tesis rara vez pasan de
+ * cinco. Pero un capítulo de resultados trae fácilmente cuarenta cifras entre
+ * alfas, normalidad, correlación, pruebas por grupo y tamaños del efecto, y con
+ * ocho se guardaban las ocho primeras y el resto se perdía EN SILENCIO: el
+ * asistente creía haberlo guardado todo y el repaso marcaba después como
+ * inventadas cifras que salían del análisis. Se vio así, en uso real: 37
+ * cifras mandadas, 8 guardadas, y ningún aviso.
+ */
+const MAXIMO_CIFRAS = 120;
+
+/**
+ * Los números que devolvió el análisis, tal cual.
+ *
+ * De aquí sale la comprobación de que ninguna cifra del capítulo de resultados
+ * se haya escrito sola. Ver `project.cifras`. Va aparte porque lo usan dos
+ * capítulos: el de resultados de la tesis y el del artículo.
+ */
+const CIFRAS_OBTENIDAS = {
+  titulo: 'Cifras obtenidas',
+  lista: true,
+  maximo: MAXIMO_CIFRAS,
+  pista:
+    'Un número por línea, con su etiqueta y tal como lo devolvió el análisis: ' +
+    '«alfa de Cronbach = 0.87», «R2 = 0.4231», «p = 0.003».',
+};
+
 const ETAPAS = {
   'tema-y-delimitacion': {
     campos: {
@@ -177,21 +206,26 @@ const ETAPAS = {
         lista: true,
         pista: 'Uno por objetivo específico, en una línea cada uno.',
       },
-      /**
-       * Los números que devolvió el análisis, tal cual.
-       *
-       * De aquí sale la comprobación de que ninguna cifra del capítulo de
-       * resultados se haya escrito sola. Ver `project.cifras`.
-       */
-      resultados: {
-        titulo: 'Cifras obtenidas',
-        lista: true,
-        pista:
-          'Un número por línea, con su etiqueta y tal como lo devolvió el análisis: ' +
-          '«alfa de Cronbach = 0.87», «R2 = 0.4231», «p = 0.003».',
-      },
+      resultados: CIFRAS_OBTENIDAS,
     },
     necesita: [{ etapa: 'metodologia', campos: ['enfoque', 'analisis'] }],
+  },
+
+  /**
+   * El capítulo de resultados del artículo, solo por sus cifras.
+   *
+   * No estaba registrado, y `guardar_analisis` guarda las cifras a través de
+   * este registro: en un artículo no se guardaba NINGUNA, y el repaso de
+   * evidencia —que sí revisa este capítulo— no tenía contra qué comparar y no
+   * marcaba nada. Se registra solo ese campo; lo demás del capítulo sigue en
+   * prosa, como cualquier etapa que todavía no tiene campos.
+   *
+   * `necesita` va vacío y explícito porque `queFalta` lo recorre sin valor por
+   * defecto: sin la clave, pedir los requisitos de este capítulo reventaría.
+   */
+  'articulo-fase5-resultados': {
+    campos: { resultados: CIFRAS_OBTENIDAS },
+    necesita: [],
   },
 };
 
@@ -223,7 +257,7 @@ function limpiar(skillCode, datos) {
         .map((v) => String(v).trim())
         .filter(Boolean)
         .map((v) => v.slice(0, MAXIMO_TEXTO))
-        .slice(0, MAXIMO_POR_LISTA);
+        .slice(0, campo.maximo ?? MAXIMO_POR_LISTA);
       if (lista.length > 0) limpio[clave] = lista;
       continue;
     }
@@ -233,6 +267,60 @@ function limpiar(skillCode, datos) {
   }
 
   return Object.keys(limpio).length > 0 ? limpio : null;
+}
+
+/**
+ * Añade a una lista lo que llega, sin repetir y sin pasar de su máximo.
+ *
+ * Es para las listas que se van completando por partes —las cifras de un
+ * análisis—, no para las que se corrigen enteras como los objetivos: esas
+ * siguen con `fusionar`, donde lo que llega sustituye a lo que había.
+ *
+ * Además de la lista devuelve qué pasó con cada cosa. Lo que no cabe NO se
+ * descarta callado: vuelve en `fuera`, para que quien llama pueda decirlo.
+ * Callarlo fue el defecto que esto arregla.
+ *
+ * Repetida es la misma cadena sin contar mayúsculas ni espacios: «r = 0.51» y
+ * «R  = 0.51» son la misma cifra guardada dos veces.
+ */
+function acumular(skillCode, clave, anterior, entrantes, { reemplazar = false } = {}) {
+  const campo = definicionDe(skillCode)?.campos?.[clave];
+  if (!campo?.lista) return null;
+
+  const maximo = campo.maximo ?? MAXIMO_POR_LISTA;
+  const previa = Array.isArray(anterior) ? anterior : [];
+  const lista = reemplazar ? [] : [...previa];
+  const comoClave = (valor) => String(valor).toLowerCase().replace(/\s+/g, ' ').trim();
+  const vistas = new Set(lista.map(comoClave));
+
+  const limpias = (Array.isArray(entrantes) ? entrantes : [entrantes])
+    .filter((valor) => valor !== undefined && valor !== null)
+    .map((valor) => String(valor).trim())
+    .filter(Boolean)
+    .map((valor) => valor.slice(0, MAXIMO_TEXTO));
+
+  let nuevas = 0;
+  let repetidas = 0;
+  const fuera = [];
+
+  for (const valor of limpias) {
+    const claveDelValor = comoClave(valor);
+    if (vistas.has(claveDelValor)) {
+      repetidas += 1;
+      continue;
+    }
+    vistas.add(claveDelValor);
+
+    if (lista.length >= maximo) {
+      fuera.push(valor);
+      continue;
+    }
+
+    lista.push(valor);
+    nuevas += 1;
+  }
+
+  return { lista, nuevas, repetidas, fuera, maximo, sustituidas: reemplazar ? previa.length : 0 };
 }
 
 /**
@@ -330,6 +418,8 @@ function catalogoParaElAsistente() {
 }
 
 module.exports = {
+  acumular,
+  MAXIMO_CIFRAS,
   ETAPAS,
   definicionDe,
   limpiar,

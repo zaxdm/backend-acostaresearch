@@ -111,3 +111,73 @@ test('los campos se ven con su nombre de verdad, no con la clave interna', () =>
   assert.match(texto, /2\. Dos/);
   assert.ok(!texto.includes('objetivosEspecificos'), 'la clave interna no se enseña');
 });
+
+// ── Las cifras del análisis: se suman, caben y lo que no cabe se dice ─────────
+//
+// Visto en uso real: un asistente mandó 37 cifras y se guardaron 8 sin avisar;
+// al mandar 8 más, borraron las 8 anteriores. Y la herramienta le decía «si vas
+// a escribir un número que falte, guárdalo antes».
+
+const CAP_RESULTADOS = 'analisis-datos-rstudio';
+const unasCifras = (n, desde = 0) =>
+  Array.from({ length: n }, (_, i) => `cifra ${desde + i} = 0.${100 + desde + i}`);
+
+test('las 37 cifras de un análisis caben enteras', () => {
+  const r = etapas.acumular(CAP_RESULTADOS, 'resultados', [], unasCifras(37));
+
+  assert.equal(r.lista.length, 37);
+  assert.equal(r.nuevas, 37);
+  assert.deepEqual(r.fuera, []);
+});
+
+test('las cifras que llegan después se SUMAN a las que había', () => {
+  const primera = etapas.acumular(CAP_RESULTADOS, 'resultados', [], unasCifras(37));
+  const segunda = etapas.acumular(CAP_RESULTADOS, 'resultados', primera.lista, unasCifras(8, 37));
+
+  assert.equal(segunda.lista.length, 45);
+  assert.equal(segunda.lista[0], 'cifra 0 = 0.100', 'la primera sigue ahí');
+});
+
+test('una cifra repetida no se guarda dos veces, aunque cambien espacios o mayúsculas', () => {
+  const r = etapas.acumular(CAP_RESULTADOS, 'resultados', ['r = 0.5112'], ['R  =  0.5112', 'p = 0.0003']);
+
+  assert.deepEqual(r.lista, ['r = 0.5112', 'p = 0.0003']);
+  assert.equal(r.repetidas, 1);
+  assert.equal(r.nuevas, 1);
+});
+
+test('lo que no cabe NO se tira callado: vuelve en «fuera»', () => {
+  const llenas = unasCifras(etapas.MAXIMO_CIFRAS);
+  const r = etapas.acumular(CAP_RESULTADOS, 'resultados', llenas, ['d = -0.419', 'd = -0.436']);
+
+  assert.equal(r.lista.length, etapas.MAXIMO_CIFRAS);
+  assert.deepEqual(r.fuera, ['d = -0.419', 'd = -0.436']);
+});
+
+test('reemplazar empieza de cero y dice cuántas había', () => {
+  const r = etapas.acumular(CAP_RESULTADOS, 'resultados', unasCifras(8), ['r = 0.5112'], {
+    reemplazar: true,
+  });
+
+  assert.deepEqual(r.lista, ['r = 0.5112']);
+  assert.equal(r.sustituidas, 8);
+});
+
+test('los objetivos siguen con su máximo de ocho: el de las cifras es solo suyo', () => {
+  const muchos = Array.from({ length: 30 }, (_, i) => `Objetivo ${i}`);
+
+  assert.equal(
+    etapas.limpiar('problema-y-objetivos', { objetivosEspecificos: muchos }).objetivosEspecificos.length,
+    8,
+  );
+  assert.equal(etapas.limpiar(CAP_RESULTADOS, { resultados: unasCifras(37) }).resultados.length, 37);
+});
+
+test('el capítulo de resultados del artículo guarda cifras y no pide requisitos', () => {
+  // No estaba registrado: en un artículo no se guardaba ninguna cifra, y pedir
+  // sus requisitos tampoco podía hacerse sin declarar «necesita».
+  const limpio = etapas.limpiar('articulo-fase5-resultados', { resultados: ['r = 0.51'] });
+
+  assert.deepEqual(limpio.resultados, ['r = 0.51']);
+  assert.deepEqual(etapas.queFalta('articulo-fase5-resultados', new Map()), []);
+});

@@ -232,6 +232,18 @@ const ESQUEMA_VER_ANALISIS = fromJsonSchema({
   additionalProperties: false,
 });
 
+const ESQUEMA_VER_CAPITULO = fromJsonSchema({
+  type: 'object',
+  properties: {
+    capitulo: {
+      type: 'string',
+      description: 'Clave del capítulo, tal como aparece en mi_proyecto.',
+    },
+  },
+  required: ['capitulo'],
+  additionalProperties: false,
+});
+
 const ESQUEMA_REVISAR_EVIDENCIA = fromJsonSchema({
   type: 'object',
   properties: {
@@ -351,7 +363,8 @@ function construirServidor(licencia) {
       title: 'Capítulos disponibles',
       description:
         'Lista los capítulos de tesis que este método puede trabajar, en su orden. ' +
-        'Úsala primero para saber en qué punto está el tesista y qué le toca.',
+        'Si ya llamaste a "mi_proyecto", no hace falta: ya trae las claves de los capítulos ' +
+        'y además dice en cuál va.',
       inputSchema: SIN_ARGUMENTOS,
     },
     async () => {
@@ -453,18 +466,19 @@ function construirServidor(licencia) {
     {
       title: 'Por dónde va su tesis',
       description:
-        'Lo que este servidor recuerda del proyecto del tesista: su tema, su universidad y ' +
-        'en qué punto está cada capítulo. LLÁMALA AL EMPEZAR CUALQUIER CONVERSACIÓN NUEVA, ' +
+        'El panorama del proyecto del tesista: su tema, su universidad, en qué punto está ' +
+        'cada capítulo y cuál le toca. LLÁMALA AL EMPEZAR CUALQUIER CONVERSACIÓN NUEVA, ' +
         'antes de preguntarle nada. Si ya lo sabemos, preguntárselo otra vez es hacerle ' +
-        'repetir lo que ya contó.',
+        'repetir lo que ya contó. Lo ACORDADO en un capítulo no viene aquí: eso se pide ' +
+        'con "ver_capitulo".',
       inputSchema: SIN_ARGUMENTOS,
     },
     async () => {
       await licenseService.recordUsage({ licenseId: licencia.id, tool: 'mi_proyecto' });
 
-      const contexto = await projectService.contexto(licencia.user.id, licencia.productCode);
+      const panorama = await projectService.resumen(licencia.user.id, licencia.productCode);
 
-      if (!contexto) {
+      if (!panorama) {
         return texto(
           'Todavía no hay nada guardado de este proyecto.\n\n' +
             'Según vayáis fijando cosas —el tema, los objetivos, la metodología— guárdalas ' +
@@ -473,17 +487,52 @@ function construirServidor(licencia) {
         );
       }
 
-      const siguiente = await projectService.siguientePaso(
+      return texto(panorama);
+    },
+  );
+
+  server.registerTool(
+    'ver_capitulo',
+    {
+      title: 'Lo acordado en un capítulo',
+      description:
+        'Lo que quedó decidido en UN capítulo: los campos ya fijados, los que faltan y lo ' +
+        'que necesita de capítulos anteriores. ÚSALA ANTES DE PREGUNTARLE NADA sobre un ' +
+        'capítulo: "mi_proyecto" da el panorama y esta da el detalle. No devuelve el texto ' +
+        'redactado, solo lo acordado.',
+      inputSchema: ESQUEMA_VER_CAPITULO,
+    },
+    async ({ capitulo }) => {
+      await licenseService.recordUsage({ licenseId: licencia.id, tool: 'ver_capitulo' });
+
+      // Mismo filtro que en guardar_capitulo: leer el acuerdo de un capítulo
+      // que no es de esta licencia es leer el proyecto de otro método.
+      const skill = await skillService.findByCode(capitulo);
+      if (!skill || !skillService.perteneceAlGrupo(skill, licencia.productCode)) {
+        return texto(
+          `No existe ningún capítulo con la clave "${capitulo}". ` +
+            'Usa mi_proyecto para ver las claves válidas.',
+        );
+      }
+
+      const detalle = await projectService.detalleDeCapitulo(
         licencia.user.id,
         licencia.productCode,
+        capitulo,
       );
 
-      return texto(
-        contexto +
-          (siguiente
-            ? `\n\nLo siguiente que le tocaría: ${siguiente.displayName} (clave: ${siguiente.code}).`
-            : '\n\nTiene todos los capítulos dados por buenos.'),
-      );
+      // Solo se llega aquí si el capítulo dejó de ser de esta licencia entre
+      // la comprobación de arriba y la lectura. Un capítulo que existe pero
+      // todavía no tiene nada guardado SÍ devuelve detalle: sus campos en
+      // blanco son justo lo que hay que ir preguntándole al tesista.
+      if (!detalle) {
+        return texto(
+          `Ya no se puede consultar «${skill.displayName}» con esta licencia. ` +
+            'Usa mi_proyecto para ver los capítulos disponibles.',
+        );
+      }
+
+      return texto(detalle);
     },
   );
 

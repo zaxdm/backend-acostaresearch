@@ -300,11 +300,30 @@ function comoTexto(skillCode, datos) {
   return lineas;
 }
 
+/**
+ * Los campos de UNA etapa, en el orden en que están declarados.
+ *
+ * Devuelve lista vacía cuando la etapa no está registrada, que es lo mismo que
+ * dice `definicionDe`: esos capítulos se apañan con el resumen en prosa y eso
+ * no es un fallo, es que no llevan campos.
+ */
+function camposDe(skillCode) {
+  const definicion = definicionDe(skillCode);
+  if (!definicion) return [];
+
+  return Object.entries(definicion.campos).map(([clave, campo]) => ({
+    clave,
+    titulo: campo.titulo,
+    pista: campo.pista,
+    lista: campo.lista === true,
+  }));
+}
+
 /** Para la descripción de la herramienta: qué campos acepta cada etapa. */
 function catalogoParaElAsistente() {
-  return Object.entries(ETAPAS).map(([skillCode, definicion]) => {
-    const campos = Object.entries(definicion.campos).map(
-      ([clave, campo]) => `${clave}${campo.lista ? ' (lista)' : ''} — ${campo.pista}`,
+  return Object.keys(ETAPAS).map((skillCode) => {
+    const campos = camposDe(skillCode).map(
+      (campo) => `${campo.clave}${campo.lista ? ' (lista)' : ''} — ${campo.pista}`,
     );
     return `${skillCode}:\n    ${campos.join('\n    ')}`;
   });
@@ -317,6 +336,7 @@ module.exports = {
   fusionar,
   queFalta,
   comoTexto,
+  camposDe,
   catalogoParaElAsistente,
   MAXIMO_TEXTO,
   MAXIMO_POR_LISTA,

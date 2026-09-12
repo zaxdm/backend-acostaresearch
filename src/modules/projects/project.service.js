@@ -34,6 +34,20 @@ const MARCAS = {
   PENDIENTE: '[pendiente]',
 };
 
+/** El ancho de la marca más larga, para que la columna de títulos cuadre. */
+const ANCHO_MARCA = Math.max(...Object.values(MARCAS).map((m) => m.length));
+
+/**
+ * Un número con sus puntos de millar.
+ *
+ * A mano y no con `toLocaleString`: el formato tiene que ser el mismo en el
+ * servidor y en las pruebas, y eso depende de qué datos de idioma traiga
+ * compilado el Node que haya en cada sitio.
+ */
+function conMiles(numero) {
+  return String(numero).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
+
 /**
  * El capítulo donde se reportan los resultados, en cada método.
  *
@@ -166,6 +180,181 @@ function datosPorEtapa(proyecto) {
 }
 
 /**
+ * El panorama del proyecto: dónde está y qué le toca. Nada más.
+ *
+ * Es lo que lee el asistente al empezar una conversación, y por eso NO lleva
+ * los acuerdos de los diez capítulos. Llevarlos costaba miles de tokens en cada
+ * conversación nueva y se quedaban ocupando la ventana hasta el final, que es
+ * justo lo que hace que una sesión larga se olvide de lo acordado a mitad.
+ *
+ * Lo acordado sigue estando: se pide capítulo a capítulo con
+ * `detalleDeCapitulo`, y sigue viajando entero con el primer tramo de
+ * `redactar`, que es el momento en que de verdad hace falta. `contexto` es esa
+ * otra vista y no se toca.
+ *
+ * Devuelve null con el mismo criterio que `contexto`: existir no es tener algo
+ * que contar.
+ */
+async function resumen(userId, productCode) {
+  const [proyecto, catalogo] = await Promise.all([
+    projectRepository.buscar(userId, productCode),
+    skillService.listCatalog(productCode),
+  ]);
+
+  if (!proyecto) return null;
+
+  const porCapitulo = new Map(proyecto.stages.map((e) => [e.skillCode, e]));
+
+  // El aviso cuenta como avance: quien solo ha mandado su análisis desde la web
+  // tiene un proyecto sin tema ni capítulos, y sin esto el bloque saldría vacío
+  // y el aviso con él.
+  const aviso = await avisoDeAnalisis(proyecto, porCapitulo);
+  const hayAvance = proyecto.tema || proyecto.stages.some((e) => e.estado !== 'PENDIENTE');
+  if (!hayAvance && !aviso) return null;
+
+  const cabecera = [];
+  if (proyecto.tema) cabecera.push(proyecto.tema);
+  const donde = [proyecto.carrera, proyecto.universidad].filter(Boolean).join(' · ');
+  if (donde) cabecera.push(donde);
+
+  // Se recorre el catálogo y no las etapas guardadas, para que los capítulos
+  // que aún no ha tocado también salgan. Saber lo que falta es la mitad de
+  // saber por dónde va.
+  const ancho = Math.max(0, ...catalogo.map((s) => s.displayName.length));
+  const cuenta = { LISTO: 0, EN_CURSO: 0, PENDIENTE: 0 };
+  let palabrasTotales = 0;
+
+  const lineas = catalogo.map((skill) => {
+    const etapa = porCapitulo.get(skill.code);
+    // Un estado que no esté en MARCAS se cuenta como pendiente en vez de
+    // tumbar la herramienta. Hoy no puede pasar —el enum de Prisma tiene esos
+    // tres—, pero esto lo lee el asistente al empezar cada conversación y un
+    // estado nuevo en la base no puede dejar a nadie sin panorama.
+    const estado = MARCAS[etapa?.estado] ? etapa.estado : 'PENDIENTE';
+    cuenta[estado] += 1;
+
+    const palabras = etapa?.palabras ?? 0;
+    palabrasTotales += palabras;
+
+    // La clave va en cada línea: es lo que hay que pasarle a las demás
+    // herramientas, y sin ella el asistente tiene que ir a buscarla a otra.
+    return (
+      `${MARCAS[estado].padEnd(ANCHO_MARCA)} ${skill.displayName.padEnd(ancho)}  ` +
+      `(${skill.code})` +
+      (palabras > 0 ? `  · ${conMiles(palabras)} palabras` : '')
+    );
+  });
+
+  const recuento =
+    `${cuenta.LISTO} cerrados · ${cuenta.EN_CURSO} en curso · ${cuenta.PENDIENTE} sin empezar` +
+    (palabrasTotales > 0 ? ` · ${conMiles(palabrasTotales)} palabras guardadas` : '') +
+    '.';
+
+  const siguiente = await siguientePaso(userId, productCode);
+  const loSuyo = [];
+
+  if (siguiente) {
+    loSuyo.push(`Le toca: ${siguiente.displayName} (clave: ${siguiente.code}).`);
+    // Aquí se dice en una línea; la explicación entera la da `ver_capitulo`.
+    // En el panorama, cuatro frases sobre un capítulo que aún no ha abierto
+    // son cuatro frases que se saltan.
+    const faltan = etapas.queFalta(siguiente.code, datosPorEtapa(proyecto));
+    if (faltan.length > 0) loSuyo.push(`Antes de empezarlo falta fijar: ${faltan.join(', ')}.`);
+  } else {
+    loSuyo.push('Tiene todos los capítulos dados por buenos.');
+  }
+
+  // Por bloques y filtrando los vacíos: un proyecto sin tema todavía, o un
+  // catálogo que aún no se ha publicado, dejaban una sección en blanco y la
+  // respuesta empezaba por una línea vacía.
+  return [
+    cabecera.join('\n'),
+    lineas.join('\n'),
+    recuento,
+    aviso,
+    loSuyo.join('\n'),
+    // Sin esta línea, el asistente da por hecho que lo que no está aquí no
+    // existe y se pone a preguntarle al tesista lo que ya decidió, que es
+    // exactamente lo que este módulo entero existe para evitar.
+    'LO ACORDADO EN CADA CAPÍTULO ESTÁ GUARDADO, pero no cabe aquí: esto es el panorama. ' +
+      'Míralo con "ver_capitulo" y la clave ANTES de preguntarle nada de ese capítulo. ' +
+      'NO le hagas repetir lo que ya está decidido.',
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+}
+
+/**
+ * Lo acordado en UN capítulo, con sus campos y lo que le falta.
+ *
+ * La otra mitad de `resumen`: el panorama dice dónde está y esto dice qué se
+ * decidió. Devuelve el ACUERDO, nunca el texto redactado — de ese solo sale
+ * cuánto ocupa y de cuándo es, que es lo que hay que saber para no
+ * sobrescribirlo sin querer.
+ *
+ * Comprueba el grupo aunque quien llame ya lo haya comprobado: que un capítulo
+ * no salga en el catálogo de una licencia no impide pedirlo por su clave, y
+ * esta función es una lectura del proyecto de alguien.
+ */
+async function detalleDeCapitulo(userId, productCode, skillCode) {
+  const [proyecto, skill] = await Promise.all([
+    projectRepository.buscar(userId, productCode),
+    skillService.findByCode(skillCode),
+  ]);
+
+  if (!skill || !skillService.perteneceAlGrupo(skill, productCode)) return null;
+
+  const etapa = (proyecto?.stages ?? []).find((e) => e.skillCode === skillCode) ?? null;
+  const estado = etapa?.estado ?? 'PENDIENTE';
+  const datos = proyecto ? (datosPorEtapa(proyecto).get(skillCode) ?? null) : null;
+
+  const palabras = etapa?.palabras ?? 0;
+  const escrito =
+    palabras > 0
+      ? `${conMiles(palabras)} palabras` +
+        (etapa?.textoAt ? `, guardadas el ${etapa.textoAt.toISOString().slice(0, 10)}` : '')
+      : 'sin texto guardado';
+
+  const partes = [`${skill.displayName} (${skillCode}) · ${MARCAS[estado]} · ${escrito}`];
+
+  const acordado = etapas.comoTexto(skillCode, datos);
+  if (acordado.length > 0 || etapa?.resumen) {
+    partes.push('', 'LO ACORDADO');
+    partes.push(...acordado);
+    if (etapa?.resumen) partes.push(`      quedó así: ${etapa.resumen}`);
+  }
+
+  const campos = etapas.camposDe(skillCode);
+  if (campos.length > 0) {
+    const puesto = (campo) => {
+      const valor = datos?.[campo.clave];
+      return Array.isArray(valor) ? valor.length > 0 : Boolean(valor);
+    };
+
+    partes.push('', 'CAMPOS DE ESTE CAPÍTULO — van dentro de "datos", en guardar_avance');
+    for (const campo of campos) {
+      partes.push(`      ${campo.clave}${campo.lista ? ' (lista)' : ''} — ${campo.pista}`);
+    }
+
+    // Se dicen CUÁLES faltan, no cuántos: es lo que hay que preguntarle al
+    // tesista, y una cuenta no se puede preguntar.
+    const sinFijar = campos.filter((campo) => !puesto(campo));
+    partes.push(
+      sinFijar.length > 0
+        ? `      SIN FIJAR: ${sinFijar.map((c) => c.clave).join(', ')}`
+        : '      Están todos fijados.',
+    );
+  }
+
+  const aviso = proyecto
+    ? avisoDeRequisitos(etapas.queFalta(skillCode, datosPorEtapa(proyecto)))
+    : null;
+  if (aviso) partes.push('', aviso);
+
+  return partes.join('\n');
+}
+
+/**
  * El aviso de que a un capítulo le faltan cosas de los anteriores.
  *
  * Se comprueba al empezar el capítulo, que es el único momento en que sirve de
@@ -176,7 +365,17 @@ async function loQueFalta(userId, productCode, skillCode) {
   const proyecto = await projectRepository.buscar(userId, productCode);
   if (!proyecto) return null;
 
-  const faltan = etapas.queFalta(skillCode, datosPorEtapa(proyecto));
+  return avisoDeRequisitos(etapas.queFalta(skillCode, datosPorEtapa(proyecto)));
+}
+
+/**
+ * El aviso de requisitos, ya redactado. Null cuando no falta nada.
+ *
+ * Sale de `loQueFalta` para que `detalleDeCapitulo` lo diga con las mismas
+ * palabras sin volver a leer el proyecto de la base: cuando ya se tiene
+ * delante, pedirlo otra vez es una consulta de más en la ruta más caliente.
+ */
+function avisoDeRequisitos(faltan) {
   if (faltan.length === 0) return null;
 
   return (
@@ -712,6 +911,8 @@ async function deUsuario(userId) {
 
 module.exports = {
   contexto,
+  resumen,
+  detalleDeCapitulo,
   loQueFalta,
   guardarAvance,
   guardarCapitulo,

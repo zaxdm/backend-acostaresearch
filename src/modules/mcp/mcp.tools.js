@@ -353,7 +353,8 @@ const ESQUEMA_REDACTAR = fromJsonSchema({
   properties: {
     capitulo: {
       type: 'string',
-      description: 'Clave del capítulo, tal como aparece en listar_capitulos.',
+      description:
+        'Clave del capítulo o de la herramienta de apoyo, tal como aparece en listar_capitulos.',
     },
     mensaje: {
       type: 'string',
@@ -453,9 +454,11 @@ function construirServidor(licencia) {
     {
       title: 'Capítulos disponibles',
       description:
-        'Lista los capítulos de tesis que este método puede trabajar, en su orden. ' +
-        'Si ya llamaste a "mi_proyecto", no hace falta: ya trae las claves de los capítulos ' +
-        'y además dice en cuál va.',
+        'El catálogo de ESTA licencia: los capítulos que trabaja el método y las herramientas ' +
+        'de apoyo que trae, con lo que hace cada uno y lo que necesita. ÚSALA cuando haga falta ' +
+        'saber qué tiene disponible el tesista, o qué hace algo en concreto. No en cada ' +
+        'conversación: por dónde va su proyecto lo dice "mi_proyecto" — aquí están las ' +
+        'capacidades, allí el estado.',
       inputSchema: SIN_ARGUMENTOS,
     },
     async () => {
@@ -1054,9 +1057,15 @@ function construirServidor(licencia) {
     {
       title: 'Trabajar un capítulo',
       description:
-        'Trabaja un capítulo de la tesis con el método de Acosta | IA & Research. ' +
-        'Envía lo que el tesista quiere hacer o responder, y devuelve el siguiente paso. ' +
-        'Es una conversación: manda el mismo "sesion" en cada llamada del mismo hilo.',
+        'Trabaja un capítulo de la tesis con el método de Acosta | IA & Research, y abre ' +
+        'también las herramientas de apoyo de esta licencia: van por el mismo "capitulo", con ' +
+        'su clave del catálogo. Envía lo que el tesista quiere hacer o responder, y devuelve el ' +
+        'siguiente paso. Es una conversación: manda el mismo "sesion" en cada llamada del mismo ' +
+        'hilo.\n\n' +
+        'Las herramientas de apoyo NO esperan a que la tesis esté terminada: se abren en cuanto ' +
+        'él tiene lo que piden —un informe de similitud y su documento, un texto que suena a IA, ' +
+        'un capítulo que quiere pulir—, aunque esté a mitad de otra cosa. Qué hace cada una y ' +
+        'qué le pide, en "listar_capitulos".',
       inputSchema: ESQUEMA_REDACTAR,
     },
     async ({ capitulo, mensaje, sesion, referencia, paso }) => {

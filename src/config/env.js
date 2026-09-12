@@ -193,6 +193,29 @@ const schema = z.object({
   // Con valor, manda sobre ZOTERO_USER_ID.
   ZOTERO_GROUP_ID: vacioComoAusente(z.string().regex(/^[0-9]+$/, 'ZOTERO_GROUP_ID es numérico')),
 
+  // ── El Zotero de cada tesista (OAuth) ───────────────────────────────────
+  // Lo de arriba es LA BIBLIOTECA DE LA CASA, con una sola clave que es tuya.
+  // Esto es otra cosa: cada comprador conecta la SUYA, y la clave la emite
+  // Zotero a su nombre cuando él autoriza.
+  //
+  // Se registra una vez en zotero.org/oauth/apps y de ahí salen estas dos.
+  // Vacías = la conexión no se ofrece y sus rutas no se montan, igual que la
+  // página de análisis sin RSTUDIO_URL: una función a medio conectar enseña a
+  // desconfiar del resto.
+  ZOTERO_OAUTH_CLIENT_KEY: vacioComoAusente(z.string()),
+  ZOTERO_OAUTH_CLIENT_SECRET: vacioComoAusente(z.string()),
+
+  // ── La llave con la que se guardan secretos de otros ────────────────────
+  // 32 bytes en hexadecimal o en base64: «openssl rand -base64 32».
+  //
+  // Con ella se cifran las claves de Zotero de los tesistas antes de tocar la
+  // base. Si se pierde, esas claves quedan ilegibles y hay que volver a
+  // conectar — que es molesto pero no destruye nada: las fuentes ya importadas
+  // siguen donde están. Si se filtra JUNTO con un volcado de la base, quedan
+  // legibles las claves de todos, así que no vive en el repositorio ni en el
+  // respaldo: solo en el `.env` del servidor.
+  SECRETS_KEY: vacioComoAusente(z.string()),
+
   // ── Búsqueda abierta en OpenAlex ────────────────────────────────────────
   // El correo con el que se identifica el conector al buscar. No es cortesía:
   // sin él, OpenAlex atiende por la cola lenta y una búsqueda tarda lo bastante
@@ -292,6 +315,13 @@ const env = Object.freeze({
     : raw.ZOTERO_USER_ID
       ? `users/${raw.ZOTERO_USER_ID}`
       : null,
+  // Conectar el Zotero propio exige las tres cosas a la vez: las dos de la
+  // aplicación registrada en Zotero y la llave con la que se guarda la clave
+  // que devuelve. Sin la tercera, el resultado del OAuth acabaría en la base
+  // en claro, así que es mejor no ofrecer el botón.
+  zoteroOauthEnabled: Boolean(
+    raw.ZOTERO_OAUTH_CLIENT_KEY && raw.ZOTERO_OAUTH_CLIENT_SECRET && raw.SECRETS_KEY,
+  ),
   paypalApiBase:
     raw.PAYPAL_ENV === 'live' ? 'https://api-m.paypal.com' : 'https://api-m.sandbox.paypal.com',
 });

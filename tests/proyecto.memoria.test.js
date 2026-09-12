@@ -206,6 +206,58 @@ test('y en el artículo, con sus fases cerradas, tampoco propone el humanizador'
   assert.equal(await projectService.siguientePaso('u1', 'ARTICULO_SCIENTIFICOS'), null);
 });
 
+/**
+ * Lo que sostiene a «continuar».
+ *
+ * Esa herramienta saca su capítulo SOLO de `siguientePaso`, así que basta con
+ * que esto no devuelva nunca una herramienta de apoyo para que aquella no pueda
+ * proponerla. No se prueba el handler entero: se blinda la única puerta por la
+ * que podría colarse.
+ *
+ * Se afirma con `esApoyo` y no contra «Bajar similitud», para que siga valiendo
+ * el día que se añada una tercera herramienta.
+ */
+
+test('lo que abriría «continuar» no es una herramienta de apoyo, con el apoyo sin tocar', async () => {
+  conProyecto({
+    tema: 'Un tema',
+    stages: FASES.map((s) => ({ skillCode: s.code, estado: 'LISTO' })),
+  });
+
+  const siguiente = await projectService.siguientePaso('u1', 'METODO_9_SKILLS');
+
+  assert.equal(siguiente, null);
+  assert.ok(
+    siguiente === null || !projectService.esApoyo(siguiente.displayName),
+    'siguientePaso no puede proponer algo que esApoyo reconozca',
+  );
+  // Si el fixture dejara de traer herramientas, lo de arriba pasaría sin probar
+  // nada. Es justo lo que ocurría antes de numerar los nombres.
+  assert.ok(
+    CATALOGO.some((s) => projectService.esApoyo(s.displayName)),
+    'el catálogo de prueba tiene que traer alguna herramienta de apoyo',
+  );
+});
+
+test('ni con una herramienta de apoyo EN_CURSO, que es lo que más se parece a pendiente', async () => {
+  conProyecto({
+    tema: 'Un tema',
+    stages: [
+      ...FASES.map((s) => ({ skillCode: s.code, estado: 'LISTO' })),
+      { skillCode: 'bajar-similitud', estado: 'EN_CURSO' },
+      { skillCode: 'humanizador-academico', estado: 'EN_CURSO' },
+    ],
+  });
+
+  const siguiente = await projectService.siguientePaso('u1', 'METODO_9_SKILLS');
+
+  assert.equal(siguiente, null);
+  assert.ok(
+    siguiente === null || !projectService.esApoyo(siguiente.displayName),
+    'empezar a usar el humanizador no convierte la tesis en inacabada',
+  );
+});
+
 test('guardar solo el estado no borra el resumen que ya había', async () => {
   // El asistente que marca LISTO sin mandar resumen no puede llevarse por
   // delante lo que se acordó. Se comprueba que ni siquiera se manda el campo.

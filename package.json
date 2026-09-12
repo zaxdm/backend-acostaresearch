@@ -31,7 +31,8 @@
     "backup:traer": "node scripts/traer-respaldo.js",
     "licencias:avisar": "node scripts/avisar-caducidad.js",
     "corpus:sincronizar": "node scripts/sincronizar-zotero.js",
-    "precio:oferta": "node scripts/precio-de-oferta.js"
+    "precio:oferta": "node scripts/precio-de-oferta.js",
+    "bibliotecas:sincronizar": "node scripts/sincronizar-bibliotecas.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.123.0",

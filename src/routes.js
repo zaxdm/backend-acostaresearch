@@ -13,6 +13,7 @@ const propiasRoutes = require('./modules/references/propias.routes');
 const tutorialRoutes = require('./modules/tutorials/tutorial.routes');
 const projectRoutes = require('./modules/projects/project.routes');
 const trialRoutes = require('./modules/trials/trial.routes');
+const zoteroRoutes = require('./modules/zotero/biblioteca.routes');
 
 const router = Router();
 
@@ -34,5 +35,8 @@ router.use('/referencias', referenceRoutes);
 router.use('/tutoriales', tutorialRoutes);
 router.use('/proyectos', projectRoutes);
 router.use('/pruebas', trialRoutes);
+// El Zotero de cada comprador. Aparte de /referencias, que es el corpus de la
+// casa: aquello lo administra Acosta y esto lo conecta cada tesista.
+router.use('/mi-zotero', zoteroRoutes);
 
 module.exports = router;

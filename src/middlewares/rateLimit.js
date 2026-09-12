@@ -63,6 +63,22 @@ const paymentLimiter = build({
 });
 
 /**
+ * Traerse la biblioteca de Zotero a mano.
+ *
+ * Cada pulsación son varias peticiones a api.zotero.org con la clave de ese
+ * tesista. Zotero frena por cuenta —y nos manda `Backoff`, que se respeta— pero
+ * la aplicación registrada es una sola y es nuestra: quien se ponga a pulsar
+ * «actualizar» nos gasta la reputación a todos. De todas formas se sincroniza
+ * sola cada noche, así que este botón es para el impaciente, no para el uso
+ * normal.
+ */
+const zoteroSyncLimiter = build({
+  windowMs: 10 * 60 * 1000,
+  max: 6,
+  message: 'Has pedido tu biblioteca varias veces seguidas. Espera unos minutos.',
+});
+
+/**
  * Recoger un conector de un enlace de prueba.
  *
  * Holgado a propósito: un taller entero sale a internet por la wifi de la
@@ -106,5 +122,6 @@ module.exports = {
   rewriteLimiter,
   paymentLimiter,
   trialClaimLimiter,
+  zoteroSyncLimiter,
   mcpLimiter,
 };

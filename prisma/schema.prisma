@@ -72,6 +72,8 @@ model User {
   accountCodes  AccountCode[]
   /// Su tesis, y su artículo si también lo compró. Ver `Project`.
   projects      Project[]
+  /// Su Zotero, si lo conectó. Como mucho uno. Ver `ZoteroAccount`.
+  zoteroAccount ZoteroAccount?
 
   /// Enlace de prueba del que salió esta cuenta. Nulo en toda cuenta real.
   ///
@@ -586,10 +588,10 @@ model License {
   /// días de historial en cada llamada.
   lastCheckedAt DateTime?
 
-  revokedAt     DateTime?
-  revokedReason String?   @db.VarChar(255)
+  revokedAt      DateTime?
+  revokedReason  String?   @db.VarChar(255)
   /// Caducidad del acceso. Nula = mientras no se revoque.
-  expiresAt     DateTime?
+  expiresAt      DateTime?
   /// Cuándo se avisó al comprador de que su acceso estaba por caducar. Guarda
   /// la fecha y no un booleano para que se vea, meses después, si el aviso
   /// salió a tiempo o el día antes.
@@ -1115,7 +1117,6 @@ model Tutorial {
 
 /**
  * En qué punto está una etapa.
- *
  * Solo tres, y el salto de EN_CURSO a LISTO lo da el tesista, no el asistente.
  * Que un capítulo se dé por bueno solo porque se escribió mucho es exactamente
  * lo que produce una tesis que no se sostiene ante el jurado.
@@ -1128,12 +1129,10 @@ enum StageState {
 
 /**
  * La memoria de una tesis, o de un artículo.
- *
  * Hasta ahora el conector respondía y olvidaba: cada conversación empezaba de
  * cero y el tesista volvía a contar su tema, sus objetivos y su metodología. Si
  * abría un chat nuevo, había perdido el hilo. Esto es lo que faltaba para que
  * «sigue con mi tesis» signifique algo.
- *
  * Uno por comprador y producto. Un tesista tiene UNA tesis; si además compra la
  * ruta del artículo, eso es otro proyecto y no debe mezclarse con el primero.
  * No se permiten dos tesis a la vez a propósito: es la forma más rápida de que
@@ -1170,13 +1169,11 @@ model Project {
 
 /**
  * Lo que quedó decidido en un capítulo.
- *
  * `resumen` es prosa corta y es lo que de verdad se usa: se le entrega al
  * asistente al empezar el capítulo siguiente para que no pregunte lo que ya se
  * habló. `datos` queda para cuando las Skills devuelvan estado estructurado
  * —variables, población, diseño— y todavía no lo hacen; existe para que ese
  * trabajo tenga dónde caer sin otra migración.
- *
  * No guarda el texto del capítulo. Esto es la memoria de lo acordado, no el
  * documento: el documento es otra etapa y otro problema.
  */
@@ -1210,4 +1207,87 @@ model ProjectStage {
   @@unique([projectId, skillCode])
   @@index([projectId, estado])
   @@map("project_stages")
+}
+
+/// El Zotero de UN tesista.
+///
+/// No confundir con el corpus de la casa: aquel es una sola biblioteca, con una
+/// clave que es de Acosta y vive en el `.env`, y su marcador de versión está en
+/// `reference_sync`, que es una fila única. Esto es una fila POR PERSONA, con su
+/// clave, su colección y su propio marcador — y por eso la sincronización de
+/// bibliotecas no puede reutilizar aquella: se pisarían la versión unas a otras.
+model ZoteroAccount {
+  id     String @id @default(uuid()) @db.Char(36)
+  userId String @unique @db.Char(36)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// El id NUMÉRICO de su cuenta en Zotero, que es lo que forma la ruta de la
+  /// API (`users/12345/items`). No es el nombre de usuario, que se puede
+  /// cambiar; lo devuelve el propio intercambio de OAuth.
+  zoteroUserId String  @db.VarChar(32)
+  /// Su nombre en Zotero, solo para enseñárselo y que reconozca qué conectó.
+  username     String? @db.VarChar(120)
+
+  /// La clave de API, CIFRADA. Ver `shared/utils/secretos.js`.
+  ///
+  /// Nunca sale de aquí en claro: ni al panel, ni en un log, ni enmascarada.
+  /// La emite Zotero a nombre del tesista cuando autoriza, y se pide de solo
+  /// lectura y sin acceso a sus grupos.
+  apiKeyCipher String @db.VarChar(500)
+
+  /// La colección que eligió, y su nombre para enseñarlo.
+  ///
+  /// NULA = conectó pero todavía no ha elegido, y en ese estado no se
+  /// sincroniza nada. Es deliberado: la biblioteca de un tesista lleva años de
+  /// asignaturas encima, y traerla entera le llenaría sus propias búsquedas de
+  /// ruido que él no puso.
+  collectionKey  String? @db.VarChar(16)
+  collectionName String? @db.VarChar(200)
+
+  /// Hasta qué versión de su biblioteca se trajo. Es lo que hace incremental la
+  /// pasada siguiente: a Zotero se le pide `since=` y devuelve solo lo tocado.
+  libraryVersion Int       @default(0)
+  lastRunAt      DateTime?
+  /// Cuántas fuentes suyas quedaron tras la última pasada.
+  lastCount      Int       @default(0)
+
+  /// Cerrojo, con la misma forma que el del corpus: la hora de entrada y no un
+  /// sí/no, para poder soltarlo si el proceso murió a media pasada. Aquí es por
+  /// persona, así que dos tesistas sincronizan a la vez sin estorbarse.
+  runningSince DateTime?
+
+  /// Lo último que falló, tal cual, para poder decírselo en el panel. Una
+  /// conexión que dejó de funcionar —porque revocó la clave en Zotero— tiene
+  /// que verse ahí y no solo en el log del servidor.
+  lastError String? @db.VarChar(500)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("zotero_accounts")
+}
+
+/// El pagaré de un OAuth a medias.
+///
+/// OAuth 1.0a tiene tres pasos y el segundo ocurre FUERA: el tesista se va a
+/// zotero.org y vuelve. Al volver trae el token, pero el secreto que hace falta
+/// para canjearlo se generó en el primer paso y hay que haberlo guardado.
+///
+/// Y se guarda de quién es. El que vuelve podría no traer sesión —vuelve de otro
+/// dominio— así que la identidad se saca de esta fila y no de la cookie: es una
+/// cosa menos que puede fallar, y evita que el token de uno pueda canjearlo
+/// otro.
+///
+/// Las filas viejas se barren: un intercambio que nadie terminó no tiene por qué
+/// seguir aquí mañana.
+model ZoteroOauthRequest {
+  token        String @id @db.VarChar(64)
+  /// Cifrado también. Es efímero, pero con él y el token se completa el canje.
+  secretCipher String @db.VarChar(500)
+  userId       String @db.Char(36)
+
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@map("zotero_oauth_requests")
 }

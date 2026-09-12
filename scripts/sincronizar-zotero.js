@@ -23,6 +23,20 @@
  * desde el panel en este momento, este proceso se retira sin tocar nada.
  *
  * Uso:  npm run corpus:sincronizar
+ *       npm run corpus:sincronizar -- --completa
+ *
+ * LA PASADA COMPLETA, Y CUÁNDO HACE FALTA
+ * ---------------------------------------
+ * La normal es incremental: a Zotero se le pide solo lo posterior a la versión
+ * que ya tenemos, así que una fuente que nadie tocó NO se vuelve a leer. Eso es
+ * lo que la hace durar segundos, y también lo que la vuelve ciega a un cambio
+ * de este lado: el día que se añade una columna —volumen y páginas, por
+ * ejemplo— las fuentes viejas se quedarían sin rellenar para siempre, porque en
+ * Zotero no cambió nada y no hay nada que traer.
+ *
+ * `--completa` relee la biblioteca entera. Tarda minutos y son cientos de
+ * peticiones, así que es para eso: después de añadir un campo, no todas las
+ * noches.
  */
 
 // El .env se lee aquí a mano y antes que nada. Normalmente lo carga
@@ -54,6 +68,9 @@ const LIMITE_MINUTOS = 45;
 
 const espera = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** `--completa` relee la biblioteca entera en vez de solo lo que cambió. */
+const completa = process.argv.includes('--completa');
+
 async function principal() {
   if (!env.zoteroEnabled) {
     console.log('El corpus no está configurado: falta ZOTERO_API_KEY o la biblioteca. No hay nada que hacer.');
@@ -63,7 +80,8 @@ async function principal() {
   const empezado = Date.now();
 
   try {
-    await referenceService.sincronizar({ completa: false });
+    if (completa) console.log('Pasada COMPLETA: se relee la biblioteca entera.');
+    await referenceService.sincronizar({ completa });
   } catch (error) {
     // Que el panel esté sincronizando no es un fallo de esta tarea: es
     // exactamente lo que el turno tiene que evitar. Se sale en silencio.

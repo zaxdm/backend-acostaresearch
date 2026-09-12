@@ -1,0 +1,11 @@
+[Unit]
+Description=Sincronizacion nocturna de las bibliotecas de Zotero de los compradores
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=acosta
+Group=acosta
+WorkingDirectory=/opt/acostaresearch/app
+ExecStart=/usr/bin/node /opt/acostaresearch/app/scripts/sincronizar-bibliotecas.js
+TimeoutStartSec=3600

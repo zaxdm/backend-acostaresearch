@@ -1,0 +1,18 @@
+[Unit]
+Description=Sincronizacion nocturna de las bibliotecas de los compradores
+
+[Timer]
+# 05:30 UTC son las 00:30 en Lima. Una hora despues del corpus a proposito:
+# aquella tarea es una sola biblioteca de 24.000 fuentes y puede alargarse, y
+# el plan de la base da cinco conexiones. Que se solapen es como se agotaron
+# las dos veces que se agotaron.
+#
+# Y va despues y no antes porque esta es la que puede esperar: el corpus lo
+# consultan todos los compradores desde el conector, y la coleccion de un
+# tesista solo la mira el.
+OnCalendar=*-*-* 05:30:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

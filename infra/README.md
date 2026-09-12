@@ -18,13 +18,15 @@ si algún día divergen, manda el servidor.
 | `systemd/acostaresearch-respaldo.*` | `/etc/systemd/system/` | Lanza el respaldo cada día a las 3:30 UTC |
 | `systemd/acostaresearch-caducidad.*` | `/etc/systemd/system/` | Lanza el aviso de caducidad cada día a las 13:00 UTC, las 8 de la mañana en Lima |
 | `systemd/acostaresearch-corpus.*` | `/etc/systemd/system/` | Sincroniza el corpus con Zotero cada noche a las 04:30 UTC, las 23:30 en Lima |
+| `systemd/acostaresearch-bibliotecas.*` | `/etc/systemd/system/` | Trae la colección de Zotero de cada comprador que la conectó, a las 05:30 UTC, las 00:30 en Lima |
 
-## Las tres horas
+## Las cuatro horas
 
 | Hora UTC | Hora en Lima | Qué corre |
 |---|---|---|
 | 03:30 | 22:30 | Respaldo |
 | 04:30 | 23:30 | Sincronización del corpus |
+| 05:30 | 00:30 | Sincronización de las bibliotecas de los compradores |
 | 13:00 | 08:00 | Aviso de caducidad |
 
 ## Por qué las horas están separadas

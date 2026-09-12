@@ -82,7 +82,12 @@ async function pedir(ruta, params = {}) {
  * usa es siempre la de cien ítems.
  *
  * `filtro.itemType` acepta la sintaxis de Zotero, negaciones incluidas:
- * `-attachment || -note` deja fuera lo que no es una fuente.
+ * `-attachment || note` deja fuera lo que no es una fuente.
+ *
+ * OJO CON EL MENOS: niega la expresión ENTERA, no cada término. Se lee «ni
+ * attachment ni note». Este comentario decía `-attachment || -note`, que es lo
+ * que parece que habría que escribir y devuelve 400 «Invalid itemType '-note'»
+ * — y un módulo nuevo lo copió de aquí y se estrenó en producción con ese 400.
  */
 async function* paginasDeItems({ desdeVersion = 0, itemType = '', alAvanzar } = {}) {
   let inicio = 0;

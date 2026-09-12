@@ -22,8 +22,14 @@ const BASE = 'https://api.zotero.org';
 const API_VERSION = '3';
 const POR_PAGINA = 100;
 
-/** Ni adjuntos ni notas: no son fuentes y no se citan. */
-const SOLO_FUENTES = '-attachment || -note';
+/**
+ * Ni adjuntos ni notas: no son fuentes y no se citan.
+ *
+ * OJO CON EL MENOS. Niega la expresion ENTERA, no cada termino: esto se lee
+ * «ni attachment ni note». Escribirlo como '-attachment || -note', que es lo
+ * que parece que habria que poner, devuelve 400 «Invalid itemType '-note'».
+ */
+const SOLO_FUENTES = '-attachment || note';
 
 async function respetarEspera(res) {
   const segundos = Number(res.headers.get('backoff') ?? res.headers.get('retry-after') ?? 0);

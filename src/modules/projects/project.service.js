@@ -17,6 +17,12 @@ const logger = require('../../config/logger');
 const projectRepository = require('./project.repository');
 const almacen = require('./project.storage');
 const documento = require('./project.docx');
+const env = require('../../config/env');
+const normas = require('./project.normas');
+const csl = require('./project.csl');
+const zoteroCampos = require('./project.zotero-campos');
+const descarga = require('./project.descarga');
+const zoteroRepository = require('../zotero/biblioteca.repository');
 const citas = require('./project.citas');
 const bibtex = require('./project.bibtex');
 const etapas = require('./project.etapas');
@@ -128,6 +134,7 @@ async function contexto(userId, productCode) {
   if (proyecto.tema) cabecera.push(`Tema: ${proyecto.tema}`);
   const donde = [proyecto.carrera, proyecto.universidad].filter(Boolean).join(' · ');
   if (donde) cabecera.push(donde);
+  cabecera.push(lineaDeNorma(proyecto));
 
   // Se recorre el catálogo y no las etapas guardadas, para que los capítulos
   // que aún no ha tocado también salgan. Saber lo que falta es la mitad de
@@ -269,6 +276,10 @@ async function resumen(userId, productCode) {
   } else {
     loSuyo.push('Tiene todos los capítulos dados por buenos.');
   }
+  // Junto a lo que le toca y no en la cabecera: la cabecera es lo que se sabe
+  // de la tesis, y sin tema ni carrera tiene que quedar vacía para que el
+  // panorama empiece por los capítulos.
+  loSuyo.push(lineaDeNorma(proyecto));
 
   // Por bloques y filtrando los vacíos: un proyecto sin tema todavía, o un
   // catálogo que aún no se ha publicado, dejaban una sección en blanco y la
@@ -547,45 +558,117 @@ async function armarWord(userId, productCode) {
   const fuentes = await referenceService.porClaves(claves, userId);
   const porClave = new Map(fuentes.map((f) => [f.ref, f]));
 
-  const usadas = new Map();
-  const perdidas = new Set();
-
-  for (const capitulo of capitulos) {
-    const resuelto = citas.resolver(capitulo.texto, porClave);
-    capitulo.texto = resuelto.texto;
-    for (const [clave, fuente] of resuelto.usadas) usadas.set(clave, fuente);
-    for (const clave of resuelto.perdidas) perdidas.add(clave);
-  }
-
-  if (perdidas.size > 0) {
-    // No se corta la descarga: el tesista tiene derecho a su documento aunque
-    // una cita esté mal. Pero queda anotado, y en el Word se ve.
-    logger.warn(
-      { userId, productCode, perdidas: [...perdidas] },
-      'Citas del Word que no corresponden a ninguna fuente',
-    );
-  }
-
   // Los estilos de su facultad, si los subió. Sin ellos sale el formato de
   // tesis por defecto, que es lo que había hasta ahora.
   const estilos = await almacen.leerPlantilla(proyecto.id).catch(() => null);
+
+  /**
+   * La norma del proyecto, y el APA de siempre si no se puede aplicar.
+   *
+   * Lo segundo no es un adorno: citeproc lee un archivo de estilo, y una ficha
+   * rara puede hacerle lanzar. Una norma que falla no puede dejar a nadie sin su
+   * documento, así que se anota y el Word sale en APA, como salía antes.
+   */
+  let armado;
+  try {
+    armado = await armarEnLaNorma({ userId, proyecto, capitulos, porClave });
+  } catch (error) {
+    logger.error(
+      { err: error, userId, productCode, norma: proyecto.estiloCitas },
+      'No se pudo aplicar la norma de citas; el Word sale en APA de respaldo',
+    );
+    armado = armarEnApa(capitulos, porClave);
+  }
+
+  if (armado.perdidas.length > 0) {
+    // No se corta la descarga: el tesista tiene derecho a su documento aunque
+    // una cita esté mal. Pero queda anotado, y en el Word se ve.
+    logger.warn(
+      { userId, productCode, perdidas: armado.perdidas },
+      'Citas del Word que no corresponden a ninguna fuente',
+    );
+  }
 
   const buffer = await documento.armar({
     tema: proyecto.tema,
     carrera: proyecto.carrera,
     universidad: proyecto.universidad,
     nombre,
-    capitulos,
-    referencias: citas.bibliografiaConCursivas([...usadas.values()]),
     estilos,
+    ...armado.documento,
   });
 
   return {
     buffer,
     nombreArchivo: documento.nombreDeArchivo(proyecto.tema),
     capitulos: capitulos.length,
-    referencias: usadas.size,
-    citasPerdidas: [...perdidas],
+    referencias: armado.usadas,
+    citasPerdidas: armado.perdidas,
+    norma: armado.norma,
+  };
+}
+
+/**
+ * Citas y referencias en la norma del proyecto.
+ *
+ * Los campos de Zotero solo si conectó el suyo. Si esa consulta falla, el Word
+ * sale igual y sin campos: no son lo que se descarga, son un extra encima.
+ */
+async function armarEnLaNorma({ userId, proyecto, capitulos, porClave }) {
+  const cuenta = await zoteroRepository.deUsuario(userId).catch(() => null);
+
+  const r = csl.renderizar({
+    norma: proyecto.estiloCitas,
+    idioma: proyecto.idiomaCitas,
+    capitulos,
+    porClave,
+    urisDe: (fuente) =>
+      zoteroCampos.urisDeZotero(fuente, { cuenta, bibliotecaDeLaCasa: env.zoteroLibrary }),
+  });
+
+  let zotero = null;
+  if (cuenta) {
+    const codigos = new Map([...r.citas].map(([numero, cita]) => [String(numero), cita.codigo]));
+    if (r.bibliografia) codigos.set('BIB', r.bibliografia.codigo);
+    zotero = {
+      preferencias: zoteroCampos.preferencias({ norma: r.norma.id, idioma: r.idioma }),
+      codigos,
+    };
+  }
+
+  return {
+    documento: {
+      capitulos: capitulos.map((capitulo, i) => ({ titulo: capitulo.titulo, texto: r.textos[i] })),
+      citas: r.citas,
+      referencias: r.bibliografia ?? [],
+      zotero,
+    },
+    usadas: r.usadas.size,
+    perdidas: r.perdidas,
+    norma: r.norma.id,
+  };
+}
+
+/** El respaldo: APA escrita a mano, como salía el Word antes de poder elegir norma. */
+function armarEnApa(capitulos, porClave) {
+  const usadas = new Map();
+  const perdidas = new Set();
+
+  const resueltos = capitulos.map((capitulo) => {
+    const resuelto = citas.resolver(capitulo.texto, porClave);
+    for (const [clave, fuente] of resuelto.usadas) usadas.set(clave, fuente);
+    for (const clave of resuelto.perdidas) perdidas.add(clave);
+    return { titulo: capitulo.titulo, texto: resuelto.texto };
+  });
+
+  return {
+    documento: {
+      capitulos: resueltos,
+      referencias: citas.bibliografiaConCursivas([...usadas.values()]),
+    },
+    usadas: usadas.size,
+    perdidas: [...perdidas],
+    norma: 'apa',
   };
 }
 
@@ -1123,6 +1206,78 @@ function esApoyo(displayName) {
   return !/^\s*(\d|fase\s)/i.test(displayName ?? '');
 }
 
+/** La norma de un proyecto, lista para enseñar. Sin elegir, la de por defecto. */
+function normaDelProyecto(proyecto) {
+  const norma = normas.normaDe(proyecto?.estiloCitas);
+  const idioma = normas.idiomaDe(proyecto?.idiomaCitas);
+
+  return {
+    estilo: norma.id,
+    nombre: norma.nombre,
+    familia: norma.familia,
+    idioma: idioma.id,
+    idiomaNombre: idioma.nombre,
+    elegida: Boolean(proyecto?.estiloCitas),
+  };
+}
+
+/**
+ * La norma, dicha para el asistente.
+ *
+ * Sin elegir se dice así, en vez de callarlo o de poner «APA»: el asistente
+ * tiene que saber que nadie la ha decidido para preguntarla antes de que el
+ * tesista descargue un Word en una norma que su universidad no acepta.
+ */
+function lineaDeNorma(proyecto) {
+  const norma = normaDelProyecto(proyecto);
+  return norma.elegida
+    ? `Norma de citas: ${norma.nombre} (${norma.idiomaNombre})`
+    : `Norma de citas: sin elegir, el Word sale en ${norma.nombre}. Pregúntale cuál exige su universidad.`;
+}
+
+/** Las normas y los idiomas que se pueden elegir, para el panel. */
+function normasDisponibles() {
+  return {
+    normas: normas.NORMAS.map(({ id, nombre, familia }) => ({ id, nombre, familia })),
+    idiomas: normas.IDIOMAS.map(({ id, nombre }) => ({ id, nombre })),
+  };
+}
+
+/**
+ * Cambia la norma desde el panel.
+ *
+ * Solo sobre un proyecto que ya existe. El proyecto nace desde el conector, que
+ * es donde se comprueba la licencia; crearlo desde aquí sería la forma de tener
+ * el proyecto de un método que no se compró.
+ */
+async function cambiarNorma({ userId, productCode, estiloCitas, idiomaCitas }) {
+  const actual = await projectRepository.buscar(userId, productCode);
+  if (!actual) return null;
+
+  const proyecto = await projectRepository.asegurar(userId, productCode, {
+    estiloCitas,
+    idiomaCitas: idiomaCitas ?? actual.idiomaCitas ?? undefined,
+  });
+
+  return normaDelProyecto(proyecto);
+}
+
+/**
+ * El enlace para descargar el Word desde la conversación.
+ *
+ * Nulo si no hay nada escrito: un enlace que lleva a «todavía no hay ningún
+ * capítulo» hace creer que el servidor perdió el trabajo.
+ */
+async function enlaceDelWord(userId, productCode) {
+  const proyecto = await projectRepository.buscar(userId, productCode);
+  if (!proyecto) return null;
+
+  const palabras = (proyecto.stages ?? []).reduce((suma, e) => suma + (e.palabras ?? 0), 0);
+  if (palabras === 0) return null;
+
+  return { ...descarga.enlace({ userId, productCode }), norma: normaDelProyecto(proyecto) };
+}
+
 async function deUsuario(userId) {
   const proyectos = await projectRepository.listarDeUsuario(userId);
   const nombres = await projectRepository.nombresDeProducto(proyectos.map((p) => p.productCode));
@@ -1157,6 +1312,7 @@ async function deUsuario(userId) {
         tema: proyecto.tema,
         carrera: proyecto.carrera,
         universidad: proyecto.universidad,
+        norma: normaDelProyecto(proyecto),
         plantilla: proyecto.plantillaAt
           ? { nombre: proyecto.plantillaNombre, desde: proyecto.plantillaAt }
           : null,
@@ -1187,6 +1343,10 @@ module.exports = {
   armarBibtex,
   revisarEvidencia,
   guardarAnalisis,
+  normaDelProyecto,
+  normasDisponibles,
+  cambiarNorma,
+  enlaceDelWord,
   recibirAnalisis,
   leerAnalisis,
   consultarAnalisis,

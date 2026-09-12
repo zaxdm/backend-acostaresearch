@@ -8,6 +8,8 @@ const { ok } = require('../../shared/http/apiResponse');
 const { ForbiddenError, ValidationError } = require('../../shared/errors/AppError');
 const licenseService = require('../licensing/license.service');
 const projectService = require('./project.service');
+const { normaSchema } = require('./project.schema');
+const descarga = require('./project.descarga');
 const { PlantillaNoValida, MAXIMO_BYTES } = require('./project.plantilla');
 
 const router = Router();
@@ -38,11 +40,88 @@ function decodificar(cabecera) {
  * más rápida de acabar enseñando la tesis de otro — y aquí, además de fuentes,
  * hay lo que alguien ha decidido sobre su propia investigación.
  */
+/**
+ * El Word desde el enlace que da el conector.
+ *
+ * Es la ÚNICA ruta de proyectos sin sesión, y por eso va antes del
+ * `authenticate`. Lo que la protege es el propio enlace: firmado, con dueño y
+ * proyecto dentro, y media hora de vida (ver `project.descarga`). Un enlace que
+ * no vale responde lo mismo que uno caducado, para no dar pistas de por qué.
+ */
+router.get(
+  '/descarga/:token',
+  asyncHandler(async (req, res) => {
+    let destino;
+    try {
+      destino = descarga.verificar(req.params.token);
+    } catch {
+      return res
+        .status(404)
+        .type('text/plain; charset=utf-8')
+        .send(
+          'Este enlace ya no sirve: caduca a la media hora. Pídele a Claude uno nuevo, o ' +
+            'descarga tu tesis desde tu perfil en acostaresearch.com.',
+        );
+    }
+
+    const documento = await projectService.armarWord(destino.userId, destino.productCode);
+    if (!documento) {
+      return res
+        .status(404)
+        .type('text/plain; charset=utf-8')
+        .send('Todavía no hay ningún capítulo escrito en esta tesis.');
+    }
+
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    );
+    res.setHeader('Content-Disposition', `attachment; filename="${documento.nombreArchivo}"`);
+    // Que el enlace no se quede en una caché ni viaje a otra página como origen.
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    return res.send(documento.buffer);
+  }),
+);
+
 router.use(authenticate);
 
 router.get(
   '/',
   asyncHandler(async (req, res) => ok(res, await projectService.deUsuario(req.user.id))),
+);
+
+/** Las normas de citas que se pueden elegir. Las mismas que ofrece el conector. */
+router.get(
+  '/normas',
+  asyncHandler(async (req, res) => ok(res, projectService.normasDisponibles())),
+);
+
+/** Cambia la norma de citas del proyecto. Se aplica en la próxima descarga. */
+router.patch(
+  '/:productCode/norma',
+  asyncHandler(async (req, res) => {
+    const datos = normaSchema.safeParse(req.body ?? {});
+    if (!datos.success) {
+      throw new ValidationError(datos.error.issues[0]?.message ?? 'Esa norma de citas no está disponible.');
+    }
+
+    const norma = await projectService.cambiarNorma({
+      userId: req.user.id,
+      productCode: req.params.productCode,
+      ...datos.data,
+    });
+
+    if (!norma) {
+      return res.status(404).json({
+        success: false,
+        message:
+          'Todavía no hay ningún proyecto de este método. Empieza a trabajar con Claude y vuelve.',
+      });
+    }
+
+    return ok(res, norma, { message: `Norma de citas: ${norma.nombre}.` });
+  }),
 );
 
 /**

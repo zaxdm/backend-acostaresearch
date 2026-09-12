@@ -464,6 +464,12 @@ function porClaves(claves, ownerUserId = null) {
       pages: true,
       doi: true,
       url: true,
+      // De dónde vino, para enlazar la cita con su ítem de Zotero en el Word.
+      // Ver `urisDeZotero` en `project.zotero-campos`.
+      sourceRef: true,
+      ownerUserId: true,
+      zoteroKey: true,
+      origin: true,
     },
   });
 }

@@ -327,6 +327,8 @@ async function buscarParaLicencia({ tema, productCode, ownerUserId = null, cuant
      * que pagó, y además le impide saber cuál eligió él y cuál no.
      */
     propia: fuente.ownerUserId !== null,
+    /** De su propio Zotero conectado: se enseña aparte de lo que subió por export o DOI. */
+    deZotero: fuente.ownerUserId !== null && fuente.origin === 'ZOTERO',
   }));
 }
 

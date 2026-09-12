@@ -17,6 +17,14 @@
  * universidad tiene la suya y adivinar mal es peor que no intentarlo—: lo que
  * se entrega es el contenido bien estructurado, con los títulos marcados como
  * títulos de verdad, para que al aplicar la plantilla se coloque solo.
+ *
+ * SOBRE LAS CITAS
+ * ---------------
+ * Llegan ya resueltas en la norma del proyecto (`project.csl`): el texto trae
+ * un hueco donde va cada una, y aquí se decide cómo se pone. En las normas de
+ * notas, un número volado y la cita en una nota al pie; en las demás, dentro
+ * del texto con su formato. Si el tesista conectó Zotero, cada cita va además
+ * envuelta en un campo de Zotero (`project.zotero-campos`).
  */
 
 const {
@@ -30,12 +38,77 @@ const {
   Footer,
   TableOfContents,
   StyleLevel,
+  FootnoteReferenceRun,
+  Tab,
+  TabStopType,
 } = require('docx');
+
+const { HUECO_RE } = require('./project.citas');
+const zoteroCampos = require('./project.zotero-campos');
 
 /** Interlineado doble, en las unidades de OOXML (240 = sencillo). */
 const DOBLE = 480;
 /** Sangría de primera línea: media pulgada, en twips. */
 const SANGRIA = 720;
+
+/** Un tramo con formato, como los devuelve `project.csl`, hecho corrida de Word. */
+function comoRun(tramo) {
+  return new TextRun({
+    text: tramo.texto,
+    italics: Boolean(tramo.cursiva),
+    bold: Boolean(tramo.negrita),
+    superScript: Boolean(tramo.superindice),
+    subScript: Boolean(tramo.subindice),
+    smallCaps: Boolean(tramo.versalitas),
+  });
+}
+
+/** Las corridas de una cita, envueltas en las marcas de campo si hay Zotero. */
+function conCampo(tramos, clave, zotero) {
+  const corridas = tramos.map(comoRun);
+  if (!zotero) return corridas;
+  return [
+    new TextRun(zoteroCampos.marcaInicio(clave)),
+    ...corridas,
+    new TextRun(zoteroCampos.marcaFin(clave)),
+  ];
+}
+
+/**
+ * Una línea de texto hecha corridas, con sus citas puestas.
+ *
+ * Sin citas resueltas —una llamada antigua, o el APA de respaldo— la línea sale
+ * tal cual, en una sola corrida, como siempre.
+ */
+function corridas(texto, contexto) {
+  const { citas = null, notas = null, zotero = false } = contexto ?? {};
+  if (!citas) return [new TextRun(texto)];
+
+  const hijos = [];
+  let desde = 0;
+
+  for (const hueco of texto.matchAll(HUECO_RE)) {
+    if (hueco.index > desde) hijos.push(new TextRun(texto.slice(desde, hueco.index)));
+    desde = hueco.index + hueco[0].length;
+
+    const cita = citas.get(Number(hueco[1]));
+    if (!cita) continue;
+
+    for (const tramo of cita.antes ?? []) hijos.push(comoRun(tramo));
+
+    if (cita.nota && notas) {
+      hijos.push(new FootnoteReferenceRun(cita.nota));
+      notas[cita.nota] = {
+        children: [new Paragraph({ children: conCampo(cita.tramos, hueco[1], zotero) })],
+      };
+    } else {
+      hijos.push(...conCampo(cita.tramos, hueco[1], zotero));
+    }
+  }
+
+  if (desde < texto.length) hijos.push(new TextRun(texto.slice(desde)));
+  return hijos.length > 0 ? hijos : [new TextRun('')];
+}
 
 /**
  * Convierte el texto del capítulo en párrafos.
@@ -45,7 +118,7 @@ const SANGRIA = 720;
  * propósito: cuanto más se interpreta, más formas hay de estropear el texto de
  * alguien, y aquí el original es lo único que no se puede rehacer.
  */
-function comoParrafos(texto) {
+function comoParrafos(texto, contexto = {}) {
   const parrafos = [];
 
   for (const bruto of texto.split(/\n{2,}/)) {
@@ -55,9 +128,14 @@ function comoParrafos(texto) {
     const encabezado = bloque.match(/^(#{1,4})\s+(.*)$/);
     if (encabezado) {
       const nivel = encabezado[1].length;
+      // Una cita en un título no se pone como nota ni como campo: se deja su
+      // texto, que es lo único que cabe en un encabezado.
+      const titulo = encabezado[2]
+        .trim()
+        .replace(HUECO_RE, (_, n) => contexto.citas?.get(Number(n))?.texto ?? '');
       parrafos.push(
         new Paragraph({
-          text: encabezado[2].trim(),
+          text: titulo,
           heading:
             nivel === 1
               ? HeadingLevel.HEADING_2
@@ -80,7 +158,7 @@ function comoParrafos(texto) {
 
       parrafos.push(
         new Paragraph({
-          children: [new TextRun(contenido.replace(/^\s*[-*•]\s+/, '• '))],
+          children: corridas(contenido.replace(/^\s*[-*•]\s+/, '• '), contexto),
           alignment: esLista ? AlignmentType.LEFT : AlignmentType.JUSTIFIED,
           spacing: { line: DOBLE },
           indent: esLista ? { left: SANGRIA } : { firstLine: SANGRIA },
@@ -113,11 +191,79 @@ function portada({ tema, carrera, universidad, nombre }) {
 }
 
 /**
+ * Los párrafos de la lista de referencias.
+ *
+ * Admite las dos formas en que llega. La de siempre —una lista de entradas APA
+ * en tramos o en texto— y la de la norma, que trae además cómo se maqueta:
+ * sangría francesa, o la etiqueta «[1]» alineada a la izquierda como piden las
+ * numéricas.
+ *
+ * La segunda línea y siguientes van sangradas y la primera no. En OOXML se
+ * consigue sangrando el párrafo entero y devolviendo la primera línea con un
+ * valor negativo; con etiqueta, una tabulación en esa misma sangría hace que el
+ * texto de todas las líneas empiece a la misma altura.
+ */
+function referenciasDelDocumento(referencias, zotero) {
+  if (Array.isArray(referencias)) {
+    return {
+      titulo: 'Referencias',
+      parrafos: referencias.map(
+        (entrada) =>
+          new Paragraph({
+            // Cada entrada llega partida en tramos porque APA pone en cursiva
+            // el continente -la revista y su volumen, o el título si la obra se
+            // sostiene sola- y una cursiva no cabe dentro de una cadena. Se
+            // acepta también texto pelado por si alguien llama a esto con la
+            // lista en plano.
+            children:
+              typeof entrada === 'string'
+                ? [new TextRun(entrada)]
+                : entrada.tramos.map(
+                    (tramo) => new TextRun({ text: tramo.texto, italics: Boolean(tramo.cursiva) }),
+                  ),
+            spacing: { line: DOBLE },
+            indent: { left: SANGRIA, hanging: SANGRIA },
+          }),
+      ),
+    };
+  }
+
+  const entradas = referencias?.entradas ?? [];
+  const alineada = Boolean(referencias?.etiquetaAlineada);
+  const francesa = alineada || referencias?.sangriaFrancesa !== false;
+
+  const parrafos = entradas.map((entrada, i) => {
+    const hijos = [];
+    // La bibliografía entera es UN campo de Zotero: empieza en la primera
+    // entrada y acaba en la última.
+    if (zotero && i === 0) hijos.push(new TextRun(zoteroCampos.marcaInicio('BIB')));
+    if (alineada && entrada.etiqueta?.length) {
+      hijos.push(...entrada.etiqueta.map(comoRun), new TextRun({ children: [new Tab()] }));
+    }
+    hijos.push(...entrada.tramos.map(comoRun));
+    if (zotero && i === entradas.length - 1) hijos.push(new TextRun(zoteroCampos.marcaFin('BIB')));
+
+    return new Paragraph({
+      children: hijos,
+      spacing: { line: DOBLE },
+      ...(francesa ? { indent: { left: SANGRIA, hanging: SANGRIA } } : {}),
+      ...(alineada ? { tabStops: [{ type: TabStopType.LEFT, position: SANGRIA }] } : {}),
+    });
+  });
+
+  return { titulo: referencias?.titulo ?? 'Referencias', parrafos };
+}
+
+/**
  * Arma el documento.
  *
  * `capitulos` llega en el orden del método y solo con los que tienen texto: un
  * índice con capítulos vacíos haría creer que el documento está más avanzado de
  * lo que está.
+ *
+ * `citas` es lo que va en cada hueco del texto (ver `project.csl`); sin ella, el
+ * texto sale como llega. `zotero`, cuando el tesista conectó el suyo, trae las
+ * preferencias del documento y el código de campo de cada cita.
  */
 async function armar({
   tema,
@@ -127,7 +273,12 @@ async function armar({
   capitulos,
   referencias = [],
   estilos = null,
+  citas = null,
+  zotero = null,
 }) {
+  const notas = {};
+  const contexto = { citas, notas, zotero: Boolean(zotero) };
+
   const cuerpo = [
     ...portada({ tema, carrera, universidad, nombre }),
     new Paragraph({ text: '', pageBreakBefore: true }),
@@ -150,44 +301,20 @@ async function armar({
         pageBreakBefore: true,
         spacing: { after: 240 },
       }),
-      ...comoParrafos(capitulo.texto),
+      ...comoParrafos(capitulo.texto, contexto),
     );
   }
 
-  /**
-   * Referencias, con sangría francesa.
-   *
-   * La segunda línea y siguientes van sangradas y la primera no: es lo que pide
-   * APA y lo que un jurado busca de un vistazo para saber si la lista está bien
-   * hecha. En OOXML se consigue sangrando el párrafo entero y devolviendo la
-   * primera línea con un valor negativo.
-   */
-  if (referencias.length > 0) {
+  const lista = referenciasDelDocumento(referencias, zotero);
+  if (lista.parrafos.length > 0) {
     cuerpo.push(
       new Paragraph({
-        text: 'Referencias',
+        text: lista.titulo,
         heading: HeadingLevel.HEADING_1,
         pageBreakBefore: true,
         spacing: { after: 240 },
       }),
-      ...referencias.map(
-        (entrada) =>
-          new Paragraph({
-            // Cada entrada llega partida en tramos porque APA pone en cursiva
-            // el continente -la revista y su volumen, o el título si la obra se
-            // sostiene sola- y una cursiva no cabe dentro de una cadena. Se
-            // acepta también texto pelado por si alguien llama a esto con la
-            // lista en plano.
-            children:
-              typeof entrada === 'string'
-                ? [new TextRun(entrada)]
-                : entrada.tramos.map(
-                    (tramo) => new TextRun({ text: tramo.texto, italics: Boolean(tramo.cursiva) }),
-                  ),
-            spacing: { line: DOBLE },
-            indent: { left: SANGRIA, hanging: SANGRIA },
-          }),
-      ),
+      ...lista.parrafos,
     );
   }
 
@@ -203,6 +330,8 @@ async function armar({
   const documento = new Document({
     creator: 'Acosta | IA & Research',
     title: tema ?? 'Tesis',
+    ...(Object.keys(notas).length > 0 ? { footnotes: notas } : {}),
+    ...(zotero ? { customProperties: zotero.preferencias } : {}),
     ...(estilos ? { externalStyles: estilos } : {}),
     ...(estilos ? {} : { styles: {
       default: {
@@ -245,7 +374,8 @@ async function armar({
     ],
   });
 
-  return Packer.toBuffer(documento);
+  const buffer = await Packer.toBuffer(documento);
+  return zotero ? zoteroCampos.coser(buffer, zotero.codigos) : buffer;
 }
 
 /**
@@ -260,7 +390,7 @@ function nombreDeArchivo(tema) {
     .normalize('NFD')
     // El rango de las tildes, escrito con códigos y no con los signos: escritos
     // tal cual son invisibles en el editor y cualquiera los borra sin verlos.
-    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[̀-ͯ]/g, '')
     .replace(/[^A-Za-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 60)

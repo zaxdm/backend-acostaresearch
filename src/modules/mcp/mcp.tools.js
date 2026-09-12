@@ -12,6 +12,7 @@ const prisma = require('../../lib/prisma');
 const referenceService = require('../references/reference.service');
 const propiasService = require('../references/propias.service');
 const projectService = require('../projects/project.service');
+const normas = require('../projects/project.normas');
 const etapas = require('../projects/project.etapas');
 const bloquesDeAnalisis = require('../projects/project.bloques');
 
@@ -198,6 +199,24 @@ const ESQUEMA_GUARDAR_AVANCE = fromJsonSchema({
     },
     carrera: { type: 'string', description: 'La carrera del tesista.' },
     universidad: { type: 'string', description: 'Su universidad.' },
+    estiloCitas: {
+      type: 'string',
+      enum: normas.IDS_DE_NORMA,
+      description:
+        'La norma de citas que exige su universidad o su asesor. El Word sale con las citas ' +
+        'y las referencias ya escritas en ella, con notas al pie si la norma las pide. ' +
+        'PREGÚNTASELA antes de que descargue su Word si el proyecto no la tiene elegida, y ' +
+        'no la supongas por la universidad. Las que hay: ' +
+        normas.NORMAS.map((n) => `${n.id} (${n.nombre})`).join('; ') +
+        '.',
+    },
+    idiomaCitas: {
+      type: 'string',
+      enum: normas.IDS_DE_IDIOMA,
+      description:
+        'Idioma de las citas: decide «y» o «and», «s. f.» o «n.d.». Si no se dice, español ' +
+        '(es-ES). Solo cámbialo si escribe la tesis en inglés o si se lo piden.',
+    },
     datos: {
       type: 'object',
       description:
@@ -676,6 +695,12 @@ function construirServidor(licencia) {
         if (entrada.tema) guardado.push('el tema');
         if (entrada.carrera) guardado.push('la carrera');
         if (entrada.universidad) guardado.push('la universidad');
+        if (entrada.estiloCitas) {
+          guardado.push(`la norma de citas (${normas.normaDe(entrada.estiloCitas).nombre})`);
+        }
+        if (entrada.idiomaCitas) {
+          guardado.push(`el idioma de las citas (${normas.idiomaDe(entrada.idiomaCitas).nombre})`);
+        }
         if (etapa) {
           guardado.push(
             `el capítulo ${etapa.skillCode}` +
@@ -1454,7 +1479,13 @@ function construirServidor(licencia) {
           // De dónde salió. Va en cada ficha y no en un encabezado porque las
           // dos procedencias se mezclan en la misma lista, y el tesista tiene
           // derecho a distinguir las que eligió él de las que le pusimos.
-          lineas.push(f.propia ? '   [de tu biblioteca]' : '   [biblioteca de Acosta · curada]');
+          lineas.push(
+            f.deZotero
+              ? '   [de tu Zotero]'
+              : f.propia
+                ? '   [de tu biblioteca]'
+                : '   [biblioteca de Acosta · curada]',
+          );
           return lineas.join('\n');
         });
 
@@ -1491,10 +1522,17 @@ function construirServidor(licencia) {
             'distingue.\n\n' +
             'CÓMO SE CITAN. Al redactar el capítulo, escribe la clave entre corchetes donde ' +
             'vaya la cita —así: «…afecta al rendimiento [AR97D22F86].»— y guarda el capítulo ' +
-            'con esa marca puesta. Al armar el Word, el servidor la cambia por la cita en ' +
-            'APA y añade la fuente a la lista de Referencias, las dos cosas sacadas de la ' +
-            'misma ficha. No montes tú la bibliografía: sale sola, y así no puede discrepar ' +
-            'de lo que dice el texto.\n\n' +
+            'con esa marca puesta. Al armar el Word, el servidor la cambia por la cita EN LA ' +
+            'NORMA DEL PROYECTO —APA, IEEE, Vancouver, Chicago…— y añade la fuente a la lista ' +
+            'de referencias, las dos cosas sacadas de la misma ficha. ' +
+            'Si el autor va en la frase, añade «:n» —«[AR97D22F86:n] sostienen que…»— y el ' +
+            'servidor pondrá «García et al. (2024) sostienen…» o «García et al. [3] sostienen…» ' +
+            'según la norma; NO escribas tú el nombre delante. Para una cita textual, la ' +
+            'página: «[AR97D22F86:p. 45]». Varias fuentes seguidas, una marca detrás de otra: ' +
+            '«[AR97D22F86][AR11112222]». ' +
+            'No montes tú la bibliografía ni el Word: salen solos, y así no pueden discrepar ' +
+            'de lo que dice el texto. Cuando el tesista quiera su documento, dale el enlace ' +
+            'de "enlace_del_word".\n\n' +
             'Al hablar con el tesista, cítalas en APA normal; la clave es para el texto que ' +
             'guardes. Y NO TRADUZCAS LOS TÍTULOS: en la bibliografía va el original, en el ' +
             'idioma en que se publicó. Un título traducido no lo encuentra nadie al ' +
@@ -1755,6 +1793,52 @@ function construirServidor(licencia) {
         `${lineas.join(N)}${N}${N}` +
           'Ya se pueden citar: búscalas con "buscar_fuentes" cuando redactes, y usa la clave ' +
           'AR que te devuelva. NO escribas la cita a mano.',
+      );
+    },
+  );
+
+  // ── El Word, desde la conversación ───────────────────────────────────────
+  //
+  // Sin esto, quien terminaba un capítulo hablando con Claude no tenía el Word
+  // a mano, y Claude acababa armándoselo por su cuenta: sin la norma del
+  // proyecto, sin la bibliografía de las fichas y sin campos de Zotero.
+  server.registerTool(
+    'enlace_del_word',
+    {
+      title: 'Enlace para descargar la tesis en Word',
+      description:
+        'Da un enlace para descargar la tesis en Word, armada por el servidor con todo lo ' +
+        'guardado: portada, índice, capítulos en orden, y las citas y las referencias ya ' +
+        'escritas en la norma del proyecto —en notas al pie si la norma lo pide, y ' +
+        'enlazadas a Zotero si el tesista lo conectó—. ' +
+        'ÚSALA cuando pida su Word, su documento o descargar, y después de guardar un ' +
+        'capítulo. NUNCA ARMES TÚ EL WORD NI ESCRIBAS TÚ LA BIBLIOGRAFÍA: el tuyo no ' +
+        'llevaría la norma ni los campos de Zotero, y podría no coincidir con las fichas. ' +
+        'El enlace caduca a la media hora; si ya pasó, pide otro.',
+      inputSchema: fromJsonSchema({ type: 'object', properties: {}, additionalProperties: false }),
+    },
+    async () => {
+      await licenseService.recordUsage({ licenseId: licencia.id, tool: 'enlace_del_word' });
+
+      const resultado = await projectService.enlaceDelWord(licencia.user.id, licencia.productCode);
+      if (!resultado) {
+        return texto(
+          'Todavía no hay ningún capítulo guardado, así que no hay Word que descargar. ' +
+            'Guarda primero lo redactado con "guardar_capitulo".',
+        );
+      }
+
+      const { url, minutos, norma } = resultado;
+      return texto(
+        `Enlace para descargar la tesis en Word (caduca en ${minutos} minutos):${N}${url}${N}${N}` +
+          `Las citas y las referencias salen en ${norma.nombre}` +
+          (norma.elegida ? `.${N}${N}` : `, que es la de por defecto: nadie ha elegido otra.${N}${N}`) +
+          'DÁSELO AL TESISTA TAL CUAL para que lo abra. ' +
+          (norma.elegida
+            ? ''
+            : 'Si su universidad pide otra norma, pregúntale cuál y guárdala con ' +
+              '"guardar_avance" (estiloCitas) antes de que lo descargue. ') +
+          'NO le prepares tú otro documento.',
       );
     },
   );

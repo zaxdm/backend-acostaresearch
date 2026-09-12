@@ -2,6 +2,8 @@
 
 const { z } = require('zod');
 
+const normas = require('./project.normas');
+
 const ESTADOS = ['PENDIENTE', 'EN_CURSO', 'LISTO'];
 
 /**
@@ -31,6 +33,23 @@ const guardarAvanceSchema = z.object({
   tema: z.string().trim().max(500).optional(),
   carrera: z.string().trim().max(160).optional(),
   universidad: z.string().trim().max(160).optional(),
+  /**
+   * La norma de citas del Word, de una lista cerrada.
+   *
+   * Cerrada porque cada una tiene detrás un archivo de estilo: una norma que el
+   * asistente se inventara —«APA 6», «Vancouver modificado»— no tendría con qué
+   * aplicarse, y el Word saldría en APA sin que nadie supiera por qué.
+   */
+  estiloCitas: z
+    .enum(normas.IDS_DE_NORMA, {
+      message: `La norma de citas tiene que ser una de estas: ${normas.IDS_DE_NORMA.join(', ')}.`,
+    })
+    .optional(),
+  idiomaCitas: z
+    .enum(normas.IDS_DE_IDIOMA, {
+      message: `El idioma de las citas tiene que ser uno de estos: ${normas.IDS_DE_IDIOMA.join(', ')}.`,
+    })
+    .optional(),
   /**
    * Lo mismo que el resumen, pero por campos.
    *
@@ -71,4 +90,16 @@ const guardarCapituloSchema = z.object({
   anadir: z.boolean().optional(),
 });
 
-module.exports = { guardarAvanceSchema, guardarCapituloSchema, ESTADOS, MAXIMO_POR_LLAMADA };
+/** Lo que manda el panel al cambiar la norma. El idioma puede no venir: se queda el que había. */
+const normaSchema = z.object({
+  estiloCitas: z.enum(normas.IDS_DE_NORMA, { message: 'Esa norma de citas no está disponible.' }),
+  idiomaCitas: z.enum(normas.IDS_DE_IDIOMA, { message: 'Ese idioma no está disponible.' }).optional(),
+});
+
+module.exports = {
+  guardarAvanceSchema,
+  guardarCapituloSchema,
+  normaSchema,
+  ESTADOS,
+  MAXIMO_POR_LLAMADA,
+};

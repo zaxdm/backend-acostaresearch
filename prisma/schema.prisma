@@ -1166,6 +1166,12 @@ model Project {
   carrera     String? @db.VarChar(160)
   universidad String? @db.VarChar(160)
 
+  /// La norma de citas del Word: uno de los quince estilos de Zotero y el
+  /// idioma de las citas. Nulos = APA 7 en español, que es como salía el Word
+  /// antes de que se pudiera elegir. Ver `project.normas`.
+  estiloCitas String? @db.VarChar(64)
+  idiomaCitas String? @db.VarChar(8)
+
   /// Cuándo subió la plantilla de su facultad, y cómo se llamaba el archivo.
   /// La hoja de estilos vive en disco; aquí solo la marca de que existe.
   plantillaAt     DateTime?

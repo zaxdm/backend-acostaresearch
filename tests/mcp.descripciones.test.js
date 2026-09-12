@@ -122,8 +122,10 @@ test('guardar_capitulo sigue hablando solo de capítulos', () => {
 
 // ── Que no se haya movido nada más ─────────────────────────────────────────
 
-test('siguen registradas las mismas 16 herramientas', () => {
-  assert.equal(registradas.size, 16);
+test('siguen registradas las mismas 17 herramientas', () => {
+  // 17 desde que existe «enlace_del_word»: el Word lo arma el servidor, en la
+  // norma del proyecto, y Claude da el enlace en vez de fabricarlo él.
+  assert.equal(registradas.size, 17);
   for (const nombre of [
     'listar_capitulos',
     'mi_proyecto',
@@ -131,6 +133,7 @@ test('siguen registradas las mismas 16 herramientas', () => {
     'ver_capitulo',
     'ver_analisis',
     'redactar',
+    'enlace_del_word',
   ]) {
     assert.ok(registradas.has(nombre), `falta ${nombre}`);
   }

@@ -10,6 +10,8 @@ const proyectoSelect = {
   tema: true,
   carrera: true,
   universidad: true,
+  estiloCitas: true,
+  idiomaCitas: true,
   createdAt: true,
   updatedAt: true,
 };
@@ -51,7 +53,7 @@ function buscar(userId, productCode) {
  */
 async function asegurar(userId, productCode, cambios = {}) {
   const limpio = {};
-  for (const campo of ['tema', 'carrera', 'universidad']) {
+  for (const campo of ['tema', 'carrera', 'universidad', 'estiloCitas', 'idiomaCitas']) {
     if (cambios[campo] !== undefined && cambios[campo] !== null) limpio[campo] = cambios[campo];
   }
 

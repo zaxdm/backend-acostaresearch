@@ -19,8 +19,41 @@
  * la capa de evidencia, y es otra cosa.
  */
 
-/** La marca que escribe el asistente. Ocho caracteres tras «AR». */
-const MARCA = /\[(AR[0-9A-F]{8})\]/g;
+/**
+ * La marca que escribe el asistente. Ocho caracteres tras «AR».
+ *
+ * Detrás de dos puntos puede llevar cómo se cita: «[AR97D22F86:n]» es narrativa
+ * —«Braun y Clarke (2006) proponen»— y «[AR97D22F86:p. 45]» lleva la página.
+ * El primer grupo sigue siendo la clave, así que quien solo busca claves
+ * —la evidencia, la auditoría, el BibTeX— no nota la diferencia.
+ */
+const MARCA = /\[(AR[0-9A-F]{8})(?::([^\]\n]{1,40}))?\]/g;
+
+/**
+ * Qué dicen los dos puntos de una marca.
+ *
+ * «n» o «narrativa» sueltos, y la página como «p. 45», «pp. 45-46» o «pág. 45».
+ * Lo que no se entiende se ignora: una marca con un añadido raro se cita igual,
+ * que es mejor que no citarla.
+ */
+function modificadoresDe(bruto) {
+  const texto = String(bruto ?? '').trim();
+  if (texto === '') return { narrativa: false, localizador: null };
+
+  return {
+    narrativa: /(^|[\s,;])n(arrativa)?(?=$|[\s,;])/i.test(texto),
+    localizador: (texto.match(/p{1,2}(?:[áa]gs?)?\.?\s*(\d[\d\u2013-]*)/i) || [])[1] ?? null,
+  };
+}
+
+/**
+ * El hueco que deja una cita en el texto hasta que el Word la pone.
+ *
+ * Con corchetes que no escribe nadie, para que no se pueda confundir con texto
+ * del tesista. Ver `project.csl` y `project.docx`.
+ */
+const hueco = (n) => `⟦C${n}⟧`;
+const HUECO_RE = /⟦C(\d+)⟧/g;
 
 /**
  * Los apellidos, en el formato que pide APA para la cita en el texto.
@@ -47,6 +80,21 @@ function citaEnElTexto(fuente) {
   const quien = autoresParaCita(fuente.authors) ?? 'Anónimo';
   const cuando = fuente.year ?? 's. f.';
   return `(${quien}, ${cuando})`;
+}
+
+/**
+ * La cita APA de respaldo, con lo que digan los dos puntos de la marca.
+ *
+ * Es la que sale cuando la norma del proyecto no se puede aplicar: tiene que
+ * entender las mismas marcas, o una narrativa saldría con el nombre repetido.
+ */
+function citaConModificadores(fuente, bruto) {
+  const { narrativa, localizador } = modificadoresDe(bruto);
+  const quien = autoresParaCita(fuente.authors) ?? 'Anónimo';
+  const cuando = fuente.year ?? 's. f.';
+  const pagina = localizador ? `, p. ${localizador}` : '';
+
+  return narrativa ? `${quien} (${cuando}${pagina})` : `(${quien}, ${cuando}${pagina})`;
 }
 
 /**
@@ -175,14 +223,14 @@ function resolver(texto, porClave) {
   const usadas = new Map();
   const perdidas = new Set();
 
-  const resuelto = texto.replace(MARCA, (original, clave) => {
+  const resuelto = texto.replace(MARCA, (original, clave, modificadores) => {
     const fuente = porClave.get(clave);
     if (!fuente) {
       perdidas.add(clave);
       return '[CITA SIN LOCALIZAR: revísala]';
     }
     usadas.set(clave, fuente);
-    return citaEnElTexto(fuente);
+    return citaConModificadores(fuente, modificadores);
   });
 
   return { texto: resuelto, usadas, perdidas: [...perdidas] };
@@ -214,6 +262,10 @@ function bibliografiaConCursivas(fuentes) {
 }
 
 module.exports = {
+  hueco,
+  HUECO_RE,
+  modificadoresDe,
+  citaConModificadores,
   MARCA,
   clavesDe,
   resolver,

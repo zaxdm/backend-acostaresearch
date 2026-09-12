@@ -62,6 +62,14 @@ function resumenDelIndice(indice) {
 }
 
 /** Autores en formato de cita, igual que los del fondo de la casa. */
+/** «45-62» a partir de las dos puntas que da OpenAlex. */
+function paginas(biblio) {
+  const desde = biblio?.first_page ?? null;
+  const hasta = biblio?.last_page ?? null;
+  if (desde && hasta) return desde === hasta ? String(desde) : `${desde}-${hasta}`;
+  return desde ? String(desde) : null;
+}
+
 function autores(authorships = []) {
   return authorships
     .slice(0, 8)
@@ -194,6 +202,12 @@ async function porDoi(crudo) {
     authors: autores(w.authorships) || '',
     year: w.publication_year ?? null,
     source: w.primary_location?.source?.display_name ?? null,
+    // OpenAlex los agrupa en `biblio`, y los da como texto. Vienen vacíos a
+    // menudo —sobre todo en lo recién publicado—; lo que falte se completa
+    // después contra Crossref, que es donde el editor los depositó.
+    volume: w.biblio?.volume ?? null,
+    issue: w.biblio?.issue ?? null,
+    pages: paginas(w.biblio),
     url: w.best_oa_location?.pdf_url ?? w.doi ?? null,
     abstract: resumenDelIndice(w.abstract_inverted_index),
     /** Las asigna un clasificador, no el autor. Sirven para buscar, no para citar. */

@@ -152,6 +152,11 @@ function aFila(item, notas = []) {
     authors: recortar(autores(data.creators), 500) ?? '',
     year: anio(data.date),
     source: recortar(fuente(data), 300),
+    // Zotero los trae en la ficha desde siempre; hasta hoy se descartaban, y
+    // por eso ninguna referencia de revista salía completa en APA.
+    volume: recortar(data.volume, 40),
+    issue: recortar(data.issue, 40),
+    pages: recortar(data.pages, 40),
     doi: recortar(doi(data), 200),
     url: recortar(data.url, 500),
     abstract: resumen || null,

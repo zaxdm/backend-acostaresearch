@@ -49,13 +49,48 @@ function citaEnElTexto(fuente) {
   return `(${quien}, ${cuando})`;
 }
 
+/**
+ * Los datos de la publicación: revista, volumen, número y páginas.
+ *
+ * APA 7 los pide así, y en este orden exacto:
+ *
+ *   Revista de Educación, 15(2), 45-62.
+ *
+ * El número va PEGADO al volumen y entre paréntesis, sin espacio, y las páginas
+ * detrás de una coma. Es de lo primero que mira un asesor en la lista de
+ * referencias, y hasta hoy aquí solo salía el nombre de la revista.
+ *
+ * Cada pieza puede faltar y la entrada tiene que seguir leyéndose bien: un
+ * capítulo de libro no tiene volumen, un artículo electrónico no tiene páginas
+ * sino número de artículo, y de lo que se importó antes de que existieran estas
+ * columnas no hay ninguno de los tres. Por eso se arma pieza a pieza en vez de
+ * con una plantilla con huecos.
+ */
+function datosDeLaPublicacion(fuente) {
+  if (!fuente.source) return null;
+
+  let texto = String(fuente.source).trim().replace(/[.,]\s*$/, '');
+
+  if (fuente.volume) {
+    texto += `, ${fuente.volume}`;
+    if (fuente.issue) texto += `(${fuente.issue})`;
+  }
+
+  if (fuente.pages) texto += `, ${fuente.pages}`;
+
+  return `${texto}.`;
+}
+
 /** La entrada completa de la lista de referencias, en APA. */
 function entradaDeBibliografia(fuente) {
   const partes = [];
   partes.push(fuente.authors || '(Autor no consignado)');
   partes.push(`(${fuente.year ?? 's. f.'}).`);
   partes.push(`${fuente.title}.`);
-  if (fuente.source) partes.push(`${fuente.source}.`);
+
+  const publicacion = datosDeLaPublicacion(fuente);
+  if (publicacion) partes.push(publicacion);
+
   if (fuente.doi) partes.push(`https://doi.org/${fuente.doi}`);
   else if (fuente.url) partes.push(fuente.url);
   return partes.join(' ');
@@ -114,5 +149,6 @@ module.exports = {
   bibliografia,
   citaEnElTexto,
   entradaDeBibliografia,
+  datosDeLaPublicacion,
   autoresParaCita,
 };

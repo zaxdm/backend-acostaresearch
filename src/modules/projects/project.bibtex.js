@@ -144,6 +144,12 @@ function entrada(fuente) {
   añadir('title', `{${escapar(fuente.title)}}`);
   if (fuente.year) añadir('year', String(fuente.year));
   añadir(campoDeLaFuente(tipo), escapar(fuente.source));
+  // En BibTeX el número de la revista se llama 'number', no 'issue', y las
+  // páginas van con doble guion: BibTeX lo compone como el guion largo que
+  // pide la tipografía de un rango.
+  añadir('volume', escapar(fuente.volume));
+  añadir('number', escapar(fuente.issue));
+  añadir('pages', escapar(String(fuente.pages ?? '').replace(/-+/, '--')));
   añadir('doi', escapar(fuente.doi));
   // Sin DOI se da la URL. Con DOI no: el DOI ya es la dirección estable y las
   // dos juntas hacen que casi todos los estilos impriman el enlace dos veces.

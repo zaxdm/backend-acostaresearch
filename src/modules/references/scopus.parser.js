@@ -107,6 +107,13 @@ const COLUMNAS_CSV = {
   keywords: ['author keywords', 'index keywords', 'keywords', 'de', 'id'],
   eid: ['eid', 'ut', 'accession number'],
   itemType: ['document type', 'dt'],
+  // Scopus escribe «Page start»/«Page end»; Web of Science, «Beginning
+  // Page»/«Ending Page» o «BP»/«EP». Alguno trae ya el rango en «Pages».
+  volume: ['volume', 'vl'],
+  issue: ['issue', 'is'],
+  pageStart: ['page start', 'beginning page', 'start page', 'bp', 'sp'],
+  pageEnd: ['page end', 'ending page', 'ep'],
+  pages: ['pages', 'page range'],
 };
 
 function indicesDeCabecera(cabecera) {
@@ -155,6 +162,11 @@ function filasAFichas(filas) {
       .join('; '),
     eid: de(fila, indices.eid),
     itemType: de(fila, indices.itemType),
+    volume: de(fila, indices.volume),
+    issue: de(fila, indices.issue),
+    pages: de(fila, indices.pages),
+    pageStart: de(fila, indices.pageStart),
+    pageEnd: de(fila, indices.pageEnd),
   }));
 }
 
@@ -179,6 +191,10 @@ const RIS = {
   N2: 'abstract',
   KW: 'keywords',
   TY: 'itemType',
+  VL: 'volume',
+  IS: 'issue',
+  SP: 'pageStart',
+  EP: 'pageEnd',
 };
 
 function desdeRis(texto) {
@@ -200,7 +216,7 @@ function desdeRis(texto) {
     const [, clave, valor] = etiqueta;
 
     if (clave === 'TY') {
-      actual = { title: '', authors: '', year: '', source: '', doi: '', url: '', abstract: '', keywords: '', eid: '', itemType: valor.trim() };
+      actual = { title: '', authors: '', year: '', source: '', doi: '', url: '', abstract: '', keywords: '', eid: '', itemType: valor.trim(), volume: '', issue: '', pages: '', pageStart: '', pageEnd: '' };
       fichas.push(actual);
       ultimoCampo = null;
       continue;
@@ -303,6 +319,10 @@ function desdeBibtex(texto) {
       keywords: campos.keywords ?? '',
       eid: '',
       itemType: coincidencia[1],
+      volume: campos.volume ?? '',
+      // En BibTeX el número de la revista se llama «number», no «issue».
+      issue: campos.number ?? campos.issue ?? '',
+      pages: campos.pages ?? '',
     });
   }
 
@@ -344,6 +364,11 @@ const fichaVacia = () => ({
   keywords: '',
   eid: '',
   itemType: '',
+  volume: '',
+  issue: '',
+  pages: '',
+  pageStart: '',
+  pageEnd: '',
 });
 
 /**
@@ -421,6 +446,10 @@ const WOS = {
   ID: 'keywords',
   UT: 'eid',
   DT: 'itemType',
+  VL: 'volume',
+  IS: 'issue',
+  BP: 'pageStart',
+  EP: 'pageEnd',
 };
 
 function desdeWos(texto) {
@@ -448,6 +477,10 @@ const MEDLINE = {
   AB: 'abstract',
   OT: 'keywords',
   PT: 'itemType',
+  // PubMed nombra distinto: volumen es VI, número es IP y el rango, PG.
+  VI: 'volume',
+  IP: 'issue',
+  PG: 'pages',
 };
 
 function desdeMedline(texto) {
@@ -568,10 +601,30 @@ function desdeScopusTxt(texto) {
       actual.year = conAnio[1];
       // «Revista de Educación, 45 (2), pp. 123-145. Cited 3 times.» → la revista.
       // El nombre puede llevar comas; lo que viene detrás empieza por número.
-      actual.source = conAnio[2]
+      const cola = conAnio[2];
+      actual.source = cola
         .split(/,\s*(?=\d|pp\.|art\.|Cited)/)[0]
         .replace(/\.\s*$/, '')
         .trim();
+
+      // «Revista de Educación, 45 (2), pp. 123-145. Cited 3 times.»
+      //
+      // El volumen es el primer número que sigue al nombre de la revista, y el
+      // número va entre paréntesis detrás. Se busca DESPUÉS de la coma para no
+      // llevarse un año o una cifra del propio título de la revista.
+      const volumen = /,\s*(\d+[A-Za-z]?)\s*(?:\(([^)]+)\))?/.exec(cola);
+      if (volumen) {
+        actual.volume = volumen[1];
+        if (volumen[2]) actual.issue = volumen[2].trim();
+      }
+
+      // Las páginas van tras «pp.». Cuando el artículo no las tiene —los
+      // electrónicos no—, Scopus pone su número de artículo, que es lo que
+      // ocupa su sitio en la referencia.
+      const paginas = /\bpp?\.\s*([\dA-Za-z]+(?:\s*[-–]{1,2}\s*[\dA-Za-z]+)?)/.exec(cola);
+      const articulo = /\bart\.\s*(?:no\.)?\s*([^\s,]+)/i.exec(cola);
+      if (paginas) actual.pages = paginas[1].replace(/\s*[-–]+\s*/, '-');
+      else if (articulo) actual.pages = articulo[1].replace(/[.,]$/, '');
     } else if (/^https?:\/\//i.test(linea)) {
       actual.url = linea;
       const eid = /[?&]eid=([^&]+)/.exec(linea);
@@ -666,6 +719,23 @@ function anio(crudo) {
  * ni encontrar, así que no vale la pena guardarla. Es también lo que descarta
  * las filas de cabecera repetidas y las líneas de relleno del export.
  */
+/**
+ * El rango de páginas, venga como venga.
+ *
+ * Unos formatos lo dan entero («45-62») y otros en dos campos. Se normaliza el
+ * guion: los exports traen guion corto, guion largo y a veces dos guiones, y
+ * tres formas de escribir lo mismo en una bibliografía se ven como un descuido.
+ */
+function rangoDePaginas(ficha) {
+  const entero = String(ficha.pages ?? '').trim();
+  if (entero) return entero.replace(/\s*[-–—]+\s*/, '-');
+
+  const desde = String(ficha.pageStart ?? '').trim();
+  const hasta = String(ficha.pageEnd ?? '').trim();
+  if (desde && hasta) return `${desde}-${hasta}`;
+  return desde || null;
+}
+
 function aFila(ficha) {
   const titulo = recortar(ficha.title, 500);
   if (!titulo) return null;
@@ -696,6 +766,9 @@ function aFila(ficha) {
     authors: autores,
     year: anio(ficha.year),
     source: recortar(ficha.source, 300),
+    volume: recortar(ficha.volume, 40),
+    issue: recortar(ficha.issue, 40),
+    pages: recortar(rangoDePaginas(ficha), 40),
     doi,
     url: recortar(ficha.url, 500),
     abstract: resumen,

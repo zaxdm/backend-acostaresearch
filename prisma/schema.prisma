@@ -980,6 +980,20 @@ model Reference {
   year     Int?
   /// Revista, libro, congreso o editorial, según el tipo de fuente.
   source   String? @db.VarChar(300)
+
+  /// Volumen, número y páginas: «15», «2», «45-62».
+  ///
+  /// Texto y no números. Un volumen puede ser «15A», un número «S1» y las
+  /// páginas de un artículo electrónico «e0123456»: guardarlos como enteros
+  /// obliga a inventar una regla para cada revista rara.
+  ///
+  /// Sin estos tres, una referencia de revista NO está completa en APA, y es
+  /// de lo primero que mira un asesor. Se rellenan desde donde vengan —Zotero,
+  /// el export, OpenAlex— y lo que falte se completa por DOI contra Crossref,
+  /// que es el registro donde el editor los depositó.
+  volume   String? @db.VarChar(40)
+  issue    String? @db.VarChar(40)
+  pages    String? @db.VarChar(40)
   doi      String? @db.VarChar(200)
   url      String? @db.VarChar(500)
   abstract String? @db.Text

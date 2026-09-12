@@ -7,6 +7,8 @@ const zotero = require('./zotero.client');
 const openalex = require('./openalex.client');
 const mapper = require('./zotero.mapper');
 const referenceRepository = require('./reference.repository');
+// Formatear en APA vive en un solo sitio, y ese sitio es el del Word.
+const { entradaDeBibliografia } = require('../projects/project.citas');
 
 /**
  * El corpus bibliográfico de la casa.
@@ -270,14 +272,14 @@ async function estado() {
  * cuelan el año que no era y el DOI que no existe.
  */
 function cita(fuente) {
-  const partes = [];
-  partes.push(fuente.authors || '(Autor no consignado)');
-  partes.push(`(${fuente.year ?? 's. f.'}).`);
-  partes.push(`${fuente.title}.`);
-  if (fuente.source) partes.push(`${fuente.source}.`);
-  if (fuente.doi) partes.push(`https://doi.org/${fuente.doi}`);
-  else if (fuente.url) partes.push(fuente.url);
-  return partes.join(' ');
+  // La MISMA función que arma la lista de referencias del Word.
+  //
+  // Estaban duplicadas y ya habían divergido: esta se quedó sin volumen,
+  // número ni páginas cuando aquella los ganó, así que el asistente vería una
+  // ficha más pobre de la fuente que está a punto de citar que la que acaba
+  // saliendo en el documento. Dos formateadores del mismo dato divergen
+  // siempre; es cuestión de cuándo.
+  return entradaDeBibliografia(fuente);
 }
 
 /**

@@ -5,6 +5,7 @@ const { AppError, ValidationError } = require('../../shared/errors/AppError');
 const { ERROR_CODES } = require('../../config/constants');
 const parser = require('./scopus.parser');
 const openalex = require('./openalex.client');
+const crossref = require('./crossref.client');
 const { normalizar } = require('./zotero.mapper');
 const propiasRepository = require('./propias.repository');
 
@@ -34,6 +35,9 @@ function comoFila(ficha) {
     authors: recortar(ficha.authors, 500) ?? '',
     year: ficha.year ?? null,
     source: recortar(ficha.source, 300),
+    volume: recortar(ficha.volume, 40),
+    issue: recortar(ficha.issue, 40),
+    pages: recortar(ficha.pages, 40),
     doi: recortar(ficha.doi, 200),
     url: recortar(ficha.url, 500),
     abstract: ficha.abstract || null,
@@ -151,7 +155,20 @@ const propiasService = {
     // gratuito, y lanzarle sesenta a la vez es la forma de que empiece a
     // rechazarlas. Sesenta secuenciales son unos segundos.
     for (const doi of lista) {
-      const ficha = await openalex.porDoi(doi);
+      // OpenAlex primero: es el que trae resumen, y sin resumen la ficha sirve
+      // para citar pero no para que el asistente la encuentre.
+      const deOpenAlex = await openalex.porDoi(doi);
+
+      // Crossref cubre dos huecos distintos. Si OpenAlex no conoce el DOI
+      // —pasa con lo recién publicado, que tarda días en indexarse allí y en
+      // Crossref existe desde el primer minuto— es la única ficha que habrá. Y
+      // si lo conoce pero sin volumen ni páginas, las completa: es el registro
+      // donde el editor las depositó, y sin ellas la referencia no está
+      // completa en APA.
+      const ficha = deOpenAlex
+        ? await crossref.completar(deOpenAlex)
+        : await crossref.porDoi(doi);
+
       if (!ficha) {
         noEncontrados.push(doi);
         continue;

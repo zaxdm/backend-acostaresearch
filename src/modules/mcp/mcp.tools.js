@@ -12,6 +12,7 @@ const prisma = require('../../lib/prisma');
 const referenceService = require('../references/reference.service');
 const propiasService = require('../references/propias.service');
 const projectService = require('../projects/project.service');
+const bloquesDeAnalisis = require('../projects/project.bloques');
 
 /**
  * Los esquemas de las herramientas van en JSON Schema, no en Zod.
@@ -290,6 +291,33 @@ const ESQUEMA_VER_ANALISIS = fromJsonSchema({
       description:
         'Clave del capítulo. Déjala vacía para el de resultados del método, que es donde ' +
         'cae lo que el tesista manda desde la página de análisis.',
+    },
+    // Lista cerrada a propósito. Un texto libre sobre la consola de R devuelve
+    // el bloque equivocado sin avisar: «ANOVA» casa con el veredicto de
+    // normalidad, que nombra tres pruebas, y «Pearson» casa también con el
+    // chi-cuadrado, que R llama «Pearson's Chi-squared test».
+    bloque: {
+      type: 'string',
+      enum: [
+        ...bloquesDeAnalisis.claves(),
+        'script',
+        'todo',
+      ],
+      description:
+        'Qué parte quieres. Sin esto se devuelve el índice de lo que hay. "script" da el ' +
+        'guion de R; "todo", la consola entera.',
+    },
+    desde: {
+      type: 'integer',
+      minimum: 1,
+      description:
+        'Primera línea de consola de un tramo pedido a mano, para lo que no cae en ningún ' +
+        'bloque. Los números de línea salen del índice.',
+    },
+    hasta: {
+      type: 'integer',
+      minimum: 1,
+      description: `Última línea del tramo. Se sirven ${bloquesDeAnalisis.MAXIMO_LINEAS} como máximo por petición.`,
     },
   },
   additionalProperties: false,
@@ -829,16 +857,20 @@ function construirServidor(licencia) {
     {
       title: 'Leer el análisis del tesista',
       description:
-        'Devuelve el script de R y lo que devolvió la consola, tal como el tesista los ' +
-        'guardó —normalmente desde la página de análisis de la web, con el botón «Enviar a ' +
-        'mi conector»—. LLÁMALA ANTES DE REDACTAR LOS RESULTADOS y cada vez que el tesista ' +
-        'diga que ya corrió su análisis: cada cifra del capítulo tiene que salir de aquí.\n\n' +
+        'El análisis de R que guardó el tesista —normalmente desde la página de análisis de ' +
+        'la web, con el botón «Enviar a mi conector»—. LLÁMALA ANTES DE REDACTAR LOS ' +
+        'RESULTADOS y cada vez que diga que ya corrió su análisis: cada cifra del capítulo ' +
+        'tiene que salir de aquí.\n\n' +
+        'SIN ARGUMENTOS devuelve el índice: qué pruebas hay en la consola y en qué líneas. ' +
+        'EL ÍNDICE NO CONTIENE LAS CIFRAS, solo dice dónde están. No redactes ningún número ' +
+        'a partir del índice: pide su bloque —ver_analisis(bloque: "alfa")— y léelo. ' +
+        '"script" da el guion de R y "todo" la consola entera.\n\n' +
         'Después guarda con "guardar_analisis" (campo resultados) las cifras que vayas a ' +
         'usar en el texto. Sin eso, el repaso no puede comprobar que ningún número se ' +
         'escribió solo.',
       inputSchema: ESQUEMA_VER_ANALISIS,
     },
-    async ({ capitulo }) => {
+    async ({ capitulo, bloque, desde, hasta }) => {
       await licenseService.recordUsage({ licenseId: licencia.id, tool: 'ver_analisis' });
 
       // Una clave de otro método leería un archivo que no es de este proyecto.
@@ -852,13 +884,24 @@ function construirServidor(licencia) {
         }
       }
 
-      const leido = await projectService.leerAnalisis(
+      // Defensa en tiempo de ejecución aunque el esquema ya sea un enum: el
+      // esquema lo valida el cliente, y la autoridad es el servidor.
+      if (bloque !== undefined && bloque !== 'script' && bloque !== 'todo') {
+        if (!bloquesDeAnalisis.definicionDe(bloque)) {
+          return texto(
+            `"${bloque}" no es un bloque de análisis. Los que existen son: ` +
+              `${bloquesDeAnalisis.claves().join(', ')}, más "script" y "todo".`,
+          );
+        }
+      }
+
+      const respuesta = await projectService.consultarAnalisis(
         licencia.user.id,
         licencia.productCode,
-        capitulo,
+        { capitulo, bloque, desde, hasta },
       );
 
-      if (!leido) {
+      if (!respuesta) {
         return texto(
           'Todavía no hay ningún análisis guardado. Pídele al tesista que lo corra en la ' +
             'página de análisis de la web (acostaresearch.com/analisis) y pulse «Enviar a mi ' +
@@ -866,19 +909,7 @@ function construirServidor(licencia) {
         );
       }
 
-      const cifras =
-        leido.cifras.length > 0
-          ? `Cifras ya guardadas (${leido.cifras.length}):\n` +
-            leido.cifras.map((c) => `  - ${c}`).join('\n')
-          : 'Todavía no hay ninguna cifra guardada de este análisis. Saca de la salida las ' +
-            'que vayan al capítulo y guárdalas con "guardar_analisis" antes de redactar.';
-
-      return texto(
-        `ANÁLISIS GUARDADO · capítulo ${leido.capitulo}\n\n` +
-          `SCRIPT DE R\n${leido.script ?? '(no se guardó el script)'}\n\n` +
-          `SALIDA DE LA CONSOLA\n${leido.salida ?? '(no se guardó la salida)'}\n\n` +
-          cifras,
-      );
+      return texto(respuesta);
     },
   );
 

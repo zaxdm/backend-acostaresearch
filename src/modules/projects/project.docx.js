@@ -173,7 +173,17 @@ async function armar({
       ...referencias.map(
         (entrada) =>
           new Paragraph({
-            children: [new TextRun(entrada)],
+            // Cada entrada llega partida en tramos porque APA pone en cursiva
+            // el continente -la revista y su volumen, o el título si la obra se
+            // sostiene sola- y una cursiva no cabe dentro de una cadena. Se
+            // acepta también texto pelado por si alguien llama a esto con la
+            // lista en plano.
+            children:
+              typeof entrada === 'string'
+                ? [new TextRun(entrada)]
+                : entrada.tramos.map(
+                    (tramo) => new TextRun({ text: tramo.texto, italics: Boolean(tramo.cursiva) }),
+                  ),
             spacing: { line: DOBLE },
             indent: { left: SANGRIA, hanging: SANGRIA },
           }),

@@ -569,7 +569,7 @@ async function armarWord(userId, productCode) {
     universidad: proyecto.universidad,
     nombre,
     capitulos,
-    referencias: citas.bibliografia([...usadas.values()]),
+    referencias: citas.bibliografiaConCursivas([...usadas.values()]),
     estilos,
   });
 

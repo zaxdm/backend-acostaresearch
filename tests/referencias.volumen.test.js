@@ -233,3 +233,84 @@ test('un ítem de Zotero los trae en su ficha', () => {
   assert.equal(fila.issue, '2');
   assert.equal(fila.pages, '45-62');
 });
+
+// ── Qué va en cursiva ───────────────────────────────────────────────────────
+
+/** La entrada con las cursivas marcadas entre asteriscos, para poder leerla. */
+const conMarcas = (fuente) =>
+  require('../src/modules/projects/project.citas')
+    .tramosDeBibliografia(fuente)
+    .map((tramo) => (tramo.cursiva ? `*${tramo.texto}*` : tramo.texto))
+    .join('');
+
+test('en un artículo van en cursiva la revista y el volumen, y nada más', () => {
+  const entrada = conMarcas({
+    itemType: 'journalArticle',
+    authors: 'Hernández, R.',
+    year: 2024,
+    title: 'Clima organizacional',
+    source: 'Revista de Educación',
+    volume: '15',
+    issue: '2',
+    pages: '45-62',
+    doi: '10.1/a',
+  });
+
+  assert.equal(
+    entrada,
+    'Hernández, R. (2024). Clima organizacional. *Revista de Educación*, *15*(2), 45-62. https://doi.org/10.1/a',
+  );
+});
+
+test('en un libro va en cursiva el título, y la editorial NO', () => {
+  const entrada = conMarcas({
+    itemType: 'book',
+    authors: 'Torres, M.',
+    year: 2020,
+    title: 'Metodología de la investigación',
+    source: 'Editorial Andina',
+  });
+
+  assert.equal(entrada, 'Torres, M. (2020). *Metodología de la investigación*. Editorial Andina.');
+});
+
+test('en un capítulo el continente es el libro, no el capítulo', () => {
+  const entrada = conMarcas({
+    itemType: 'bookSection',
+    authors: 'Ruiz, P.',
+    year: 2019,
+    title: 'Un capítulo',
+    source: 'Manual de métodos',
+    pages: '12-30',
+  });
+
+  assert.match(entrada, /Un capítulo\. \*Manual de métodos\*/);
+});
+
+test('el tipo llega escrito de cuatro maneras y las cuatro se entienden', () => {
+  const { esObraSuelta } = require('../src/modules/projects/project.citas');
+
+  // Zotero, Scopus, OpenAlex y Crossref, en ese orden.
+  for (const articulo of ['journalArticle', 'Article', 'article', 'journal-article']) {
+    assert.equal(esObraSuelta(articulo), false, articulo);
+  }
+  for (const suelta of ['book', 'Book', 'monograph', 'thesis', 'report']) {
+    assert.equal(esObraSuelta(suelta), true, suelta);
+  }
+  // Un capítulo lleva «book» dentro y NO es una obra suelta.
+  for (const dentro of ['bookSection', 'book-chapter', 'Book Chapter']) {
+    assert.equal(esObraSuelta(dentro), false, dentro);
+  }
+});
+
+test('sin tipo se trata como artículo, que es lo que son casi todas', () => {
+  const entrada = conMarcas({
+    authors: 'Vargas, L.',
+    year: 2021,
+    title: 'Lo importado antes de que existiera el tipo',
+    source: 'Revista Vieja',
+    doi: '10.9/y',
+  });
+
+  assert.match(entrada, /\*Revista Vieja\*/);
+});

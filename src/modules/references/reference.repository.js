@@ -453,6 +453,10 @@ function porClaves(claves, ownerUserId = null) {
       authors: true,
       year: true,
       source: true,
+      // El tipo decide qué va en cursiva: la revista de un artículo, o el
+      // título de un libro. Sin él, se pondría en cursiva el nombre de las
+      // editoriales.
+      itemType: true,
       // Los tres de la referencia en APA. Sin pedirlos aquí, da igual que estén
       // guardados: la bibliografía se arma con lo que devuelve esta consulta.
       volume: true,

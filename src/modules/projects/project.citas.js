@@ -81,19 +81,78 @@ function datosDeLaPublicacion(fuente) {
   return `${texto}.`;
 }
 
-/** La entrada completa de la lista de referencias, en APA. */
+/**
+ * ¿Es una obra que se sostiene sola, o algo publicado dentro de otra cosa?
+ *
+ * De eso depende QUÉ va en cursiva, que en APA no es decorativo: la cursiva
+ * marca el continente. En un artículo, el continente es la revista; en un
+ * libro, el libro mismo. Poner en cursiva el nombre de una editorial es un
+ * error tan visible como no poner ninguna.
+ *
+ * El tipo llega escrito de cuatro maneras según por dónde entró la fuente
+ * —Zotero dice `journalArticle`, Scopus «Article», OpenAlex `article`,
+ * Crossref `journal-article`— así que se compara en minúsculas y sin guiones.
+ * Lo que no se reconoce se trata como artículo, que es lo que son casi todas.
+ */
+function esObraSuelta(itemType) {
+  const tipo = String(itemType ?? '').toLowerCase().replace(/[-_\s]/g, '');
+  if (tipo.includes('section') || tipo.includes('chapter')) return false;
+  return ['book', 'monograph', 'thesis', 'report', 'dataset', 'software'].some((suelta) =>
+    tipo.includes(suelta),
+  );
+}
+
+/**
+ * La entrada partida en trozos, diciendo cuáles van en cursiva.
+ *
+ * Se devuelve así y no como texto porque el Word necesita saberlo: una cursiva
+ * no se puede insinuar dentro de una cadena. `entradaDeBibliografia` los une
+ * y da el texto plano, que es lo que hace falta en todo lo demás.
+ */
+function tramosDeBibliografia(fuente) {
+  const tramos = [];
+  const suelta = esObraSuelta(fuente.itemType);
+
+  tramos.push({ texto: `${fuente.authors || '(Autor no consignado)'} ` });
+  tramos.push({ texto: `(${fuente.year ?? 's. f.'}). ` });
+
+  // En una obra suelta, el título ES el continente y va en cursiva.
+  tramos.push({ texto: `${fuente.title}`, cursiva: suelta });
+  tramos.push({ texto: '. ' });
+
+  if (fuente.source) {
+    const contenedor = String(fuente.source).trim().replace(/[.,]\s*$/, '');
+    // En un artículo o un capítulo, el continente es la revista o el libro. En
+    // una obra suelta esto es la editorial, y una editorial nunca va en cursiva.
+    tramos.push({ texto: contenedor, cursiva: !suelta });
+
+    if (!suelta && fuente.volume) {
+      // El volumen acompaña a la revista en cursiva; el número, no.
+      tramos.push({ texto: ', ' });
+      tramos.push({ texto: String(fuente.volume), cursiva: true });
+      if (fuente.issue) tramos.push({ texto: `(${fuente.issue})` });
+    }
+
+    if (!suelta && fuente.pages) tramos.push({ texto: `, ${fuente.pages}` });
+
+    tramos.push({ texto: '. ' });
+  }
+
+  if (fuente.doi) tramos.push({ texto: `https://doi.org/${fuente.doi}` });
+  else if (fuente.url) tramos.push({ texto: fuente.url });
+
+  // Sin enlace, la entrada acaba en el punto que se puso arriba.
+  const ultimo = tramos[tramos.length - 1];
+  if (ultimo.texto === '. ') ultimo.texto = '.';
+
+  return tramos;
+}
+
+/** La entrada completa de la lista de referencias, en APA y en texto plano. */
 function entradaDeBibliografia(fuente) {
-  const partes = [];
-  partes.push(fuente.authors || '(Autor no consignado)');
-  partes.push(`(${fuente.year ?? 's. f.'}).`);
-  partes.push(`${fuente.title}.`);
-
-  const publicacion = datosDeLaPublicacion(fuente);
-  if (publicacion) partes.push(publicacion);
-
-  if (fuente.doi) partes.push(`https://doi.org/${fuente.doi}`);
-  else if (fuente.url) partes.push(fuente.url);
-  return partes.join(' ');
+  return tramosDeBibliografia(fuente)
+    .map((tramo) => tramo.texto)
+    .join('');
 }
 
 /** Las claves que aparecen en un texto, sin repetir. */
@@ -142,11 +201,26 @@ function bibliografia(fuentes) {
     .sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
 }
 
+/**
+ * Lo mismo, pero con las cursivas puestas, que es lo que baja al Word.
+ *
+ * Se ordena por el texto plano y no por los tramos: el orden es el mismo y
+ * comparar cadenas es lo que sabe hacer `localeCompare`.
+ */
+function bibliografiaConCursivas(fuentes) {
+  return [...fuentes]
+    .map((fuente) => ({ texto: entradaDeBibliografia(fuente), tramos: tramosDeBibliografia(fuente) }))
+    .sort((a, b) => a.texto.localeCompare(b.texto, 'es', { sensitivity: 'base' }));
+}
+
 module.exports = {
   MARCA,
   clavesDe,
   resolver,
   bibliografia,
+  bibliografiaConCursivas,
+  tramosDeBibliografia,
+  esObraSuelta,
   citaEnElTexto,
   entradaDeBibliografia,
   datosDeLaPublicacion,

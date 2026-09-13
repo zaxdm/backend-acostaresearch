@@ -10,6 +10,7 @@ const { ROLES } = require('../../config/constants');
 const env = require('../../config/env');
 const {
   generateCodesSchema,
+  checkEmailsSchema,
   redeemSchema,
   revokeSchema,
   changeProductSchema,
@@ -38,6 +39,11 @@ router.post(
 router.use(authorize(ROLES.ADMIN));
 
 router.post('/codes', validate({ body: generateCodesSchema }), licenseController.generate);
+router.post(
+  '/codes/check-emails',
+  validate({ body: checkEmailsSchema }),
+  licenseController.checkEmails,
+);
 
 /**
  * El comprobante de una venta cobrada fuera de la web.

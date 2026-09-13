@@ -71,6 +71,11 @@ const generateCodesSchema = z
     }
   });
 
+/** Correos que el panel quiere comprobar antes de generar. */
+const checkEmailsSchema = z.object({
+  emails: z.array(z.string().trim().toLowerCase().max(255)).min(1).max(MAXIMO_CODIGOS),
+});
+
 const redeemSchema = z.object({
   code: z
     .string({ required_error: 'Escribe el código de activación.' })
@@ -111,6 +116,7 @@ const listQuerySchema = z.object({
 
 module.exports = {
   generateCodesSchema,
+  checkEmailsSchema,
   redeemSchema,
   revokeSchema,
   changeProductSchema,

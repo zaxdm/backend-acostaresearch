@@ -6,6 +6,7 @@ const { addDays } = require('../../shared/utils/tokens');
 const licenseService = require('./license.service');
 const { ValidationError } = require('../../shared/errors/AppError');
 const { ROLES } = require('../../config/constants');
+const { revisarCorreos } = require('../../shared/utils/correo');
 
 const licenseController = {
   /** Solo ADMIN. Los códigos en claro se devuelven aquí y nunca más. */
@@ -26,6 +27,16 @@ const licenseController = {
       resultado,
       'Códigos generados. Cópialos ahora: no se pueden volver a consultar.',
     );
+  }),
+
+  /**
+   * Solo ADMIN. Revisa correos antes de generar: forma, erratas y si el dominio
+   * recibe correo. Es lo que usa el panel para avisar mientras se escribe; al
+   * generar se vuelve a mirar igual.
+   */
+  checkEmails: asyncHandler(async (req, res) => {
+    const revisiones = await revisarCorreos(req.body.emails);
+    return ok(res, { revisiones });
   }),
 
   subirComprobante: asyncHandler(async (req, res) => {

@@ -202,4 +202,89 @@ function revisarCorreo(entrada) {
   return { correo, problema: null, sugerencia: null };
 }
 
-module.exports = { revisarCorreo };
+// ── ¿El dominio recibe correo? ─────────────────────────────────────────────
+//
+// Las erratas no lo cubren todo: `zz@hou.com` no se parece a ningún proveedor y
+// su dominio existe —tiene web—, pero no tiene buzones. Lo que decide si un
+// correo puede llegar son los registros MX, y eso solo se sabe preguntando al
+// DNS, así que esto vive en el servidor.
+
+const dns = require('node:dns');
+
+/** Un DNS lento no puede dejar la venta colgada: 3 s por intento, dos intentos. */
+const resolverPorDefecto = new dns.promises.Resolver({ timeout: 3000, tries: 2 });
+
+/** Una hora: los MX de un dominio no cambian de un rato para otro. */
+const DURACION_CACHE_MS = 60 * 60 * 1000;
+const cachePorDefecto = new Map();
+
+/** Respuestas que dicen «este dominio no tiene correo», no «no se pudo saber». */
+const SIN_CORREO = new Set(['ENODATA', 'ENOTFOUND']);
+
+/**
+ * true si el dominio tiene servidores de correo, false si no los tiene, null si
+ * el DNS no contestó.
+ *
+ * Con null NO se bloquea: un DNS caído no es motivo para dejar de vender, y el
+ * resultado no se guarda para volver a preguntar la próxima vez.
+ *
+ * Un dominio sin MX pero con web se da por que no recibe correo. La norma dice
+ * que entonces se intenta la dirección de la web, pero en la práctica ningún
+ * proveedor de correo personal funciona así, y es justo el caso de `hou.com`.
+ */
+async function dominioRecibeCorreo(
+  dominio,
+  {
+    resolverMx = (d) => resolverPorDefecto.resolveMx(d),
+    cache = cachePorDefecto,
+    ahora = Date.now,
+  } = {},
+) {
+  const guardado = cache.get(dominio);
+  if (guardado && guardado.hasta > ahora()) return guardado.recibe;
+
+  let recibe;
+  try {
+    const registros = await resolverMx(dominio);
+    // Un MX vacío o «.» (RFC 7505) dice expresamente que ahí no se acepta correo.
+    recibe = (registros ?? []).some((r) => r.exchange && r.exchange !== '.');
+  } catch (error) {
+    if (!SIN_CORREO.has(error.code)) return null;
+    recibe = false;
+  }
+
+  cache.set(dominio, { recibe, hasta: ahora() + DURACION_CACHE_MS });
+  return recibe;
+}
+
+/**
+ * Revisa una lista entera: forma y erratas, y después el DNS.
+ *
+ * Solo se pregunta por los correos que ya pasaron lo primero —una errata se
+ * corta antes y conserva su sugerencia— y una sola vez por dominio: cien
+ * compradores de gmail son una consulta.
+ */
+async function revisarCorreos(correos, opciones) {
+  const revisiones = correos.map((correo) => revisarCorreo(correo));
+
+  const dominios = [
+    ...new Set(revisiones.filter((r) => !r.problema).map((r) => r.correo.split('@')[1])),
+  ];
+  const respuestas = new Map(
+    await Promise.all(
+      dominios.map(async (dominio) => [dominio, await dominioRecibeCorreo(dominio, opciones)]),
+    ),
+  );
+
+  return revisiones.map((r) => {
+    if (r.problema) return r;
+    const dominio = r.correo.split('@')[1];
+    if (respuestas.get(dominio) !== false) return r;
+    return {
+      ...r,
+      problema: `«@${dominio}» no recibe correos: ese dominio no existe o no tiene buzones.`,
+    };
+  });
+}
+
+module.exports = { revisarCorreo, revisarCorreos, dominioRecibeCorreo };

@@ -7,6 +7,7 @@ const { ERROR_CODES } = require('../../config/constants');
 const { sendMail } = require('../../lib/mailer');
 const plantillas = require('../../lib/emailTemplates');
 const licenseRepository = require('./license.repository');
+const { revisarCorreos } = require('../../shared/utils/correo');
 const { analizar, NIVELES } = require('./license.detector');
 const limites = require('./license.limits');
 const watch = require('./license.watch');
@@ -432,6 +433,23 @@ const licenseService = {
     // Un correo repetido en la lista es un pegado doble, no dos ventas: quien
     // compra dos va con `cantidad`.
     const compradores = buyerEmails?.length ? [...new Set(buyerEmails)] : [buyerEmail ?? null];
+
+    // El esquema ya descartó las erratas; aquí se pregunta al DNS si el dominio
+    // recibe correo. `zz@hou.com` tiene forma perfecta, no se parece a ningún
+    // proveedor y no tiene buzones: sin esto el código se cobra y no llega.
+    // Antes de crear nada, para que no quede una venta a medias.
+    const sinBuzon = (await revisarCorreos(compradores.filter(Boolean))).filter(
+      (revision) => revision.problema,
+    );
+    if (sinBuzon.length > 0) {
+      throw new ValidationError(
+        sinBuzon.map((revision) => ({
+          field: 'body.buyerEmails',
+          message: `${revision.correo}: ${revision.problema}`,
+        })),
+        'Hay correos que no pueden recibir el código.',
+      );
+    }
 
     const codigos = [];
     const ids = [];

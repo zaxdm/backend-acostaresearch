@@ -96,10 +96,26 @@ const normaSchema = z.object({
   idiomaCitas: z.enum(normas.IDS_DE_IDIOMA, { message: 'Ese idioma no está disponible.' }).optional(),
 });
 
+/**
+ * Borrar el proyecto entero, desde el panel.
+ *
+ * Se pide escribir la palabra, como al borrar la cuenta: a un «¿seguro?» se le
+ * da que sí sin leerlo, y esto se lleva capítulos escritos que no vuelven. Se
+ * compara sin mayúsculas porque lo que se comprueba es la intención.
+ */
+const borrarProyectoSchema = z.object({
+  confirmacion: z
+    .string({ required_error: 'Escribe «eliminar» para confirmar.' })
+    .trim()
+    .toLowerCase()
+    .refine((v) => v === 'eliminar', 'Escribe exactamente «eliminar».'),
+});
+
 module.exports = {
   guardarAvanceSchema,
   guardarCapituloSchema,
   normaSchema,
+  borrarProyectoSchema,
   ESTADOS,
   MAXIMO_POR_LLAMADA,
 };

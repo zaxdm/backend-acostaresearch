@@ -112,6 +112,11 @@ function marcarPlantilla(projectId, nombre) {
   });
 }
 
+/** Borra el proyecto. Sus etapas se van con él: la relación es en cascada. */
+function borrar(projectId) {
+  return prisma.project.delete({ where: { id: projectId } });
+}
+
 /** El nombre del tesista, para la portada del Word. */
 async function nombreDe(userId) {
   const usuario = await prisma.user.findUnique({
@@ -148,6 +153,7 @@ module.exports = {
   asegurar,
   guardarEtapa,
   listarDeUsuario,
+  borrar,
   nombreDe,
   marcarPlantilla,
   nombresDeProducto,

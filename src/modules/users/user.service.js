@@ -13,6 +13,7 @@ const { sendMail } = require('../../lib/mailer');
 const { avisarAlAdmin } = require('../../lib/notify');
 const { passwordChangeCode, adminAccountCreated } = require('../../lib/emailTemplates');
 const tokenRepository = require('../auth/token.repository');
+const projectStorage = require('../projects/project.storage');
 const { hashPassword } = require('../../shared/utils/password');
 const {
   generateNumericCode,
@@ -246,7 +247,13 @@ const userService = {
     const anonimo = `borrada-${user.id}@cuenta.invalid`;
     const ahora = new Date();
 
+    // Sus tesis se van enteras. La fila del usuario se queda —por los apuntes
+    // contables—, así que la cascada de la base nunca llegaría a los proyectos:
+    // hay que borrarlos a mano, y su carpeta en disco también.
+    const proyectos = await prisma.project.findMany({ where: { userId }, select: { id: true } });
+
     await prisma.$transaction([
+      prisma.project.deleteMany({ where: { userId } }),
       // Las licencias se revocan, no se borran: el conector tiene que dejar de
       // responder hoy, y el motivo queda escrito por si mañana pregunta alguien.
       prisma.license.updateMany({
@@ -271,6 +278,14 @@ const userService = {
         },
       }),
     ]);
+
+    // Después de la base y sin tumbar nada si falla: la cuenta ya está borrada, y
+    // una carpeta huérfana es un estorbo, no un acceso.
+    for (const { id: projectId } of proyectos) {
+      await projectStorage.borrarProyecto(projectId).catch((error) => {
+        logger.error({ err: error, projectId }, 'No se pudo borrar la carpeta de una cuenta borrada');
+      });
+    }
 
     logger.warn({ userId, email: user.email }, 'Cuenta borrada por su dueño');
 

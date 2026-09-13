@@ -101,7 +101,7 @@ async function borrar(projectId, skillCode) {
   }
 }
 
-/** Todo el proyecto, cuando se borra la cuenta. */
+/** Todo el proyecto: cuando su dueño lo borra, o borra la cuenta. */
 async function borrarProyecto(projectId) {
   if (!SEGURO.test(projectId)) throw new Error('Identificador de proyecto no válido');
   await fs.rm(path.join(env.capitulosDir, projectId), { recursive: true, force: true });

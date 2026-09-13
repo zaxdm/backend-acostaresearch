@@ -795,6 +795,31 @@ async function quitarPlantilla(userId, productCode) {
 }
 
 /**
+ * Empezar de cero: el proyecto entero fuera.
+ *
+ * Primero la base y luego el disco. Si el disco falla, el proyecto ya no existe
+ * para nadie —ni el panel ni el conector lo ven— y lo que queda es una carpeta
+ * huérfana, que es un estorbo, no un dato que siga en uso. Al revés, un fallo de
+ * la base dejaría un proyecto con sus capítulos borrados y el panel contando
+ * palabras que ya no están.
+ *
+ * La licencia no se toca, ni la conexión con Zotero: lo que se borra es el
+ * trabajo, no el acceso.
+ */
+async function borrarProyecto(userId, productCode) {
+  const proyecto = await projectRepository.buscar(userId, productCode);
+  if (!proyecto) return false;
+
+  await projectRepository.borrar(proyecto.id);
+  await almacen.borrarProyecto(proyecto.id).catch((error) => {
+    logger.error({ err: error, projectId: proyecto.id }, 'No se pudo borrar la carpeta de un proyecto');
+  });
+
+  logger.warn({ userId, productCode, projectId: proyecto.id }, 'Proyecto borrado por su dueño');
+  return true;
+}
+
+/**
  * Guarda el análisis: el script, lo que devolvió, y las cifras.
  *
  * NO SE EJECUTA NADA AQUÍ, y es a propósito. El tesista corre su análisis en su
@@ -1352,6 +1377,7 @@ module.exports = {
   consultarAnalisis,
   guardarPlantilla,
   quitarPlantilla,
+  borrarProyecto,
   auditar,
   siguientePaso,
   deUsuario,

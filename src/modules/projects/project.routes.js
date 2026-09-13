@@ -8,7 +8,7 @@ const { ok } = require('../../shared/http/apiResponse');
 const { ForbiddenError, ValidationError } = require('../../shared/errors/AppError');
 const licenseService = require('../licensing/license.service');
 const projectService = require('./project.service');
-const { normaSchema } = require('./project.schema');
+const { normaSchema, borrarProyectoSchema } = require('./project.schema');
 const descarga = require('./project.descarga');
 const { PlantillaNoValida, MAXIMO_BYTES } = require('./project.plantilla');
 
@@ -121,6 +121,34 @@ router.patch(
     }
 
     return ok(res, norma, { message: `Norma de citas: ${norma.nombre}.` });
+  }),
+);
+
+/**
+ * Borra el proyecto entero: avance, capítulos escritos, análisis y plantilla.
+ *
+ * Es la única forma de empezar de cero. El conector no puede hacerlo —anota,
+ * pero no olvida—, y tiene que poder hacerlo el dueño cuando le cambian el tema.
+ */
+router.delete(
+  '/:productCode',
+  asyncHandler(async (req, res) => {
+    const datos = borrarProyectoSchema.safeParse(req.body ?? {});
+    if (!datos.success) {
+      throw new ValidationError(datos.error.issues[0]?.message ?? 'Escribe «eliminar» para confirmar.');
+    }
+
+    const borrado = await projectService.borrarProyecto(req.user.id, req.params.productCode);
+    if (!borrado) {
+      return res.status(404).json({
+        success: false,
+        message: 'No hay ningún proyecto de este método que borrar.',
+      });
+    }
+
+    return ok(res, { borrado }, {
+      message: 'Proyecto borrado. La próxima vez que trabajes con Claude empezará de cero.',
+    });
   }),
 );
 

@@ -23,6 +23,7 @@ const sustituir = (ruta, exports) => {
 sustituir('../src/modules/projects/project.repository', {
   listarDeUsuario: async () => estado.guardados,
   productosConLicencia: async () => estado.conLicencia,
+  productosConVariasTesis: async () => [],
   nombresDeProducto: async (codigos) => new Map(codigos.map((c) => [c, `Plan ${c}`])),
   buscar: async (userId, productCode) =>
     estado.guardados.find((p) => p.productCode === productCode) ?? null,

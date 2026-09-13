@@ -190,6 +190,24 @@ async function productosConLicencia(userId) {
   return licencias.map((l) => l.productCode);
 }
 
+/**
+ * Los métodos en los que un administrador le dio permiso para abrir varias
+ * tesis: licencia vigente de ese método con `variasTesis` encendido.
+ */
+async function productosConVariasTesis(userId) {
+  const licencias = await prisma.license.findMany({
+    where: {
+      userId,
+      status: 'ACTIVE',
+      variasTesis: true,
+      OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+    },
+    select: { productCode: true },
+    distinct: ['productCode'],
+  });
+  return licencias.map((l) => l.productCode);
+}
+
 /** Para el panel del comprador: sus proyectos, sin las etapas. */
 function listarDeUsuario(userId) {
   return prisma.project.findMany({
@@ -275,6 +293,7 @@ module.exports = {
   guardarEtapa,
   listarDeUsuario,
   productosConLicencia,
+  productosConVariasTesis,
   reiniciar,
   nombreDe,
   marcarPlantilla,

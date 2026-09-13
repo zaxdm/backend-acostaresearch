@@ -833,16 +833,23 @@ async function reiniciarProyecto(userId, productCode) {
  * Otra tesis del mismo método, que pasa a ser la activa.
  *
  * Solo con licencia vigente de ese método, igual que al elegir la norma desde
- * un panel en blanco. Que sea de un administrador lo comprueba la ruta.
- * Devuelve nulo sin licencia.
+ * un panel en blanco. Además, o es administrador, o un administrador le
+ * encendió «varias tesis» en esa licencia desde la ficha del acceso.
+ *
+ * Devuelve `{ tesis }`, o `{ error: 'sin-licencia' | 'sin-permiso' }`.
  */
-async function crearTesis({ userId, productCode, nombre }) {
+async function crearTesis({ userId, productCode, nombre, esAdmin = false }) {
   const conLicencia = await projectRepository.productosConLicencia(userId);
-  if (!conLicencia.includes(productCode)) return null;
+  if (!conLicencia.includes(productCode)) return { error: 'sin-licencia' };
+
+  if (!esAdmin) {
+    const conPermiso = await projectRepository.productosConVariasTesis(userId);
+    if (!conPermiso.includes(productCode)) return { error: 'sin-permiso' };
+  }
 
   const tesis = await projectRepository.crearTesis(userId, productCode, nombre);
   logger.info({ userId, productCode, projectId: tesis.id }, 'Tesis adicional creada');
-  return tesis;
+  return { tesis };
 }
 
 /** Deja activa una de sus tesis. Falso si no es suya o no existe. */
@@ -1436,9 +1443,13 @@ function proyectoEnBlanco(productCode) {
  * Las dos consultas van una detrás de otra y no a la vez: la base admite cinco
  * conexiones y este panel lo abre cualquiera que entre en su perfil.
  */
-async function deUsuario(userId, { variasTesis = false } = {}) {
+async function deUsuario(userId, { esAdmin = false } = {}) {
   const guardados = await projectRepository.listarDeUsuario(userId);
   const conLicencia = await projectRepository.productosConLicencia(userId);
+  // El administrador puede siempre; los demás, en los métodos donde se lo dieron.
+  const conPermiso = esAdmin
+    ? null
+    : new Set(await projectRepository.productosConVariasTesis(userId));
 
   // Quien tiene varias tesis de un método ve una sola fila, la activa, con la
   // lista para cambiar de una a otra.
@@ -1486,8 +1497,8 @@ async function deUsuario(userId, { variasTesis = false } = {}) {
         nombre: proyecto.nombre ?? null,
         /** Todas sus tesis de este método, por orden de creación. Vacía si no hay nada guardado. */
         tesis: listaDe.get(proyecto.productCode) ?? [],
-        /** Si puede abrir otra tesis: solo los administradores. */
-        puedeCrearTesis: variasTesis,
+        /** Si puede abrir otra tesis: administradores, o licencia con el permiso encendido. */
+        puedeCrearTesis: esAdmin || conPermiso.has(proyecto.productCode),
         tema: proyecto.tema,
         carrera: proyecto.carrera,
         universidad: proyecto.universidad,

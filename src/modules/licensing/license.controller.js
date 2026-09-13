@@ -176,6 +176,24 @@ const licenseController = {
     );
   }),
 
+  variasTesis: asyncHandler(async (req, res) => {
+    const license = await licenseService.setVariasTesis({
+      id: req.params.id,
+      activar: req.body.activar,
+      byId: req.user.id,
+    });
+
+    return ok(
+      res,
+      { license },
+      {
+        message: license.variasTesis
+          ? 'Listo: ya puede abrir varias tesis de este método desde su perfil.'
+          : 'Permiso quitado: ya no puede abrir más tesis. Las que tenga se conservan.',
+      },
+    );
+  }),
+
   /** Borrado de verdad. Para limpiar pruebas; a un cliente se le revoca. */
   eliminar: asyncHandler(async (req, res) => {
     await licenseService.eliminar({ id: req.params.id, adminId: req.user.id });

@@ -1100,6 +1100,25 @@ const licenseService = {
     return { license: actualizada, anterior: licencia.productCode };
   },
 
+  /**
+   * Permite (o deja de permitir) que abra varias tesis de este método.
+   *
+   * No toca la URL ni lo que ya tiene. Al quitarlo, las tesis que ya abrió se
+   * conservan y puede seguir eligiendo entre ellas; lo único que pierde es el
+   * botón de abrir otra.
+   */
+  async setVariasTesis({ id, activar, byId }) {
+    const licencia = await licenseRepository.findById(id);
+    if (!licencia) throw new NotFoundError('No encontramos esa licencia.');
+
+    const actualizada = await licenseRepository.setVariasTesis(id, activar);
+    logger.info(
+      { licenseId: id, variasTesis: activar, porAdmin: byId },
+      'Permiso de varias tesis cambiado desde el panel',
+    );
+    return actualizada;
+  },
+
   listAll(filtros) {
     return licenseRepository.listAll(filtros);
   },

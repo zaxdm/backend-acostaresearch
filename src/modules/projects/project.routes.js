@@ -3,7 +3,6 @@
 const { Router } = require('express');
 const express = require('express');
 const authenticate = require('../../middlewares/authenticate');
-const authorize = require('../../middlewares/authorize');
 const asyncHandler = require('../../shared/http/asyncHandler');
 const { ok } = require('../../shared/http/apiResponse');
 const { ForbiddenError, ValidationError } = require('../../shared/errors/AppError');
@@ -93,7 +92,7 @@ router.get(
   asyncHandler(async (req, res) =>
     ok(
       res,
-      await projectService.deUsuario(req.user.id, { variasTesis: req.user.role === ROLES.ADMIN }),
+      await projectService.deUsuario(req.user.id, { esAdmin: req.user.role === ROLES.ADMIN }),
     ),
   ),
 );
@@ -101,29 +100,35 @@ router.get(
 /**
  * Varias tesis del mismo método.
  *
- * Un comprador tiene UNA por método: es lo que compró, y el conector no sabría
- * con cuál de dos trabajar. Abrir más es solo del administrador, que las usa
- * para probar el método con temas distintos sin borrar lo que ya tiene.
+ * Un comprador tiene UNA por método: es lo que compró. Abrir más pueden el
+ * administrador —que las usa para probar el método con temas distintos— y
+ * quien tenga encendido «varias tesis» en su licencia, que lo da un
+ * administrador desde la ficha del acceso. Eso lo decide el servicio.
  *
- * Elegir y borrar no piden ser administrador a propósito: solo sirven a quien
- * ya tiene varias, y alguien que dejó de serlo tiene que poder quedarse con una.
+ * Elegir y borrar no piden permiso a propósito: solo sirven a quien ya tiene
+ * varias, y a quien se le quitó el permiso tiene que poder quedarse con una.
  */
 router.post(
   '/:productCode/tesis',
-  authorize(ROLES.ADMIN),
   asyncHandler(async (req, res) => {
     const datos = nuevaTesisSchema.safeParse(req.body ?? {});
     if (!datos.success) {
       throw new ValidationError(datos.error.issues[0]?.message ?? 'Ponle un nombre para distinguirla.');
     }
 
-    const tesis = await projectService.crearTesis({
+    const { tesis, error } = await projectService.crearTesis({
       userId: req.user.id,
       productCode: req.params.productCode,
       nombre: datos.data.nombre,
+      esAdmin: req.user.role === ROLES.ADMIN,
     });
-    if (!tesis) {
+    if (error === 'sin-licencia') {
       throw new ForbiddenError('Necesitas una licencia vigente de este método para abrir otra tesis.');
+    }
+    if (error === 'sin-permiso') {
+      throw new ForbiddenError(
+        'Tu licencia es para una sola tesis. Si necesitas otra, escríbenos por WhatsApp.',
+      );
     }
 
     return ok(res, { id: tesis.id }, {

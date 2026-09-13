@@ -114,7 +114,13 @@ const listQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(200).default(100),
 });
 
+/** Encender o apagar que esa licencia pueda abrir varias tesis. */
+const variasTesisSchema = z.object({
+  activar: z.boolean({ required_error: 'Dime si lo activo o lo quito.' }),
+});
+
 module.exports = {
+  variasTesisSchema,
   generateCodesSchema,
   checkEmailsSchema,
   redeemSchema,

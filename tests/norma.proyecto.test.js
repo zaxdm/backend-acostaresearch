@@ -59,6 +59,7 @@ sustituir('../src/modules/projects/project.repository', {
   nombreDe: async () => 'Alguien',
   listarDeUsuario: async () => (estado.proyecto ? [estado.proyecto] : []),
   productosConLicencia: async () => [],
+  productosConVariasTesis: async () => [],
   nombresDeProducto: async () => new Map(),
   guardarEtapa: async () => ({}),
 });

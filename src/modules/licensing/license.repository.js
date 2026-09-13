@@ -45,6 +45,7 @@ const licenseSelect = {
   delivery: true,
   revokedAt: true,
   revokedReason: true,
+  variasTesis: true,
   expiresAt: true,
   createdAt: true,
 };
@@ -172,6 +173,10 @@ const licenseRepository = {
    * La caducidad NO se toca: cambiar de producto no es renovar, y regalar meses
    * sin querer es un error que solo se descubre cuando ya caducó tarde.
    */
+  setVariasTesis(id, variasTesis) {
+    return prisma.license.update({ where: { id }, data: { variasTesis }, select: licenseSelect });
+  },
+
   changeProduct(id, { productCode, delivery, topes }) {
     return prisma.license.update({
       where: { id },

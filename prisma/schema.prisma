@@ -602,6 +602,10 @@ model License {
   /// pasada volvía a ver las mismas conversaciones que la revocaron y el mismo
   /// aviso de días atrás, y la revocaba otra vez en cuanto se usaba.
   reactivatedAt  DateTime?
+  /// Si quien la tiene puede abrir más de una tesis de este método desde su
+  /// panel. Lo enciende un administrador desde la ficha del acceso; por defecto,
+  /// una tesis por licencia, que es lo que se vende.
+  variasTesis    Boolean   @default(false)
   /// Caducidad del acceso. Nula = mientras no se revoque.
   expiresAt      DateTime?
   /// Cuándo se avisó al comprador de que su acceso estaba por caducar. Guarda

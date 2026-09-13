@@ -14,6 +14,7 @@ const {
   redeemSchema,
   revokeSchema,
   changeProductSchema,
+  variasTesisSchema,
   idParamSchema,
   listQuerySchema,
 } = require('./license.schema');
@@ -92,6 +93,14 @@ router.post(
   '/:id/product',
   validate({ params: idParamSchema, body: changeProductSchema }),
   licenseController.changeProduct,
+);
+
+// Que pueda abrir más de una tesis de su método desde el perfil. Tampoco toca
+// la URL: solo le enciende (o apaga) el botón «Nueva tesis».
+router.post(
+  '/:id/varias-tesis',
+  validate({ params: idParamSchema, body: variasTesisSchema }),
+  licenseController.variasTesis,
 );
 
 router.post(

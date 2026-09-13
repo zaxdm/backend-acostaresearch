@@ -194,9 +194,10 @@ async function contratoDelProducto(productCode) {
  *
  * Que falle el envío no puede tumbar nada: los códigos ya están creados y el
  * administrador los tiene en pantalla para copiarlos. Se registra y se sigue.
+ * Por eso la promesa que devuelve nunca falla.
  */
 function avisarDelCodigo({ buyerEmail, codigos, planName, expiresAt }) {
-  sendMail({
+  return sendMail({
     to: buyerEmail,
     ...plantillas.activationCode({ codes: codigos, planName, expiresAt }),
   }).catch((error) => {
@@ -205,6 +206,18 @@ function avisarDelCodigo({ buyerEmail, codigos, planName, expiresAt }) {
       'No se pudo enviar el código de activación al comprador',
     );
   });
+}
+
+/**
+ * Manda a cada comprador sus códigos, de uno en uno.
+ *
+ * En fila y no todos a la vez: treinta envíos simultáneos es la forma de que
+ * el SMTP empiece a rechazar, y aquí nadie espera la respuesta.
+ */
+async function avisarDeLosCodigos({ envios, planName, expiresAt }) {
+  for (const { email, codes } of envios) {
+    await avisarDelCodigo({ buyerEmail: email, codigos: codes, planName, expiresAt });
+  }
 }
 
 /** Moneda de los cobros de fuera de la web: los precios se anuncian en soles. */
@@ -389,11 +402,16 @@ const licenseService = {
    * Si se indica el correo del comprador, se le mandan también por ahí. La
    * pantalla del administrador los sigue enseñando igual: el correo puede
    * rebotar, y en ese caso lo único que queda es lo que se copió a mano.
+   *
+   * Con `buyerEmails` es la misma venta repetida para cada comprador: mismo
+   * producto, mismo medio y mismo importe por código, y cada uno recibe en su
+   * correo solo los suyos.
    */
   async generateCodes({
     cantidad = 1,
     productCode,
     buyerEmail,
+    buyerEmails,
     note,
     createdById,
     expiresAt,
@@ -411,46 +429,68 @@ const licenseService = {
     // web: es lo que ocurre en la práctica y evita teclear la cifra dos veces.
     const cobrado = cortesia ? null : (amountCents ?? contrato.priceCents);
 
+    // Un correo repetido en la lista es un pegado doble, no dos ventas: quien
+    // compra dos va con `cantidad`.
+    const compradores = buyerEmails?.length ? [...new Set(buyerEmails)] : [buyerEmail ?? null];
+
     const codigos = [];
     const ids = [];
     const filas = [];
+    const envios = [];
 
-    for (let i = 0; i < cantidad; i += 1) {
-      const codigo = generarCodigo();
-      codigos.push(codigo);
+    for (const comprador of compradores) {
+      const suyos = [];
 
-      // El identificador se genera aquí y no en la base de datos porque
-      // `createMany` no devuelve las filas creadas, y hace falta saber a qué
-      // código enganchar el comprobante que suba el administrador justo después.
-      const id = crypto.randomUUID();
-      ids.push(id);
+      for (let i = 0; i < cantidad; i += 1) {
+        const codigo = generarCodigo();
+        codigos.push(codigo);
+        suyos.push(codigo);
 
-      filas.push({
-        id,
-        codeHash: hashToken(codigo),
-        // Los últimos 4 caracteres bastan para reconocerlo en el panel.
-        hint: codigo.slice(-4),
-        productCode: producto,
-        buyerEmail,
-        note,
-        createdById,
-        expiresAt,
-        paymentMethod,
-        paymentRef: paymentRef || null,
-        amountCents: cobrado,
-      });
+        // El identificador se genera aquí y no en la base de datos porque
+        // `createMany` no devuelve las filas creadas, y hace falta saber a qué
+        // código enganchar el comprobante que suba el administrador justo después.
+        const id = crypto.randomUUID();
+        ids.push(id);
+
+        filas.push({
+          id,
+          codeHash: hashToken(codigo),
+          // Los últimos 4 caracteres bastan para reconocerlo en el panel.
+          hint: codigo.slice(-4),
+          productCode: producto,
+          buyerEmail: comprador,
+          note,
+          createdById,
+          expiresAt,
+          paymentMethod,
+          paymentRef: paymentRef || null,
+          amountCents: cobrado,
+        });
+      }
+
+      envios.push({ email: comprador, codes: suyos });
     }
 
+    // Todas las filas en una sola escritura: o se crea la venta entera o nada,
+    // y no queda media lista con códigos y la otra media sin ellos.
     await licenseRepository.createCodes(filas);
     logger.info(
-      { cantidad, producto, buyerEmail, paymentMethod, amountCents: cobrado },
+      {
+        cantidad,
+        producto,
+        compradores: compradores.length,
+        buyerEmail: compradores.length === 1 ? compradores[0] : undefined,
+        paymentMethod,
+        amountCents: cobrado,
+      },
       'Códigos de activación generados',
     );
 
-    if (buyerEmail) {
+    const conCorreo = envios.filter((envio) => envio.email);
+    if (conCorreo.length > 0) {
       // El nombre del plan sale del mismo sitio que en una compra, para que el
       // comprador lea lo mismo que vio en la web al pagar.
-      avisarDelCodigo({ buyerEmail, codigos, planName: contrato.nombre, expiresAt });
+      avisarDeLosCodigos({ envios: conCorreo, planName: contrato.nombre, expiresAt });
     }
 
     return {
@@ -459,7 +499,10 @@ const licenseService = {
       // Los identificadores viajan para que el panel pueda adjuntarle el
       // comprobante al código recién creado, si el administrador subió uno.
       ids,
-      enviadoA: buyerEmail ?? null,
+      enviadoA: compradores.length === 1 ? compradores[0] : null,
+      // Qué códigos le tocaron a quién. Con una lista es lo único que permite
+      // contestar a «no me llegó» sin rehacer la venta.
+      envios,
       // Lo que se apuntó como cobro, para que el panel lo confirme en pantalla.
       // Un importe de cero se anuncia como lo que es —nada—, porque es lo que
       // hará el canje: sin dinero no se apunta ningún pago.

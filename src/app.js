@@ -12,6 +12,7 @@ const logger = require('./config/logger');
 const routes = require('./routes');
 const mcpRouter = require('./modules/mcp/mcp.router');
 const { globalLimiter } = require('./middlewares/rateLimit');
+const { ocultarSecretosEnUrl, ocultarConsulta } = require('./shared/utils/ocultar');
 const notFound = require('./middlewares/notFound');
 const errorHandler = require('./middlewares/errorHandler');
 
@@ -50,7 +51,21 @@ function createApp() {
   app.use(express.json({ limit: '100kb' }));
   app.use(express.urlencoded({ extended: true, limit: '100kb' }));
   app.use(cookieParser());
-  app.use(pinoHttp({ logger }));
+  app.use(
+    pinoHttp({
+      logger,
+      // La URL del conector ES la licencia, y el `redact` de pino no mira dentro
+      // de una cadena. Sin esto, cada llamada dejaba una licencia usable en el
+      // journal. Ver `shared/utils/ocultar`.
+      serializers: {
+        req: (req) => ({
+          ...req,
+          url: ocultarSecretosEnUrl(req.url),
+          query: ocultarConsulta(req.query),
+        }),
+      },
+    }),
+  );
 
   // El conector MCP va ANTES del límite global a propósito: ese límite cuenta
   // por IP, y todas las llamadas de Claude llegan desde la misma dirección de

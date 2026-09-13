@@ -4,6 +4,7 @@ const { Prisma } = require('@prisma/client');
 const env = require('../config/env');
 const logger = require('../config/logger');
 const { AppError } = require('../shared/errors/AppError');
+const { ocultarSecretosEnUrl } = require('../shared/utils/ocultar');
 const { ERROR_CODES } = require('../config/constants');
 const { avisarAlAdmin } = require('../lib/notify');
 const { esCaidaDeBase, crearDetector, UMBRAL } = require('../lib/dbAlert');
@@ -91,7 +92,14 @@ function errorHandler(error, req, res, _next) {
   // 5xx: siempre con traza. 4xx: ruido esperable, nivel warn.
   const log = statusCode >= 500 ? logger.error.bind(logger) : logger.warn.bind(logger);
   log(
-    { err: error, statusCode, code, method: req.method, url: req.originalUrl, userId: req.user?.id },
+    {
+      err: error,
+      statusCode,
+      code,
+      method: req.method,
+      url: ocultarSecretosEnUrl(req.originalUrl),
+      userId: req.user?.id,
+    },
     message,
   );
 

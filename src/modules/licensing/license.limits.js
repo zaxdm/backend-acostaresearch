@@ -247,12 +247,14 @@ async function reservar(licencia, ahora = new Date()) {
   const dia = selloDia(ahora);
   const mes = selloMes(ahora);
 
-  try {
-    await prisma.licenseCounter.create({ data: { licenseId, dayStamp: dia, monthStamp: mes } });
-  } catch (error) {
-    // Ya existía, o la creó a la vez otra llamada de la misma licencia.
-    if (error?.code !== 'P2002') throw error;
-  }
+  // Ya existía, o la crea a la vez otra llamada de la misma licencia: con
+  // `skipDuplicates` lo resuelve la base sin error. Antes era un `create` con el
+  // P2002 atrapado, y Prisma dejaba igualmente un «prisma:error» en el registro
+  // por cada consulta de cada tesista: 65 en tres horas, el 13 de septiembre.
+  await prisma.licenseCounter.createMany({
+    data: [{ licenseId, dayStamp: dia, monthStamp: mes }],
+    skipDuplicates: true,
+  });
   await alinearSellos(licenseId, dia, mes);
 
   const { count } = await prisma.licenseCounter.updateMany({

@@ -13,6 +13,7 @@ const routes = require('./routes');
 const mcpRouter = require('./modules/mcp/mcp.router');
 const { globalLimiter } = require('./middlewares/rateLimit');
 const { ocultarSecretosEnUrl, ocultarConsulta } = require('./shared/utils/ocultar');
+const { ForbiddenError } = require('./shared/errors/AppError');
 const notFound = require('./middlewares/notFound');
 const errorHandler = require('./middlewares/errorHandler');
 
@@ -42,7 +43,10 @@ function createApp() {
       origin(origin, callback) {
         // Sin Origin (curl, health checks del balanceador) se permite.
         if (!origin || env.corsOrigins.includes(origin)) return callback(null, true);
-        return callback(new Error(`Origen no permitido por CORS: ${origin}`));
+        // Un 403 y no un Error suelto: aquel llegaba al manejador como fallo del
+        // servidor y dejaba un error grave en el registro cada vez que alguien
+        // abría la web en local contra la API de producción.
+        return callback(new ForbiddenError(`Origen no permitido por CORS: ${origin}`));
       },
       credentials: true, // imprescindible para la cookie del refresh token
     }),
@@ -72,6 +76,14 @@ function createApp() {
   // Anthropic. Aplicarlo aquí metería a todos los compradores en el mismo cubo.
   // El conector tiene su propio límite, contado por licencia.
   app.use('/mcp', mcpRouter);
+
+  // Claude pregunta por OAuth antes de conectar (`/.well-known/oauth-…`). El
+  // conector no usa OAuth —la licencia va en la URL—, así que la respuesta es
+  // «no existe»; pero dada por el 404 general dejaba un aviso en el registro por
+  // cada conexión de cada tesista. Se contesta aquí, sin anotarlo como error.
+  app.use('/.well-known', (_req, res) =>
+    res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'No existe.' } }),
+  );
 
   app.use(globalLimiter);
 

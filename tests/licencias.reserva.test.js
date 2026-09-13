@@ -48,6 +48,19 @@ const prismaFalso = {
       const fila = filas.get(where.licenseId);
       return fila ? { ...fila } : null;
     },
+    // Como MySQL con INSERT IGNORE: lo repetido no falla, se salta.
+    async createMany({ data, skipDuplicates }) {
+      let count = 0;
+      for (const fila of [].concat(data)) {
+        try {
+          await prismaFalso.licenseCounter.create({ data: fila });
+          count += 1;
+        } catch (error) {
+          if (!(skipDuplicates && error.code === 'P2002')) throw error;
+        }
+      }
+      return { count };
+    },
     async create({ data }) {
       await turno();
       if (filas.has(data.licenseId)) throw Object.assign(new Error('duplicada'), { code: 'P2002' });

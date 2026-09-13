@@ -183,9 +183,16 @@ function autores(authorships = []) {
  * pregunta del jurado —«¿y qué se ha estudiado sobre esto en el Perú?»— y la
  * que el fondo de la casa no puede responder porque es casi todo en inglés.
  */
-async function buscar({ tema, idioma = null, pais = null, desdeAnio = null, cuantas = 6 }) {
+/**
+ * Una página de resultados, o null si OpenAlex no contestó.
+ *
+ * `enTituloYResumen` decide dónde se busca: con él, la palabra tiene que estar
+ * en el título o el resumen; sin él, OpenAlex busca también en el texto
+ * completo, y ahí «Lima» y «compra» aparecen en casi cualquier artículo peruano.
+ */
+async function paginaDeBusqueda({ tema, idioma, pais, desdeAnio, cuantas, enTituloYResumen }) {
   const url = new URL(BASE);
-  url.searchParams.set('search', tema);
+  if (!enTituloYResumen) url.searchParams.set('search', tema);
   url.searchParams.set('per_page', String(Math.min(Math.max(cuantas, 1), 25)));
   url.searchParams.set('mailto', contacto());
 
@@ -193,6 +200,8 @@ async function buscar({ tema, idioma = null, pais = null, desdeAnio = null, cuan
   if (idioma) filtros.push(`language:${idioma}`);
   if (pais) filtros.push(`authorships.institutions.country_code:${pais.toLowerCase()}`);
   if (desdeAnio) filtros.push(`from_publication_date:${desdeAnio}-01-01`);
+  // Las comas separan filtros en OpenAlex: dentro del tema romperían la consulta.
+  if (enTituloYResumen) filtros.push(`title_and_abstract.search:${tema.replace(/,/g, ' ')}`);
   url.searchParams.set('filter', filtros.join(','));
 
   const corte = AbortSignal.timeout(TIEMPO_LIMITE_MS);
@@ -201,7 +210,7 @@ async function buscar({ tema, idioma = null, pais = null, desdeAnio = null, cuan
     return null;
   });
 
-  if (!res) return { fuentes: [], total: 0, caida: true };
+  if (!res) return null;
 
   if (!res.ok) {
     const detalle = await res.text().catch(() => '');
@@ -209,10 +218,40 @@ async function buscar({ tema, idioma = null, pais = null, desdeAnio = null, cuan
     // recupera; los filtros siguen funcionando. No es culpa de nadie y no debe
     // parecer un fallo del conector.
     logger.warn({ estado: res.status, detalle: detalle.slice(0, 160) }, 'OpenAlex rechazó la búsqueda');
-    return { fuentes: [], total: 0, caida: true };
+    return null;
   }
 
-  const datos = await res.json();
+  return res.json();
+}
+
+/**
+ * Busca en OpenAlex, primero en título y resumen y después, si no llega, en
+ * todo.
+ *
+ * Solo con la búsqueda completa, «experiencia de compra comercio electrónico
+ * Lima» devolvía el 13 de septiembre de 2026 evasión tributaria en San Martín y
+ * cajas municipales de Áncash. Solo con título y resumen, la misma frase daba un
+ * único resultado, porque exige cada palabra. Las dos juntas: lo relevante
+ * delante y lo amplio detrás, sin repetir.
+ */
+async function buscar({ tema, idioma = null, pais = null, desdeAnio = null, cuantas = 6 }) {
+  const comun = { tema, idioma, pais, desdeAnio, cuantas };
+
+  const precisa = await paginaDeBusqueda({ ...comun, enTituloYResumen: true });
+  let resultados = precisa?.results ?? [];
+  let total = precisa?.meta?.count ?? 0;
+
+  if (resultados.length < cuantas) {
+    const amplia = await paginaDeBusqueda({ ...comun, enTituloYResumen: false });
+    if (!precisa && !amplia) return { fuentes: [], total: 0, caida: true };
+
+    const vistos = new Set(resultados.map((w) => w.id));
+    const extra = (amplia?.results ?? []).filter((w) => !vistos.has(w.id));
+    resultados = [...resultados, ...extra].slice(0, cuantas);
+    total = Math.max(total, amplia?.meta?.count ?? 0);
+  }
+
+  const datos = { results: resultados, meta: { count: total } };
 
   const fuentes = (datos.results ?? []).map((w) => ({
     titulo: w.title ?? '(sin título)',

@@ -303,3 +303,37 @@ test('si fallan todos, sale el error del último', async () => {
     (error) => error.status === 500,
   );
 });
+
+// ── Promociones ────────────────────────────────────────────────────────────
+
+const PLANES_CON_CODIGO = [
+  { ...PLANES[0], code: 'METODO_DE_TESIS_HUMANIZADOR' },
+  { ...PLANES[1], code: 'ARTICULO_SCIENTIFICOS' },
+];
+
+test('con promoción pública, el precio que se da primero es el que ve en la web', () => {
+  const texto = describirPlanes(PLANES_CON_CODIGO, [
+    { code: 'TESIS11', amountCents: 4000, planCode: 'METODO_DE_TESIS_HUMANIZADOR' },
+  ]);
+  assert.match(texto, /Método de Tesis: S\/ 159 con el código TESIS11, .*\(precio normal S\/ 199\)/);
+  // El otro paquete no tiene promoción y sale como siempre.
+  assert.match(texto, /Artículos Científicos: S\/ 250,/);
+});
+
+test('una promoción que no rebaja o que se come el precio entero no se anuncia', () => {
+  const texto = describirPlanes(PLANES_CON_CODIGO, [
+    { code: 'CERO', amountCents: 0, planCode: 'METODO_DE_TESIS_HUMANIZADOR' },
+    { code: 'GRATIS', amountCents: 25000, planCode: 'ARTICULO_SCIENTIFICOS' },
+  ]);
+  assert.doesNotMatch(texto, /CERO|GRATIS/);
+});
+
+test('las instrucciones del asistente llevan la promoción', () => {
+  const sistema = construirSistema({
+    planes: PLANES_CON_CODIGO,
+    promos: [{ code: 'TESIS11', amountCents: 4000, planCode: 'METODO_DE_TESIS_HUMANIZADOR' }],
+    pagina: '/planes',
+    conSesion: false,
+  });
+  assert.match(sistema, /S\/ 159 con el código TESIS11/);
+});

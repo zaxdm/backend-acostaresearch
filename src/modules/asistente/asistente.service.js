@@ -6,6 +6,7 @@ const { ERROR_CODES } = require('../../config/constants');
 const { AppError } = require('../../shared/errors/AppError');
 const { generarConRespaldo, GeminiError } = require('../../lib/gemini');
 const billingService = require('../billing/billing.service');
+const discountService = require('../billing/discount.service');
 const { construirSistema } = require('./asistente.prompt');
 const { crearTopeDiario } = require('./asistente.tope');
 
@@ -28,20 +29,28 @@ const { crearTopeDiario } = require('./asistente.tope');
 const PLANES_VIGENCIA_MS = 10 * 60 * 1000;
 let planesEnMemoria = { valor: null, leidoEn: 0 };
 
-async function planesVigentes() {
+/**
+ * Los planes y las promociones públicas, con la misma memoria de diez minutos.
+ *
+ * Las promociones van juntas porque la página de precios las aplica solas: un
+ * precio sin su promoción es un precio que la persona no va a ver.
+ */
+async function preciosVigentes() {
   if (planesEnMemoria.valor && Date.now() - planesEnMemoria.leidoEn < PLANES_VIGENCIA_MS) {
     return planesEnMemoria.valor;
   }
 
   try {
+    // Una detrás de otra y no a la vez: la base aguanta cinco conexiones.
     const planes = await billingService.listPlans();
-    planesEnMemoria = { valor: planes, leidoEn: Date.now() };
-    return planes;
+    const promos = await discountService.publicos();
+    planesEnMemoria = { valor: { planes, promos }, leidoEn: Date.now() };
+    return planesEnMemoria.valor;
   } catch (error) {
     // Con la base caída el asistente sigue atendiendo: las dudas no necesitan
     // precios, y el prompt ya le dice que no dé cifras si no las tiene.
     logger.warn({ err: error }, 'Asistente: no se pudieron leer los planes');
-    return planesEnMemoria.valor ?? [];
+    return planesEnMemoria.valor ?? { planes: [], promos: [] };
   }
 }
 
@@ -77,7 +86,8 @@ const asistenteService = {
       );
     }
 
-    const sistema = construirSistema({ planes: await planesVigentes(), pagina, conSesion });
+    const { planes, promos } = await preciosVigentes();
+    const sistema = construirSistema({ planes, promos, pagina, conSesion });
 
     try {
       const { texto, finishReason, uso, modelo } = await generarConRespaldo({

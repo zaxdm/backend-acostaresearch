@@ -125,7 +125,8 @@ router.patch(
 );
 
 /**
- * Borra el proyecto entero: avance, capítulos escritos, análisis y plantilla.
+ * Devuelve el proyecto al comienzo: borra avance, capítulos escritos, análisis y
+ * plantilla, y deja el método con sus fases en blanco.
  *
  * Es la única forma de empezar de cero. El conector no puede hacerlo —anota,
  * pero no olvida—, y tiene que poder hacerlo el dueño cuando le cambian el tema.
@@ -138,16 +139,16 @@ router.delete(
       throw new ValidationError(datos.error.issues[0]?.message ?? 'Escribe «eliminar» para confirmar.');
     }
 
-    const borrado = await projectService.borrarProyecto(req.user.id, req.params.productCode);
-    if (!borrado) {
+    const reiniciado = await projectService.reiniciarProyecto(req.user.id, req.params.productCode);
+    if (!reiniciado) {
       return res.status(404).json({
         success: false,
         message: 'No hay ningún proyecto de este método que borrar.',
       });
     }
 
-    return ok(res, { borrado }, {
-      message: 'Proyecto borrado. La próxima vez que trabajes con Claude empezará de cero.',
+    return ok(res, { reiniciado }, {
+      message: 'Tu proyecto volvió al comienzo. La próxima vez que trabajes con Claude empezará de cero.',
     });
   }),
 );

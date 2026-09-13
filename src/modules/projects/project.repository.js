@@ -112,9 +112,27 @@ function marcarPlantilla(projectId, nombre) {
   });
 }
 
-/** Borra el proyecto. Sus etapas se van con él: la relación es en cascada. */
-function borrar(projectId) {
-  return prisma.project.delete({ where: { id: projectId } });
+/**
+ * Deja el proyecto como recién creado: sin etapas y sin nada de lo que se
+ * anotó. La fila se queda —es lo que hace que el panel siga enseñando el método
+ * con sus fases en blanco—; lo demás, fuera, en una sola transacción.
+ */
+function reiniciar(projectId) {
+  return prisma.$transaction([
+    prisma.projectStage.deleteMany({ where: { projectId } }),
+    prisma.project.update({
+      where: { id: projectId },
+      data: {
+        tema: null,
+        carrera: null,
+        universidad: null,
+        estiloCitas: null,
+        idiomaCitas: null,
+        plantillaAt: null,
+        plantillaNombre: null,
+      },
+    }),
+  ]);
 }
 
 /** El nombre del tesista, para la portada del Word. */
@@ -153,7 +171,7 @@ module.exports = {
   asegurar,
   guardarEtapa,
   listarDeUsuario,
-  borrar,
+  reiniciar,
   nombreDe,
   marcarPlantilla,
   nombresDeProducto,

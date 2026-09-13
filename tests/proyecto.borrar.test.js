@@ -3,9 +3,9 @@
 /**
  * Empezar de cero.
  *
- * Lo que se prueba: que borrar pide la palabra, que se lleva la base Y la
- * carpeta del disco —en ese orden—, que un fallo del disco no deja al tesista
- * con un error después de haber borrado, y que borrar la cuenta ya no deja las
+ * Lo que se prueba: que pide la palabra, que vacía el disco Y la base —en ese
+ * orden— dejando el proyecto en su sitio para que el panel lo enseñe en blanco,
+ * que un fallo del disco no toca la base, y que borrar la cuenta ya no deja las
  * tesis colgando de una fila anónima. La base y el disco se sustituyen.
  */
 
@@ -22,7 +22,7 @@ const sustituir = (ruta, exports) => {
 
 sustituir('../src/modules/projects/project.repository', {
   buscar: async () => estado.proyecto,
-  borrar: async (projectId) => {
+  reiniciar: async (projectId) => {
     pasos.push(`base:${projectId}`);
   },
 });
@@ -96,25 +96,25 @@ test('sin proyecto no hay nada que borrar, y no se toca nada', async () => {
   empezar();
   estado.proyecto = null;
 
-  assert.equal(await projectService.borrarProyecto('u1', 'METODO_9_SKILLS'), false);
+  assert.equal(await projectService.reiniciarProyecto('u1', 'METODO_9_SKILLS'), false);
   assert.deepEqual(pasos, []);
 });
 
-test('se borra la base y después la carpeta del disco', async () => {
+test('se vacía el disco y después se reinicia en la base, sin borrar el proyecto', async () => {
   empezar();
 
-  assert.equal(await projectService.borrarProyecto('u1', 'METODO_9_SKILLS'), true);
-  assert.deepEqual(pasos, ['base:p1', 'disco:p1']);
+  assert.equal(await projectService.reiniciarProyecto('u1', 'METODO_9_SKILLS'), true);
+  assert.deepEqual(pasos, ['disco:p1', 'base:p1']);
 });
 
-test('si el disco falla, el borrado igual se da por hecho', async () => {
-  // La base ya no tiene el proyecto: devolver un error aquí haría creer al
-  // tesista que su tesis sigue ahí, y volvería a intentarlo contra nada.
+test('si el disco falla, se avisa y la base no se toca', async () => {
+  // El proyecto conserva su identificador: dar por reiniciada una base con los
+  // capítulos todavía en disco haría que el conector los volviera a encontrar.
   empezar();
   estado.discoRompe = true;
 
-  assert.equal(await projectService.borrarProyecto('u1', 'METODO_9_SKILLS'), true);
-  assert.deepEqual(pasos, ['base:p1']);
+  await assert.rejects(projectService.reiniciarProyecto('u1', 'METODO_9_SKILLS'), /disco/);
+  assert.deepEqual(pasos, []);
 });
 
 // ── La cuenta ───────────────────────────────────────────────────────────────

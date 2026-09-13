@@ -1,21 +1,26 @@
 'use strict';
 
+const { Prisma } = require('@prisma/client');
+
 /**
- * Detector de cortes de la base de datos.
+ * ¿Este error dice que la base no está, o solo que la consulta no cuadra?
  *
  * El 11 de septiembre de 2026, entre las 15:00 y las 15:04 UTC, la base de
  * Clever Cloud dejó de responder y la API devolvió 38 errores, doce de ellos
  * intentos de inicio de sesión. Nadie se enteró hasta el día siguiente, y solo
  * porque alguien fue a mirar los logs. Era el cuarto corte de cinco en siete
- * días. Esto es la campanita para los siguientes.
+ * días.
  *
- * Lo que se vigila NO son errores de consulta —una clave duplicada, una fila
- * que no está— sino los que significan «la base no está al otro lado». Esa
- * distinción es toda la utilidad del aviso: si suena por cualquier error, se
- * silencia a la semana y deja de servir.
+ * Lo que se distingue aquí NO son errores de consulta —una clave duplicada, una
+ * fila que no está— sino los que significan «la base no está al otro lado». De
+ * eso depende que la API conteste 503, y la web saque la pantalla de
+ * mantenimiento, en vez de un 500.
  *
- * La decisión de avisar se separa del aviso en sí para poder probarla con un
- * reloj falso, sin red y sin ntfy.
+ * El aviso al móvil ya no sale de contar estos errores: lo manda el vigilante
+ * (`vigiaBase.js`), que pregunta él mismo a la base. Contarlos dejaba el aviso en
+ * manos de las visitas, y con la pantalla de mantenimiento puesta cada pestaña
+ * pregunta una vez cada treinta segundos: con una sola, nunca se llegaba a tres
+ * fallos en un minuto.
  */
 
 /**
@@ -32,60 +37,31 @@ const CODIGOS_DE_CAIDA = Object.freeze(['P1001', 'P1002', 'P1017', 'P2024']);
 
 const CODIGOS = new Set(CODIGOS_DE_CAIDA);
 
-/** Fallos dentro de la ventana que hacen sonar el aviso. */
-const UMBRAL = 3;
-
-/** Ventana en la que se cuentan esos fallos. */
-const VENTANA_MS = 60 * 1000;
+/**
+ * El código de Prisma, esté donde esté.
+ *
+ * No viene siempre en el mismo sitio: PrismaClientKnownRequestError lo trae en
+ * `code`, y PrismaClientInitializationError —el que sale si el corte pilla al
+ * cliente sin conectar— en `errorCode`. Mirando solo `code`, esa variante salía
+ * como 500 y la web no se enteraba de que era una caída.
+ */
+function codigoDe(error) {
+  return error?.code ?? error?.errorCode;
+}
 
 /**
- * Tiempo que se calla después de avisar.
+ * Un error de inicialización es caída aunque no traiga código.
  *
- * Un corte de cuatro minutos dio 38 errores. Sin esto, 38 avisos: el teléfono
- * inservible justo el rato en el que hay que mirarlo.
+ * Probado contra un MySQL inalcanzable: Prisma 6.19 lanza
+ * PrismaClientInitializationError con «Can't reach database server» y sin nada
+ * ni en `code` ni en `errorCode`. Ese error solo sale cuando el cliente no llega
+ * a la base, que es justo lo que aquí se pregunta.
  */
-const SILENCIO_MS = 15 * 60 * 1000;
-
-/** ¿Este error dice que la base no está, o solo que la consulta no cuadra? */
 function esCaidaDeBase(error) {
-  return typeof error?.code === 'string' && CODIGOS.has(error.code);
+  if (error instanceof Prisma.PrismaClientInitializationError) return true;
+
+  const codigo = codigoDe(error);
+  return typeof codigo === 'string' && CODIGOS.has(codigo);
 }
 
-/**
- * Ventana deslizante con silencio posterior.
- *
- * Devuelve una función que se llama con cada fallo de conexión y responde si
- * toca avisar. El reloj entra por parámetro para que las pruebas no dependan de
- * esperar un minuto de verdad.
- */
-function crearDetector({
-  umbral = UMBRAL,
-  ventanaMs = VENTANA_MS,
-  silencioMs = SILENCIO_MS,
-} = {}) {
-  let fallos = [];
-  let ultimoAviso = null;
-
-  return function registrarFallo(ahora = Date.now()) {
-    fallos = fallos.filter((momento) => ahora - momento < ventanaMs);
-    fallos.push(ahora);
-
-    if (fallos.length < umbral) return false;
-    if (ultimoAviso !== null && ahora - ultimoAviso < silencioMs) return false;
-
-    ultimoAviso = ahora;
-    // Se vacía el recuento: los fallos que ya dispararon un aviso no deben
-    // contar para el siguiente.
-    fallos = [];
-    return true;
-  };
-}
-
-module.exports = {
-  CODIGOS_DE_CAIDA,
-  UMBRAL,
-  VENTANA_MS,
-  SILENCIO_MS,
-  esCaidaDeBase,
-  crearDetector,
-};
+module.exports = { CODIGOS_DE_CAIDA, codigoDe, esCaidaDeBase };

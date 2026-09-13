@@ -17,8 +17,7 @@ const zoteroRoutes = require('./modules/zotero/biblioteca.routes');
 const asistenteRoutes = require('./modules/asistente/asistente.routes');
 const reclamoRoutes = require('./modules/reclamos/reclamo.routes');
 
-const prisma = require('./lib/prisma');
-const { crearSonda } = require('./lib/sondaBase');
+const comprobarBase = require('./lib/comprobarBase');
 
 const router = Router();
 
@@ -30,7 +29,6 @@ router.get('/health', (_req, res) =>
 // caída sigue contestando ok. Esta es la que pregunta la pantalla de
 // mantenimiento de la web para saber cuándo quitarse. Si la base no está, el
 // error llega al manejador de errores y sale como 503.
-const comprobarBase = crearSonda({ consultar: () => prisma.$queryRaw`SELECT 1` });
 
 router.get('/health/bd', async (_req, res, next) => {
   try {

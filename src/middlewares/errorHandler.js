@@ -6,8 +6,7 @@ const logger = require('../config/logger');
 const { AppError } = require('../shared/errors/AppError');
 const { ocultarSecretosEnUrl } = require('../shared/utils/ocultar');
 const { ERROR_CODES } = require('../config/constants');
-const { avisarAlAdmin } = require('../lib/notify');
-const { esCaidaDeBase, crearDetector, UMBRAL } = require('../lib/dbAlert');
+const { esCaidaDeBase } = require('../lib/dbAlert');
 
 /**
  * Segundos que se le piden al cliente antes de reintentar.
@@ -18,14 +17,15 @@ const { esCaidaDeBase, crearDetector, UMBRAL } = require('../lib/dbAlert');
  */
 const REINTENTAR_EN_S = 30;
 
-const registrarFallo = crearDetector();
-
 /** Traduce errores conocidos de Prisma a errores HTTP con sentido. */
 function fromPrisma(error) {
-  // Primero lo que no es culpa de la consulta sino del enlace con la base. Se
-  // mira el código suelto, sin exigir el tipo: la misma avería llega como
-  // PrismaClientKnownRequestError si ya había cliente y como
-  // PrismaClientInitializationError si el corte pilló al arranque.
+  // Primero lo que no es culpa de la consulta sino del enlace con la base. No se
+  // exige el tipo: la misma avería llega como PrismaClientKnownRequestError si
+  // ya había cliente y como PrismaClientInitializationError si el corte pilló
+  // al arranque, cada una con el código en un sitio distinto.
+  //
+  // El aviso al móvil no sale de aquí sino del vigilante de la base
+  // (`lib/vigiaBase.js`), que no depende de que lleguen peticiones.
   if (esCaidaDeBase(error)) {
     return {
       statusCode: 503,
@@ -48,30 +48,6 @@ function fromPrisma(error) {
   return null;
 }
 
-/**
- * Avisa al administrador si los cortes se acumulan.
- *
- * Va envuelto en su propio try porque esto es el último muro de la aplicación:
- * si el manejador de errores lanza, Express responde con su página en blanco y
- * el error original se pierde. Ningún aviso vale eso.
- */
-function avisarSiLaBaseSeCayo(error) {
-  try {
-    if (!esCaidaDeBase(error) || !registrarFallo()) return;
-
-    avisarAlAdmin({
-      titulo: 'La base de datos no responde',
-      mensaje:
-        `${UMBRAL} fallos de conexión en menos de un minuto (${error.code}). ` +
-        'La API está devolviendo 503 a quien entre.',
-      etiquetas: ['rotating_light'],
-      prioridad: 5,
-    });
-  } catch (fallo) {
-    logger.error({ err: fallo }, 'No se pudo evaluar el aviso de caída de la base');
-  }
-}
-
 // Express identifica el manejador de errores por su aridad de 4 argumentos.
 // eslint-disable-next-line no-unused-vars
 function errorHandler(error, req, res, _next) {
@@ -86,8 +62,6 @@ function errorHandler(error, req, res, _next) {
     const mapped = fromPrisma(error);
     if (mapped) ({ statusCode, code, message } = mapped);
   }
-
-  avisarSiLaBaseSeCayo(error);
 
   // 5xx: siempre con traza. 4xx: ruido esperable, nivel warn.
   const log = statusCode >= 500 ? logger.error.bind(logger) : logger.warn.bind(logger);

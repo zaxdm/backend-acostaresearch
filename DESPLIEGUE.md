@@ -221,6 +221,15 @@ aleatorio, y por eso el aviso **no lleva el correo del comprador** — solo nomb
 de pila, inicial, importe y plan. Quién es y su comprobante están detrás del
 panel, que pide sesión.
 
+**Los cortes de la base avisan por el mismo canal.** El servidor pregunta a la
+base cada 30 s (`src/lib/vigiaBase.js`), haya o no gente en la web. Dos
+comprobaciones fallidas seguidas mandan «La base de datos no responde», una sola
+vez por corte, y cuando vuelve llega «La base de datos volvió» con lo que duró.
+Antes el aviso salía de contar los errores de las peticiones, y con la pantalla
+de mantenimiento puesta —una pregunta cada 30 s por pestaña— no sonaba casi
+nunca. Si lo que se cae es el propio proceso del backend, nadie queda para
+avisar: eso lo tendría que vigilar alguien desde fuera llamando a `/health`.
+
 ---
 
 ## Las migraciones

@@ -5,6 +5,9 @@ const logger = require('./config/logger');
 const prisma = require('./lib/prisma');
 const createApp = require('./app');
 const { verifyTransport } = require('./lib/mailer');
+const { avisarAlAdmin } = require('./lib/notify');
+const comprobarBase = require('./lib/comprobarBase');
+const { INTERVALO_MS, crearVigia } = require('./lib/vigiaBase');
 
 async function bootstrap() {
   // Fallar aquí y no en la primera petición si la BD no responde.
@@ -19,9 +22,19 @@ async function bootstrap() {
     logger.info(`API escuchando en http://localhost:${env.PORT}${env.API_PREFIX} [${env.NODE_ENV}]`);
   });
 
+  // El vigilante de la base: pregunta cada medio minuto aunque no haya nadie en
+  // la web, y avisa al móvil si deja de contestar. El `catch` no sobra: una
+  // promesa rechazada sin manejar tumba el proceso, y ningún aviso vale eso.
+  const vigilar = crearVigia({ comprobar: comprobarBase, avisar: avisarAlAdmin });
+  const vigia = setInterval(() => {
+    vigilar().catch((error) => logger.error({ err: error }, 'El vigilante de la base falló'));
+  }, INTERVALO_MS);
+  vigia.unref();
+
   // Apagado ordenado: se dejan terminar las peticiones en curso.
   const shutdown = (signal) => async () => {
     logger.info(`${signal} recibido, cerrando servidor…`);
+    clearInterval(vigia);
     server.close(async () => {
       await prisma.$disconnect();
       logger.info('Servidor cerrado correctamente');

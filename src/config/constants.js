@@ -38,6 +38,9 @@ const ERROR_CODES = Object.freeze({
   LICENSE_REVOKED: 'LICENSE_REVOKED',
   DISCOUNT_INVALID: 'DISCOUNT_INVALID',
   SERVICE_UNAVAILABLE: 'SERVICE_UNAVAILABLE',
+  // Propio y no SERVICE_UNAVAILABLE: ese enciende la pantalla de mantenimiento
+  // de la web, y que el chat no conteste no es motivo para tapar el sitio.
+  ASSISTANT_UNAVAILABLE: 'ASSISTANT_UNAVAILABLE',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
 });
 

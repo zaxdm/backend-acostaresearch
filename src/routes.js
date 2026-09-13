@@ -14,6 +14,7 @@ const tutorialRoutes = require('./modules/tutorials/tutorial.routes');
 const projectRoutes = require('./modules/projects/project.routes');
 const trialRoutes = require('./modules/trials/trial.routes');
 const zoteroRoutes = require('./modules/zotero/biblioteca.routes');
+const asistenteRoutes = require('./modules/asistente/asistente.routes');
 
 const prisma = require('./lib/prisma');
 const { crearSonda } = require('./lib/sondaBase');
@@ -56,5 +57,7 @@ router.use('/pruebas', trialRoutes);
 // El Zotero de cada comprador. Aparte de /referencias, que es el corpus de la
 // casa: aquello lo administra Acosta y esto lo conecta cada tesista.
 router.use('/mi-zotero', zoteroRoutes);
+// El chat de la web. Público: está para quien todavía no tiene cuenta.
+router.use('/asistente', asistenteRoutes);
 
 module.exports = router;

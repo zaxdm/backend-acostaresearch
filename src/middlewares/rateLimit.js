@@ -93,6 +93,19 @@ const trialClaimLimiter = build({
 });
 
 /**
+ * Mensajes al Asistente Acosta.
+ *
+ * Cuarenta cada diez minutos es más de lo que escribe una persona charlando, y
+ * deja sitio a varias detrás de la misma IP de operador. La factura no la
+ * protege esto sino el tope diario del servicio.
+ */
+const asistenteLimiter = build({
+  windowMs: 10 * 60 * 1000,
+  max: 40,
+  message: 'Estás escribiendo muy rápido. Espera unos minutos o escríbenos por WhatsApp.',
+});
+
+/**
  * Límite del conector MCP, contado POR LICENCIA y no por IP.
  *
  * Es obligatorio que sea así: Claude llama desde la infraestructura de
@@ -123,5 +136,6 @@ module.exports = {
   paymentLimiter,
   trialClaimLimiter,
   zoteroSyncLimiter,
+  asistenteLimiter,
   mcpLimiter,
 };

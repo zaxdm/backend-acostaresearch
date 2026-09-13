@@ -77,6 +77,24 @@ const schema = z.object({
   // sin gastar. NUNCA en producción: el arranque lo impide.
   SKILLS_SIMULADAS: booleanish.default('false'),
 
+  // ── Asistente Acosta (Gemini) ───────────────────────────────────────────
+  // El chat de la web. Clave en https://aistudio.google.com/apikey, EN UN
+  // PROYECTO CON FACTURACIÓN: en el nivel gratuito Google puede usar lo que
+  // escriben los visitantes para mejorar sus modelos, y eso contradice lo que
+  // les decimos. Vacía = el panel no aparece en la web.
+  GEMINI_API_KEY: vacioComoAusente(z.string()),
+  // Flash-Lite y no Flash ni Pro: responde preguntas de una ficha, y la espera se
+  // nota más que la diferencia de calidad. Medido el 13 de septiembre de 2026 con
+  // el mismo prompt: 2 s con respuestas más ceñidas, frente a 25 s de Flash.
+  GEMINI_MODEL: z.string().default('gemini-3.5-flash-lite'),
+  // Al que se pasa si el principal falla, tarda o está saturado. Mejor de otra
+  // generación: cuando uno se satura, los de su misma familia suelen ir igual.
+  // Vacío = sin respaldo.
+  GEMINI_MODEL_RESPALDO: vacioComoAusente(z.string()).default('gemini-3.1-flash-lite'),
+  GEMINI_THINKING: z.enum(['minimal', 'low', 'medium', 'high']).default('minimal'),
+  // Mensajes al día para todo el sitio, contados en memoria. 0 = sin tope.
+  ASISTENTE_MAX_DIARIO: z.coerce.number().int().nonnegative().default(1500),
+
   // ── Acceso con Google ───────────────────────────────────────────────────
   // Client ID de la app OAuth (console.cloud.google.com → Credenciales). Es
   // público por diseño: viaja en el HTML y Google comprueba el origen. Vacío =
@@ -289,6 +307,7 @@ const env = Object.freeze({
   rewriteEnabled:
     Boolean(raw.ANTHROPIC_API_KEY) || (raw.SKILLS_SIMULADAS && raw.NODE_ENV !== 'production'),
   googleAuthEnabled: Boolean(raw.GOOGLE_CLIENT_ID),
+  asistenteEnabled: Boolean(raw.GEMINI_API_KEY),
   googleClientIds: (raw.GOOGLE_CLIENT_ID ?? '')
     .split(',')
     .map((id) => id.trim())

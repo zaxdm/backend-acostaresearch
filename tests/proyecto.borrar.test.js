@@ -40,8 +40,10 @@ sustituir('../src/modules/zotero/biblioteca.repository', { deUsuario: async () =
 
 // Lo justo de la base para borrar una cuenta: cada operación anota su nombre y
 // la transacción las da por buenas.
+const argumentos = {};
 const anotar = (nombre) => (args) => {
   pasos.push(nombre);
+  argumentos[nombre] = args;
   return args;
 };
 sustituir('../src/lib/prisma', {
@@ -61,7 +63,11 @@ sustituir('../src/lib/prisma', {
   },
   license: { updateMany: anotar('license.updateMany') },
   accountCode: { deleteMany: anotar('accountCode.deleteMany') },
-  refreshToken: { updateMany: anotar('refreshToken.updateMany') },
+  rewrite: { updateMany: anotar('rewrite.updateMany') },
+  reference: { deleteMany: anotar('reference.deleteMany') },
+  zoteroAccount: { deleteMany: anotar('zoteroAccount.deleteMany') },
+  zoteroOauthRequest: { deleteMany: anotar('zoteroOauthRequest.deleteMany') },
+  refreshToken: { deleteMany: anotar('refreshToken.deleteMany') },
   $transaction: async (operaciones) => operaciones,
 });
 sustituir('../src/lib/mailer', { sendMail: async () => {} });
@@ -135,4 +141,29 @@ test('borrar la cuenta se lleva sus proyectos, de la base y del disco', async ()
     pasos.indexOf('project.deleteMany') < pasos.indexOf('disco:p1'),
     'el disco va después de la base',
   );
+});
+
+test('borrar la cuenta se lleva también sus fuentes, su Zotero, sus sesiones y sus textos', async () => {
+  // La política de privacidad lo promete: la fila anónima se queda por los
+  // pagos, así que nada de esto se va solo por cascada.
+  empezar();
+
+  await userService.deleteOwnAccount('u1', { email: 'tesista@correo.com' });
+
+  for (const paso of [
+    'reference.deleteMany',
+    'zoteroAccount.deleteMany',
+    'zoteroOauthRequest.deleteMany',
+    'refreshToken.deleteMany',
+    'rewrite.updateMany',
+  ]) {
+    assert.ok(pasos.includes(paso), `falta ${paso}`);
+  }
+
+  assert.deepEqual(
+    argumentos['reference.deleteMany'].where,
+    { ownerUserId: 'u1' },
+    'solo sus fuentes: las del corpus no tienen dueño',
+  );
+  assert.deepEqual(argumentos['rewrite.updateMany'].data, { sourceText: '', resultText: null });
 });

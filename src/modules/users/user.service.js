@@ -261,10 +261,17 @@ const userService = {
         data: { status: 'REVOKED', revokedAt: ahora, revokedReason: 'Cuenta borrada por su dueño' },
       }),
       prisma.accountCode.deleteMany({ where: { userId } }),
-      prisma.refreshToken.updateMany({
-        where: { userId, revokedAt: null },
-        data: { revokedAt: ahora },
-      }),
+      // Lo que escribió o trajo se va con él, por lo mismo que sus tesis: la
+      // cascada no llega. Del reescritor quedan las cifras —palabras, tokens,
+      // coste— y no el texto. Las fuentes del corpus no tienen dueño, así que el
+      // filtro no las roza.
+      prisma.rewrite.updateMany({ where: { userId }, data: { sourceText: '', resultText: null } }),
+      prisma.reference.deleteMany({ where: { ownerUserId: userId } }),
+      prisma.zoteroAccount.deleteMany({ where: { userId } }),
+      prisma.zoteroOauthRequest.deleteMany({ where: { userId } }),
+      // Las sesiones se borran en vez de revocarse: guardan la IP y el navegador,
+      // y un token que ya no existe se rechaza igual que uno revocado.
+      prisma.refreshToken.deleteMany({ where: { userId } }),
       prisma.user.update({
         where: { id: userId },
         data: {

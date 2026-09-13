@@ -143,7 +143,7 @@ function conColeccion() {
  * biblioteca de otro; sin el prefijo, se lleva por delante lo que subió él mismo
  * desde Scopus, que no viene de ninguna colección y no está en esa lista.
  */
-async function borrarLasQueYaNoEstan(userId, zoteroUserId, clavesVivas) {
+async function borrarLasQueYaNoEstan(userId, zoteroUserId, clavesVivas, citadas = []) {
   const prefijo = prefijoDe(zoteroUserId);
 
   const { count } = await prisma.reference.deleteMany({
@@ -153,6 +153,9 @@ async function borrarLasQueYaNoEstan(userId, zoteroUserId, clavesVivas) {
         startsWith: prefijo,
         notIn: clavesVivas.map((clave) => `${prefijo}${clave}`),
       },
+      // Y nunca lo que ya cita en un capítulo, aunque la haya sacado de la
+      // colección: su clave no se recupera al volver a traerla. Ver `citadas`.
+      ...(citadas.length > 0 && { ref: { notIn: citadas } }),
     },
   });
 

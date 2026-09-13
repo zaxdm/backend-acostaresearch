@@ -6,6 +6,7 @@ const secretos = require('../../shared/utils/secretos');
 const { ValidationError, NotFoundError, ConflictError } = require('../../shared/errors/AppError');
 const mapper = require('../references/zotero.mapper');
 const propiasRepository = require('../references/propias.repository');
+const { clavesCitadas } = require('../references/citadas');
 const oauth = require('./oauth1');
 const cliente = require('./biblioteca.client');
 const repositorio = require('./biblioteca.repository');
@@ -238,8 +239,16 @@ async function correr(userId) {
   }
 
   // Lo que salió de la colección se va de aquí. Una sola petición.
+  // Salvo lo que ya cita en un capítulo: si se borra, al volver a traerla sale
+  // con otra clave y la cita queda rota. Ver `references/citadas`.
   const vivas = await cliente.clavesDeLaColeccion(contexto, cuenta.collectionKey);
-  const retiradas = await repositorio.borrarLasQueYaNoEstan(userId, cuenta.zoteroUserId, vivas);
+  const citadas = await clavesCitadas(userId);
+  const retiradas = await repositorio.borrarLasQueYaNoEstan(
+    userId,
+    cuenta.zoteroUserId,
+    vivas,
+    citadas,
+  );
 
   const total = await repositorio.contarDeZotero(userId, cuenta.zoteroUserId);
   await repositorio.guardarPasada(userId, { libraryVersion: version, lastCount: total });

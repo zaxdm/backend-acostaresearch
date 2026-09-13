@@ -182,9 +182,24 @@ async function pagina(userId, { saltar = 0, tomar = 40, origen = 'todas' } = {})
  * El `ownerUserId` en el `where` no es una comodidad: es lo que impide que esto
  * llegue nunca al fondo de la casa, cuyas filas lo tienen nulo.
  */
-async function vaciar(userId) {
-  const { count } = await prisma.reference.deleteMany({ where: { ownerUserId: userId } });
-  return count;
+async function vaciar(userId, conservar = []) {
+  // Lo citado en sus capítulos se queda: borrarlo deja la cita rota para
+  // siempre, porque al volver a subirla la fuente recibe otra clave. Ver
+  // `citadas`. El filtro va solo si hay algo que conservar: `NOT IN ()` vacío no
+  // es SQL válido en todas partes.
+  const { count } = await prisma.reference.deleteMany({
+    where: {
+      ownerUserId: userId,
+      ...(conservar.length > 0 && { ref: { notIn: conservar } }),
+    },
+  });
+
+  const conservadas =
+    conservar.length > 0
+      ? await prisma.reference.count({ where: { ownerUserId: userId, ref: { in: conservar } } })
+      : 0;
+
+  return { borradas: count, conservadas };
 }
 
 module.exports = {

@@ -157,11 +157,24 @@ async function completar(ficha) {
   const faltan = !ficha.volume || !ficha.pages || !ficha.source;
   if (!faltan || !ficha.doi) return ficha;
 
-  const suyo = await porDoi(ficha.doi);
+  return unir(ficha, await porDoi(ficha.doi));
+}
+
+/**
+ * Junta una ficha con la de Crossref del mismo DOI.
+ *
+ * Por omisión solo rellena huecos, por lo dicho en `completar`. La excepción son
+ * los autores de una ficha de OPENALEX: allí llegan como nombre entero y hubo
+ * que adivinar el apellido, mientras que en Crossref el editor los depositó ya
+ * separados. Para esas se pide `preferirSusAutores`. Una ficha de Zotero o de un
+ * export no lo pide nunca: esos nombres los revisó alguien.
+ */
+function unir(ficha, suyo, { preferirSusAutores = false } = {}) {
   if (!suyo) return ficha;
 
   return {
     ...ficha,
+    authors: preferirSusAutores ? suyo.authors || ficha.authors : ficha.authors || suyo.authors,
     source: ficha.source || suyo.source,
     volume: ficha.volume || suyo.volume,
     issue: ficha.issue || suyo.issue,
@@ -170,4 +183,4 @@ async function completar(ficha) {
   };
 }
 
-module.exports = { porDoi, completar, limpiarDoi };
+module.exports = { porDoi, completar, unir, limpiarDoi };

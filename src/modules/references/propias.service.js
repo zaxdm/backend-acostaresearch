@@ -8,6 +8,7 @@ const openalex = require('./openalex.client');
 const crossref = require('./crossref.client');
 const { normalizar } = require('./zotero.mapper');
 const propiasRepository = require('./propias.repository');
+const { clavesCitadas } = require('./citadas');
 const bibliotecaRepository = require('../zotero/biblioteca.repository');
 
 const recortar = (valor, largo) => {
@@ -321,9 +322,14 @@ const propiasService = {
       // si lo conoce pero sin volumen ni páginas, las completa: es el registro
       // donde el editor las depositó, y sin ellas la referencia no está
       // completa en APA.
+      //
+      // Y se le pregunta siempre, no solo cuando falta algo: los autores de
+      // OpenAlex llegan como nombre entero y hay que adivinar el apellido. Esta
+      // ficha acaba en la bibliografía del Word, y ahí salían «F. Larcker, D.».
+      const deCrossref = await crossref.porDoi(doi);
       const ficha = deOpenAlex
-        ? await crossref.completar(deOpenAlex)
-        : await crossref.porDoi(doi);
+        ? crossref.unir(deOpenAlex, deCrossref, { preferirSusAutores: true })
+        : deCrossref;
 
       if (!ficha) {
         noEncontrados.push(doi);
@@ -357,8 +363,9 @@ const propiasService = {
     };
   },
 
-  vaciar(userId) {
-    return propiasRepository.vaciar(userId);
+  /** Todas menos las que cita en sus capítulos. Ver `citadas`. */
+  async vaciar(userId) {
+    return propiasRepository.vaciar(userId, await clavesCitadas(userId));
   },
 
   /**

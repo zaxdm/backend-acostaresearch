@@ -72,8 +72,9 @@ const repositorio = {
   elegirColeccion: async (_userId, datos) => {
     baseDeDatos.cuenta = { ...baseDeDatos.cuenta, ...datos, libraryVersion: 0 };
   },
-  borrarLasQueYaNoEstan: async (userId, zoteroUserId, clavesVivas) => {
+  borrarLasQueYaNoEstan: async (userId, zoteroUserId, clavesVivas, citadas) => {
     baseDeDatos.borradoCon = { userId, zoteroUserId, clavesVivas };
+    baseDeDatos.citadasConservadas = citadas;
     return 1;
   },
   contarDeZotero: async () => baseDeDatos.cuantasDeZotero,
@@ -122,6 +123,10 @@ const propias = {
   },
 };
 sustituir('../src/modules/references/propias.repository', propias);
+
+/** Lo que ya cita en sus capítulos. De verdad se lee del disco; aquí se dice. */
+const citadas = { claves: [] };
+sustituir('../src/modules/references/citadas', { clavesCitadas: async () => citadas.claves });
 
 const servicio = require('../src/modules/zotero/biblioteca.service');
 
@@ -350,4 +355,18 @@ test('desconectar quita la conexión y NO las fuentes ya traídas', async () => 
 
   assert.equal(baseDeDatos.cuenta, null);
   assert.equal(escritas.length, cuantasAntes, 'borrarlas dejaría su tesis con citas rotas');
+});
+
+test('la limpieza no se lleva lo que ya cita en sus capítulos', async () => {
+  // Sacó de la colección una fuente que tiene citada. Si se borra, al volver a
+  // traerla sale con otra clave y en su Word queda «CITA SIN LOCALIZAR».
+  empezar();
+  citadas.claves = ['AR5CCC19E0'];
+  zotero.items = [articulo('WXYZ9999', 'Sigue en la colección')];
+  zotero.clavesVivas = ['WXYZ9999'];
+
+  await servicio.sincronizar('u1');
+
+  assert.deepEqual(baseDeDatos.citadasConservadas, ['AR5CCC19E0']);
+  citadas.claves = [];
 });

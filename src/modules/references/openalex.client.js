@@ -107,17 +107,69 @@ function comoFicha(w) {
   };
 }
 
+/** Países donde lo normal es nombre y DOS apellidos: «Rosa Isabel Tecocha Portocarrero». */
+const DOS_APELLIDOS = new Set([
+  'AR', 'BO', 'BR', 'CL', 'CO', 'CR', 'CU', 'DO', 'EC', 'ES', 'GT', 'HN', 'MX',
+  'NI', 'PA', 'PE', 'PR', 'PT', 'PY', 'SV', 'UY', 'VE',
+]);
+
+/** Van con el apellido que las sigue: «Juan de la Cruz» → «de la Cruz». */
+const PARTICULAS = new Set(['de', 'del', 'la', 'las', 'los', 'da', 'das', 'do', 'dos', 'van', 'von', 'der', 'den', 'di', 'du', 'le']);
+
+/** «F.», «F», «J.-P.»: una inicial del nombre, nunca un apellido. */
+const INICIAL = /^\p{Lu}\.?(-\p{Lu}\.?)?$/u;
+
+/**
+ * Un nombre de OpenAlex, en «Apellido, I.».
+ *
+ * OpenAlex da el nombre entero —«David F. Larcker»— y no dice dónde empieza el
+ * apellido, así que hay que decidirlo. Antes se tomaba la primera palabra como
+ * nombre y todo lo demás como apellido, y así salieron a la bibliografía
+ * «F. Larcker, D.», «M. Podsakoff, P.» o «Sugey Román-Córdova, V.». Las reglas,
+ * en orden:
+ *
+ *   1. Una inicial es del nombre: el apellido empieza después de la última.
+ *   2. Si el autor es de un país de dos apellidos, o no se sabe de dónde es:
+ *      un último apellido con guion va solo («Vanessa Sugey Román-Córdova»);
+ *      con cuatro palabras o más, los dos últimos son los apellidos; con tres,
+ *      las dos últimas («Christian Díaz Peralta»).
+ *   3. Si se sabe que es de otro sitio, el apellido es la última palabra.
+ *
+ * Nunca es perfecto —un nombre no dice su estructura—, y por eso lo que se
+ * GUARDA para citar prefiere los autores de Crossref, que el editor depositó ya
+ * separados. Esto es para lo que se enseña en una búsqueda.
+ */
+function nombreApa(nombreCompleto, paises = []) {
+  if (!nombreCompleto) return null;
+  const partes = String(nombreCompleto).trim().split(/\s+/);
+  if (partes.length === 1) return partes[0];
+
+  let inicio;
+  const ultimaInicial = partes.reduce((i, parte, j) => (INICIAL.test(parte) ? j : i), -1);
+
+  if (ultimaInicial >= 0 && ultimaInicial < partes.length - 1) {
+    inicio = ultimaInicial + 1;
+  } else {
+    const conocidos = (paises ?? []).map((p) => String(p).toUpperCase());
+    const dosApellidos = conocidos.length === 0 || conocidos.some((p) => DOS_APELLIDOS.has(p));
+
+    if (!dosApellidos) inicio = partes.length - 1;
+    else if (partes.length >= 3 && partes.at(-1).includes('-')) inicio = partes.length - 1;
+    else if (partes.length >= 4) inicio = partes.length - 2;
+    else inicio = 1;
+  }
+
+  // Las partículas que preceden al apellido son parte de él.
+  while (inicio > 1 && PARTICULAS.has(partes[inicio - 1].toLowerCase())) inicio -= 1;
+
+  return `${partes.slice(inicio).join(' ')}, ${partes[0].charAt(0)}.`;
+}
+
 function autores(authorships = []) {
   return authorships
     .slice(0, 8)
     .map((a) => {
-      const nombre = a?.author?.display_name;
-      if (!nombre) return null;
-      // «Christian Díaz Peralta» → «Díaz Peralta, C.»
-      const partes = nombre.trim().split(/\s+/);
-      if (partes.length === 1) return partes[0];
-      const inicial = `${partes[0].charAt(0)}.`;
-      return `${partes.slice(1).join(' ')}, ${inicial}`;
+      return nombreApa(a?.author?.display_name, a?.countries);
     })
     .filter(Boolean)
     .join('; ');
@@ -350,6 +402,7 @@ module.exports = {
   porIds,
   citanA,
   limpiarDoi,
+  nombreApa,
   resumenDelIndice,
   soloElId,
 };

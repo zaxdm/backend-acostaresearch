@@ -78,8 +78,13 @@ router.post(
 router.delete(
   '/',
   asyncHandler(async (req, res) => {
-    const borradas = await propiasService.vaciar(req.user.id);
-    return ok(res, { borradas }, { message: `Se borraron ${borradas} fuentes tuyas.` });
+    const { borradas, conservadas } = await propiasService.vaciar(req.user.id);
+    const mensaje =
+      conservadas > 0
+        ? `Se borraron ${borradas} fuentes tuyas. Se conservaron ${conservadas} porque las citas ` +
+          'en tus capítulos: borrarlas dejaría esas citas rotas en tu Word.'
+        : `Se borraron ${borradas} fuentes tuyas.`;
+    return ok(res, { borradas, conservadas }, { message: mensaje });
   }),
 );
 

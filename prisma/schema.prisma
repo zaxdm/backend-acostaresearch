@@ -595,6 +595,13 @@ model License {
 
   revokedAt      DateTime?
   revokedReason  String?   @db.VarChar(255)
+  /// Cuándo la reactivó el administrador por última vez.
+  ///
+  /// La vigilancia no juzga nada anterior a esta fecha: ni el uso, ni las
+  /// alertas, ni el aviso previo. Sin ella, reactivar no servía: la siguiente
+  /// pasada volvía a ver las mismas conversaciones que la revocaron y el mismo
+  /// aviso de días atrás, y la revocaba otra vez en cuanto se usaba.
+  reactivatedAt  DateTime?
   /// Caducidad del acceso. Nula = mientras no se revoque.
   expiresAt      DateTime?
   /// Cuándo se avisó al comprador de que su acceso estaba por caducar. Guarda

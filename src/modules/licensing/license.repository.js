@@ -299,6 +299,8 @@ const licenseRepository = {
         status,
         revokedAt: status === 'ACTIVE' ? null : new Date(),
         revokedReason: status === 'ACTIVE' ? null : (revokedReason ?? null),
+        // Desde aquí la vigilancia empieza de cero. Ver `license.watch`.
+        ...(status === 'ACTIVE' && { reactivatedAt: new Date() }),
       },
       select: licenseSelect,
     });

@@ -59,22 +59,43 @@ function hace(horas) {
   return new Date(Date.now() - horas * HORA_MS);
 }
 
+/**
+ * El inicio de una ventana, sin pasar de la última reactivación.
+ *
+ * Lo que ocurrió antes de reactivar ya se juzgó —por eso se revocó— y el
+ * administrador decidió devolverle el acceso. Volver a contarlo la revocaba
+ * otra vez en la primera llamada: el 13 de septiembre de 2026 una licencia
+ * revocada por las conversaciones de una prueba no se podía recuperar con el
+ * botón «Reactivar», porque las mismas nueve conversaciones seguían dentro de
+ * la ventana de 24 horas y el aviso de días atrás seguía valiendo.
+ */
+function desde(horas, reactivadaAt) {
+  const inicio = hace(horas);
+  return reactivadaAt && reactivadaAt > inicio ? reactivadaAt : inicio;
+}
+
 /** ¿Ya hay una alerta igual reciente? Evita llenar la tabla de duplicados. */
-async function alertaReciente(licenseId, kind) {
+async function alertaReciente(licenseId, kind, reactivadaAt) {
   return prisma.licenseAlert.findFirst({
-    where: { licenseId, kind, createdAt: { gte: hace(ANTIRREPETICION_HORAS) } },
+    where: { licenseId, kind, createdAt: { gte: desde(ANTIRREPETICION_HORAS, reactivadaAt) } },
     select: { id: true },
   });
 }
 
-/** Aviso previo aún vigente: es el que habilita revocar a la segunda. */
-async function avisoPrevio(licenseId) {
+/**
+ * Aviso previo aún vigente: es el que habilita revocar a la segunda.
+ *
+ * Con fecha de caducidad: un aviso de hace meses no puede seguir sirviendo de
+ * primera advertencia para lo que pase hoy. Antes no la tenía, y cualquier
+ * sospecha futura revocaba sin avisar.
+ */
+async function avisoPrevio(licenseId, reactivadaAt) {
   return prisma.licenseAlert.findFirst({
     where: {
       licenseId,
       level: 'SOSPECHA_ALTA',
       action: 'NOTIFICADO',
-      createdAt: { lte: hace(GRACIA_HORAS) },
+      createdAt: { lte: hace(GRACIA_HORAS), gte: desde(VENTANA_DIAS * 24, reactivadaAt) },
     },
     orderBy: { createdAt: 'desc' },
     select: { id: true, createdAt: true },
@@ -98,9 +119,9 @@ async function avisar(licencia, motivos, revocada) {
 }
 
 /** Cuenta intentos de extracción recientes, que es una señal por sí sola. */
-async function contarExtracciones(licenseId) {
+async function contarExtracciones(licenseId, reactivadaAt) {
   return prisma.licenseUsage.count({
-    where: { licenseId, kind: 'EXTRACTION_ATTEMPT', createdAt: { gte: hace(24) } },
+    where: { licenseId, kind: 'EXTRACTION_ATTEMPT', createdAt: { gte: desde(24, reactivadaAt) } },
   });
 }
 
@@ -144,8 +165,10 @@ async function evaluar(licenseId, { forzar = false } = {}) {
       data: { lastCheckedAt: new Date() },
     });
 
+    const reactivadaAt = licencia.reactivatedAt ?? null;
+
     const usos = await prisma.licenseUsage.findMany({
-      where: { licenseId, createdAt: { gte: hace(VENTANA_DIAS * 24) } },
+      where: { licenseId, createdAt: { gte: desde(VENTANA_DIAS * 24, reactivadaAt) } },
       select: { createdAt: true, promptHash: true, sessionId: true, tool: true },
       orderBy: { createdAt: 'asc' },
     });
@@ -154,7 +177,7 @@ async function evaluar(licenseId, { forzar = false } = {}) {
     const señales = [...diagnostico.senales];
 
     // Los intentos de extracción no los ve el detector: se suman aquí.
-    const extracciones = await contarExtracciones(licenseId);
+    const extracciones = await contarExtracciones(licenseId, reactivadaAt);
     if (extracciones >= EXTRACCIONES_PARA_ALERTA) {
       señales.push({
         codigo: 'EXTRACCION',
@@ -169,7 +192,7 @@ async function evaluar(licenseId, { forzar = false } = {}) {
     for (const señal of señales) {
       const kind = señal.codigo === 'EXTRACCION' ? 'EXTRACCION' : TIPOS[señal.codigo];
       if (!kind) continue;
-      if (await alertaReciente(licenseId, kind)) continue;
+      if (await alertaReciente(licenseId, kind, reactivadaAt)) continue;
 
       await prisma.licenseAlert.create({
         data: {
@@ -185,7 +208,7 @@ async function evaluar(licenseId, { forzar = false } = {}) {
 
     // ── Sospecha alta: avisar primero, revocar a la segunda ─────────────────
     const motivos = señales.map((s) => s.detalle);
-    const previo = await avisoPrevio(licenseId);
+    const previo = await avisoPrevio(licenseId, reactivadaAt);
 
     if (!previo) {
       await prisma.licenseAlert.updateMany({
@@ -209,6 +232,9 @@ async function evaluar(licenseId, { forzar = false } = {}) {
       where: { licenseId, createdAt: { gte: hace(1) } },
       data: { action: 'REVOCADO' },
     });
+    // Y el aviso que la habilitó, que ya se gastó: quedaba como «notificado»
+    // para siempre y, en el panel, parecía una alerta pendiente.
+    await prisma.licenseAlert.update({ where: { id: previo.id }, data: { action: 'REVOCADO' } });
     await avisar(licencia, motivos, true);
 
     logger.warn({ licenseId, motivos }, 'Licencia revocada automáticamente tras el aviso previo');

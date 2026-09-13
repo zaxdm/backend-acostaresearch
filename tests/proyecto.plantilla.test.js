@@ -111,6 +111,89 @@ test('el Word sale con los márgenes y el tamaño de la plantilla', async () => 
   assert.match(doc, /<w:pgSz[^>]*w:w="11906"[^>]*w:h="16838"/);
 });
 
+// ── El Word que sale ───────────────────────────────────────────────────────
+
+async function armarDePrueba({ conPlantilla }) {
+  const { armar } = require('../src/modules/projects/project.docx');
+  const buffer = await armar({
+    tema: 'Prueba',
+    ...(conPlantilla ? { estilos: ESTILOS_XML } : {}),
+    capitulos: [
+      {
+        titulo: '2 · Capítulo I · Problema y objetivos',
+        texto: '# Realidad\n\nUn párrafo del cuerpo.\n\n### Problema general\n\n- Objetivo uno',
+      },
+    ],
+    referencias: ['García, J. (2024). Un título largo. Revista, 1(2), 3-4. https://doi.org/10.1/x'],
+  });
+  const zip = new AdmZip(buffer);
+  return {
+    doc: zip.getEntry('word/document.xml').getData().toString('utf8'),
+    styles: zip.getEntry('word/styles.xml').getData().toString('utf8'),
+  };
+}
+
+/** El párrafo que contiene ese texto, entero. */
+const parrafoCon = (doc, texto) =>
+  [...doc.matchAll(/<w:p\b[\s\S]*?<\/w:p>/g)].map((m) => m[0]).find((p) => p.includes(texto));
+
+test('con plantilla, el interlineado y la sangría del texto los decide ella', async () => {
+  const { doc } = await armarDePrueba({ conPlantilla: true });
+  const cuerpo = parrafoCon(doc, 'Un párrafo del cuerpo.');
+
+  assert.doesNotMatch(cuerpo, /w:line="480"/, 'sin doble espacio a mano');
+  assert.doesNotMatch(cuerpo, /w:firstLine=/, 'sin sangría a mano');
+  assert.doesNotMatch(cuerpo, /<w:jc /, 'sin alineación a mano');
+});
+
+test('sin plantilla, el texto sigue a doble espacio, justificado y con sangría', async () => {
+  const { doc } = await armarDePrueba({ conPlantilla: false });
+  const cuerpo = parrafoCon(doc, 'Un párrafo del cuerpo.');
+
+  assert.match(cuerpo, /w:line="480"/);
+  assert.match(cuerpo, /w:firstLine=/);
+  assert.match(cuerpo, /<w:jc w:val="both"\/>/);
+});
+
+test('las referencias van a la izquierda con sangría francesa, con o sin plantilla', async () => {
+  for (const conPlantilla of [true, false]) {
+    const { doc } = await armarDePrueba({ conPlantilla });
+    const referencia = parrafoCon(doc, 'García, J. (2024)');
+
+    assert.match(referencia, /<w:jc w:val="(left|start)"\/>/, `a la izquierda (plantilla: ${conPlantilla})`);
+    assert.match(referencia, /w:hanging=/);
+  }
+});
+
+test('el título «Índice» no entra en el índice', async () => {
+  for (const conPlantilla of [true, false]) {
+    const { doc, styles } = await armarDePrueba({ conPlantilla });
+    const indice = parrafoCon(doc, '>Índice<');
+
+    assert.match(indice, /<w:pStyle w:val="TOCHeading"\/>/);
+    assert.match(styles, /w:styleId="TOCHeading"[\s\S]*?<w:outlineLvl w:val="9"\/>/);
+  }
+});
+
+test('el título del capítulo sale sin el número del método', async () => {
+  const { tituloDelCapitulo } = require('../src/modules/projects/project.docx');
+  assert.equal(tituloDelCapitulo('2 · Capítulo I · Problema y objetivos'), 'Capítulo I · Problema y objetivos');
+  assert.equal(tituloDelCapitulo('Fase 3B — Mapeo bibliométrico'), 'Mapeo bibliométrico');
+  assert.equal(tituloDelCapitulo('Humanizador académico'), 'Humanizador académico');
+
+  const { doc } = await armarDePrueba({ conPlantilla: true });
+  assert.ok(doc.includes('Capítulo I · Problema y objetivos'));
+  assert.ok(!doc.includes('2 · Capítulo I'));
+});
+
+test('sin plantilla, el cuarto nivel de título sale en negro como los demás', async () => {
+  const { styles } = await armarDePrueba({ conPlantilla: false });
+  const titulo4 = styles.match(/<w:style [^>]*w:styleId="Heading4"[\s\S]*?<\/w:style>/)?.[0] ?? '';
+
+  assert.match(titulo4, /Times New Roman/);
+  assert.match(titulo4, /w:val="000000"/);
+});
+
 test('de un .docx sale su hoja de estilos', () => {
   const xml = extraerEstilos(docxDePrueba());
 

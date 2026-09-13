@@ -144,7 +144,8 @@ function comoParrafos(texto, contexto = {}) {
               : nivel === 2
                 ? HeadingLevel.HEADING_3
                 : HeadingLevel.HEADING_4,
-          spacing: { before: 240, after: 120 },
+          // Con plantilla, el espaciado del título es el de su estilo.
+          ...(contexto.plantilla ? {} : { spacing: { before: 240, after: 120 } }),
         }),
       );
       continue;
@@ -158,12 +159,19 @@ function comoParrafos(texto, contexto = {}) {
       const contenido = linea.trim();
       if (contenido === '') continue;
 
+      // Con plantilla, el interlineado, la sangría y la alineación del texto los
+      // decide su estilo «Normal»: puestos aquí a mano la tapaban, y la tesis
+      // salía a doble espacio aunque la facultad pidiera 1,5. Las listas
+      // conservan su sangría izquierda, que es estructura y no formato.
       parrafos.push(
         new Paragraph({
           children: corridas(contenido.replace(/^\s*[-*•]\s+/, '• '), contexto),
-          alignment: esLista ? AlignmentType.LEFT : AlignmentType.JUSTIFIED,
-          spacing: { line: DOBLE },
-          indent: esLista ? { left: SANGRIA } : { firstLine: SANGRIA },
+          ...(esLista
+            ? { alignment: AlignmentType.LEFT, indent: { left: SANGRIA } }
+            : contexto.plantilla
+              ? {}
+              : { alignment: AlignmentType.JUSTIFIED, indent: { firstLine: SANGRIA } }),
+          ...(contexto.plantilla ? {} : { spacing: { line: DOBLE } }),
         }),
       );
     }
@@ -205,7 +213,15 @@ function portada({ tema, carrera, universidad, nombre }) {
  * valor negativo; con etiqueta, una tabulación en esa misma sangría hace que el
  * texto de todas las líneas empiece a la misma altura.
  */
-function referenciasDelDocumento(referencias, zotero) {
+function referenciasDelDocumento(referencias, zotero, plantilla = false) {
+  // Siempre a la izquierda: justificadas, las entradas con URL o DOI largos
+  // abrían huecos enormes entre palabras. Heredaban el justificado del
+  // «Normal» de la plantilla. El interlineado, con plantilla, es el suyo.
+  const formato = {
+    alignment: AlignmentType.LEFT,
+    ...(plantilla ? {} : { spacing: { line: DOBLE } }),
+  };
+
   if (Array.isArray(referencias)) {
     return {
       titulo: 'Referencias',
@@ -223,7 +239,7 @@ function referenciasDelDocumento(referencias, zotero) {
                 : entrada.tramos.map(
                     (tramo) => new TextRun({ text: tramo.texto, italics: Boolean(tramo.cursiva) }),
                   ),
-            spacing: { line: DOBLE },
+            ...formato,
             indent: { left: SANGRIA, hanging: SANGRIA },
           }),
       ),
@@ -247,7 +263,7 @@ function referenciasDelDocumento(referencias, zotero) {
 
     return new Paragraph({
       children: hijos,
-      spacing: { line: DOBLE },
+      ...formato,
       ...(francesa ? { indent: { left: SANGRIA, hanging: SANGRIA } } : {}),
       ...(alineada ? { tabStops: [{ type: TabStopType.LEFT, position: SANGRIA }] } : {}),
     });
@@ -280,12 +296,18 @@ async function armar({
   zotero = null,
 }) {
   const notas = {};
-  const contexto = { citas, notas, zotero: Boolean(zotero) };
+  const plantilla = Boolean(estilos);
+  const contexto = { citas, notas, zotero: Boolean(zotero), plantilla };
+  // El espaciado de los títulos de capítulo: con plantilla, el de su estilo.
+  const espacioDeTitulo = plantilla ? {} : { spacing: { after: 240 } };
 
   const cuerpo = [
     ...portada({ tema, carrera, universidad, nombre }),
     new Paragraph({ text: '', pageBreakBefore: true }),
-    new Paragraph({ text: 'Índice', heading: HeadingLevel.HEADING_1 }),
+    // «TOC Heading» y no Título 1: se ve como un Título 1 pero no entra en el
+    // índice. Con Título 1, el índice se listaba a sí mismo como primera
+    // entrada. Es el mismo estilo que usa Word; ver `conTituloDelIndice`.
+    new Paragraph({ text: 'Índice', style: 'TOCHeading' }),
     // Word lo rellena al abrir el documento y pedir «actualizar campos». No se
     // puede calcular aquí: los números de página los decide Word al maquetar,
     // no nosotros.
@@ -299,23 +321,23 @@ async function armar({
   for (const capitulo of capitulos) {
     cuerpo.push(
       new Paragraph({
-        text: capitulo.titulo,
+        text: tituloDelCapitulo(capitulo.titulo),
         heading: HeadingLevel.HEADING_1,
         pageBreakBefore: true,
-        spacing: { after: 240 },
+        ...espacioDeTitulo,
       }),
       ...comoParrafos(capitulo.texto, contexto),
     );
   }
 
-  const lista = referenciasDelDocumento(referencias, zotero);
+  const lista = referenciasDelDocumento(referencias, zotero, plantilla);
   if (lista.parrafos.length > 0) {
     cuerpo.push(
       new Paragraph({
         text: lista.titulo,
         heading: HeadingLevel.HEADING_1,
         pageBreakBefore: true,
-        spacing: { after: 240 },
+        ...espacioDeTitulo,
       }),
       ...lista.parrafos,
     );
@@ -351,6 +373,12 @@ async function armar({
           run: { font: 'Times New Roman', size: 24, bold: true, italics: true, color: '000000' },
           paragraph: { spacing: { before: 200, after: 120 } },
         },
+        // El cuarto nivel («###» en el texto). Sin definirlo, salía con el azul
+        // en cursiva de la librería, distinto de todo lo demás.
+        heading4: {
+          run: { font: 'Times New Roman', size: 24, bold: true, color: '000000' },
+          paragraph: { spacing: { before: 160, after: 80 } },
+        },
       },
     } }),
     sections: [
@@ -380,7 +408,7 @@ async function armar({
   });
 
   let buffer = await Packer.toBuffer(documento);
-  if (estilos) buffer = quitarEstilosRepetidos(buffer);
+  buffer = ajustarEstilos(buffer, { quitarRepetidos: plantilla });
   return zotero ? zoteroCampos.coser(buffer, zotero.codigos) : buffer;
 }
 
@@ -404,25 +432,61 @@ const ESTILO_RE =
  * Se quita en el XML ya empaquetado, como los campos de Zotero, porque la
  * librería no deja elegir qué estilos propios omitir.
  */
-function quitarEstilosRepetidos(buffer) {
+function sinEstilosRepetidos(xml) {
+  const ultima = new Map();
+  for (const m of xml.matchAll(ESTILO_RE)) ultima.set(m[1], m.index);
+
+  return xml.replace(ESTILO_RE, (bloque, id, posicion) =>
+    ultima.get(id) === posicion ? bloque : '',
+  );
+}
+
+/**
+ * El estilo del título «Índice», si la hoja de estilos no lo trae.
+ *
+ * Basado en Título 1 —así se ve como los demás títulos, los de la plantilla si
+ * la hay— pero con nivel de esquema «texto normal», que es lo que lo deja fuera
+ * del índice. Es como lo define el propio Word. Si la plantilla ya trae el
+ * suyo, manda el suyo.
+ */
+const TITULO_DEL_INDICE =
+  '<w:style w:type="paragraph" w:styleId="TOCHeading"><w:name w:val="TOC Heading"/>' +
+  '<w:basedOn w:val="Heading1"/><w:next w:val="Normal"/><w:uiPriority w:val="39"/>' +
+  '<w:unhideWhenUsed/><w:qFormat/><w:pPr><w:outlineLvl w:val="9"/></w:pPr></w:style>';
+
+function conTituloDelIndice(xml) {
+  if (/w:styleId="TOCHeading"/.test(xml) || !xml.includes('</w:styles>')) return xml;
+  return xml.replace('</w:styles>', `${TITULO_DEL_INDICE}</w:styles>`);
+}
+
+/** Los retoques de `styles.xml` que la librería no deja hacer, en una sola pasada. */
+function ajustarEstilos(buffer, { quitarRepetidos = false } = {}) {
   const zip = new AdmZip(buffer);
   const entrada = zip.getEntry('word/styles.xml');
   if (!entrada) return buffer;
 
-  const xml = entrada.getData().toString('utf8');
-  const ultima = new Map();
-  for (const m of xml.matchAll(ESTILO_RE)) ultima.set(m[1], m.index);
+  const antes = entrada.getData().toString('utf8');
+  const despues = conTituloDelIndice(quitarRepetidos ? sinEstilosRepetidos(antes) : antes);
 
-  let repetidos = 0;
-  const limpio = xml.replace(ESTILO_RE, (bloque, id, posicion) => {
-    if (ultima.get(id) === posicion) return bloque;
-    repetidos += 1;
-    return '';
-  });
-
-  if (repetidos === 0) return buffer;
-  zip.updateFile('word/styles.xml', Buffer.from(limpio, 'utf8'));
+  if (despues === antes) return buffer;
+  zip.updateFile('word/styles.xml', Buffer.from(despues, 'utf8'));
   return zip.toBuffer();
+}
+
+/**
+ * El título del capítulo tal como va en la tesis.
+ *
+ * El catálogo numera los capítulos por su orden en el método —«2 · Capítulo I ·
+ * Problema y objetivos», «Fase 3 — Introducción»— y ese número es del método,
+ * no del documento: en la tesis salía «2 · CAPÍTULO I».
+ */
+function tituloDelCapitulo(titulo) {
+  const original = String(titulo ?? '');
+  const limpio = original
+    .replace(/^\s*\d+[a-z]?\s*·\s*/i, '')
+    .replace(/^\s*fase\s+\d+[a-z]?\s*[—–-]\s*/i, '')
+    .trim();
+  return limpio || original;
 }
 
 /**
@@ -447,4 +511,4 @@ function nombreDeArchivo(tema) {
   return `${base || 'tesis'}-${fecha}.docx`;
 }
 
-module.exports = { armar, nombreDeArchivo, comoParrafos, quitarEstilosRepetidos };
+module.exports = { armar, nombreDeArchivo, comoParrafos, ajustarEstilos, tituloDelCapitulo };

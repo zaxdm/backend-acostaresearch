@@ -30,7 +30,6 @@ Hay dos paquetes:
 ### 1. Método de Tesis (página /metodo)
 Incluye:
 - Las 11 Skills: las 9 fases de la tesis, el Humanizador académico y Bajar similitud.
-- 30 minutos de asesoría personalizada con Benicio, para resolver la duda que tenga trabado al tesista.
 - El panel: sus fuentes de Scopus, sus PDF o su Zotero, y R en el navegador.
 - La tesis en un solo Word, con el formato de su universidad y en 15 normas de citas.
 - Videos guía para conectarlo y usarlo.
@@ -58,7 +57,8 @@ De una idea a un artículo enviado a una revista real. Incluye:
 - El artículo en Word, con la plantilla que pida la revista y en 15 normas de citas.
 - Videos guía.
 Las fases: tema y revista destino verificada (cuartil, costo de publicación, si es depredadora) · matriz de estrategia · introducción · revisión de la literatura (o mapeo bibliométrico con PRISMA) · métodos · resultados · discusión · conclusiones, título y resumen · adaptación a la revista y carta de presentación · respuesta a revisores.
-La asesoría de 30 minutos es del Método de Tesis; en la página del artículo no figura.
+
+Ningún paquete incluye asesoría personalizada ni redacción por encargo. Por WhatsApp se atienden los problemas de acceso, de pago y de uso de la plataforma.
 
 ## Qué lo hace distinto
 - Solo fuentes que existen: las que trae el tesista (exports de Scopus, Web of Science, SciELO o PubMed, sus PDF o su Zotero) y las que Claude encuentra en la literatura publicada, siempre con DOI real. Cero autores inventados.
@@ -83,6 +83,11 @@ En /planes, eligiendo el paquete:
 - PayPal: en dólares.
 - Si hay un código de descuento, se escribe en la página de precios antes de pagar.
 La licencia es individual: compartir la URL del conector puede hacer que se desactive. Si alguien pierde su URL, genera otra desde /perfil y la anterior deja de valer.
+
+## Condiciones de uso y reembolsos (resumen de /terminos)
+- La licencia es personal e intransferible: sirve para la tesis o el artículo de quien compra. No se puede usar para trabajos de otras personas, en asesorías, consultoras u otro negocio, ni compartir o revender la URL.
+- Reembolsos: una vez activado el acceso no hay devolución, porque el contenido queda disponible en ese momento. Sí se devuelve si se pagó y el acceso no llegó a activarse, si hubo un cobro duplicado o por un importe distinto, o si una falla nuestra impide usarlo y no se resuelve. Se pide por WhatsApp con el número de operación. No hay devolución por cambiar de opinión, por límites de Claude, por el resultado de Turnitin o porque la tesis no se apruebe.
+- Las condiciones completas están en /terminos. Si alguien pide un caso concreto de devolución, no lo decides tú: ofrece WhatsApp.
 
 ## Preguntas frecuentes
 - ¿Necesito pagar Claude Pro? No. Funciona con el plan gratuito. Con Pro hay más conversaciones seguidas antes de que Claude pida esperar, cómodo si se trabaja varias horas, pero no es requisito. (La única excepción es la vía de Claude for Excel en el análisis.)

@@ -570,6 +570,9 @@ async function armarWord(userId, productCode) {
   // Los estilos de su facultad, si los subió. Sin ellos sale el formato de
   // tesis por defecto, que es lo que había hasta ahora.
   const estilos = await almacen.leerPlantilla(proyecto.id).catch(() => null);
+  // Sus márgenes y tamaño de página, si la plantilla los traía. Solo con
+  // estilos: una página sin su plantilla sería de una plantilla ya quitada.
+  const pagina = estilos ? await almacen.leerPagina(proyecto.id).catch(() => null) : null;
 
   /**
    * La norma del proyecto, y el APA de siempre si no se puede aplicar.
@@ -604,6 +607,7 @@ async function armarWord(userId, productCode) {
     universidad: proyecto.universidad,
     nombre,
     estilos,
+    pagina,
     ...armado.documento,
   });
 
@@ -786,12 +790,14 @@ async function revisarEvidencia(userId, productCode, { capitulo = null } = {}) {
  */
 async function guardarPlantilla({ userId, productCode, buffer, nombre }) {
   const xml = plantilla.extraerEstilos(buffer);
+  const pagina = plantilla.extraerPagina(buffer);
 
   const proyecto = await projectRepository.asegurar(userId, productCode);
   await almacen.guardarPlantilla(proyecto.id, xml);
+  await almacen.guardarPagina(proyecto.id, pagina);
   await projectRepository.marcarPlantilla(proyecto.id, nombre ?? null);
 
-  return { estilos: plantilla.estilosQueTrae(xml) };
+  return { estilos: plantilla.estilosQueTrae(xml), conMargenes: Boolean(pagina?.margen) };
 }
 
 async function quitarPlantilla(userId, productCode) {

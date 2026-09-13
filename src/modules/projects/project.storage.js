@@ -200,7 +200,38 @@ async function leerPlantilla(projectId) {
   }
 }
 
+/** Márgenes y tamaño de página de la plantilla, al lado de sus estilos. */
+function rutaDePagina(projectId) {
+  if (!SEGURO.test(projectId)) throw new Error('Identificador de proyecto no válido');
+  return path.join(env.capitulosDir, projectId, 'plantilla-pagina.json');
+}
+
+/** Con null se borra: una plantilla nueva sin márgenes no hereda los de la anterior. */
+async function guardarPagina(projectId, pagina) {
+  const ruta = rutaDePagina(projectId);
+  if (!pagina) {
+    await fs.unlink(ruta).catch((error) => {
+      if (error.code !== 'ENOENT') throw error;
+    });
+    return;
+  }
+  await fs.mkdir(path.dirname(ruta), { recursive: true });
+  const temporal = `${ruta}.parcial`;
+  await fs.writeFile(temporal, JSON.stringify(pagina), 'utf8');
+  await fs.rename(temporal, ruta);
+}
+
+async function leerPagina(projectId) {
+  try {
+    return JSON.parse(await fs.readFile(rutaDePagina(projectId), 'utf8'));
+  } catch (error) {
+    if (error.code === 'ENOENT' || error instanceof SyntaxError) return null;
+    throw error;
+  }
+}
+
 async function borrarPlantilla(projectId) {
+  await guardarPagina(projectId, null);
   try {
     await fs.unlink(rutaDePlantilla(projectId));
     return true;
@@ -223,4 +254,6 @@ module.exports = {
   guardarPlantilla,
   leerPlantilla,
   borrarPlantilla,
+  guardarPagina,
+  leerPagina,
 };

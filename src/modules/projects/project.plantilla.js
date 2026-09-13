@@ -92,6 +92,65 @@ function extraerEstilos(buffer) {
   return xml;
 }
 
+/** Lo más grande que acepta Word para una medida de página, en twips (22 pulgadas). */
+const MAXIMO_TWIPS = 31680;
+
+/**
+ * Los márgenes y el tamaño de página de la plantilla.
+ *
+ * Viven fuera de la hoja de estilos, en la sección del documento
+ * (`<w:sectPr>` de `word/document.xml`), así que con solo los estilos el Word
+ * salía con nuestros márgenes aunque la facultad pidiera otros. Se leen de la
+ * ÚLTIMA sección, que es la que manda en un documento de una sola, y de ella
+ * solo se sacan números: el texto del documento sigue sin guardarse.
+ *
+ * Devuelve null si no trae nada utilizable; entonces se usan los de siempre.
+ */
+function extraerPagina(buffer) {
+  let xml;
+  try {
+    xml = new AdmZip(buffer).getEntry('word/document.xml')?.getData().toString('utf8');
+  } catch {
+    return null;
+  }
+  if (!xml) return null;
+
+  const secciones = [...xml.matchAll(/<w:sectPr\b[\s\S]*?<\/w:sectPr>/g)];
+  const seccion = secciones.at(-1)?.[0];
+  if (!seccion) return null;
+
+  const atributos = (etiqueta) => {
+    const m = seccion.match(new RegExp(`<w:${etiqueta}\\b([^>]*)/?>`));
+    if (!m) return {};
+    return Object.fromEntries(
+      [...m[1].matchAll(/w:(\w+)="([^"]*)"/g)].map(([, nombre, valor]) => [nombre, valor]),
+    );
+  };
+
+  // Word guarda negativos para «margen fijo aunque crezca el encabezado»; la
+  // medida es la misma.
+  const medida = (valor) => {
+    const n = Math.abs(Number.parseInt(valor, 10));
+    return Number.isInteger(n) && n <= MAXIMO_TWIPS ? n : undefined;
+  };
+
+  const mar = atributos('pgMar');
+  const margen = {};
+  for (const lado of ['top', 'right', 'bottom', 'left', 'header', 'footer', 'gutter']) {
+    const n = medida(mar[lado]);
+    if (n !== undefined) margen[lado] = n;
+  }
+  const completo = ['top', 'right', 'bottom', 'left'].every((lado) => margen[lado] !== undefined);
+
+  const sz = atributos('pgSz');
+  const ancho = medida(sz.w);
+  const alto = medida(sz.h);
+  const tamano = ancho && alto ? { width: ancho, height: alto } : null;
+
+  if (!completo && !tamano) return null;
+  return { ...(completo ? { margen } : {}), ...(tamano ? { tamano } : {}) };
+}
+
 /**
  * Qué estilos trae, para poder decírselo al tesista.
  *
@@ -103,4 +162,4 @@ function estilosQueTrae(xml) {
   return [...new Set(nombres)];
 }
 
-module.exports = { extraerEstilos, estilosQueTrae, PlantillaNoValida, MAXIMO_BYTES };
+module.exports = { extraerEstilos, extraerPagina, estilosQueTrae, PlantillaNoValida, MAXIMO_BYTES };

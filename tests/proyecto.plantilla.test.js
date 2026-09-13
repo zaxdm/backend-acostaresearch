@@ -15,6 +15,7 @@ const AdmZip = require('adm-zip');
 
 const {
   extraerEstilos,
+  extraerPagina,
   estilosQueTrae,
   PlantillaNoValida,
 } = require('../src/modules/projects/project.plantilla');
@@ -38,6 +39,77 @@ function docxDePrueba({ conEstilos = true } = {}) {
   if (conEstilos) zip.addFile('word/styles.xml', Buffer.from(ESTILOS_XML));
   return zip.toBuffer();
 }
+
+test('el Word armado con la plantilla lleva SUS títulos, no los de la librería', async () => {
+  // El caso real: la librería metía su «Heading1» azul delante del de la
+  // plantilla, y Word se quedaba con el primero. Los títulos de la facultad no
+  // se aplicaban nunca.
+  const { armar } = require('../src/modules/projects/project.docx');
+
+  const buffer = await armar({
+    tema: 'Prueba',
+    estilos: ESTILOS_XML,
+    capitulos: [{ titulo: 'Capítulo I', texto: '## Antecedentes\n\nTexto.' }],
+  });
+
+  const styles = new AdmZip(buffer).getEntry('word/styles.xml').getData().toString('utf8');
+  const titulos1 = [...styles.matchAll(/<w:style\s[^>]*w:styleId="Heading1"[\s\S]*?<\/w:style>/g)];
+
+  assert.equal(titulos1.length, 1, 'una sola definición de Título 1');
+  assert.match(titulos1[0][0], /Arial/, 'y es la de la plantilla');
+  assert.doesNotMatch(titulos1[0][0], /2E74B5/, 'no la azul de la librería');
+});
+
+/** Un .docx con la sección de página: A4 y márgenes de 2,5 / 3 / 2,5 / 4 cm. */
+function docxConPagina(sectPr) {
+  const zip = new AdmZip();
+  zip.addFile('[Content_Types].xml', Buffer.from('<Types/>'));
+  zip.addFile(
+    'word/document.xml',
+    Buffer.from(`<w:document><w:body><w:p>TEXTO AJENO</w:p>${sectPr}</w:body></w:document>`),
+  );
+  zip.addFile('word/styles.xml', Buffer.from(ESTILOS_XML));
+  return zip.toBuffer();
+}
+
+const SECCION_A4 =
+  '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/>' +
+  '<w:pgMar w:top="1417" w:right="1701" w:bottom="-1417" w:left="2268" w:header="709" ' +
+  'w:footer="709" w:gutter="0"/></w:sectPr>';
+
+test('de la plantilla salen sus márgenes y su tamaño de página, y nada del texto', () => {
+  const pagina = extraerPagina(docxConPagina(SECCION_A4));
+
+  assert.deepEqual(pagina, {
+    margen: { top: 1417, right: 1701, bottom: 1417, left: 2268, header: 709, footer: 709, gutter: 0 },
+    tamano: { width: 11906, height: 16838 },
+  });
+  assert.ok(!JSON.stringify(pagina).includes('TEXTO AJENO'));
+});
+
+test('una plantilla sin sección de página no da márgenes, y no revienta', () => {
+  assert.equal(extraerPagina(docxConPagina('')), null);
+  assert.equal(extraerPagina(Buffer.from('no es un zip')), null);
+  assert.equal(
+    extraerPagina(docxConPagina('<w:sectPr><w:pgMar w:top="99999999" w:left="x"/></w:sectPr>')),
+    null,
+    'medidas absurdas o incompletas se ignoran',
+  );
+});
+
+test('el Word sale con los márgenes y el tamaño de la plantilla', async () => {
+  const { armar } = require('../src/modules/projects/project.docx');
+  const buffer = await armar({
+    tema: 'Prueba',
+    estilos: ESTILOS_XML,
+    pagina: extraerPagina(docxConPagina(SECCION_A4)),
+    capitulos: [{ titulo: 'Capítulo I', texto: 'Texto.' }],
+  });
+
+  const doc = new AdmZip(buffer).getEntry('word/document.xml').getData().toString('utf8');
+  assert.match(doc, /<w:pgMar[^>]*w:left="2268"/);
+  assert.match(doc, /<w:pgSz[^>]*w:w="11906"[^>]*w:h="16838"/);
+});
 
 test('de un .docx sale su hoja de estilos', () => {
   const xml = extraerEstilos(docxDePrueba());

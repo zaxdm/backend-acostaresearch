@@ -43,6 +43,8 @@ const {
   TabStopType,
 } = require('docx');
 
+const AdmZip = require('adm-zip');
+
 const { HUECO_RE } = require('./project.citas');
 const zoteroCampos = require('./project.zotero-campos');
 
@@ -273,6 +275,7 @@ async function armar({
   capitulos,
   referencias = [],
   estilos = null,
+  pagina = null,
   citas = null,
   zotero = null,
 }) {
@@ -354,9 +357,11 @@ async function armar({
       {
         properties: {
           page: {
-            // Márgenes de tesis: 3 cm arriba, izquierda y abajo; 2,5 a la
+            // Los de su plantilla si los traía (ver `project.plantilla`); si
+            // no, márgenes de tesis: 3 cm arriba, izquierda y abajo; 2,5 a la
             // derecha. En twips, que es lo que entiende Word.
-            margin: { top: 1701, right: 1417, bottom: 1701, left: 1701 },
+            margin: pagina?.margen ?? { top: 1701, right: 1417, bottom: 1701, left: 1701 },
+            ...(pagina?.tamano ? { size: pagina.tamano } : {}),
           },
         },
         footers: {
@@ -374,8 +379,50 @@ async function armar({
     ],
   });
 
-  const buffer = await Packer.toBuffer(documento);
+  let buffer = await Packer.toBuffer(documento);
+  if (estilos) buffer = quitarEstilosRepetidos(buffer);
   return zotero ? zoteroCampos.coser(buffer, zotero.codigos) : buffer;
+}
+
+/** Un estilo entero de `styles.xml`, con su identificador. */
+const ESTILO_RE =
+  /<w:style\s[^>]*?w:styleId="([^"]+)"[^>]*?(?:\/>|>[\s\S]*?<\/w:style>)/g;
+
+/**
+ * Deja una sola definición por estilo: la última, que es la de la plantilla.
+ *
+ * POR QUÉ HACE FALTA
+ * ------------------
+ * Con `externalStyles`, la librería `docx` mete igualmente sus estilos de
+ * títulos —«Heading1» azul de 16 puntos— DELANTE de los de la plantilla. Word
+ * se queda con la primera definición de cada identificador, así que de la
+ * plantilla de la facultad solo se aplicaban la fuente y el interlineado del
+ * texto normal, y los títulos salían con el azul de la librería. Se descubrió
+ * el 13 de septiembre de 2026 subiendo una plantilla con títulos en Georgia
+ * granate: el Word salía con dos «Heading1» y ganaba el que no era.
+ *
+ * Se quita en el XML ya empaquetado, como los campos de Zotero, porque la
+ * librería no deja elegir qué estilos propios omitir.
+ */
+function quitarEstilosRepetidos(buffer) {
+  const zip = new AdmZip(buffer);
+  const entrada = zip.getEntry('word/styles.xml');
+  if (!entrada) return buffer;
+
+  const xml = entrada.getData().toString('utf8');
+  const ultima = new Map();
+  for (const m of xml.matchAll(ESTILO_RE)) ultima.set(m[1], m.index);
+
+  let repetidos = 0;
+  const limpio = xml.replace(ESTILO_RE, (bloque, id, posicion) => {
+    if (ultima.get(id) === posicion) return bloque;
+    repetidos += 1;
+    return '';
+  });
+
+  if (repetidos === 0) return buffer;
+  zip.updateFile('word/styles.xml', Buffer.from(limpio, 'utf8'));
+  return zip.toBuffer();
 }
 
 /**
@@ -400,4 +447,4 @@ function nombreDeArchivo(tema) {
   return `${base || 'tesis'}-${fecha}.docx`;
 }
 
-module.exports = { armar, nombreDeArchivo, comoParrafos };
+module.exports = { armar, nombreDeArchivo, comoParrafos, quitarEstilosRepetidos };

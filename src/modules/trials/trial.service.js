@@ -13,6 +13,7 @@ const {
 } = require('../licensing/license.service');
 const projectStorage = require('../projects/project.storage');
 const { finDelEnlace, enlaceTerminado } = require('./trial.plazo');
+const { selloDia } = require('../licensing/license.limits');
 
 /**
  * Enlaces de prueba del conector.
@@ -171,14 +172,22 @@ const trialService = {
     // conectores, y agruparlos aquí evita una consulta por enlace.
     const licencias = await prisma.license.findMany({
       where: { user: { trialLinkId: { in: enlaces.map((e) => e.id) } } },
-      select: { callsTotal: true, user: { select: { trialLinkId: true } } },
+      select: {
+        callsTotal: true,
+        counter: { select: { callsLifetime: true } },
+        user: { select: { trialLinkId: true } },
+      },
     });
 
     const uso = new Map();
-    for (const { callsTotal, user } of licencias) {
+    for (const { callsTotal, counter, user } of licencias) {
       const suma = uso.get(user.trialLinkId) ?? { conectados: 0, consultas: 0 };
+      // «Lo usaron» es haber llamado al conector para lo que sea…
       if (callsTotal > 0) suma.conectados += 1;
-      suma.consultas += callsTotal;
+      // …pero las consultas son las que gastan del tope, no cada vez que su
+      // Claude miró la lista o guardó un avance. Contar esas hacía ver 34
+      // consultas en un conector con tope de 5 que nunca pasó de 5.
+      suma.consultas += counter?.callsLifetime ?? 0;
       uso.set(user.trialLinkId, suma);
     }
 
@@ -205,20 +214,33 @@ const trialService = {
         lastName: true,
         createdAt: true,
         licenses: {
-          select: { id: true, tokenHint: true, callsTotal: true, lastUsedAt: true, expiresAt: true },
+          select: {
+            id: true,
+            tokenHint: true,
+            lastUsedAt: true,
+            expiresAt: true,
+            counter: { select: { callsToday: true, callsLifetime: true, dayStamp: true } },
+          },
         },
       },
       orderBy: { createdAt: 'asc' },
     });
 
+    const hoy = selloDia();
+
     return invitados.map((invitado) => {
       const licencia = invitado.licenses[0] ?? null;
+      const contador = licencia?.counter ?? null;
       return {
         // El número de invitado se guarda como apellido al entregarlo.
         numero: Number(invitado.lastName) || null,
         recibidoAt: invitado.createdAt,
         tokenHint: licencia?.tokenHint ?? null,
-        consultas: licencia?.callsTotal ?? 0,
+        // Las que gastan del tope, no todas las llamadas: es el número que se
+        // compara con «Consultas al día».
+        consultas: contador?.callsLifetime ?? 0,
+        // Un contador de ayer se lee como cero, igual que lo lee el tope.
+        hoy: contador?.dayStamp === hoy ? contador.callsToday : 0,
         ultimoUso: licencia?.lastUsedAt ?? null,
         expiresAt: fin ?? licencia?.expiresAt ?? null,
       };

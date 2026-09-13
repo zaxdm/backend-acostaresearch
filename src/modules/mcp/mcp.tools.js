@@ -476,6 +476,35 @@ function construirServidor(licencia) {
   const esArticulo = licencia.productCode?.startsWith('ARTICULO') === true;
   const SU_OBRA = esArticulo ? 'su artículo' : 'su tesis';
 
+  /**
+   * En un conector de prueba, las herramientas que trabajan también gastan cupo.
+   *
+   * A un comprador solo le descuenta `redactar`: lo demás es su proyecto y ya lo
+   * pagó. Un invitado no pagó nada, y «Consultas al día» en el enlace se lee
+   * como lo que dice: cuántas veces puede usar el conector. Sin esto, un
+   * invitado con tope de 5 hizo trece búsquedas en la literatura en una tarde.
+   *
+   * Siguen sin gastar lo que orienta —lista, estado, proyecto, ver— y lo que
+   * guarda: su Claude guarda avances por su cuenta, y cobrarlos dejaría a
+   * alguien sin cupo por conservar lo que ya se le dio.
+   *
+   * Devuelve `{ bloqueo }` con la respuesta si no le queda, o `{ reserva }`.
+   */
+  const esPrueba = Boolean(licencia.user?.trialLink);
+  async function cupoDePrueba(tool, prompt) {
+    if (!esPrueba) return {};
+    const cupo = await licenseService.reserveLimits(licencia);
+    if (cupo.permitido) return { reserva: cupo.reserva };
+    await licenseService.recordUsage({
+      licenseId: licencia.id,
+      tool,
+      prompt,
+      ok: false,
+      kind: 'BLOCKED_LIMIT',
+    });
+    return { bloqueo: texto(cupo.motivo) };
+  }
+
   // ── Catálogo ─────────────────────────────────────────────────────────────
   server.registerTool(
     'listar_capitulos',
@@ -569,7 +598,9 @@ function construirServidor(licencia) {
       return texto(
         `${titular}\n` +
           `Producto: ${licencia.productCode}\n` +
-          `Consultas realizadas en total: ${licencia.callsTotal}\n` +
+          // En una prueba ese total mezcla lo que no gasta cupo, y al lado de
+          // «5 consultas cada día» se lee como que ya se pasó. El cupo lo dice.
+          (esPrueba ? '' : `Consultas realizadas en total: ${licencia.callsTotal}\n`) +
           (cupo.length > 0 ? `${cupo.join('\n')}\n` : '') +
           `${caduca}\n\n` +
           'Esta licencia es individual. Compartir la URL del conector puede provocar su revocación.',
@@ -989,6 +1020,8 @@ function construirServidor(licencia) {
       inputSchema: ESQUEMA_REVISAR_EVIDENCIA,
     },
     async ({ capitulo }) => {
+      const cupo = await cupoDePrueba('revisar_evidencia');
+      if (cupo.bloqueo) return cupo.bloqueo;
       await licenseService.recordUsage({ licenseId: licencia.id, tool: 'revisar_evidencia' });
 
       const informe = await projectService.revisarEvidencia(
@@ -1065,6 +1098,8 @@ function construirServidor(licencia) {
       inputSchema: SIN_ARGUMENTOS,
     },
     async () => {
+      const cupo = await cupoDePrueba('revisar_la_tesis');
+      if (cupo.bloqueo) return cupo.bloqueo;
       await licenseService.recordUsage({ licenseId: licencia.id, tool: 'revisar_la_tesis' });
 
       const informe = await projectService.auditar(licencia.user.id, licencia.productCode);
@@ -1198,7 +1233,7 @@ function construirServidor(licencia) {
       // descontar. Sí cuenta para el tope diario, que aquí solo hace de freno
       // ante una descarga masiva.
       if (licencia.delivery === 'INSTRUCTIONS') {
-        const cupoEntrega = await licenseService.checkLimits(licencia);
+        const cupoEntrega = await licenseService.reserveLimits(licencia);
         if (!cupoEntrega.permitido) {
           await anotarSinCobrar('BLOCKED_LIMIT');
           return texto(cupoEntrega.motivo);
@@ -1223,6 +1258,7 @@ function construirServidor(licencia) {
             await guardarTramo(hilo.id, skill.code, contenido.numero);
           }
         } catch (error) {
+          await licenseService.releaseLimits(cupoEntrega.reserva);
           await anotarSinCobrar('NORMAL');
           logger.error(
             { err: error, licenseId: licencia.id, skill: skill.code },
@@ -1242,7 +1278,8 @@ function construirServidor(licencia) {
           // Entregar no consume tokens nuestros: el coste va a cero y solo
           // cuenta como consulta.
           costCents: 0,
-          cuentaParaElTope: true,
+          // Ya se descontó al reservarla, antes de entregar.
+          cupoReservado: true,
         });
 
         /**
@@ -1306,8 +1343,10 @@ function construirServidor(licencia) {
       }
 
       // ── 4. Topes del plan ────────────────────────────────────────────────
-      // Se comprueba ANTES de gastar tokens, que es lo que cuesta dinero.
-      const cupo = await licenseService.checkLimits(licencia);
+      // Se toma ANTES de gastar tokens, que es lo que cuesta dinero, y en la
+      // misma sentencia que lo comprueba: dos llamadas a la vez no pueden
+      // llevarse las dos la última consulta del día.
+      const cupo = await licenseService.reserveLimits(licencia);
       if (!cupo.permitido) {
         await anotarSinCobrar('BLOCKED_LIMIT');
         return texto(cupo.motivo);
@@ -1326,7 +1365,8 @@ function construirServidor(licencia) {
           clientKey: sesion,
         });
       } catch (error) {
-        // El fallo no lo paga el comprador: se anota, no se le descuenta.
+        // El fallo no lo paga el comprador: se anota y se le devuelve.
+        await licenseService.releaseLimits(cupo.reserva);
         await anotarSinCobrar('NORMAL');
         logger.error(
           { err: error, licenseId: licencia.id, skill: skill.code },
@@ -1357,7 +1397,7 @@ function construirServidor(licencia) {
         outputTokens: resultado.outputTokens,
         cachedTokens: resultado.cachedTokens,
         costCents: resultado.costCents,
-        cuentaParaElTope: true,
+        cupoReservado: true,
       });
 
       return texto(resultado.texto);
@@ -1391,6 +1431,8 @@ function construirServidor(licencia) {
         inputSchema: ESQUEMA_FUENTES,
       },
       async ({ tema, temaOriginal, pais, cuantas }) => {
+        const cupo = await cupoDePrueba('buscar_fuentes', tema);
+        if (cupo.bloqueo) return cupo.bloqueo;
         await licenseService.recordUsage({
           licenseId: licencia.id,
           tool: 'buscar_fuentes',
@@ -1576,6 +1618,8 @@ function construirServidor(licencia) {
       inputSchema: ESQUEMA_LITERATURA,
     },
     async ({ tema, idioma, pais, desdeAnio, cuantas }) => {
+      const cupo = await cupoDePrueba('buscar_en_la_literatura', tema);
+      if (cupo.bloqueo) return cupo.bloqueo;
       await licenseService.recordUsage({
         licenseId: licencia.id,
         tool: 'buscar_en_la_literatura',
@@ -1594,6 +1638,8 @@ function construirServidor(licencia) {
       // recupera. No es culpa del tesista ni un fallo del conector, y decirlo
       // así evita que se ponga a probar cosas creyendo que hizo algo mal.
       if (caida) {
+        // Si no respondió, no se le cobra.
+        await licenseService.releaseLimits(cupo.reserva);
         return texto(
           'El catálogo abierto no está respondiendo ahora mismo. No es nada que hayas hecho ' +
             'tú ni te falte configurar: es su servidor.\n\n' +
@@ -1673,6 +1719,8 @@ function construirServidor(licencia) {
       inputSchema: ESQUEMA_BOLA,
     },
     async ({ desdeAnio, cuantas }) => {
+      const cupo = await cupoDePrueba('ampliar_desde_mis_fuentes');
+      if (cupo.bloqueo) return cupo.bloqueo;
       await licenseService.recordUsage({
         licenseId: licencia.id,
         tool: 'ampliar_desde_mis_fuentes',
@@ -1684,6 +1732,7 @@ function construirServidor(licencia) {
       });
 
       if (caida) {
+        await licenseService.releaseLimits(cupo.reserva);
         return texto(
           'El catálogo abierto no está respondiendo ahora mismo. No es nada que hayas hecho ' +
             'tú: es su servidor. Prueba en un rato.',

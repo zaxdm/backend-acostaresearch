@@ -208,6 +208,119 @@ async function registrar(licenseId, { costCents = 0 } = {}, ahora = new Date()) 
   });
 }
 
+/**
+ * Pone a cero lo del periodo anterior si el sello ya no es el de hoy o el de
+ * este mes. Cada `updateMany` es una sola sentencia con su condición, así que
+ * dos llamadas simultáneas no pueden reiniciar el día dos veces: la segunda ya
+ * ve el sello nuevo y no toca nada.
+ */
+async function alinearSellos(licenseId, dia, mes) {
+  await prisma.licenseCounter.updateMany({
+    where: { licenseId, dayStamp: { not: dia } },
+    data: { dayStamp: dia, callsToday: 0, costCentsToday: 0 },
+  });
+  await prisma.licenseCounter.updateMany({
+    where: { licenseId, monthStamp: { not: mes } },
+    data: { monthStamp: mes, callsMonth: 0, costCentsMonth: 0 },
+  });
+}
+
+/**
+ * Toma una consulta del cupo ANTES de hacer el trabajo, o dice por qué no queda.
+ *
+ * Existe porque `comprobar` y `registrar` van separados por todo lo que tarda
+ * la llamada: dos consultas lanzadas a la vez leían «4 de 5», pasaban las dos y
+ * acababan en 6. Aquí la comprobación y la suma son la misma sentencia —subir
+ * el contador SOLO SI sigue por debajo del tope—, y MySQL bloquea la fila
+ * mientras la evalúa: la sexta no encuentra fila que cumpla y se queda fuera.
+ *
+ * Los topes de gasto siguen yendo por `comprobar`: el coste no se sabe hasta
+ * que la respuesta vuelve, y ahí se acepta el desvío de una llamada.
+ *
+ * Devuelve `reserva` para poder devolverla con `liberar` si el trabajo falla.
+ */
+async function reservar(licencia, ahora = new Date()) {
+  const previo = await comprobar(licencia, ahora);
+  if (!previo.permitido) return previo;
+
+  const licenseId = licencia.id;
+  const dia = selloDia(ahora);
+  const mes = selloMes(ahora);
+
+  try {
+    await prisma.licenseCounter.create({ data: { licenseId, dayStamp: dia, monthStamp: mes } });
+  } catch (error) {
+    // Ya existía, o la creó a la vez otra llamada de la misma licencia.
+    if (error?.code !== 'P2002') throw error;
+  }
+  await alinearSellos(licenseId, dia, mes);
+
+  const { count } = await prisma.licenseCounter.updateMany({
+    where: {
+      licenseId,
+      ...(licencia.callsPerDay > 0 && { callsToday: { lt: licencia.callsPerDay } }),
+      ...(licencia.callsPerMonth > 0 && { callsMonth: { lt: licencia.callsPerMonth } }),
+      ...(licencia.callsLimitTotal > 0 && { callsLifetime: { lt: licencia.callsLimitTotal } }),
+    },
+    data: {
+      callsToday: { increment: 1 },
+      callsMonth: { increment: 1 },
+      callsLifetime: { increment: 1 },
+    },
+  });
+
+  if (count === 0) {
+    // Otra llamada se llevó la última entre la lectura y la suma. `comprobar`
+    // ya ve el contador lleno y sabe decir cuál de los topes fue.
+    const despues = await comprobar(licencia, ahora);
+    return {
+      ...despues,
+      permitido: false,
+      motivo:
+        despues.motivo ??
+        'Has alcanzado el límite de consultas de hoy. Vuelve mañana o escríbenos si necesitas más.',
+    };
+  }
+
+  return { permitido: true, reserva: { licenseId, dia, mes } };
+}
+
+/**
+ * Devuelve la consulta reservada cuando el trabajo no llegó a hacerse: el fallo
+ * fue nuestro y no se le cobra. Si entre medias cambió el día, no se toca nada:
+ * esa consulta ya se contó en un día que terminó.
+ */
+async function liberar(reserva) {
+  if (!reserva) return;
+  await prisma.licenseCounter.updateMany({
+    where: {
+      licenseId: reserva.licenseId,
+      dayStamp: reserva.dia,
+      monthStamp: reserva.mes,
+      callsToday: { gt: 0 },
+    },
+    data: {
+      callsToday: { decrement: 1 },
+      callsMonth: { decrement: 1 },
+      callsLifetime: { decrement: 1 },
+    },
+  });
+}
+
+/** Suma el coste real de una consulta que ya se contó al reservarla. */
+async function anotarCoste(licenseId, costCents, ahora = new Date()) {
+  if (!(costCents > 0)) return;
+  await alinearSellos(licenseId, selloDia(ahora), selloMes(ahora));
+  await prisma.licenseCounter.updateMany({
+    where: { licenseId },
+    data: {
+      costCentsToday: { increment: costCents },
+      costCentsMonth: { increment: costCents },
+      costCentsLifetime: { increment: costCents },
+    },
+  });
+}
+
 /** Resumen para el panel del comprador y el del administrador. */
 async function resumen(licencia) {
   const contador = await estado(licencia.id);
@@ -270,4 +383,15 @@ function describirCupo(uso) {
   return lineas;
 }
 
-module.exports = { comprobar, registrar, estado, resumen, describirCupo, selloDia, selloMes };
+module.exports = {
+  comprobar,
+  registrar,
+  reservar,
+  liberar,
+  anotarCoste,
+  estado,
+  resumen,
+  describirCupo,
+  selloDia,
+  selloMes,
+};

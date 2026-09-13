@@ -719,6 +719,8 @@ const licenseService = {
     cachedTokens = 0,
     costCents = 0,
     cuentaParaElTope = false,
+    // La consulta ya se descontó con `reserveLimits`: solo falta su coste.
+    cupoReservado = false,
   }) {
     try {
       await licenseRepository.recordUsage({
@@ -740,7 +742,9 @@ const licenseService = {
       // Las consultas baratas (catálogo, estado) se registran pero no gastan
       // cupo: sería absurdo que alguien se quedara sin capítulos por haber
       // mirado la lista tres veces.
-      if (cuentaParaElTope) {
+      if (cupoReservado) {
+        await limites.anotarCoste(licenseId, costCents);
+      } else if (cuentaParaElTope) {
         await limites.registrar(licenseId, { costCents });
       }
     } catch (error) {
@@ -755,6 +759,23 @@ const licenseService = {
   /** ¿Le queda cupo a esta licencia? Se consulta ANTES de gastar tokens. */
   checkLimits(licencia) {
     return limites.comprobar(licencia);
+  },
+
+  /**
+   * Toma la consulta del cupo antes de trabajar, en una sola sentencia: dos
+   * llamadas a la vez no pueden pasar las dos con la última consulta del día.
+   */
+  reserveLimits(licencia) {
+    return limites.reservar(licencia);
+  },
+
+  /** Devuelve una consulta reservada cuyo trabajo falló. Nunca lanza. */
+  async releaseLimits(reserva) {
+    try {
+      await limites.liberar(reserva);
+    } catch (error) {
+      logger.error({ err: error, licenseId: reserva?.licenseId }, 'No se pudo devolver la consulta');
+    }
   },
 
   usageSummary(licencia) {

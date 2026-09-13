@@ -479,11 +479,17 @@ async function siguientePaso(userId, productCode) {
 
   if (catalogo.length === 0) return null;
 
-  const listos = new Set(
-    (proyecto?.stages ?? []).filter((e) => e.estado === 'LISTO').map((e) => e.skillCode),
-  );
+  const etapas = proyecto?.stages ?? [];
+  const listos = new Set(etapas.filter((e) => e.estado === 'LISTO').map((e) => e.skillCode));
+  const enCurso = new Set(etapas.filter((e) => e.estado === 'EN_CURSO').map((e) => e.skillCode));
+  const fases = catalogo.filter((s) => !esApoyo(s.displayName));
 
-  return catalogo.find((s) => !esApoyo(s.displayName) && !listos.has(s.code)) ?? null;
+  // Si hay algo empezado, toca seguir con eso. Antes se ofrecía siempre la
+  // primera fase sin cerrar, y a quien tenía el Capítulo I a medias —y el tema
+  // ya fijado en el proyecto— se le decía «Le toca: 1 · Tema y delimitación».
+  return (
+    fases.find((s) => enCurso.has(s.code)) ?? fases.find((s) => !listos.has(s.code)) ?? null
+  );
 }
 
 /**

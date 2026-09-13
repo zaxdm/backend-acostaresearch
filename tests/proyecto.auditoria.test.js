@@ -280,3 +280,49 @@ test('el mismo instrumento nombrado igual no dice nada', () => {
 
   assert.equal(r.hallazgos.length, 0);
 });
+
+test('lo que va entre paréntesis en una variable no cuenta para buscarla en los objetivos', () => {
+  // Así guardó sus variables un tesista el 13 de septiembre de 2026, y el repaso
+  // decía que ninguna de las tres aparecía en ningún objetivo.
+  const r = auditar({
+    etapas: [
+      {
+        skillCode: 'problema-y-objetivos',
+        estado: 'EN_CURSO',
+        palabras: 1400,
+        datos: {
+          objetivoGeneral:
+            'Determinar la influencia de la personalización percibida de las recomendaciones en la ' +
+            'valoración de la experiencia de compra, con la confianza como mediadora.',
+          objetivosEspecificos: ['Determinar la influencia de la personalización percibida en la confianza.'],
+          variables: [
+            'Personalización percibida de las recomendaciones (independiente; dimensiones: relevancia y precisión, control del usuario sobre sus datos)',
+            'Confianza (mediadora; dimensiones: integridad, benevolencia, competencia)',
+            'Valoración de la experiencia de compra en línea (dependiente; dimensiones: satisfacción, valor percibido, facilidad de uso, disfrute)',
+          ],
+        },
+      },
+    ],
+  });
+
+  assert.doesNotMatch(mensajes(r), /no aparece en ningún objetivo/);
+});
+
+test('una variable que de verdad falta se sigue señalando aunque lleve paréntesis', () => {
+  const r = auditar({
+    etapas: [
+      {
+        skillCode: 'problema-y-objetivos',
+        estado: 'EN_CURSO',
+        palabras: 1400,
+        datos: {
+          objetivoGeneral: 'Determinar la influencia de la confianza en la lealtad del cliente.',
+          objetivosEspecificos: ['Medir la confianza.'],
+          variables: ['Rendimiento académico (dependiente; dimensiones: notas, asistencia)'],
+        },
+      },
+    ],
+  });
+
+  assert.match(mensajes(r), /Rendimiento académico.*no aparece en ningún objetivo/);
+});

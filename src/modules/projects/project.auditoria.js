@@ -62,8 +62,12 @@ const VACIAS = new Set([
 
 /** Las palabras con contenido de una frase, normalizadas. */
 function palabrasClave(frase) {
+  // Lo que va entre paréntesis es aclaración, no el nombre: «Confianza
+  // (mediadora; dimensiones: integridad, benevolencia, competencia)». Contarlo
+  // exigía encontrar en los objetivos «dimensiones» y «benevolencia», y daba por
+  // ausentes tres variables que estaban en todos los objetivos.
   return new Set(
-    normalizar(frase)
+    normalizar(String(frase ?? '').replace(/\([^)]*\)/g, ' '))
       .split(/[^a-z0-9]+/)
       .filter((p) => p.length >= 6 && !VACIAS.has(p)),
   );

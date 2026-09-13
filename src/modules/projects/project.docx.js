@@ -47,6 +47,7 @@ const AdmZip = require('adm-zip');
 
 const { HUECO_RE } = require('./project.citas');
 const zoteroCampos = require('./project.zotero-campos');
+const partesDePlantilla = require('./project.plantilla-partes');
 
 /** Interlineado doble, en las unidades de OOXML (240 = sencillo). */
 const DOBLE = 480;
@@ -292,17 +293,25 @@ async function armar({
   referencias = [],
   estilos = null,
   pagina = null,
+  partes = null,
   citas = null,
   zotero = null,
 }) {
   const notas = {};
   const plantilla = Boolean(estilos);
+  // Si la numeración de la plantilla ya escribe «Capítulo I», el título no lo
+  // repite: saldría «CAPÍTULO I CAPÍTULO I · PROBLEMA Y OBJETIVOS».
+  const numeraCapitulos = /<w:lvlText w:val="[^"]*cap[ií]tulo/i.test(partes?.numeracion ?? '');
   const contexto = { citas, notas, zotero: Boolean(zotero), plantilla };
   // El espaciado de los títulos de capítulo: con plantilla, el de su estilo.
   const espacioDeTitulo = plantilla ? {} : { spacing: { after: 240 } };
 
   const cuerpo = [
-    ...portada({ tema, carrera, universidad, nombre }),
+    // La portada de su facultad, si la plantilla la trae con marcas: aquí va un
+    // hueco y se pone al final, ya empaquetado (ver `project.plantilla-partes`).
+    ...(partes?.portada
+      ? [new Paragraph({ text: partesDePlantilla.MARCA_PORTADA })]
+      : portada({ tema, carrera, universidad, nombre })),
     new Paragraph({ text: '', pageBreakBefore: true }),
     // «TOC Heading» y no Título 1: se ve como un Título 1 pero no entra en el
     // índice. Con Título 1, el índice se listaba a sí mismo como primera
@@ -321,7 +330,7 @@ async function armar({
   for (const capitulo of capitulos) {
     cuerpo.push(
       new Paragraph({
-        text: tituloDelCapitulo(capitulo.titulo),
+        text: tituloDelCapitulo(capitulo.titulo, { sinCapitulo: numeraCapitulos }),
         heading: HeadingLevel.HEADING_1,
         pageBreakBefore: true,
         ...espacioDeTitulo,
@@ -409,6 +418,16 @@ async function armar({
 
   let buffer = await Packer.toBuffer(documento);
   buffer = ajustarEstilos(buffer, { quitarRepetidos: plantilla });
+  if (partes) {
+    buffer = partesDePlantilla.aplicar(buffer, partes, {
+      tema,
+      carrera,
+      universidad,
+      nombre,
+      // La lista de referencias es un Título 1, pero no se numera.
+      sinNumero: lista.parrafos.length > 0 ? [lista.titulo] : [],
+    });
+  }
   return zotero ? zoteroCampos.coser(buffer, zotero.codigos) : buffer;
 }
 
@@ -452,7 +471,10 @@ function sinEstilosRepetidos(xml) {
 const TITULO_DEL_INDICE =
   '<w:style w:type="paragraph" w:styleId="TOCHeading"><w:name w:val="TOC Heading"/>' +
   '<w:basedOn w:val="Heading1"/><w:next w:val="Normal"/><w:uiPriority w:val="39"/>' +
-  '<w:unhideWhenUsed/><w:qFormat/><w:pPr><w:outlineLvl w:val="9"/></w:pPr></w:style>';
+  // numId 0 = sin numeración: si la plantilla numera el Título 1, el título del
+  // índice lo heredaba y salía «1. ÍNDICE», con los capítulos corridos a «2.».
+  '<w:unhideWhenUsed/><w:qFormat/><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="0"/></w:numPr>' +
+  '<w:outlineLvl w:val="9"/></w:pPr></w:style>';
 
 function conTituloDelIndice(xml) {
   if (/w:styleId="TOCHeading"/.test(xml) || !xml.includes('</w:styles>')) return xml;
@@ -480,12 +502,15 @@ function ajustarEstilos(buffer, { quitarRepetidos = false } = {}) {
  * Problema y objetivos», «Fase 3 — Introducción»— y ese número es del método,
  * no del documento: en la tesis salía «2 · CAPÍTULO I».
  */
-function tituloDelCapitulo(titulo) {
+function tituloDelCapitulo(titulo, { sinCapitulo = false } = {}) {
   const original = String(titulo ?? '');
-  const limpio = original
+  let limpio = original
     .replace(/^\s*\d+[a-z]?\s*·\s*/i, '')
     .replace(/^\s*fase\s+\d+[a-z]?\s*[—–-]\s*/i, '')
     .trim();
+  // «Capítulo I · Problema y objetivos» → «Problema y objetivos», cuando el
+  // número del capítulo ya lo pone la numeración de la plantilla.
+  if (sinCapitulo) limpio = limpio.replace(/^cap[ií]tulo\s+[IVXLCDM\d]+\s*[·:.—–-]\s*/i, '').trim();
   return limpio || original;
 }
 

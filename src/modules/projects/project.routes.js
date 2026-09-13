@@ -334,7 +334,7 @@ router.post(
     const nombre = decodificar(req.get('X-Nombre-Archivo'));
 
     try {
-      const { estilos, conMargenes } = await projectService.guardarPlantilla({
+      const { estilos, mensaje } = await projectService.guardarPlantilla({
         userId: req.user.id,
         productCode: req.params.productCode,
         buffer: req.body,
@@ -345,10 +345,7 @@ router.post(
         res,
         { estilos: estilos.slice(0, 20), cuantos: estilos.length },
         {
-          message:
-            `Plantilla guardada, con ${estilos.length} estilos` +
-            (conMargenes ? ' y sus márgenes' : '') +
-            '. Tu próxima descarga saldrá con el formato de tu facultad.',
+          message: mensaje,
         },
       );
     } catch (error) {

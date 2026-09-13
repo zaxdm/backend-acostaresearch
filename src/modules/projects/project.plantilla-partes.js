@@ -1,0 +1,570 @@
+'use strict';
+
+/**
+ * Lo que se copia de la plantilla además de sus estilos y sus márgenes.
+ *
+ * POR QUÉ EXISTE
+ * --------------
+ * Con solo la hoja de estilos, el Word tenía la letra y los colores de la
+ * facultad, pero no lo que un jurado mira primero: los títulos numerados
+ * («1.1», «1.1.1»), el encabezado con el nombre de la universidad y la portada.
+ * Cada una de esas cosas vive en otra parte del .docx, y aquí se copian:
+ *
+ *   - la NUMERACIÓN (`word/numbering.xml`): los estilos de título la citan por
+ *     número, y sin ella los títulos salían sin su «1.1»;
+ *   - el ENCABEZADO y el PIE (`word/headerN.xml`, `word/footerN.xml`), con sus
+ *     imágenes —el logo—, el normal y el de la primera página;
+ *   - la PORTADA: la primera página, hasta el primer salto de página.
+ *
+ * LA PORTADA SOLO CON MARCAS
+ * --------------------------
+ * Una plantilla de facultad viene con la portada de ejemplo, y a veces con el
+ * nombre de otro tesista. Así que la portada solo se guarda si el tesista ha
+ * escrito en ella dónde van sus datos: {{TITULO}}, {{AUTOR}}, {{CARRERA}},
+ * {{UNIVERSIDAD}}, {{AÑO}}. Esas marcas se rellenan al descargar; las que no se
+ * conocen —{{ASESOR}}— se dejan a la vista para que las complete a mano. Sin
+ * marcas, sale nuestra portada, y se le dice por qué.
+ *
+ * Del resto del documento no se guarda nada: todo lo que no es una de estas
+ * partes se descarta en memoria, como hasta ahora.
+ *
+ * CÓMO SE APLICA
+ * --------------
+ * Como los campos de Zotero: en el .docx ya empaquetado, porque la librería no
+ * sabe insertar XML ajeno. Las imágenes se copian con un nombre sacado de su
+ * contenido y las relaciones se renumeran para no chocar con las nuestras.
+ */
+
+const crypto = require('crypto');
+const path = require('path');
+const AdmZip = require('adm-zip');
+
+/** Dónde va la portada de la plantilla dentro del Word que arma el servidor. */
+const MARCA_PORTADA = '⟦PORTADA⟧';
+
+const MARCA_RE = /\{\{\s*([A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+)\s*\}\}/g;
+
+/** El normal y el de la primera página. El de páginas pares pide más ajustes. */
+const TIPOS_DE_CABECERA = ['default', 'first'];
+
+/** Una portada son unas decenas de párrafos; esto deja sitio de sobra. */
+const MAXIMO_PORTADA = 400 * 1024;
+
+const REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+const TIPO_IMAGEN = `${REL}/image`;
+const TIPO_ENLACE = `${REL}/hyperlink`;
+
+const CONTENIDO_DE_MEDIO = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  bmp: 'image/bmp',
+  svg: 'image/svg+xml',
+  emf: 'image/x-emf',
+  wmf: 'image/x-wmf',
+  tif: 'image/tiff',
+  tiff: 'image/tiff',
+};
+
+/** Los atributos con los que un fragmento cita una relación: imágenes y enlaces. */
+const ATRIBUTO_REL_RE = /\br:(embed|id|link|pict)="([^"]+)"/g;
+
+const escaparXml = (texto) =>
+  String(texto).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const escaparAtributo = (texto) => escaparXml(texto).replace(/"/g, '&quot;');
+
+function atributos(texto) {
+  return Object.fromEntries(
+    [...String(texto).matchAll(/([\w:.-]+)="([^"]*)"/g)].map(([, nombre, valor]) => [nombre, valor]),
+  );
+}
+
+function leerRelaciones(xml) {
+  const mapa = new Map();
+  for (const m of String(xml ?? '').matchAll(/<Relationship\b([^>]*?)\/?>/g)) {
+    const a = atributos(m[1]);
+    if (a.Id) mapa.set(a.Id, { type: a.Type, target: a.Target, externo: a.TargetMode === 'External' });
+  }
+  return mapa;
+}
+
+/** La ruta dentro del zip de un destino relativo a `word/`. */
+function rutaEnWord(target) {
+  if (target.startsWith('/')) return target.slice(1);
+  return path.posix.normalize(path.posix.join('word', target));
+}
+
+/**
+ * Un fragmento con las relaciones que usa, listo para llevárselo.
+ *
+ * Solo imágenes y enlaces externos. Cualquier otra cosa —un objeto incrustado,
+ * un gráfico— devuelve null y el fragmento no se usa: llevarse la mitad dejaría
+ * un Word que Word no abre.
+ */
+function recoger(xml, relaciones, zip, medios) {
+  const nuevos = {};
+  const rels = [];
+
+  for (const id of new Set([...xml.matchAll(ATRIBUTO_REL_RE)].map((m) => m[2]))) {
+    const rel = relaciones.get(id);
+    if (!rel) return null;
+
+    if (rel.type === TIPO_ENLACE && rel.externo) {
+      rels.push({ id, type: rel.type, target: rel.target, externo: true });
+      continue;
+    }
+    if (rel.type !== TIPO_IMAGEN || rel.externo) return null;
+
+    const ext = path.posix.extname(rel.target).slice(1).toLowerCase();
+    const datos = zip.getEntry(rutaEnWord(rel.target))?.getData();
+    if (!datos || !CONTENIDO_DE_MEDIO[ext]) return null;
+
+    const nombre = `pl-${crypto.createHash('sha1').update(datos).digest('hex').slice(0, 16)}.${ext}`;
+    nuevos[nombre] = datos.toString('base64');
+    rels.push({ id, type: rel.type, target: `media/${nombre}` });
+  }
+
+  Object.assign(medios, nuevos);
+  return { xml, rels };
+}
+
+/**
+ * Los hijos directos del cuerpo: párrafos, tablas y controles de contenido.
+ *
+ * Contando profundidad y no con una expresión regular sin más, porque una
+ * portada lleva párrafos dentro de tablas y de cuadros de texto, y un `</w:p>`
+ * interior cerraría antes de tiempo.
+ */
+function hijosDelCuerpo(cuerpo) {
+  const hijos = [];
+  const etiqueta = /<(\/?)w:(p|tbl|sdt)\b[^>]*?(\/?)>/g;
+  let profundidad = 0;
+  let inicio = -1;
+
+  for (const m of cuerpo.matchAll(etiqueta)) {
+    const [texto, cierre, , autocierre] = m;
+    if (autocierre) {
+      if (profundidad === 0) hijos.push(texto);
+      continue;
+    }
+    if (cierre) {
+      profundidad -= 1;
+      if (profundidad === 0 && inicio !== -1) {
+        hijos.push(cuerpo.slice(inicio, m.index + texto.length));
+        inicio = -1;
+      }
+      continue;
+    }
+    if (profundidad === 0) inicio = m.index;
+    profundidad += 1;
+  }
+  return hijos;
+}
+
+const SALTO_DE_PAGINA_RE = /<w:br\b[^>]*w:type="page"[^>]*\/>/;
+const SALTO_ANTES_RE = /<w:pageBreakBefore(?![^>]*w:val="(?:0|false|off)")[^>]*\/>/;
+
+/**
+ * La primera página: todo hasta el primer salto de página o de sección.
+ *
+ * Si no hay ningún salto, null: sin él no se sabe dónde acaba la portada, y
+ * llevarse el documento entero es justo lo que no se quiere.
+ */
+function recortarPortada(cuerpo) {
+  const trozos = [];
+
+  for (const hijo of hijosDelCuerpo(cuerpo)) {
+    const esParrafo = /^<w:p[\s>/]/.test(hijo);
+
+    if (esParrafo && trozos.length > 0 && SALTO_ANTES_RE.test(hijo)) return trozos;
+
+    const salto = hijo.search(SALTO_DE_PAGINA_RE);
+    if (salto !== -1) {
+      if (esParrafo) {
+        // Se corta en la corrida que lleva el salto: lo de antes es portada.
+        const corrida = Math.max(hijo.lastIndexOf('<w:r>', salto), hijo.lastIndexOf('<w:r ', salto));
+        trozos.push(`${hijo.slice(0, corrida > 0 ? corrida : salto)}</w:p>`);
+      } else {
+        trozos.push(hijo.replace(SALTO_DE_PAGINA_RE, ''));
+      }
+      return trozos;
+    }
+
+    if (/<w:sectPr\b/.test(hijo)) {
+      trozos.push(hijo.replace(/<w:sectPr\b[\s\S]*?<\/w:sectPr>/g, ''));
+      return trozos;
+    }
+
+    trozos.push(hijo);
+  }
+
+  return null;
+}
+
+/** Los espacios de nombres de la raíz, para declararlos donde vaya la portada. */
+function espaciosDe(documento) {
+  const raiz = documento.match(/<w:document\b([^>]*)>/)?.[1] ?? '';
+  return Object.fromEntries(
+    Object.entries(atributos(raiz)).filter(([nombre]) => nombre.startsWith('xmlns:') || nombre === 'mc:Ignorable'),
+  );
+}
+
+const vacias = () => ({
+  numeracion: null,
+  encabezados: {},
+  pies: {},
+  primeraPaginaDistinta: false,
+  portada: null,
+  portadaSinMarcas: false,
+  medios: {},
+});
+
+/** Las partes de la plantilla. Nunca lanza: lo que no se puede leer, no se copia. */
+function extraer(buffer) {
+  const partes = vacias();
+
+  let zip;
+  try {
+    zip = new AdmZip(buffer);
+  } catch {
+    return partes;
+  }
+  const texto = (nombre) => zip.getEntry(nombre)?.getData().toString('utf8') ?? null;
+
+  const documento = texto('word/document.xml');
+  if (!documento) return partes;
+  const relaciones = leerRelaciones(texto('word/_rels/document.xml.rels'));
+
+  const numeracion = texto('word/numbering.xml');
+  if (numeracion?.includes('<w:abstractNum')) partes.numeracion = numeracion;
+
+  // La sección del documento: la última, que es la que manda al final.
+  const finDelCuerpo = documento.lastIndexOf('</w:body>');
+  const inicioSeccion = documento.lastIndexOf('<w:sectPr', finDelCuerpo);
+  const seccion =
+    inicioSeccion === -1
+      ? ''
+      : documento.slice(inicioSeccion, documento.indexOf('</w:sectPr>', inicioSeccion) + 11);
+
+  partes.primeraPaginaDistinta = /<w:titlePg(?![^>]*w:val="(?:0|false|off)")[^>]*\/>/.test(seccion);
+
+  for (const m of seccion.matchAll(/<w:(header|footer)Reference\b([^>]*?)\/>/g)) {
+    const a = atributos(m[2]);
+    const tipo = a['w:type'] ?? 'default';
+    if (!TIPOS_DE_CABECERA.includes(tipo)) continue;
+
+    const rel = relaciones.get(a['r:id']);
+    if (!rel || rel.externo) continue;
+
+    const ruta = rutaEnWord(rel.target);
+    const xml = texto(ruta);
+    if (!xml) continue;
+
+    const relsDeLaParte = leerRelaciones(
+      texto(path.posix.join(path.posix.dirname(ruta), '_rels', `${path.posix.basename(ruta)}.rels`)),
+    );
+    const recogido = recoger(xml, relsDeLaParte, zip, partes.medios);
+    if (recogido) (m[1] === 'header' ? partes.encabezados : partes.pies)[tipo] = recogido;
+  }
+
+  const apertura = documento.match(/<w:body\b[^>]*>/);
+  if (apertura && finDelCuerpo !== -1) {
+    const cuerpo = documento.slice(apertura.index + apertura[0].length, finDelCuerpo);
+    const trozos = recortarPortada(cuerpo);
+
+    if (trozos) {
+      const xml = trozos.join('');
+      const plano = xml.replace(/<[^>]+>/g, '');
+
+      if (new RegExp(MARCA_RE.source).test(plano) && xml.length <= MAXIMO_PORTADA) {
+        const recogido = recoger(xml, relaciones, zip, partes.medios);
+        if (recogido) partes.portada = { ...recogido, espacios: espaciosDe(documento) };
+      } else if (plano.trim() !== '') {
+        partes.portadaSinMarcas = true;
+      }
+    }
+  }
+
+  return partes;
+}
+
+/** Qué se copió, para decírselo al tesista. */
+function resumen(partes) {
+  return {
+    numeracion: Boolean(partes?.numeracion),
+    encabezado: Object.keys(partes?.encabezados ?? {}).length > 0,
+    pie: Object.keys(partes?.pies ?? {}).length > 0,
+    portada: Boolean(partes?.portada),
+    portadaSinMarcas: Boolean(partes?.portadaSinMarcas),
+  };
+}
+
+const CAMPO_DE_MARCA = {
+  TITULO: 'tema',
+  TEMA: 'tema',
+  AUTOR: 'nombre',
+  AUTORA: 'nombre',
+  TESISTA: 'nombre',
+  NOMBRE: 'nombre',
+  CARRERA: 'carrera',
+  ESCUELA: 'carrera',
+  UNIVERSIDAD: 'universidad',
+};
+
+function valorDeMarca(nombre, datos) {
+  const clave = nombre.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
+  if (clave === 'ANO' || clave === 'ANIO') return String(new Date().getFullYear());
+  const campo = CAMPO_DE_MARCA[clave];
+  const valor = campo ? datos?.[campo] : null;
+  return valor ? String(valor) : null;
+}
+
+/**
+ * Rellena las marcas de la portada con los datos del proyecto.
+ *
+ * Word parte el texto en corridas donde le parece —«{{TIT» en una, «ULO}}» en
+ * otra, por la corrección ortográfica—, así que se mira el texto del párrafo
+ * entero. Si hay que cambiar algo, el texto va a la primera corrida y las demás
+ * se vacían: se pierde un cambio de formato a mitad de línea, que en una línea
+ * de portada no suele haber. Solo párrafos sin otros párrafos dentro: los de
+ * los cuadros de texto se tratan uno a uno.
+ */
+function rellenarMarcas(xml, datos) {
+  const TEXTO_RE = /<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>/g;
+
+  return xml.replace(/<w:p\b[^>]*>(?:(?!<w:p[\s>])[\s\S])*?<\/w:p>/g, (parrafo) => {
+    const textos = [...parrafo.matchAll(TEXTO_RE)];
+    if (textos.length === 0) return parrafo;
+
+    const junto = textos.map((t) => t[1]).join('');
+    const relleno = junto.replace(new RegExp(MARCA_RE.source, 'g'), (marca, nombre) => {
+      const valor = valorDeMarca(nombre, datos);
+      return valor === null ? marca : escaparXml(valor);
+    });
+    if (relleno === junto) return parrafo;
+
+    let indice = 0;
+    return parrafo.replace(TEXTO_RE, () =>
+      indice++ === 0 ? `<w:t xml:space="preserve">${relleno}</w:t>` : '<w:t></w:t>',
+    );
+  });
+}
+
+/**
+ * Quita la numeración a los párrafos de Título 1 con ese texto exacto.
+ *
+ * El `numPr` va en su sitio dentro de `pPr`: detrás de pStyle, keepNext,
+ * keepLines, pageBreakBefore y widowControl. El esquema fija el orden, y en otro
+ * lugar Word da el documento por dañado.
+ */
+function sinNumeracion(documento, titulo) {
+  const texto = `>${escaparXml(titulo)}</w:t>`;
+  const NUM_CERO = '<w:numPr><w:ilvl w:val="0"/><w:numId w:val="0"/></w:numPr>';
+
+  return documento.replace(/<w:p\b[^>]*>(?:(?!<w:p[\s>])[\s\S])*?<\/w:p>/g, (parrafo) => {
+    if (!parrafo.includes(texto) || !/<w:pStyle w:val="Heading1"\/>/.test(parrafo)) return parrafo;
+    if (parrafo.includes('<w:numPr>')) return parrafo;
+
+    return parrafo.replace(/<w:pPr>([\s\S]*?)<\/w:pPr>/, (pPr, dentro) => {
+      const antes = /^(?:<w:(?:pStyle|keepNext|keepLines|pageBreakBefore|framePr|widowControl)\b[^>]*\/>)*/.exec(dentro)[0];
+      return `<w:pPr>${antes}${NUM_CERO}${dentro.slice(antes.length)}</w:pPr>`;
+    });
+  });
+}
+
+/** Declara en la raíz los espacios de nombres que trae la portada y faltan. */
+function conEspacios(documento, espacios = {}) {
+  return documento.replace(/<w:document\b[^>]*>/, (apertura) => {
+    let nueva = apertura;
+    for (const [nombre, valor] of Object.entries(espacios)) {
+      if (nombre === 'mc:Ignorable') continue;
+      if (!new RegExp(`\\s${nombre}=`).test(nueva)) {
+        nueva = nueva.replace(/>$/, ` ${nombre}="${escaparAtributo(valor)}">`);
+      }
+    }
+
+    // Los prefijos que Word puede ignorar: si la portada usa uno que aquí no
+    // estaba en la lista, Word se negaría a abrir el documento.
+    const suyos = String(espacios['mc:Ignorable'] ?? '').split(/\s+/).filter(Boolean);
+    if (suyos.length > 0) {
+      const actual = nueva.match(/\smc:Ignorable="([^"]*)"/);
+      const juntos = [...new Set([...(actual?.[1] ?? '').split(/\s+/).filter(Boolean), ...suyos])]
+        // Solo los que están declarados; uno sin declarar también rompe el archivo.
+        .filter((prefijo) => new RegExp(`\\sxmlns:${prefijo}=`).test(nueva))
+        .join(' ');
+      nueva = actual
+        ? nueva.replace(actual[0], ` mc:Ignorable="${juntos}"`)
+        : nueva.replace(/>$/, ` mc:Ignorable="${juntos}">`);
+    }
+    return nueva;
+  });
+}
+
+/**
+ * Pone las partes de la plantilla en el Word ya armado.
+ *
+ * `datos` son los del proyecto, para las marcas de la portada.
+ */
+function aplicar(buffer, partes, datos = {}) {
+  const r = resumen(partes);
+  if (!r.numeracion && !r.encabezado && !r.pie && !r.portada) return buffer;
+
+  const zip = new AdmZip(buffer);
+  const texto = (nombre) => zip.getEntry(nombre)?.getData().toString('utf8') ?? '';
+  const escribir = (nombre, contenido) => {
+    const datosDelArchivo = Buffer.isBuffer(contenido) ? contenido : Buffer.from(contenido, 'utf8');
+    if (zip.getEntry(nombre)) zip.updateFile(nombre, datosDelArchivo);
+    else zip.addFile(nombre, datosDelArchivo);
+  };
+
+  let tipos = texto('[Content_Types].xml');
+  let rels = texto('word/_rels/document.xml.rels');
+  let documento = texto('word/document.xml');
+
+  let contador = 0;
+  const idNuevo = () => {
+    let id;
+    do {
+      contador += 1;
+      id = `rIdPl${contador}`;
+    } while (rels.includes(`Id="${id}"`));
+    return id;
+  };
+  const relXml = ({ id, type, target, externo }) =>
+    `<Relationship Id="${id}" Type="${type}" Target="${escaparAtributo(target)}"` +
+    `${externo ? ' TargetMode="External"' : ''}/>`;
+  const anadirRel = (rel) => {
+    rels = rels.replace('</Relationships>', `${relXml(rel)}</Relationships>`);
+  };
+  const anadirOverride = (parte, contentType) => {
+    if (!tipos.includes(`PartName="${parte}"`)) {
+      tipos = tipos.replace('</Types>', `<Override PartName="${parte}" ContentType="${contentType}"/></Types>`);
+    }
+  };
+
+  const copiados = new Set();
+  const copiarMedio = (target) => {
+    const nombre = path.posix.basename(target);
+    if (copiados.has(nombre)) return;
+    const base64 = partes.medios?.[nombre];
+    if (!base64) throw new Error(`La plantilla guardada no tiene la imagen ${nombre}`);
+
+    escribir(`word/media/${nombre}`, Buffer.from(base64, 'base64'));
+    const ext = path.posix.extname(nombre).slice(1);
+    if (!new RegExp(`Extension="${ext}"`, 'i').test(tipos)) {
+      tipos = tipos.replace('</Types>', `<Default Extension="${ext}" ContentType="${CONTENIDO_DE_MEDIO[ext]}"/></Types>`);
+    }
+    copiados.add(nombre);
+  };
+
+  // ── La numeración ────────────────────────────────────────────────────────
+  // La nuestra no la usa nada —las viñetas del texto son un carácter—, así que
+  // se sustituye entera por la suya y los títulos recuperan su «1.1».
+  if (r.numeracion) {
+    escribir('word/numbering.xml', partes.numeracion);
+    anadirOverride(
+      '/word/numbering.xml',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml',
+    );
+    if (!rels.includes('/relationships/numbering"')) {
+      anadirRel({ id: idNuevo(), type: `${REL}/numbering`, target: 'numbering.xml' });
+    }
+
+    // Los títulos que no se numeran aunque su estilo sí: la lista de
+    // referencias. numId 0 en el párrafo anula la numeración del estilo.
+    for (const titulo of datos.sinNumero ?? []) {
+      documento = sinNumeracion(documento, titulo);
+    }
+  }
+
+  // ── Encabezado y pie ─────────────────────────────────────────────────────
+  const referencias = [];
+  let numero = 0;
+  for (const [clase, grupo] of [
+    ['header', partes.encabezados ?? {}],
+    ['footer', partes.pies ?? {}],
+  ]) {
+    for (const tipo of TIPOS_DE_CABECERA) {
+      const parte = grupo[tipo];
+      if (!parte) continue;
+
+      numero += 1;
+      const nombre = `${clase}Pl${numero}.xml`;
+      escribir(`word/${nombre}`, parte.xml);
+      if (parte.rels.length > 0) {
+        for (const rel of parte.rels) if (!rel.externo) copiarMedio(rel.target);
+        escribir(
+          `word/_rels/${nombre}.rels`,
+          '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+            `${parte.rels.map(relXml).join('')}</Relationships>`,
+        );
+      }
+      anadirOverride(`/word/${nombre}`, `application/vnd.openxmlformats-officedocument.wordprocessingml.${clase}+xml`);
+
+      const id = idNuevo();
+      anadirRel({ id, type: `${REL}/${clase}`, target: nombre });
+      referencias.push(`<w:${clase}Reference w:type="${tipo}" r:id="${id}"/>`);
+    }
+  }
+
+  if (referencias.length > 0) {
+    const inicio = documento.lastIndexOf('<w:sectPr');
+    const final = documento.indexOf('</w:sectPr>', inicio) + '</w:sectPr>'.length;
+    let seccion = documento.slice(inicio, final);
+
+    // Solo se quita lo nuestro que la plantilla sustituye: si trae encabezado
+    // pero no pie, se queda nuestro número de página.
+    if (r.encabezado) seccion = seccion.replace(/<w:headerReference\b[^>]*\/>/g, '');
+    if (r.pie) seccion = seccion.replace(/<w:footerReference\b[^>]*\/>/g, '');
+    seccion = seccion.replace(/^<w:sectPr\b[^>]*>/, (apertura) => apertura + referencias.join(''));
+
+    const hayDePrimera = partes.encabezados?.first || partes.pies?.first;
+    if (partes.primeraPaginaDistinta && hayDePrimera && !/<w:titlePg\b/.test(seccion)) {
+      // En su sitio: el esquema fija el orden, y Word no perdona un titlePg
+      // detrás de docGrid.
+      seccion = /<w:(textDirection|bidi|rtlGutter|docGrid)\b/.test(seccion)
+        ? seccion.replace(/<w:(textDirection|bidi|rtlGutter|docGrid)\b/, '<w:titlePg/><w:$1')
+        : seccion.replace('</w:sectPr>', '<w:titlePg/></w:sectPr>');
+    }
+
+    documento = documento.slice(0, inicio) + seccion + documento.slice(final);
+  }
+
+  // ── La portada ───────────────────────────────────────────────────────────
+  if (r.portada) {
+    const marca = documento.indexOf(MARCA_PORTADA);
+    if (marca !== -1) {
+      const inicio = Math.max(documento.lastIndexOf('<w:p>', marca), documento.lastIndexOf('<w:p ', marca));
+      const final = documento.indexOf('</w:p>', marca) + '</w:p>'.length;
+
+      const nuevos = new Map();
+      for (const rel of partes.portada.rels) {
+        const id = idNuevo();
+        nuevos.set(rel.id, id);
+        if (!rel.externo) copiarMedio(rel.target);
+        anadirRel({ ...rel, id });
+      }
+
+      const xml = rellenarMarcas(
+        partes.portada.xml.replace(ATRIBUTO_REL_RE, (atributo, clase, id) =>
+          nuevos.has(id) ? `r:${clase}="${nuevos.get(id)}"` : atributo,
+        ),
+        datos,
+      );
+
+      documento = conEspacios(
+        documento.slice(0, inicio) + xml + documento.slice(final),
+        partes.portada.espacios,
+      );
+    }
+  }
+
+  escribir('[Content_Types].xml', tipos);
+  escribir('word/_rels/document.xml.rels', rels);
+  escribir('word/document.xml', documento);
+  return zip.toBuffer();
+}
+
+module.exports = { extraer, aplicar, resumen, rellenarMarcas, MARCA_PORTADA };

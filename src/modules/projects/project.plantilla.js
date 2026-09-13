@@ -20,8 +20,11 @@
  * ------------------------------------
  * El contenido del archivo NO. Una plantilla de facultad suele venir con
  * ejemplos, con el nombre de otro tesista, a veces con una tesis entera dentro.
- * Nada de eso hace falta y nada de eso se queda: se extrae la hoja de estilos y
- * el resto se descarta en memoria. Lo que no se guarda no se puede filtrar.
+ * Nada de eso hace falta y nada de eso se queda: se extrae el formato —la hoja
+ * de estilos, los márgenes, la numeración de los títulos, el encabezado y el
+ * pie— y, de la portada, solo la primera página y solo si el tesista escribió
+ * en ella marcas como {{TITULO}} (ver `project.plantilla-partes`). El resto se
+ * descarta en memoria. Lo que no se guarda no se puede filtrar.
  */
 
 const AdmZip = require('adm-zip');

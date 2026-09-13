@@ -230,8 +230,55 @@ async function leerPagina(projectId) {
   }
 }
 
+/**
+ * Numeración, encabezado, pie y portada de la plantilla (ver
+ * `project.plantilla-partes`), con sus imágenes en base64.
+ *
+ * Que exista el archivo también dice algo: las plantillas subidas antes de que
+ * se copiaran estas partes no lo tienen, y el panel le pide al tesista que la
+ * vuelva a subir.
+ */
+function rutaDePartes(projectId) {
+  if (!SEGURO.test(projectId)) throw new Error('Identificador de proyecto no válido');
+  return path.join(env.capitulosDir, projectId, 'plantilla-partes.json');
+}
+
+/** Con null se borra. */
+async function guardarPartes(projectId, partes) {
+  const ruta = rutaDePartes(projectId);
+  if (!partes) {
+    await fs.unlink(ruta).catch((error) => {
+      if (error.code !== 'ENOENT') throw error;
+    });
+    return;
+  }
+  await fs.mkdir(path.dirname(ruta), { recursive: true });
+  const temporal = `${ruta}.parcial`;
+  await fs.writeFile(temporal, JSON.stringify(partes), 'utf8');
+  await fs.rename(temporal, ruta);
+}
+
+async function leerPartes(projectId) {
+  try {
+    return JSON.parse(await fs.readFile(rutaDePartes(projectId), 'utf8'));
+  } catch (error) {
+    if (error.code === 'ENOENT' || error instanceof SyntaxError) return null;
+    throw error;
+  }
+}
+
+async function tienePartes(projectId) {
+  try {
+    await fs.access(rutaDePartes(projectId));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function borrarPlantilla(projectId) {
   await guardarPagina(projectId, null);
+  await guardarPartes(projectId, null);
   try {
     await fs.unlink(rutaDePlantilla(projectId));
     return true;
@@ -256,4 +303,7 @@ module.exports = {
   borrarPlantilla,
   guardarPagina,
   leerPagina,
+  guardarPartes,
+  leerPartes,
+  tienePartes,
 };

@@ -29,6 +29,7 @@ const etapas = require('./project.etapas');
 const bloques = require('./project.bloques');
 const evidencia = require('./project.evidencia');
 const plantilla = require('./project.plantilla');
+const partesDePlantilla = require('./project.plantilla-partes');
 const auditoria = require('./project.auditoria');
 const skillService = require('../skills/skill.service');
 const referenceService = require('../references/reference.service');
@@ -573,6 +574,8 @@ async function armarWord(userId, productCode) {
   // Sus márgenes y tamaño de página, si la plantilla los traía. Solo con
   // estilos: una página sin su plantilla sería de una plantilla ya quitada.
   const pagina = estilos ? await almacen.leerPagina(proyecto.id).catch(() => null) : null;
+  // Numeración, encabezado, pie y portada, si la plantilla los traía.
+  const partes = estilos ? await almacen.leerPartes(proyecto.id).catch(() => null) : null;
 
   /**
    * La norma del proyecto, y el APA de siempre si no se puede aplicar.
@@ -608,6 +611,7 @@ async function armarWord(userId, productCode) {
     nombre,
     estilos,
     pagina,
+    partes,
     ...armado.documento,
   });
 
@@ -784,20 +788,47 @@ async function revisarEvidencia(userId, productCode, { capitulo = null } = {}) {
 /**
  * Guarda la plantilla de la facultad del tesista.
  *
- * Del .docx solo se queda la hoja de estilos. Ver `project.plantilla` para el
+ * Del .docx solo se queda el formato. Ver `project.plantilla` para el
  * porqué: lo que no se guarda no se puede filtrar, y esos archivos suelen venir
  * con la tesis de otro dentro.
  */
 async function guardarPlantilla({ userId, productCode, buffer, nombre }) {
   const xml = plantilla.extraerEstilos(buffer);
   const pagina = plantilla.extraerPagina(buffer);
+  const partes = partesDePlantilla.extraer(buffer);
 
   const proyecto = await projectRepository.asegurar(userId, productCode);
   await almacen.guardarPlantilla(proyecto.id, xml);
   await almacen.guardarPagina(proyecto.id, pagina);
+  await almacen.guardarPartes(proyecto.id, partes);
   await projectRepository.marcarPlantilla(proyecto.id, nombre ?? null);
 
-  return { estilos: plantilla.estilosQueTrae(xml), conMargenes: Boolean(pagina?.margen) };
+  const estilos = plantilla.estilosQueTrae(xml);
+  return { estilos, mensaje: mensajeDePlantilla(estilos.length, pagina, partes) };
+}
+
+/** Qué se tomó de la plantilla, dicho de forma que se pueda comprobar en el Word. */
+function mensajeDePlantilla(cuantosEstilos, pagina, partes) {
+  const r = partesDePlantilla.resumen(partes);
+  const tomado = [
+    `${cuantosEstilos} estilos`,
+    pagina?.margen ? 'sus márgenes' : null,
+    r.numeracion ? 'la numeración de sus títulos' : null,
+    r.encabezado ? 'su encabezado' : null,
+    r.pie ? 'su pie de página' : null,
+    r.portada ? 'su portada' : null,
+  ].filter(Boolean);
+
+  const lista =
+    tomado.length > 1 ? `${tomado.slice(0, -1).join(', ')} y ${tomado.at(-1)}` : tomado[0];
+  let mensaje = `Plantilla guardada, con ${lista}. Tu próxima descarga saldrá con ese formato.`;
+
+  if (r.portadaSinMarcas) {
+    mensaje +=
+      ' Su portada no se usa todavía: escribe en ella {{TITULO}}, {{AUTOR}}, {{CARRERA}}, ' +
+      '{{UNIVERSIDAD}} y {{AÑO}} donde van tus datos, y vuelve a subirla.';
+  }
+  return mensaje;
 }
 
 async function quitarPlantilla(userId, productCode) {
@@ -1510,7 +1541,13 @@ async function deUsuario(userId, { esAdmin = false } = {}) {
         universidad: proyecto.universidad,
         norma: normaDelProyecto(proyecto),
         plantilla: proyecto.plantillaAt
-          ? { nombre: proyecto.plantillaNombre, desde: proyecto.plantillaAt }
+          ? {
+              nombre: proyecto.plantillaNombre,
+              desde: proyecto.plantillaAt,
+              // Falso = subida antes de copiar márgenes, numeración, encabezado,
+              // pie y portada: el panel le pide que la vuelva a subir.
+              completa: await almacen.tienePartes(proyecto.id).catch(() => true),
+            }
           : null,
         updatedAt: proyecto.updatedAt,
         etapas,

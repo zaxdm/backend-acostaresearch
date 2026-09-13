@@ -33,6 +33,8 @@ const guardarAvanceSchema = z.object({
   tema: z.string().trim().max(500).optional(),
   carrera: z.string().trim().max(160).optional(),
   universidad: z.string().trim().max(160).optional(),
+  /** Vacío = todavía no tiene asesor: queda anotado que ya se preguntó. */
+  asesor: z.string().trim().max(160, 'El nombre del asesor admite hasta 160 caracteres.').optional(),
   /**
    * La norma de citas del Word, de una lista cerrada.
    *
@@ -111,6 +113,14 @@ const borrarProyectoSchema = z.object({
     .refine((v) => v === 'eliminar', 'Escribe exactamente «eliminar».'),
 });
 
+/** El asesor, desde el panel. Vacío lo quita. */
+const asesorSchema = z.object({
+  asesor: z
+    .string({ required_error: 'Escribe el nombre del asesor.' })
+    .trim()
+    .max(160, 'El nombre del asesor admite hasta 160 caracteres.'),
+});
+
 /** Abrir otra tesis desde el panel (solo administradores): basta con un nombre. */
 const nuevaTesisSchema = z.object({
   nombre: z
@@ -121,6 +131,7 @@ const nuevaTesisSchema = z.object({
 });
 
 module.exports = {
+  asesorSchema,
   nuevaTesisSchema,
   guardarAvanceSchema,
   guardarCapituloSchema,

@@ -30,6 +30,7 @@ const bloques = require('./project.bloques');
 const evidencia = require('./project.evidencia');
 const plantilla = require('./project.plantilla');
 const partesDePlantilla = require('./project.plantilla-partes');
+const portadaAuto = require('./project.portada-auto');
 const auditoria = require('./project.auditoria');
 const skillService = require('../skills/skill.service');
 const referenceService = require('../references/reference.service');
@@ -138,6 +139,8 @@ async function contexto(userId, productCode) {
   if (proyecto.tema) cabecera.push(`Tema: ${proyecto.tema}`);
   const donde = [proyecto.carrera, proyecto.universidad].filter(Boolean).join(' · ');
   if (donde) cabecera.push(donde);
+  const asesor = lineaDeAsesor(proyecto);
+  if (asesor) cabecera.push(asesor);
   cabecera.push(lineaDeNorma(proyecto));
 
   // Se recorre el catálogo y no las etapas guardadas, para que los capítulos
@@ -166,6 +169,27 @@ async function contexto(userId, productCode) {
     'Da esto por sabido: NO se lo vuelvas a preguntar. Si algo de aquí ya no es ' +
       'cierto porque lo han cambiado hablando, corrígelo con "guardar_avance".',
   ].join('\n');
+}
+
+/**
+ * El asesor, en lo que lee el asistente.
+ *
+ * Sin dato, se le pide que lo pregunte UNA vez: sale en la portada del Word y
+ * es lo único de ella que el servidor no sabe. Vacío quiere decir «todavía no
+ * tiene», y entonces se le dice que no insista: un asistente que pregunta lo
+ * mismo en cada conversación cansa más de lo que ayuda.
+ */
+function lineaDeAsesor(proyecto) {
+  if (proyecto.asesor) return `Asesor: ${proyecto.asesor}`;
+  if (proyecto.asesor === '') return 'Asesor: todavía no tiene (ya se preguntó; no insistas).';
+  if (proyecto.asesor === null) {
+    return (
+      'Asesor: sin dato. Sale en la portada del Word: pregúntaselo UNA vez cuando venga al ' +
+      'caso y guárdalo con "guardar_avance" (asesor). Si aún no tiene, guarda asesor vacío y no ' +
+      'vuelvas a preguntar.'
+    );
+  }
+  return null;
 }
 
 /**
@@ -228,6 +252,8 @@ async function resumen(userId, productCode) {
   if (proyecto.tema) cabecera.push(proyecto.tema);
   const donde = [proyecto.carrera, proyecto.universidad].filter(Boolean).join(' · ');
   if (donde) cabecera.push(donde);
+  const asesor = lineaDeAsesor(proyecto);
+  if (asesor) cabecera.push(asesor);
 
   // Se recorre el catálogo y no las etapas guardadas, para que los capítulos
   // que aún no ha tocado también salgan. Saber lo que falta es la mitad de
@@ -608,6 +634,7 @@ async function armarWord(userId, productCode) {
     tema: proyecto.tema,
     carrera: proyecto.carrera,
     universidad: proyecto.universidad,
+    asesor: proyecto.asesor,
     nombre,
     estilos,
     pagina,
@@ -795,12 +822,13 @@ async function revisarEvidencia(userId, productCode, { capitulo = null } = {}) {
 async function guardarPlantilla({ userId, productCode, buffer, nombre }) {
   const xml = plantilla.extraerEstilos(buffer);
   const pagina = plantilla.extraerPagina(buffer);
-  const partes = partesDePlantilla.extraer(buffer);
+  // Si la portada no trae marcas, se buscan solas dónde van sus datos.
+  const partes = await portadaAuto.prepararPortada(partesDePlantilla.extraer(buffer));
 
   const proyecto = await projectRepository.asegurar(userId, productCode);
   await almacen.guardarPlantilla(proyecto.id, xml);
   await almacen.guardarPagina(proyecto.id, pagina);
-  await almacen.guardarPartes(proyecto.id, partes);
+  await almacen.guardarPartes(proyecto.id, partes, partesDePlantilla.resumen(partes));
   await projectRepository.marcarPlantilla(proyecto.id, nombre ?? null);
 
   const estilos = plantilla.estilosQueTrae(xml);
@@ -816,19 +844,89 @@ function mensajeDePlantilla(cuantosEstilos, pagina, partes) {
     r.numeracion ? 'la numeración de sus títulos' : null,
     r.encabezado ? 'su encabezado' : null,
     r.pie ? 'su pie de página' : null,
-    r.portada ? 'su portada' : null,
+    r.portada
+      ? r.camposDePortada.length > 0
+        ? `su portada, que llenaremos con tu ${enLista(r.camposDePortada.map((c) => NOMBRE_DE_CAMPO[c]))}`
+        : 'su portada'
+      : null,
   ].filter(Boolean);
 
-  const lista =
-    tomado.length > 1 ? `${tomado.slice(0, -1).join(', ')} y ${tomado.at(-1)}` : tomado[0];
-  let mensaje = `Plantilla guardada, con ${lista}. Tu próxima descarga saldrá con ese formato.`;
+  let mensaje = `Plantilla guardada, con ${enLista(tomado)}. Tu próxima descarga saldrá con ese formato.`;
 
   if (r.portadaSinMarcas) {
     mensaje +=
-      ' Su portada no se usa todavía: escribe en ella {{TITULO}}, {{AUTOR}}, {{CARRERA}}, ' +
-      '{{UNIVERSIDAD}} y {{AÑO}} donde van tus datos, y vuelve a subirla.';
+      ' No reconocimos los datos de su portada, así que tu Word sale con nuestra portada y sus estilos.';
   }
   return mensaje;
+}
+
+const NOMBRE_DE_CAMPO = {
+  titulo: 'título',
+  autor: 'nombre',
+  asesor: 'asesor',
+  carrera: 'carrera',
+  anio: 'año',
+};
+
+/** «a, b y c». */
+function enLista(cosas) {
+  return cosas.length > 1 ? `${cosas.slice(0, -1).join(', ')} y ${cosas.at(-1)}` : (cosas[0] ?? '');
+}
+
+/**
+ * La plantilla, como la enseña el panel.
+ *
+ * Lee el resumen pequeño, no las partes: esas llevan las imágenes en base64 y
+ * el panel lo abre cualquiera que entre en su perfil. Sin resumen, la plantilla
+ * se subió antes de que se tomaran portada, encabezado y demás: el panel le
+ * pide que la vuelva a subir.
+ */
+async function plantillaDelPanel(proyecto) {
+  const resumen = await almacen.leerResumenDePlantilla(proyecto.id).catch(() => null);
+  return {
+    nombre: proyecto.plantillaNombre,
+    desde: proyecto.plantillaAt,
+    completa: Boolean(resumen),
+    portada: Boolean(resumen?.portada),
+    camposDePortada: resumen?.camposDePortada ?? [],
+  };
+}
+
+/**
+ * Deja de usar la portada de su plantilla y vuelve la nuestra.
+ *
+ * Para cuando la detección se equivocó. Lo demás de la plantilla —estilos,
+ * márgenes, encabezado— se queda.
+ */
+async function quitarPortadaDePlantilla(userId, productCode) {
+  const proyecto = await projectRepository.buscar(userId, productCode);
+  if (!proyecto) return false;
+
+  const partes = await almacen.leerPartes(proyecto.id);
+  if (!partes?.portada) return false;
+
+  partes.portada = null;
+  partes.camposDePortada = [];
+  partesDePlantilla.podarMedios(partes);
+  await almacen.guardarPartes(proyecto.id, partes, partesDePlantilla.resumen(partes));
+  return true;
+}
+
+/**
+ * Cambia el asesor desde el panel.
+ *
+ * Como la norma: sobre el proyecto que haya, o creándolo si tiene licencia
+ * vigente de ese método. Devuelve el asesor que queda, o null sin licencia.
+ */
+async function cambiarAsesor({ userId, productCode, asesor }) {
+  const actual = await projectRepository.buscar(userId, productCode);
+  if (!actual) {
+    const conLicencia = await projectRepository.productosConLicencia(userId);
+    if (!conLicencia.includes(productCode)) return null;
+  }
+
+  const proyecto = await projectRepository.asegurar(userId, productCode, { asesor });
+  return proyecto.asesor ?? '';
 }
 
 async function quitarPlantilla(userId, productCode) {
@@ -1460,6 +1558,7 @@ function proyectoEnBlanco(productCode) {
     tema: null,
     carrera: null,
     universidad: null,
+    asesor: null,
     estiloCitas: null,
     idiomaCitas: null,
     plantillaAt: null,
@@ -1539,16 +1638,9 @@ async function deUsuario(userId, { esAdmin = false } = {}) {
         tema: proyecto.tema,
         carrera: proyecto.carrera,
         universidad: proyecto.universidad,
+        asesor: proyecto.asesor ?? null,
         norma: normaDelProyecto(proyecto),
-        plantilla: proyecto.plantillaAt
-          ? {
-              nombre: proyecto.plantillaNombre,
-              desde: proyecto.plantillaAt,
-              // Falso = subida antes de copiar márgenes, numeración, encabezado,
-              // pie y portada: el panel le pide que la vuelva a subir.
-              completa: await almacen.tienePartes(proyecto.id).catch(() => true),
-            }
-          : null,
+        plantilla: proyecto.plantillaAt ? await plantillaDelPanel(proyecto) : null,
         updatedAt: proyecto.updatedAt,
         etapas,
         avance: { listos, total: fases.length },
@@ -1589,6 +1681,8 @@ module.exports = {
   crearTesis,
   activarTesis,
   eliminarTesis,
+  cambiarAsesor,
+  quitarPortadaDePlantilla,
   auditar,
   siguientePaso,
   deUsuario,

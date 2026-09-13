@@ -9,7 +9,12 @@ const { ForbiddenError, ValidationError } = require('../../shared/errors/AppErro
 const { ROLES } = require('../../config/constants');
 const licenseService = require('../licensing/license.service');
 const projectService = require('./project.service');
-const { normaSchema, borrarProyectoSchema, nuevaTesisSchema } = require('./project.schema');
+const {
+  normaSchema,
+  borrarProyectoSchema,
+  nuevaTesisSchema,
+  asesorSchema,
+} = require('./project.schema');
 const descarga = require('./project.descarga');
 const { PlantillaNoValida, MAXIMO_BYTES } = require('./project.plantilla');
 
@@ -207,6 +212,49 @@ router.patch(
     }
 
     return ok(res, norma, { message: `Norma de citas: ${norma.nombre}.` });
+  }),
+);
+
+/** El asesor, para la portada. Vacío lo quita. */
+router.patch(
+  '/:productCode/asesor',
+  asyncHandler(async (req, res) => {
+    const datos = asesorSchema.safeParse(req.body ?? {});
+    if (!datos.success) {
+      throw new ValidationError(datos.error.issues[0]?.message ?? 'Ese nombre no es válido.');
+    }
+
+    const asesor = await projectService.cambiarAsesor({
+      userId: req.user.id,
+      productCode: req.params.productCode,
+      asesor: datos.data.asesor,
+    });
+    if (asesor === null) {
+      return res.status(404).json({
+        success: false,
+        message: 'Todavía no hay ningún proyecto de este método.',
+      });
+    }
+
+    return ok(res, { asesor }, {
+      message: asesor ? `Listo: «${asesor}» saldrá en tu portada.` : 'Asesor quitado de tu portada.',
+    });
+  }),
+);
+
+/**
+ * Deja de usar la portada de su plantilla: para cuando la detección se equivocó.
+ * Estilos, márgenes, encabezado y pie se quedan.
+ */
+router.delete(
+  '/:productCode/plantilla/portada',
+  asyncHandler(async (req, res) => {
+    const quitada = await projectService.quitarPortadaDePlantilla(req.user.id, req.params.productCode);
+    return ok(res, { quitada }, {
+      message: quitada
+        ? 'Listo: tu Word sale con nuestra portada. El resto del formato de tu facultad se queda.'
+        : 'Tu plantilla no tenía portada en uso.',
+    });
   }),
 );
 

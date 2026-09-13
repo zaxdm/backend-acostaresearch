@@ -243,10 +243,14 @@ function rutaDePartes(projectId) {
   return path.join(env.capitulosDir, projectId, 'plantilla-partes.json');
 }
 
-/** Con null se borra. */
-async function guardarPartes(projectId, partes) {
-  const ruta = rutaDePartes(projectId);
-  if (!partes) {
+/** Lo que se tomó de la plantilla, sin las imágenes: es lo que lee el panel. */
+function rutaDeResumen(projectId) {
+  if (!SEGURO.test(projectId)) throw new Error('Identificador de proyecto no válido');
+  return path.join(env.capitulosDir, projectId, 'plantilla-resumen.json');
+}
+
+async function escribirJson(ruta, valor) {
+  if (valor === null || valor === undefined) {
     await fs.unlink(ruta).catch((error) => {
       if (error.code !== 'ENOENT') throw error;
     });
@@ -254,8 +258,23 @@ async function guardarPartes(projectId, partes) {
   }
   await fs.mkdir(path.dirname(ruta), { recursive: true });
   const temporal = `${ruta}.parcial`;
-  await fs.writeFile(temporal, JSON.stringify(partes), 'utf8');
+  await fs.writeFile(temporal, JSON.stringify(valor), 'utf8');
   await fs.rename(temporal, ruta);
+}
+
+/** Con null se borran las partes y su resumen. */
+async function guardarPartes(projectId, partes, resumen = null) {
+  await escribirJson(rutaDePartes(projectId), partes);
+  await escribirJson(rutaDeResumen(projectId), partes ? resumen : null);
+}
+
+async function leerResumenDePlantilla(projectId) {
+  try {
+    return JSON.parse(await fs.readFile(rutaDeResumen(projectId), 'utf8'));
+  } catch (error) {
+    if (error.code === 'ENOENT' || error instanceof SyntaxError) return null;
+    throw error;
+  }
 }
 
 async function leerPartes(projectId) {
@@ -306,4 +325,5 @@ module.exports = {
   guardarPartes,
   leerPartes,
   tienePartes,
+  leerResumenDePlantilla,
 };

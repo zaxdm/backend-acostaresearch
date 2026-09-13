@@ -42,7 +42,20 @@ const AdmZip = require('adm-zip');
 /** Dónde va la portada de la plantilla dentro del Word que arma el servidor. */
 const MARCA_PORTADA = '⟦PORTADA⟧';
 
-const MARCA_RE = /\{\{\s*([A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+)\s*\}\}/g;
+/**
+ * Una marca de la portada: {{AUTOR}}, o con respaldo {{CARRERA|Psicología}}.
+ *
+ * El respaldo lo pone la detección automática con lo que traía la plantilla,
+ * para los datos que pueden no estar en el proyecto: sin carrera guardada, la
+ * portada dice la de la plantilla y no una línea vacía.
+ */
+const MARCA_RE = /\{\{\s*([A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+)\s*(?:\|([^{}]*))?\}\}/g;
+
+/** Lo que va donde falta un dato y no hay respaldo: se completa en Word. */
+const PUNTOS = '……………………………';
+
+/** Un párrafo que no contiene otros (los de los cuadros de texto van aparte). */
+const PARRAFO_INTERIOR_RE = /<w:p\b[^>]*>(?:(?!<w:p[\s>])[\s\S])*?<\/w:p>/g;
 
 /** El normal y el de la primera página. El de páginas pares pide más ajustes. */
 const TIPOS_DE_CABECERA = ['default', 'first'];
@@ -164,20 +177,33 @@ function hijosDelCuerpo(cuerpo) {
 
 const SALTO_DE_PAGINA_RE = /<w:br\b[^>]*w:type="page"[^>]*\/>/;
 const SALTO_ANTES_RE = /<w:pageBreakBefore(?![^>]*w:val="(?:0|false|off)")[^>]*\/>/;
+/** Un título: donde empieza el cuerpo aunque la plantilla no ponga salto. */
+const TITULO_RE = /<w:pStyle w:val="(?:Heading\d|Title|TOCHeading|TOC\d)"\/>/;
 
 /**
- * La primera página: todo hasta el primer salto de página o de sección.
+ * Hasta cuántos elementos se acepta un documento sin salto como portada.
  *
- * Si no hay ningún salto, null: sin él no se sabe dónde acaba la portada, y
- * llevarse el documento entero es justo lo que no se quiere.
+ * Muchas facultades reparten SOLO la carátula, en un archivo de una hoja y sin
+ * salto al final (así la de la UNFV). Una carátula son unas decenas de
+ * párrafos; un documento más largo sin salto no se sabe dónde acaba.
+ */
+const MAXIMO_ELEMENTOS_SIN_SALTO = 60;
+
+/**
+ * La primera página: todo hasta el primer salto de página o de sección, o hasta
+ * el primer título. Sin nada de eso, el documento entero si es corto; si no,
+ * null.
  */
 function recortarPortada(cuerpo) {
   const trozos = [];
+  const hijos = hijosDelCuerpo(cuerpo);
 
-  for (const hijo of hijosDelCuerpo(cuerpo)) {
+  for (const hijo of hijos) {
     const esParrafo = /^<w:p[\s>/]/.test(hijo);
 
-    if (esParrafo && trozos.length > 0 && SALTO_ANTES_RE.test(hijo)) return trozos;
+    if (esParrafo && trozos.length > 0 && (SALTO_ANTES_RE.test(hijo) || TITULO_RE.test(hijo))) {
+      return trozos;
+    }
 
     const salto = hijo.search(SALTO_DE_PAGINA_RE);
     if (salto !== -1) {
@@ -199,7 +225,7 @@ function recortarPortada(cuerpo) {
     trozos.push(hijo);
   }
 
-  return null;
+  return hijos.length > 0 && hijos.length <= MAXIMO_ELEMENTOS_SIN_SALTO ? trozos : null;
 }
 
 /** Los espacios de nombres de la raíz, para declararlos donde vaya la portada. */
@@ -216,6 +242,10 @@ const vacias = () => ({
   pies: {},
   primeraPaginaDistinta: false,
   portada: null,
+  /** Una portada sin marcas, pendiente de que `project.portada-auto` las ponga. Nunca se guarda así. */
+  portadaCandidata: null,
+  /** Qué datos se detectaron en la portada: titulo, autor, asesor, carrera, anio. */
+  camposDePortada: [],
   portadaSinMarcas: false,
   medios: {},
 });
@@ -277,15 +307,39 @@ function extraer(buffer) {
       const xml = trozos.join('');
       const plano = xml.replace(/<[^>]+>/g, '');
 
-      if (new RegExp(MARCA_RE.source).test(plano) && xml.length <= MAXIMO_PORTADA) {
+      if (plano.trim() !== '' && xml.length <= MAXIMO_PORTADA) {
         const recogido = recoger(xml, relaciones, zip, partes.medios);
-        if (recogido) partes.portada = { ...recogido, espacios: espaciosDe(documento) };
-      } else if (plano.trim() !== '') {
-        partes.portadaSinMarcas = true;
+        if (recogido) {
+          const portada = { ...recogido, espacios: espaciosDe(documento) };
+          // Con marcas escritas a mano, lista. Sin ellas, candidata: la
+          // detección automática busca dónde van los datos, y si no los
+          // encuentra no se guarda (ver `project.portada-auto`).
+          if (new RegExp(MARCA_RE.source).test(plano)) partes.portada = portada;
+          else partes.portadaCandidata = portada;
+        }
       }
     }
   }
 
+  return partes;
+}
+
+/** Quita las imágenes que ya no usa ninguna parte: las de una portada descartada. */
+function podarMedios(partes) {
+  const usadas = new Set();
+  const anotar = (fragmento) => {
+    for (const rel of fragmento?.rels ?? []) {
+      if (!rel.externo) usadas.add(path.posix.basename(rel.target));
+    }
+  };
+  Object.values(partes.encabezados ?? {}).forEach(anotar);
+  Object.values(partes.pies ?? {}).forEach(anotar);
+  anotar(partes.portada);
+  anotar(partes.portadaCandidata);
+
+  for (const nombre of Object.keys(partes.medios ?? {})) {
+    if (!usadas.has(nombre)) delete partes.medios[nombre];
+  }
   return partes;
 }
 
@@ -296,6 +350,7 @@ function resumen(partes) {
     encabezado: Object.keys(partes?.encabezados ?? {}).length > 0,
     pie: Object.keys(partes?.pies ?? {}).length > 0,
     portada: Boolean(partes?.portada),
+    camposDePortada: partes?.portada ? [...(partes.camposDePortada ?? [])] : [],
     portadaSinMarcas: Boolean(partes?.portadaSinMarcas),
   };
 }
@@ -307,17 +362,29 @@ const CAMPO_DE_MARCA = {
   AUTORA: 'nombre',
   TESISTA: 'nombre',
   NOMBRE: 'nombre',
+  ASESOR: 'asesor',
+  ASESORA: 'asesor',
   CARRERA: 'carrera',
   ESCUELA: 'carrera',
   UNIVERSIDAD: 'universidad',
 };
 
-function valorDeMarca(nombre, datos) {
+/**
+ * Lo que va en una marca, ya escapado para el XML.
+ *
+ * Sin el dato: el respaldo que dejó la detección (que ya viene escapado, porque
+ * se escribió dentro del documento), y si no hay, una línea de puntos para
+ * completarla en Word. Nunca la marca a la vista: el tesista no tiene por qué
+ * saber que existe.
+ */
+function valorDeMarca(nombre, porDefecto, datos) {
   const clave = nombre.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
   if (clave === 'ANO' || clave === 'ANIO') return String(new Date().getFullYear());
+
   const campo = CAMPO_DE_MARCA[clave];
   const valor = campo ? datos?.[campo] : null;
-  return valor ? String(valor) : null;
+  if (valor) return escaparXml(String(valor));
+  return porDefecto?.trim() ? porDefecto : PUNTOS;
 }
 
 /**
@@ -331,21 +398,30 @@ function valorDeMarca(nombre, datos) {
  * los cuadros de texto se tratan uno a uno.
  */
 function rellenarMarcas(xml, datos) {
-  const TEXTO_RE = /<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>/g;
+  const TEXTO_RE = /(<w:t(?:\s[^>]*)?>)([^<]*)(<\/w:t>)/g;
+  const cambiar = (texto) =>
+    texto.replace(new RegExp(MARCA_RE.source, 'g'), (marca, nombre, porDefecto) =>
+      valorDeMarca(nombre, porDefecto, datos),
+    );
+  const hayMarca = (texto) => new RegExp(MARCA_RE.source).test(texto);
 
-  return xml.replace(/<w:p\b[^>]*>(?:(?!<w:p[\s>])[\s\S])*?<\/w:p>/g, (parrafo) => {
-    const textos = [...parrafo.matchAll(TEXTO_RE)];
-    if (textos.length === 0) return parrafo;
+  return xml.replace(PARRAFO_INTERIOR_RE, (parrafo) => {
+    // Primero dentro de cada corrida: así «Asesor:» conserva su negrita y el
+    // nombre la suya. Es el caso normal, porque la detección automática
+    // escribe cada marca en una sola corrida.
+    const porCorrida = parrafo.replace(TEXTO_RE, (entero, apertura, contenido, cierre) =>
+      hayMarca(contenido) ? `<w:t xml:space="preserve">${cambiar(contenido)}${cierre}` : entero,
+    );
 
-    const junto = textos.map((t) => t[1]).join('');
-    const relleno = junto.replace(new RegExp(MARCA_RE.source, 'g'), (marca, nombre) => {
-      const valor = valorDeMarca(nombre, datos);
-      return valor === null ? marca : escaparXml(valor);
-    });
-    if (relleno === junto) return parrafo;
+    const textos = [...porCorrida.matchAll(TEXTO_RE)];
+    const junto = textos.map((t) => t[2]).join('');
+    if (!hayMarca(junto)) return porCorrida;
 
+    // Una marca escrita a mano que Word partió en dos corridas: el texto va a
+    // la primera y las demás se vacían.
+    const relleno = cambiar(junto);
     let indice = 0;
-    return parrafo.replace(TEXTO_RE, () =>
+    return porCorrida.replace(TEXTO_RE, () =>
       indice++ === 0 ? `<w:t xml:space="preserve">${relleno}</w:t>` : '<w:t></w:t>',
     );
   });
@@ -567,4 +643,12 @@ function aplicar(buffer, partes, datos = {}) {
   return zip.toBuffer();
 }
 
-module.exports = { extraer, aplicar, resumen, rellenarMarcas, MARCA_PORTADA };
+module.exports = {
+  extraer,
+  aplicar,
+  resumen,
+  rellenarMarcas,
+  podarMedios,
+  MARCA_PORTADA,
+  PARRAFO_INTERIOR_RE,
+};

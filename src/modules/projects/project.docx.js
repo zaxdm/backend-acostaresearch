@@ -182,7 +182,7 @@ function comoParrafos(texto, contexto = {}) {
 }
 
 /** La portada: lo poco que el servidor sabe con certeza. */
-function portada({ tema, carrera, universidad, nombre }) {
+function portada({ tema, carrera, universidad, nombre, asesor }) {
   const centrado = (texto, opciones = {}) =>
     new Paragraph({
       children: [new TextRun({ text: texto, ...opciones })],
@@ -197,6 +197,7 @@ function portada({ tema, carrera, universidad, nombre }) {
   hojas.push(centrado(tema ?? 'Tesis', { bold: true, size: 32 }));
   hojas.push(new Paragraph({ text: '', spacing: { after: 720 } }));
   if (nombre) hojas.push(centrado(nombre, { size: 24 }));
+  if (asesor) hojas.push(centrado(`Asesor: ${asesor}`, { size: 24 }));
 
   return hojas;
 }
@@ -288,6 +289,7 @@ async function armar({
   tema,
   carrera,
   universidad,
+  asesor = null,
   nombre,
   capitulos,
   referencias = [],
@@ -311,7 +313,7 @@ async function armar({
     // hueco y se pone al final, ya empaquetado (ver `project.plantilla-partes`).
     ...(partes?.portada
       ? [new Paragraph({ text: partesDePlantilla.MARCA_PORTADA })]
-      : portada({ tema, carrera, universidad, nombre })),
+      : portada({ tema, carrera, universidad, nombre, asesor })),
     new Paragraph({ text: '', pageBreakBefore: true }),
     // «TOC Heading» y no Título 1: se ve como un Título 1 pero no entra en el
     // índice. Con Título 1, el índice se listaba a sí mismo como primera
@@ -424,6 +426,7 @@ async function armar({
       carrera,
       universidad,
       nombre,
+      asesor,
       // La lista de referencias es un Título 1, pero no se numera.
       sinNumero: lista.parrafos.length > 0 ? [lista.titulo] : [],
     });

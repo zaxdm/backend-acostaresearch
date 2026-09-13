@@ -126,6 +126,7 @@ test('de la plantilla salen numeración, encabezados, pie y portada con su image
     encabezado: true,
     pie: true,
     portada: true,
+    camposDePortada: [],
     portadaSinMarcas: false,
   });
 });
@@ -135,22 +136,34 @@ test('lo que hay detrás de la portada NO se guarda', () => {
   assert.ok(!JSON.stringify(partes).includes('TEXTO AJENO'));
 });
 
-test('una portada sin marcas no se guarda, y se dice por qué', () => {
-  const partes = partesDePlantilla.extraer(
+test('una portada sin marcas y sin datos reconocibles no se guarda, y se dice por qué', async () => {
+  const { prepararPortada } = require('../src/modules/projects/project.portada-auto');
+  const extraidas = partesDePlantilla.extraer(
     plantillaDePrueba({
       portada: '<w:p><w:r><w:t>Juan Pérez, Tesis 2019</w:t></w:r><w:r><w:br w:type="page"/></w:r></w:p>',
     }),
   );
+  assert.ok(extraidas.portadaCandidata, 'queda como candidata, sin marcas');
+
+  const partes = await prepararPortada(extraidas, { clasificar: async () => [] });
   assert.equal(partes.portada, null);
   assert.equal(partes.portadaSinMarcas, true);
-  assert.ok(!JSON.stringify(partes).includes('Juan Pérez'));
+  assert.ok(!JSON.stringify(partes).includes('Juan Pérez'), 'la candidata no se guarda');
 });
 
-test('sin salto de página no hay portada: no se sabe dónde acaba', () => {
-  const partes = partesDePlantilla.extraer(
+test('un documento corto sin salto es la portada entera; uno largo, no', () => {
+  const corta = partesDePlantilla.extraer(
     plantillaDePrueba({ portada: '<w:p><w:r><w:t>{{TITULO}}</w:t></w:r></w:p>' }),
   );
-  assert.equal(partes.portada, null);
+  assert.ok(corta.portada, 'la carátula suelta de una hoja');
+
+  const larga = partesDePlantilla.extraer(
+    plantillaDePrueba({
+      portada: '<w:p><w:r><w:t>{{TITULO}}</w:t></w:r></w:p>' + '<w:p><w:r><w:t>relleno</w:t></w:r></w:p>'.repeat(70),
+    }),
+  );
+  assert.equal(larga.portada, null);
+  assert.equal(larga.portadaCandidata, null);
 });
 
 test('una portada con algo que no es una imagen (un objeto incrustado) no se lleva a medias', () => {
@@ -168,6 +181,7 @@ test('un archivo que no es un zip no revienta', () => {
     encabezado: false,
     pie: false,
     portada: false,
+    camposDePortada: [],
     portadaSinMarcas: false,
   });
 });
@@ -194,12 +208,13 @@ const relacion = (rels, id) =>
   rels.match(new RegExp(`<Relationship [^>]*Id="${id}"[^>]*/>`))?.[0] ?? '';
 const destino = (rel) => rel.match(/Target="([^"]+)"/)?.[1];
 
-test('la portada sale con los datos del proyecto y las marcas desconocidas a la vista', async () => {
+test('la portada sale con los datos del proyecto y puntos donde falta uno', async () => {
   const { doc } = await wordConPartes();
 
   assert.ok(doc.includes('Mi tema de tesis'));
   assert.ok(doc.includes('Autor: Ana Pérez &amp; Co'), 'con el & escapado');
-  assert.ok(doc.includes('{{ASESOR}}'), 'la que no conocemos se deja para completarla');
+  assert.ok(doc.includes('Asesor: ……'), 'sin asesor guardado, una línea para completarla');
+  assert.ok(!doc.includes('{{'), 'ninguna marca a la vista');
   assert.ok(doc.includes(`Lima, ${new Date().getFullYear()}`));
   assert.ok(!doc.includes('{{TIT'));
   assert.ok(!doc.includes(partesDePlantilla.MARCA_PORTADA));

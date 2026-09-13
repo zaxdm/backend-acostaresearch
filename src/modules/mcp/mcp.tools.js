@@ -227,6 +227,13 @@ const ESQUEMA_GUARDAR_AVANCE = fromJsonSchema({
     },
     carrera: { type: 'string', description: 'La carrera del tesista.' },
     universidad: { type: 'string', description: 'Su universidad.' },
+    asesor: {
+      type: 'string',
+      description:
+        'El nombre de su asesor o asesora, tal como debe salir en la portada del Word, con su ' +
+        'grado si lo dice («Dr. Juan Pérez Gómez»). Si todavía no tiene, manda "" (vacío): así ' +
+        'queda anotado que ya se preguntó y no se le vuelve a preguntar.',
+    },
     estiloCitas: {
       type: 'string',
       enum: normas.IDS_DE_NORMA,

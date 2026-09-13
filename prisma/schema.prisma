@@ -1181,6 +1181,10 @@ model Project {
   tema        String? @db.VarChar(500)
   carrera     String? @db.VarChar(160)
   universidad String? @db.VarChar(160)
+  /// Su asesor, como sale en la portada del Word («Dr. Juan Pérez Gómez»).
+  /// Nulo = no se ha preguntado; vacío = todavía no tiene, y no hay que
+  /// volver a preguntárselo.
+  asesor      String? @db.VarChar(160)
 
   /// La norma de citas del Word: uno de los quince estilos de Zotero y el
   /// idioma de las citas. Nulos = APA 7 en español, que es como salía el Word

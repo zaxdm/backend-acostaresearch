@@ -10,6 +10,7 @@ const proyectoSelect = {
   tema: true,
   carrera: true,
   universidad: true,
+  asesor: true,
   estiloCitas: true,
   idiomaCitas: true,
   ranura: true,
@@ -66,7 +67,9 @@ function buscar(userId, productCode) {
  */
 async function asegurar(userId, productCode, cambios = {}) {
   const limpio = {};
-  for (const campo of ['tema', 'carrera', 'universidad', 'estiloCitas', 'idiomaCitas']) {
+  // El asesor puede llegar vacío a propósito: «todavía no tiene». Se guarda así
+  // para no volver a preguntárselo.
+  for (const campo of ['tema', 'carrera', 'universidad', 'asesor', 'estiloCitas', 'idiomaCitas']) {
     if (cambios[campo] !== undefined && cambios[campo] !== null) limpio[campo] = cambios[campo];
   }
 
@@ -257,6 +260,7 @@ function reiniciar(projectId) {
         tema: null,
         carrera: null,
         universidad: null,
+        asesor: null,
         estiloCitas: null,
         idiomaCitas: null,
         plantillaAt: null,

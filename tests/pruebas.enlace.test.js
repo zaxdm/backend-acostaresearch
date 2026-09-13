@@ -7,6 +7,7 @@ const {
   estadoDelEnlace,
   generarSlug,
   correoDeInvitado,
+  caducidadDelConector,
 } = require('../src/modules/trials/trial.service');
 const { createTrialSchema, slugParamSchema } = require('../src/modules/trials/trial.schema');
 
@@ -58,18 +59,20 @@ test('un enlace nuevo trae 30 cupos si no se dice otra cosa', () => {
   const datos = createTrialSchema.parse({
     name: 'Taller UNMSM',
     productCode: 'metodo_9_skills',
-    accessDays: 15,
+    accessMinutes: 120,
   });
   assert.equal(datos.seats, 30);
   assert.equal(datos.productCode, 'METODO_9_SKILLS');
   assert.equal(datos.callsPerDay, 0);
+  assert.equal(datos.accessMinutes, 120);
 });
 
 test('los topes tienen techo: un cero de más no pasa', () => {
-  const base = { name: 'Taller', productCode: 'METODO_9_SKILLS', accessDays: 15 };
+  const base = { name: 'Taller', productCode: 'METODO_9_SKILLS', accessMinutes: 60 };
   assert.throws(() => createTrialSchema.parse({ ...base, seats: 5000 }));
   assert.throws(() => createTrialSchema.parse({ ...base, callsPerDay: 5000 }));
-  assert.throws(() => createTrialSchema.parse({ ...base, accessDays: 0 }));
+  assert.throws(() => createTrialSchema.parse({ ...base, accessMinutes: -1 }));
+  assert.throws(() => createTrialSchema.parse({ ...base, accessMinutes: 525601 }), 'más de un año');
 });
 
 test('un enlace de prueba no lleva tope total: si llega uno, se descarta', () => {
@@ -78,11 +81,27 @@ test('un enlace de prueba no lleva tope total: si llega uno, se descarta', () =>
   const datos = createTrialSchema.parse({
     name: 'TIKTOK',
     productCode: 'METODO_9_SKILLS',
-    accessDays: 1,
+    accessMinutes: 60,
     callsPerDay: 5,
     callsLimitTotal: 5,
   });
 
   assert.equal(datos.callsPerDay, 5);
   assert.equal('callsLimitTotal' in datos, false);
+});
+
+// ── El tiempo de acceso ─────────────────────────────────────────────────────
+
+test('0 minutos de acceso es sin límite: el conector no tiene fecha de caducidad', () => {
+  const datos = createTrialSchema.parse({ name: 'Taller', productCode: 'METODO_9_SKILLS', accessMinutes: 0 });
+
+  assert.equal(datos.accessMinutes, 0);
+  assert.equal(caducidadDelConector(0), null);
+});
+
+test('con minutos, el conector caduca exactamente esos minutos después de recogerlo', () => {
+  const recogido = new Date('2026-09-12T20:00:00Z');
+
+  assert.equal(caducidadDelConector(90, recogido).toISOString(), '2026-09-12T21:30:00.000Z');
+  assert.equal(caducidadDelConector(24 * 60, recogido).toISOString(), '2026-09-13T20:00:00.000Z');
 });

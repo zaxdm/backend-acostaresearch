@@ -23,11 +23,18 @@ const createTrialSchema = z.object({
     .min(1, 'Al menos un cupo.')
     .max(500, 'Como mucho 500 cupos por enlace.')
     .default(30),
-  accessDays: z.coerce
-    .number({ required_error: 'Indica cuántos días dura cada conector.' })
-    .int()
-    .min(1, 'Al menos un día de acceso.')
-    .max(365, 'Como mucho 365 días.'),
+  /**
+   * Cuánto dura cada conector, en minutos, desde que el invitado lo recoge.
+   *
+   * En minutos y no en días porque una prueba de un taller o de un directo dura
+   * horas. 0 = sin límite: el conector no caduca, y se corta apagando el enlace.
+   * El techo es un año.
+   */
+  accessMinutes: z.coerce
+    .number({ required_error: 'Indica cuánto dura cada conector.' })
+    .int('El tiempo de acceso va en minutos enteros.')
+    .min(0, 'El tiempo de acceso no puede ser negativo.')
+    .max(525600, 'Como mucho un año de acceso.'),
   callsPerDay: z.coerce.number().int().min(0).max(1000).default(0),
   // Sin tope total: un enlace de prueba solo lleva tope por día. Si un panel
   // antiguo manda «callsLimitTotal», zod lo descarta aquí sin dar error.

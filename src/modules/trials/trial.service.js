@@ -5,7 +5,7 @@ const env = require('../../config/env');
 const logger = require('../../config/logger');
 const { ERROR_CODES } = require('../../config/constants');
 const prisma = require('../../lib/prisma');
-const { generateOpaqueToken, hashToken, addDays } = require('../../shared/utils/tokens');
+const { generateOpaqueToken, hashToken, addMinutes } = require('../../shared/utils/tokens');
 const { AppError, NotFoundError, ValidationError } = require('../../shared/errors/AppError');
 const {
   urlDelConector,
@@ -105,7 +105,7 @@ const enlaceSelect = {
   productCode: true,
   seats: true,
   claimed: true,
-  accessDays: true,
+  accessMinutes: true,
   callsPerDay: true,
   active: true,
   createdAt: true,
@@ -125,8 +125,20 @@ function presentar(enlace, nombres, uso) {
   };
 }
 
+/**
+ * Cuándo deja de funcionar un conector recién entregado.
+ *
+ * Nulo con 0 minutos: sin límite. Una licencia sin fecha no caduca nunca —así
+ * funcionan ya las de por vida—, y el administrador la corta apagando el enlace,
+ * que se comprueba en cada llamada del conector.
+ */
+function caducidadDelConector(accessMinutes, ahora = new Date()) {
+  const minutos = Number(accessMinutes) || 0;
+  return minutos > 0 ? addMinutes(ahora, minutos) : null;
+}
+
 const trialService = {
-  async create({ name, productCode, seats, accessDays, callsPerDay, createdById }) {
+  async create({ name, productCode, seats, accessMinutes, callsPerDay, createdById }) {
     // Sin plan activo no hay catálogo que servir: el invitado recibiría un
     // conector vacío. Mejor negarse aquí que descubrirlo en mitad del taller.
     const contrato = await contratoDelProducto(productCode);
@@ -140,7 +152,7 @@ const trialService = {
         name,
         productCode,
         seats,
-        accessDays,
+        accessMinutes,
         callsPerDay,
         createdById,
       },
@@ -148,7 +160,7 @@ const trialService = {
     });
 
     logger.info(
-      { trialLinkId: enlace.id, producto: productCode, seats, accessDays, porAdmin: createdById },
+      { trialLinkId: enlace.id, producto: productCode, seats, accessMinutes, porAdmin: createdById },
       'Enlace de prueba creado',
     );
 
@@ -289,7 +301,7 @@ const trialService = {
       estado: estadoDelEnlace(enlace),
       quedan: Math.max(0, enlace.seats - enlace.claimed),
       seats: enlace.seats,
-      accessDays: enlace.accessDays,
+      accessMinutes: enlace.accessMinutes,
       callsPerDay: enlace.callsPerDay,
     };
   },
@@ -311,7 +323,7 @@ const trialService = {
 
     const contrato = await contratoDelProducto(enlace.productCode);
     const token = generateOpaqueToken(32);
-    const expiresAt = addDays(new Date(), enlace.accessDays);
+    const expiresAt = caducidadDelConector(enlace.accessMinutes);
 
     const entrega = await prisma.$transaction(async (tx) => {
       const { count } = await tx.trialLink.updateMany({
@@ -389,3 +401,4 @@ module.exports = trialService;
 module.exports.estadoDelEnlace = estadoDelEnlace;
 module.exports.generarSlug = generarSlug;
 module.exports.correoDeInvitado = correoDeInvitado;
+module.exports.caducidadDelConector = caducidadDelConector;

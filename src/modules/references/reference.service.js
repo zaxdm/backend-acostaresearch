@@ -283,24 +283,93 @@ function cita(fuente) {
 }
 
 /**
- * Busca fuentes para una licencia.
+ * Palabras de tres letras o más que no dicen nada del tema.
  *
- * Las palabras de una o dos letras se descartan: «de», «la» y «el» aparecen en
- * todas las fichas, así que exigirlas no filtra nada y en cambio dejan fuera una
- * fuente cuyo título las escribió de otro modo.
+ * Las de una o dos ya se descartan por largo. Estas no, y en español son justo
+ * las que más se escriben: «clima organizacional de los docentes» exigía «los»,
+ * y la búsqueda floja daba por buena cualquier ficha con «los» y «para». En
+ * inglés MySQL ya ignora las suyas, pero quitarlas aquí cuesta lo mismo.
  */
-async function buscarParaLicencia({ tema, productCode, ownerUserId = null, cuantas }) {
-  const palabras = mapper
+const VACIAS = new Set([
+  'del', 'las', 'los', 'una', 'uno', 'unos', 'unas', 'para', 'por', 'con', 'sin', 'que',
+  'como', 'entre', 'sobre', 'desde', 'hasta', 'sus', 'este', 'esta', 'estos', 'estas',
+  'ese', 'esa', 'mas', 'muy', 'segun', 'durante', 'the', 'and', 'for', 'with', 'from',
+  'into', 'its', 'their', 'this', 'that', 'these', 'those',
+]);
+
+/**
+ * Las palabras con las que se pregunta a la base.
+ *
+ * Las de una o dos letras se descartan: «de», «la» y «el» aparecen en todas las
+ * fichas, así que exigirlas no filtra nada y en cambio dejan fuera una fuente
+ * cuyo título las escribió de otro modo. Las vacías, igual; pero si el tema no
+ * trae otra cosa se buscan tal cual antes que no buscar.
+ */
+function palabrasDe(tema) {
+  const todas = mapper
     .normalizar(tema)
     .split(/[^a-z0-9]+/)
     .filter((palabra) => palabra.length > 2);
+
+  const conContenido = todas.filter((palabra) => !VACIAS.has(palabra));
+  return conContenido.length > 0 ? conContenido : todas;
+}
+
+/**
+ * Busca fuentes para una licencia.
+ *
+ * DOS IDIOMAS CONTRA SU BIBLIOTECA
+ * --------------------------------
+ * El conector pide el tema en inglés porque el fondo de la casa sale de Scopus.
+ * Pero la biblioteca del tesista —su Zotero, su export de SciELO— suele estar en
+ * español, y «organizational climate» no encuentra «clima organizacional». La
+ * búsqueda daba cero fuentes suyas, salía al catálogo abierto y le servía
+ * fuentes sin revisar teniendo en casa las que él mismo eligió.
+ *
+ * Por eso, si llega el tema también en español y hay dueño, se pregunta otra vez
+ * con esas palabras. Se juntan las dos respuestas con las suyas primero, que es
+ * el mismo orden que ya aplica la consulta.
+ */
+async function buscarParaLicencia({
+  tema,
+  temaOriginal = null,
+  productCode,
+  ownerUserId = null,
+  cuantas,
+}) {
+  const palabras = palabrasDe(tema);
 
   if (palabras.length === 0) {
     throw new ValidationError('Dime sobre qué tema buscar, con al menos una palabra.');
   }
 
   const limite = Math.min(Math.max(Number(cuantas) || POR_BUSQUEDA, 1), MAXIMO_POR_BUSQUEDA);
-  const fuentes = await referenceRepository.buscar({ palabras, productCode, ownerUserId, limite });
+  let fuentes = await referenceRepository.buscar({ palabras, productCode, ownerUserId, limite });
+
+  // Sin dueño no hay biblioteca suya que leer en español: la de la casa está en
+  // inglés y repetir la consulta sería gastar una conexión para nada.
+  const enEspanol = ownerUserId ? palabrasDe(temaOriginal) : [];
+  const otraPregunta = enEspanol.length > 0 && enEspanol.join(' ') !== palabras.join(' ');
+
+  if (otraPregunta) {
+    const segunda = await referenceRepository.buscar({
+      palabras: enEspanol,
+      productCode,
+      ownerUserId,
+      limite,
+    });
+
+    const suya = (fuente) => fuente.ownerUserId !== null;
+    const vistas = new Set();
+    fuentes = [
+      ...fuentes.filter(suya),
+      ...segunda.filter(suya),
+      ...fuentes.filter((fuente) => !suya(fuente)),
+      ...segunda.filter((fuente) => !suya(fuente)),
+    ]
+      .filter((fuente) => !vistas.has(fuente.id) && vistas.add(fuente.id))
+      .slice(0, limite);
+  }
 
   return fuentes.map((fuente) => ({
     /**

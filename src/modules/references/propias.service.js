@@ -8,6 +8,7 @@ const openalex = require('./openalex.client');
 const crossref = require('./crossref.client');
 const { normalizar } = require('./zotero.mapper');
 const propiasRepository = require('./propias.repository');
+const bibliotecaRepository = require('../zotero/biblioteca.repository');
 
 const recortar = (valor, largo) => {
   const texto = String(valor ?? '').trim();
@@ -197,8 +198,59 @@ async function boladeNieve(userId, { desdeAnio = null, cuantas = 8 } = {}) {
   return { semillas: obras.length, atras, adelante, caida: false };
 }
 
+/** Cuántas fuentes se enseñan por página en la conversación. */
+const POR_PAGINA = 40;
+
+/**
+ * Su biblioteca por páginas, con de dónde viene cada parte.
+ *
+ * Existe porque el tesista que conectó su Zotero pregunta por él con esas
+ * palabras —«entra a mi carpeta de Zotero»— y ninguna herramienta respondía a
+ * eso: todas pedían un tema. El asistente concluía que no tenía acceso a su
+ * Zotero, teniendo sus quinientas fuentes a una consulta de distancia.
+ *
+ * Va con el estado de la conexión porque es lo que explica una lista vacía o
+ * corta: que no eligió colección, que se está trayendo, que Zotero la revocó.
+ */
+async function biblioteca(userId, { pagina = 1, origen = 'todas' } = {}) {
+  const numero = Math.max(Math.trunc(Number(pagina)) || 1, 1);
+
+  const [total, deZotero, cuenta] = await Promise.all([
+    propiasRepository.contar(userId),
+    propiasRepository.contarDeZotero(userId),
+    bibliotecaRepository.deUsuario(userId),
+  ]);
+
+  const listado = await propiasRepository.pagina(userId, {
+    saltar: (numero - 1) * POR_PAGINA,
+    tomar: POR_PAGINA,
+    origen,
+  });
+
+  return {
+    total,
+    deZotero,
+    subidas: total - deZotero,
+    zotero: cuenta
+      ? {
+          coleccion: cuenta.collectionName,
+          ultima: cuenta.lastRunAt,
+          trayendo: Boolean(cuenta.runningSince),
+          error: cuenta.lastError,
+        }
+      : null,
+    origen,
+    pagina: numero,
+    paginas: Math.max(Math.ceil(listado.total / POR_PAGINA), 1),
+    enElFiltro: listado.total,
+    desde: (numero - 1) * POR_PAGINA + 1,
+    fuentes: listado.fuentes,
+  };
+}
+
 const propiasService = {
   boladeNieve,
+  biblioteca,
   TIPOS,
   MAXIMO_DOIS,
 

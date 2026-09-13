@@ -46,13 +46,15 @@ const ESQUEMA_FUENTES = fromJsonSchema({
       description:
         'Sobre qué buscar, EN INGLÉS y en palabras del contenido, no una pregunta entera: ' +
         '«construct validity», «convenience sampling», «Cronbach alpha». ' +
-        'Tradúcelo tú: el tesista escribe en español y la biblioteca está en inglés.',
+        'Tradúcelo tú: el tesista escribe en español y la biblioteca de Acosta está en inglés.',
     },
     temaOriginal: {
       type: 'string',
       description:
         'El mismo tema EN ESPAÑOL, tal como lo dijo el tesista. Mándalo siempre. ' +
-        'Si en la biblioteca no hay nada, esta herramienta sale sola al catálogo abierto ' +
+        'Con estas palabras se busca también en SU biblioteca —su Zotero, sus exports—, que ' +
+        'suele estar en español y no la encuentra el tema en inglés. ' +
+        'Y si no hay nada en ninguna, esta herramienta sale sola al catálogo abierto ' +
         'usando estas palabras, y ahí el español encuentra lo que el inglés no: Scielo, ' +
         'Redalyc y los repositorios latinoamericanos.',
     },
@@ -103,6 +105,31 @@ const ESQUEMA_ANADIR = fromJsonSchema({
     },
   },
   required: ['dois'],
+  additionalProperties: false,
+});
+
+/**
+ * Ver su biblioteca sin tema.
+ *
+ * Es lo que pide quien dice «entra a mi Zotero» o «qué fuentes tengo», y no hay
+ * palabra que buscar en esa frase.
+ */
+const ESQUEMA_MIS_FUENTES = fromJsonSchema({
+  type: 'object',
+  properties: {
+    pagina: {
+      type: 'integer',
+      minimum: 1,
+      description: 'Qué página de la lista. Por omisión, la primera; la respuesta dice cuántas hay.',
+    },
+    origen: {
+      type: 'string',
+      enum: ['todas', 'zotero', 'subidas'],
+      description:
+        '«zotero» para ver solo lo que trajo de su Zotero; «subidas», lo que subió de un ' +
+        'export o guardó por DOI. Por omisión, todas.',
+    },
+  },
   additionalProperties: false,
 });
 
@@ -1413,20 +1440,27 @@ function construirServidor(licencia) {
     server.registerTool(
       'buscar_fuentes',
       {
-        title: 'Buscar fuentes en la biblioteca',
+        title: 'Buscar fuentes en la biblioteca, su Zotero incluido',
         description:
-          'Busca referencias reales y verificadas en la biblioteca de Acosta | IA & Research. ' +
+          'Busca referencias reales y verificadas en DOS bibliotecas a la vez: la de Acosta | ' +
+          'IA & Research y LA DEL PROPIO TESISTA, que incluye la colección de SU ZOTERO que ' +
+          'conectó desde su perfil en la web, sus exports de Scopus, Web of Science o SciELO y ' +
+          'lo que guardó por DOI. ' +
+          'SI TE PIDE CITAR DE SU ZOTERO, ES AQUÍ: sus fuentes de Zotero ya están dentro y ' +
+          'salen marcadas «de tu Zotero». No busques otro conector de Zotero ni le digas que ' +
+          'no tienes acceso. Para ver su lista entera, sin tema, usa "mis_fuentes". ' +
           'ÚSALA SIEMPRE que haga falta citar: antecedentes, marco teórico, metodología o ' +
           'discusión. NO cites de memoria: los datos bibliográficos que no salen de aquí ' +
           'suelen tener el año o el DOI equivocados, y eso lo comprueba un jurado en segundos. ' +
-          'BUSCA AQUÍ EN INGLÉS: esta biblioteca son artículos indexados en Scopus y Web of ' +
-          'Science, y sus títulos y resúmenes están en inglés. El tesista te escribe en español, ' +
+          'EN "tema", EN INGLÉS: la biblioteca de Acosta son artículos indexados en Scopus y ' +
+          'Web of Science, con títulos y resúmenes en inglés. El tesista te escribe en español, ' +
           'así que traduce tú el tema antes de buscar («validez de constructo» → «construct ' +
           'validity»). ' +
-          'MANDA SIEMPRE "temaOriginal" con el tema en español y "pais" con el del tesista: ' +
-          'si aquí no hay nada, esta misma herramienta sale al catálogo abierto con esas ' +
-          'palabras y no te deja sin fuentes. ' +
-          'Las de la biblioteca llevan el criterio de Acosta; las que vengan del catálogo ' +
+          'MANDA SIEMPRE "temaOriginal" con el tema en español y "pais" con el del tesista: con ' +
+          '"temaOriginal" se busca también en su biblioteca, que suele estar en español, y si no ' +
+          'hay nada en ninguna, esta misma herramienta sale al catálogo abierto y no te deja ' +
+          'sin fuentes. ' +
+          'Las de la biblioteca de Acosta llevan su criterio; las del tesista y las del catálogo ' +
           'abierto no, y la respuesta te lo dirá para que lo adviertas.',
         inputSchema: ESQUEMA_FUENTES,
       },
@@ -1443,6 +1477,9 @@ function construirServidor(licencia) {
         // Las fuentes sin producto —la metodología— las ve todo el mundo.
         const fuentes = await referenceService.buscarParaLicencia({
           tema,
+          // Para buscar también en español dentro de su biblioteca: su Zotero
+          // no está en inglés como el fondo de la casa.
+          temaOriginal,
           cuantas,
           productCode: licencia.productCode,
           // Las que subió este tesista de su export de Scopus, además del fondo
@@ -1471,14 +1508,15 @@ function construirServidor(licencia) {
 
           if (abierta.fuentes.length === 0) {
             return texto(
-              `No hay nada sobre «${tema}» ni en la biblioteca de Acosta ni en el catálogo ` +
-                `abierto.\n\n` +
+              `No hay nada sobre «${tema}» ni en la biblioteca de Acosta, ni en la del ` +
+                `tesista, ni en el catálogo abierto.\n\n` +
                 'DÍSELO AL TESISTA TAL CUAL y sigue sin citar ahí. Que su tema esté poco ' +
                 'estudiado es un hallazgo que va en la justificación, no un problema que se ' +
                 'tape citando de memoria.\n\n' +
-                'Y dile que puede subir SU PROPIO export de Scopus, Web of Science o SciELO ' +
-                'desde su perfil, en «Método de tesis → Mis fuentes»: desde ese momento estas ' +
-                'búsquedas también leen de ahí.',
+                'Y dile que puede traer SUS PROPIAS fuentes desde su perfil en la web: ' +
+                'conectando su Zotero en «Tu Zotero», o subiendo su export de Scopus, Web of ' +
+                'Science o SciELO en «Método de tesis → Mis fuentes». Desde ese momento estas ' +
+                'búsquedas también leen de ahí. Si ya las trajo, "mis_fuentes" le enseña qué hay.',
             );
           }
 
@@ -1499,8 +1537,9 @@ function construirServidor(licencia) {
             // se miraron las suyas. Y evita que el asistente aprenda que «la
             // biblioteca» significa siempre «la de Acosta», que es de donde
             // salía luego atribuirle a Acosta fuentes que no había revisado.
-            `No hay nada sobre «${tema}» ni en la biblioteca de Acosta ni en la que subió el ` +
-              `tesista, así que busqué en el catálogo abierto con «${enEspanol}»:` +
+            `No hay nada sobre «${tema}» ni en la biblioteca de Acosta ni en la del tesista ` +
+              `—su Zotero y lo que subió—, así que busqué en el catálogo abierto con ` +
+              `«${enEspanol}»:` +
               `\n\n${deFuera.join('\n\n')}\n\n` +
               'AVISA DE QUE ESTAS NO ESTÁN REVISADAS POR ACOSTA: vienen de un catálogo ' +
               'abierto donde entra de todo, preprints y repositorios incluidos. El tesista ' +
@@ -1545,20 +1584,27 @@ function construirServidor(licencia) {
          * la garantía por la que pagó. Se corrige en el encabezado, que es lo
          * que el modelo usa para narrar el conjunto.
          */
-        const propias = fuentes.filter((f) => f.propia).length;
-        const deLaCasa = fuentes.length - propias;
+        const deSuZotero = fuentes.filter((f) => f.deZotero).length;
+        const subidas = fuentes.filter((f) => f.propia && !f.deZotero).length;
+        const deLaCasa = fuentes.length - deSuZotero - subidas;
+
+        const partes = [
+          deSuZotero > 0 ? `${deSuZotero} de su Zotero` : null,
+          subidas > 0 ? `${subidas} que subió él` : null,
+          deLaCasa > 0 ? `${deLaCasa} de la biblioteca de Acosta` : null,
+        ].filter(Boolean);
 
         const procedencia =
-          propias > 0 && deLaCasa > 0
-            ? `${propias} de las que subió el tesista y ${deLaCasa} de la biblioteca de Acosta`
-            : propias > 0
-              ? 'de la biblioteca que subió EL PROPIO TESISTA, no de la de Acosta'
-              : 'de la biblioteca curada de Acosta';
+          deLaCasa === fuentes.length
+            ? 'de la biblioteca curada de Acosta'
+            : deLaCasa === 0
+              ? `de la biblioteca del PROPIO TESISTA, no de la de Acosta: ${partes.join(' y ')}`
+              : partes.join(', ');
 
         return texto(
           `Fuentes sobre «${tema}» (${procedencia}):\n\n${fichas.join('\n\n')}\n\n` +
             'RESPETA LA PROCEDENCIA DE CADA UNA, que va marcada bajo su ficha. Las que dicen ' +
-            '«de tu biblioteca» las eligió y subió el tesista: son suyas y NO están revisadas ' +
+            '«de tu Zotero» o «de tu biblioteca» las eligió el tesista: son suyas y NO están revisadas ' +
             'por Acosta, así que no se las presentes como si lo estuvieran. Las que dicen ' +
             '«biblioteca de Acosta» sí pasaron por su criterio, y eso es justo lo que las ' +
             'distingue.\n\n' +
@@ -1703,7 +1749,8 @@ function construirServidor(licencia) {
     {
       title: 'Qué más leer, a partir de lo que ya tiene',
       description:
-        'BOLA DE NIEVE sobre las fuentes que el tesista ya subió: devuelve (a) los trabajos ' +
+        'BOLA DE NIEVE sobre la biblioteca del tesista —su Zotero conectado, sus exports y lo ' +
+        'que guardó por DOI—: devuelve (a) los trabajos ' +
         'que MÁS DE UNA de sus fuentes citan y él no tiene, y (b) los trabajos recientes que ' +
         'citan a las suyas. ' +
         'ÚSALA en antecedentes y marco teórico, y sobre todo cuando diga que NO SABE QUÉ MÁS ' +
@@ -1842,6 +1889,156 @@ function construirServidor(licencia) {
         `${lineas.join(N)}${N}${N}` +
           'Ya se pueden citar: búscalas con "buscar_fuentes" cuando redactes, y usa la clave ' +
           'AR que te devuelva. NO escribas la cita a mano.',
+      );
+    },
+  );
+
+  // ── Su biblioteca, sin tema: «entra a mi Zotero» ─────────────────────────
+  //
+  // El tesista que conectó su Zotero pregunta por él así, y todas las demás
+  // búsquedas piden un tema. Sin esto, el asistente buscaba un conector de
+  // Zotero, no lo encontraba y le decía que no tenía acceso, con sus quinientas
+  // fuentes ya dentro. Va fuera de cualquier condición: su biblioteca no depende
+  // de que haya corpus de la casa.
+  server.registerTool(
+    'mis_fuentes',
+    {
+      title: 'Su biblioteca, su Zotero incluido',
+      description:
+        'Enseña la biblioteca PROPIA del tesista: la colección de SU ZOTERO que conectó ' +
+        'desde su perfil en la web, lo que subió de Scopus, Web of Science o SciELO, y lo ' +
+        'que guardó por DOI. Dice cuántas tiene, de qué colección de Zotero vienen y cuándo ' +
+        'se actualizaron, y las lista por páginas con la clave de cada una para citarla. ' +
+        'ÚSALA cuando pregunte por SU ZOTERO, su colección o su carpeta, o por «mis ' +
+        'fuentes», «mi biblioteca», «qué tengo». SÍ TIENES ACCESO a lo que trajo de Zotero: ' +
+        'es por aquí, no por otro conector. ' +
+        (env.zoteroEnabled
+          ? 'Para las de un tema concreto no pases páginas: usa "buscar_fuentes", que busca ' +
+            'dentro de estas. '
+          : '') +
+        'Si tiene muchas, enséñale el resumen y la primera página, y pregúntale qué necesita ' +
+        'antes de pedir las demás.',
+      inputSchema: ESQUEMA_MIS_FUENTES,
+    },
+    async ({ pagina, origen }) => {
+      await licenseService.recordUsage({ licenseId: licencia.id, tool: 'mis_fuentes' });
+
+      const b = await propiasService.biblioteca(licencia.userId, { pagina, origen });
+      const zotero = b.zotero;
+      const fecha = (valor) =>
+        new Date(valor).toLocaleDateString('es-PE', {
+          day: 'numeric',
+          month: 'short',
+          year: 'numeric',
+        });
+
+      // Lo que explica una lista vacía o corta. Va antes que la lista porque es
+      // lo primero que el tesista necesita saber si esperaba ver algo.
+      const avisos = [];
+      if (zotero?.trayendo) {
+        avisos.push(
+          'Su Zotero se está trayendo AHORA MISMO: puede que falten fuentes. Que vuelva a ' +
+            'pedirlo en un par de minutos.',
+        );
+      }
+      if (zotero && !zotero.coleccion) {
+        avisos.push(
+          'Tiene Zotero conectado pero NO HA ELEGIDO QUÉ TRAER: que entre en su perfil de la ' +
+            'web, en «Tu Zotero», y elija una colección o toda su biblioteca. Hasta entonces no ' +
+            'se importa nada de ahí.',
+        );
+      }
+      if (zotero?.error) {
+        avisos.push(
+          `La última vez que se intentó traer su Zotero falló: «${zotero.error}». Díselo; ` +
+            'desde «Tu Zotero» en su perfil puede volver a conectarlo o pulsar «Actualizar ahora».',
+        );
+      }
+
+      if (b.total === 0) {
+        return texto(
+          'El tesista todavía no tiene fuentes propias.' +
+            N +
+            N +
+            (avisos.length > 0
+              ? avisos.join(N)
+              : 'Díselo tal cual y cuéntale cómo traerlas desde su perfil en la web: conectando ' +
+                'su Zotero en «Tu Zotero» —elige una colección y se actualiza sola cada noche— o ' +
+                'subiendo su export de Scopus, Web of Science o SciELO en «Mis fuentes».') +
+            (env.zoteroEnabled
+              ? `${N}${N}Mientras tanto, "buscar_fuentes" sigue buscando en la biblioteca de Acosta.`
+              : ''),
+        );
+      }
+
+      const resumen = [`Biblioteca propia del tesista: ${b.total} fuentes.`];
+      if (b.deZotero > 0) {
+        const deDonde = zotero?.coleccion ? ` —de «${zotero.coleccion}»` : '';
+        const alDia = zotero?.ultima ? `, al día del ${fecha(zotero.ultima)}` : '';
+        const cierre = deDonde ? '—' : '';
+        resumen.push(
+          `· ${b.deZotero} de su Zotero${deDonde}${alDia}${cierre}.` +
+            (zotero ? '' : ' Ya no tiene Zotero conectado: se quedaron las que había traído.'),
+        );
+      }
+      if (b.subidas > 0) {
+        resumen.push(
+          `· ${b.subidas} que subió él: de un export de Scopus, Web of Science o SciELO, o por DOI.`,
+        );
+      }
+
+      const filtro =
+        b.origen === 'zotero'
+          ? ' (solo las de Zotero)'
+          : b.origen === 'subidas'
+            ? ' (solo las subidas)'
+            : '';
+
+      if (b.fuentes.length === 0) {
+        return texto(
+          `${resumen.join(N)}${avisos.length > 0 ? N + N + avisos.join(N) : ''}${N}${N}` +
+            (b.enElFiltro === 0
+              ? `No hay ninguna${filtro}. Pide la lista sin "origen" para verlas todas.`
+              : `La página ${b.pagina} no existe${filtro}: hay ${b.paginas}.`),
+        );
+      }
+
+      // La marca de origen solo si hay de las dos: en una biblioteca que es toda
+      // de Zotero, repetir «Zotero» cuarenta veces no dice nada.
+      const mezcladas = b.origen === 'todas' && b.deZotero > 0 && b.subidas > 0;
+      const recortar = (valor, largo) => {
+        const limpio = String(valor ?? '').trim();
+        return limpio.length > largo ? `${limpio.slice(0, largo - 1)}…` : limpio;
+      };
+
+      const lista = b.fuentes.map((f, i) => {
+        const autores = recortar(f.authors, 90) || '(Autor no consignado)';
+        const marca = mezcladas ? (f.origin === 'ZOTERO' ? '   · Zotero' : '   · subida') : '';
+        const titulo = recortar(f.title, 180);
+        return `${b.desde + i}. [${f.ref}]  ${autores} (${f.year ?? 's. f.'}). ${titulo}${marca}`;
+      });
+
+      const siguiente =
+        b.pagina < b.paginas
+          ? `${N}${N}Hay más: para seguir, pide "pagina": ${b.pagina + 1}.`
+          : '';
+
+      return texto(
+        `${resumen.join(N)}${avisos.length > 0 ? N + N + avisos.join(N) : ''}${N}${N}` +
+          `Página ${b.pagina} de ${b.paginas}${filtro}, por autor:${N}${N}` +
+          `${lista.join(N)}${siguiente}${N}${N}` +
+          'ESTAS LAS ELIGIÓ EL TESISTA y NO están revisadas por Acosta: no se las presentes como ' +
+          'si lo estuvieran. ' +
+          'CÓMO SE CITAN: con la clave entre corchetes en el texto que guardes —«…afecta al ' +
+          'rendimiento [AR97D22F86].», o «[AR97D22F86:n] sostienen que…» si el autor va en la ' +
+          'frase—. Al armar el Word, el servidor escribe la cita y la referencia en la norma del ' +
+          'proyecto. NO escribas tú la cita ni la bibliografía, y no cambies títulos ni años. ' +
+          (env.zoteroEnabled
+            ? 'Para las que traten de un tema concreto, "buscar_fuentes" busca dentro de estas ' +
+              'y te da el resumen de cada una. '
+            : '') +
+          'Si falta una que tiene en Zotero, puede que no esté en la colección elegida o que no ' +
+          'se haya actualizado aún: en su perfil, «Tu Zotero» → «Actualizar ahora».',
       );
     },
   );

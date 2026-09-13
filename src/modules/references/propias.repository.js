@@ -131,6 +131,48 @@ async function resumen(userId) {
 }
 
 /**
+ * Cuántas de las suyas vinieron de su Zotero.
+ *
+ * Por el origen y no por el prefijo de su cuenta, como hace el panel de Zotero:
+ * al desconectar, las fuentes se quedan, y siguen siendo «de su Zotero» aunque
+ * ya no haya cuenta de la que sacar el prefijo.
+ */
+function contarDeZotero(userId) {
+  return prisma.reference.count({ where: { ownerUserId: userId, origin: 'ZOTERO' } });
+}
+
+/** «zotero» = lo que trajo su Zotero; «subidas» = export o DOI; otra cosa = todo. */
+function filtroDeOrigen(origen) {
+  if (origen === 'zotero') return { origin: 'ZOTERO' };
+  if (origen === 'subidas') return { origin: { not: 'ZOTERO' } };
+  return {};
+}
+
+/**
+ * Una página de su biblioteca, ordenada por autor como una bibliografía.
+ *
+ * Es lo que pide quien dice «entra a mi Zotero»: ver lo que hay, sin tema. Solo
+ * los campos que hacen falta para reconocer y citar una fuente —el resumen de
+ * seiscientas fichas no cabe en una conversación—.
+ */
+async function pagina(userId, { saltar = 0, tomar = 40, origen = 'todas' } = {}) {
+  const where = { ownerUserId: userId, ...filtroDeOrigen(origen) };
+
+  const [total, fuentes] = await Promise.all([
+    prisma.reference.count({ where }),
+    prisma.reference.findMany({
+      where,
+      select: { ref: true, title: true, authors: true, year: true, origin: true },
+      orderBy: [{ authors: 'asc' }, { year: 'desc' }, { title: 'asc' }],
+      skip: saltar,
+      take: tomar,
+    }),
+  ]);
+
+  return { total, fuentes };
+}
+
+/**
  * Vacía su biblioteca.
  *
  * Es el deshacer de una importación. Existe porque un import no se puede
@@ -145,4 +187,14 @@ async function vaciar(userId) {
   return count;
 }
 
-module.exports = { guardarLote, doisDe, contar, contarSinResumen, resumen, vaciar, TOPE_POR_USUARIO };
+module.exports = {
+  guardarLote,
+  doisDe,
+  contar,
+  contarSinResumen,
+  contarDeZotero,
+  pagina,
+  resumen,
+  vaciar,
+  TOPE_POR_USUARIO,
+};

@@ -122,10 +122,45 @@ test('guardar_capitulo sigue hablando solo de capítulos', () => {
 
 // ── Que no se haya movido nada más ─────────────────────────────────────────
 
-test('siguen registradas las mismas 17 herramientas', () => {
+// ── Su Zotero ──────────────────────────────────────────────────────────────
+//
+// Con 580 fuentes traídas de su Zotero, el asistente le decía al tesista que
+// no tenía acceso a Zotero: ninguna descripción lo nombraba, y la marca «de tu
+// Zotero» solo aparecía DESPUÉS de buscar. Esto es lo que lo impide.
+
+test('buscar_fuentes dice que busca también en el Zotero del tesista', () => {
+  const d = descripcion('buscar_fuentes');
+  assert.match(d, /SU ZOTERO/);
+  assert.match(d, /no tienes acceso/, 'hay que desmentir el «no tengo acceso»');
+  assert.match(d, /mis_fuentes/);
+});
+
+test('temaOriginal dice que sirve para buscar en su biblioteca, no solo fuera', () => {
+  assert.match(esquema('buscar_fuentes').properties.temaOriginal.description, /SU biblioteca/);
+});
+
+test('mis_fuentes responde a quien pregunta por su Zotero', () => {
+  const d = descripcion('mis_fuentes');
+  assert.match(d, /SU ZOTERO/);
+  assert.match(d, /SÍ TIENES ACCESO/);
+  assert.match(d, /buscar_fuentes/, 'para un tema, que no pase páginas');
+});
+
+test('mis_fuentes no pide nada obligatorio: «entra a mi Zotero» no trae tema', () => {
+  const e = esquema('mis_fuentes');
+  assert.equal(e.required, undefined);
+  assert.deepEqual(Object.keys(e.properties).sort(), ['origen', 'pagina']);
+});
+
+test('ampliar_desde_mis_fuentes cuenta su Zotero entre las semillas', () => {
+  assert.match(descripcion('ampliar_desde_mis_fuentes'), /Zotero/);
+});
+
+test('siguen registradas las mismas 18 herramientas', () => {
   // 17 desde que existe «enlace_del_word»: el Word lo arma el servidor, en la
   // norma del proyecto, y Claude da el enlace en vez de fabricarlo él.
-  assert.equal(registradas.size, 17);
+  // 18 desde «mis_fuentes»: ver su biblioteca y su Zotero sin tener un tema.
+  assert.equal(registradas.size, 18);
   for (const nombre of [
     'listar_capitulos',
     'mi_proyecto',
@@ -134,6 +169,7 @@ test('siguen registradas las mismas 17 herramientas', () => {
     'ver_analisis',
     'redactar',
     'enlace_del_word',
+    'mis_fuentes',
   ]) {
     assert.ok(registradas.has(nombre), `falta ${nombre}`);
   }

@@ -12,9 +12,15 @@ const proyectoSelect = {
   universidad: true,
   estiloCitas: true,
   idiomaCitas: true,
+  ranura: true,
+  nombre: true,
+  activadaAt: true,
   createdAt: true,
   updatedAt: true,
 };
+
+/** La activa primero: la de fecha más reciente y, si empatan, la más nueva. */
+const activaPrimero = [{ activadaAt: 'desc' }, { ranura: 'desc' }];
 
 const etapaSelect = {
   skillCode: true,
@@ -33,10 +39,16 @@ const etapaSelect = {
  * al comprar, sino la primera vez que hay algo que recordar. Crear una fila
  * vacía a cada uno solo serviría para no distinguir «no ha empezado» de «no ha
  * comprado».
+ *
+ * Quien tiene varias tesis del mismo método (un administrador) recibe la
+ * activa. Todo lo demás —el conector, el Word, la norma, borrar— trabaja sobre
+ * lo que devuelve esto, así que elegir la activa en el panel lo cambia todo a
+ * la vez.
  */
 function buscar(userId, productCode) {
-  return prisma.project.findUnique({
-    where: { userId_productCode: { userId, productCode } },
+  return prisma.project.findFirst({
+    where: { userId, productCode },
+    orderBy: activaPrimero,
     select: {
       ...proyectoSelect,
       stages: { select: etapaSelect, orderBy: { updatedAt: 'desc' } },
@@ -57,12 +69,78 @@ async function asegurar(userId, productCode, cambios = {}) {
     if (cambios[campo] !== undefined && cambios[campo] !== null) limpio[campo] = cambios[campo];
   }
 
+  const activa = await prisma.project.findFirst({
+    where: { userId, productCode },
+    orderBy: activaPrimero,
+    select: { id: true },
+  });
+  if (activa) {
+    return prisma.project.update({ where: { id: activa.id }, data: limpio, select: proyectoSelect });
+  }
+
+  // La primera nace en la ranura 0 con `upsert`, no con `create`: Claude llama a
+  // varias herramientas a la vez, y dos que lleguen juntas a un tesista sin
+  // proyecto crearían dos. Con la ranura única, la segunda actualiza la primera.
   return prisma.project.upsert({
-    where: { userId_productCode: { userId, productCode } },
+    where: { userId_productCode_ranura: { userId, productCode, ranura: 0 } },
     create: { userId, productCode, ...limpio },
     update: limpio,
     select: proyectoSelect,
   });
+}
+
+/**
+ * Abre otra tesis del mismo método y la deja activa. Solo para administradores:
+ * eso lo decide la ruta, no esto.
+ *
+ * Va en la ranura siguiente a la más alta. Si dos peticiones chocan en la misma
+ * ranura, la base rechaza la segunda por el índice único y se reintenta una vez.
+ */
+async function crearTesis(userId, productCode, nombre) {
+  for (let intento = 0; ; intento += 1) {
+    const { _max } = await prisma.project.aggregate({
+      where: { userId, productCode },
+      _max: { ranura: true },
+    });
+    const ranura = _max.ranura === null ? 0 : _max.ranura + 1;
+
+    try {
+      return await prisma.project.create({
+        data: { userId, productCode, ranura, nombre, activadaAt: new Date() },
+        select: proyectoSelect,
+      });
+    } catch (error) {
+      if (error?.code !== 'P2002' || intento > 0) throw error;
+    }
+  }
+}
+
+/** Una tesis concreta, solo si es de esa persona y de ese método. */
+function buscarTesis(userId, productCode, id) {
+  return prisma.project.findFirst({
+    where: { id, userId, productCode },
+    select: proyectoSelect,
+  });
+}
+
+/** Cuántas tesis tiene de ese método. */
+function contarTesis(userId, productCode) {
+  return prisma.project.count({ where: { userId, productCode } });
+}
+
+/** La deja activa. Devuelve cuántas filas tocó: 0 = no es suya. */
+async function activarTesis(userId, productCode, id) {
+  const { count } = await prisma.project.updateMany({
+    where: { id, userId, productCode },
+    data: { activadaAt: new Date() },
+  });
+  return count;
+}
+
+/** Borra la fila; sus etapas se van en cascada. El disco es cosa del servicio. */
+async function eliminarTesis(userId, productCode, id) {
+  const { count } = await prisma.project.deleteMany({ where: { id, userId, productCode } });
+  return count;
 }
 
 /**
@@ -189,6 +267,11 @@ async function nombresDeProducto(codigos) {
 module.exports = {
   buscar,
   asegurar,
+  crearTesis,
+  buscarTesis,
+  contarTesis,
+  activarTesis,
+  eliminarTesis,
   guardarEtapa,
   listarDeUsuario,
   productosConLicencia,

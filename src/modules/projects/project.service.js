@@ -131,6 +131,9 @@ async function contexto(userId, productCode) {
   if (!hayAvance && !aviso) return null;
 
   const cabecera = [];
+  // Solo las tesis que se abrieron aparte llevan nombre: así quien tiene varias
+  // ve con cuál está trabajando Claude, y al comprador no le sale nada nuevo.
+  if (proyecto.nombre) cabecera.push(`Tesis activa: ${proyecto.nombre} (se cambia en el panel)`);
   if (proyecto.tema) cabecera.push(`Tema: ${proyecto.tema}`);
   const donde = [proyecto.carrera, proyecto.universidad].filter(Boolean).join(' · ');
   if (donde) cabecera.push(donde);
@@ -827,6 +830,93 @@ async function reiniciarProyecto(userId, productCode) {
 }
 
 /**
+ * Otra tesis del mismo método, que pasa a ser la activa.
+ *
+ * Solo con licencia vigente de ese método, igual que al elegir la norma desde
+ * un panel en blanco. Que sea de un administrador lo comprueba la ruta.
+ * Devuelve nulo sin licencia.
+ */
+async function crearTesis({ userId, productCode, nombre }) {
+  const conLicencia = await projectRepository.productosConLicencia(userId);
+  if (!conLicencia.includes(productCode)) return null;
+
+  const tesis = await projectRepository.crearTesis(userId, productCode, nombre);
+  logger.info({ userId, productCode, projectId: tesis.id }, 'Tesis adicional creada');
+  return tesis;
+}
+
+/** Deja activa una de sus tesis. Falso si no es suya o no existe. */
+async function activarTesis({ userId, productCode, id }) {
+  return (await projectRepository.activarTesis(userId, productCode, id)) > 0;
+}
+
+/**
+ * Borra una tesis entera, no la vacía: capítulos, análisis, plantilla y la fila.
+ *
+ * Solo si le queda otra. La última se vacía con «empezar de cero», que deja el
+ * método con sus fases en blanco; borrarla sin más haría lo mismo pero por otro
+ * camino, y dos caminos para lo mismo acaban comportándose distinto.
+ *
+ * Primero el disco y luego la base, por lo mismo que al reiniciar.
+ *
+ * Devuelve 'no-existe', 'unica' o 'borrada'.
+ */
+async function eliminarTesis({ userId, productCode, id }) {
+  const tesis = await projectRepository.buscarTesis(userId, productCode, id);
+  if (!tesis) return 'no-existe';
+  if ((await projectRepository.contarTesis(userId, productCode)) < 2) return 'unica';
+
+  await almacen.borrarProyecto(tesis.id);
+  await projectRepository.eliminarTesis(userId, productCode, tesis.id);
+
+  logger.warn({ userId, productCode, projectId: tesis.id }, 'Tesis borrada por su dueño');
+  return 'borrada';
+}
+
+/** Cuándo se activó, en milisegundos. Sin fecha cuenta como la más antigua. */
+function momentoDeActivacion(proyecto) {
+  const fecha = proyecto.activadaAt ? new Date(proyecto.activadaAt).getTime() : 0;
+  return Number.isNaN(fecha) ? 0 : fecha;
+}
+
+/**
+ * Una fila por método: la tesis activa y, al lado, la lista de todas.
+ *
+ * La activa es la de activación más reciente, con el mismo criterio que
+ * `projectRepository.buscar`: el panel tiene que enseñar la misma que usa el
+ * conector.
+ */
+function agruparPorMetodo(guardados) {
+  const porMetodo = new Map();
+  for (const proyecto of guardados) {
+    const grupo = porMetodo.get(proyecto.productCode) ?? [];
+    grupo.push(proyecto);
+    porMetodo.set(proyecto.productCode, grupo);
+  }
+
+  return [...porMetodo.values()].map((grupo) => {
+    const activa = grupo.reduce((mejor, p) => {
+      const diferencia = momentoDeActivacion(p) - momentoDeActivacion(mejor);
+      if (diferencia !== 0) return diferencia > 0 ? p : mejor;
+      return (p.ranura ?? 0) > (mejor.ranura ?? 0) ? p : mejor;
+    });
+
+    const tesis = [...grupo]
+      .sort((a, b) => (a.ranura ?? 0) - (b.ranura ?? 0))
+      .map((p) => ({
+        id: p.id,
+        nombre: p.nombre ?? null,
+        tema: p.tema ?? null,
+        activa: p === activa,
+        palabras: (p.stages ?? []).reduce((suma, e) => suma + (e.palabras ?? 0), 0),
+        updatedAt: p.updatedAt ?? null,
+      }));
+
+    return { activa, tesis };
+  });
+}
+
+/**
  * Guarda el análisis: el script, lo que devolvió, y las cifras.
  *
  * NO SE EJECUTA NADA AQUÍ, y es a propósito. El tesista corre su análisis en su
@@ -1346,13 +1436,18 @@ function proyectoEnBlanco(productCode) {
  * Las dos consultas van una detrás de otra y no a la vez: la base admite cinco
  * conexiones y este panel lo abre cualquiera que entre en su perfil.
  */
-async function deUsuario(userId) {
+async function deUsuario(userId, { variasTesis = false } = {}) {
   const guardados = await projectRepository.listarDeUsuario(userId);
   const conLicencia = await projectRepository.productosConLicencia(userId);
 
-  const yaEstan = new Set(guardados.map((p) => p.productCode));
+  // Quien tiene varias tesis de un método ve una sola fila, la activa, con la
+  // lista para cambiar de una a otra.
+  const grupos = agruparPorMetodo(guardados);
+  const listaDe = new Map(grupos.map((g) => [g.activa.productCode, g.tesis]));
+
+  const yaEstan = new Set(listaDe.keys());
   const proyectos = [
-    ...guardados,
+    ...grupos.map((g) => g.activa),
     ...conLicencia.filter((codigo) => !yaEstan.has(codigo)).map(proyectoEnBlanco),
   ];
 
@@ -1387,6 +1482,12 @@ async function deUsuario(userId) {
         productCode: proyecto.productCode,
         /** El nombre de venta. Si ningún plan lo nombra, el código: feo pero cierto. */
         productName: nombres.get(proyecto.productCode) ?? proyecto.productCode,
+        /** Nombre de la tesis activa; solo lo tienen las que se abrieron aparte. */
+        nombre: proyecto.nombre ?? null,
+        /** Todas sus tesis de este método, por orden de creación. Vacía si no hay nada guardado. */
+        tesis: listaDe.get(proyecto.productCode) ?? [],
+        /** Si puede abrir otra tesis: solo los administradores. */
+        puedeCrearTesis: variasTesis,
         tema: proyecto.tema,
         carrera: proyecto.carrera,
         universidad: proyecto.universidad,
@@ -1431,6 +1532,9 @@ module.exports = {
   guardarPlantilla,
   quitarPlantilla,
   reiniciarProyecto,
+  crearTesis,
+  activarTesis,
+  eliminarTesis,
   auditar,
   siguientePaso,
   deUsuario,

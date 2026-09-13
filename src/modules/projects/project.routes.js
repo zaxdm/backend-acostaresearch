@@ -3,12 +3,14 @@
 const { Router } = require('express');
 const express = require('express');
 const authenticate = require('../../middlewares/authenticate');
+const authorize = require('../../middlewares/authorize');
 const asyncHandler = require('../../shared/http/asyncHandler');
 const { ok } = require('../../shared/http/apiResponse');
 const { ForbiddenError, ValidationError } = require('../../shared/errors/AppError');
+const { ROLES } = require('../../config/constants');
 const licenseService = require('../licensing/license.service');
 const projectService = require('./project.service');
-const { normaSchema, borrarProyectoSchema } = require('./project.schema');
+const { normaSchema, borrarProyectoSchema, nuevaTesisSchema } = require('./project.schema');
 const descarga = require('./project.descarga');
 const { PlantillaNoValida, MAXIMO_BYTES } = require('./project.plantilla');
 
@@ -88,7 +90,86 @@ router.use(authenticate);
 
 router.get(
   '/',
-  asyncHandler(async (req, res) => ok(res, await projectService.deUsuario(req.user.id))),
+  asyncHandler(async (req, res) =>
+    ok(
+      res,
+      await projectService.deUsuario(req.user.id, { variasTesis: req.user.role === ROLES.ADMIN }),
+    ),
+  ),
+);
+
+/**
+ * Varias tesis del mismo método.
+ *
+ * Un comprador tiene UNA por método: es lo que compró, y el conector no sabría
+ * con cuál de dos trabajar. Abrir más es solo del administrador, que las usa
+ * para probar el método con temas distintos sin borrar lo que ya tiene.
+ *
+ * Elegir y borrar no piden ser administrador a propósito: solo sirven a quien
+ * ya tiene varias, y alguien que dejó de serlo tiene que poder quedarse con una.
+ */
+router.post(
+  '/:productCode/tesis',
+  authorize(ROLES.ADMIN),
+  asyncHandler(async (req, res) => {
+    const datos = nuevaTesisSchema.safeParse(req.body ?? {});
+    if (!datos.success) {
+      throw new ValidationError(datos.error.issues[0]?.message ?? 'Ponle un nombre para distinguirla.');
+    }
+
+    const tesis = await projectService.crearTesis({
+      userId: req.user.id,
+      productCode: req.params.productCode,
+      nombre: datos.data.nombre,
+    });
+    if (!tesis) {
+      throw new ForbiddenError('Necesitas una licencia vigente de este método para abrir otra tesis.');
+    }
+
+    return ok(res, { id: tesis.id }, {
+      message: `«${tesis.nombre}» es ahora tu tesis activa. Claude trabajará con ella.`,
+    });
+  }),
+);
+
+router.patch(
+  '/:productCode/tesis/:id/activar',
+  asyncHandler(async (req, res) => {
+    const activada = await projectService.activarTesis({
+      userId: req.user.id,
+      productCode: req.params.productCode,
+      id: req.params.id,
+    });
+    if (!activada) {
+      return res.status(404).json({ success: false, message: 'Esa tesis no existe.' });
+    }
+    return ok(res, { activada }, { message: 'Listo. Claude trabajará con esta tesis.' });
+  }),
+);
+
+router.delete(
+  '/:productCode/tesis/:id',
+  asyncHandler(async (req, res) => {
+    const datos = borrarProyectoSchema.safeParse(req.body ?? {});
+    if (!datos.success) {
+      throw new ValidationError(datos.error.issues[0]?.message ?? 'Escribe «eliminar» para confirmar.');
+    }
+
+    const resultado = await projectService.eliminarTesis({
+      userId: req.user.id,
+      productCode: req.params.productCode,
+      id: req.params.id,
+    });
+    if (resultado === 'no-existe') {
+      return res.status(404).json({ success: false, message: 'Esa tesis no existe.' });
+    }
+    if (resultado === 'unica') {
+      throw new ValidationError(
+        'Es tu única tesis de este método. Para vaciarla usa «Borrar mi progreso y empezar de cero».',
+      );
+    }
+    return ok(res, { borrada: true }, { message: 'Tesis borrada.' });
+  }),
 );
 
 /** Las normas de citas que se pueden elegir. Las mismas que ofrece el conector. */

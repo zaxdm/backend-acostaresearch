@@ -1189,13 +1189,23 @@ model Project {
   plantillaAt     DateTime?
   plantillaNombre String?   @db.VarChar(200)
 
+  /// Las tesis de una misma persona y método. Un comprador tiene solo la 0; un
+  /// administrador puede abrir más (1, 2…) para probar. La 0 es la que nace
+  /// sola desde el conector, y su unicidad es lo que impide que dos llamadas
+  /// simultáneas de Claude creen dos proyectos para el mismo tesista.
+  ranura Int @default(0)
+  /// Cómo la llama quien tiene varias, para distinguirlas en el panel.
+  nombre String? @db.VarChar(80)
+  /// La tesis activa es la de fecha más reciente: con la que trabaja el
+  /// conector y la que enseña el panel. Elegir otra es ponerle la fecha de ahora.
+  activadaAt DateTime @default(now())
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   stages ProjectStage[]
 
-  /// Un proyecto por comprador y método.
-  @@unique([userId, productCode])
+  @@unique([userId, productCode, ranura])
   @@map("projects")
 }
 

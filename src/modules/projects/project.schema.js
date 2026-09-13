@@ -111,7 +111,17 @@ const borrarProyectoSchema = z.object({
     .refine((v) => v === 'eliminar', 'Escribe exactamente «eliminar».'),
 });
 
+/** Abrir otra tesis desde el panel (solo administradores): basta con un nombre. */
+const nuevaTesisSchema = z.object({
+  nombre: z
+    .string({ required_error: 'Ponle un nombre para distinguirla.' })
+    .trim()
+    .min(1, 'Ponle un nombre para distinguirla.')
+    .max(80, 'El nombre admite hasta 80 caracteres.'),
+});
+
 module.exports = {
+  nuevaTesisSchema,
   guardarAvanceSchema,
   guardarCapituloSchema,
   normaSchema,

@@ -15,11 +15,29 @@ const projectRoutes = require('./modules/projects/project.routes');
 const trialRoutes = require('./modules/trials/trial.routes');
 const zoteroRoutes = require('./modules/zotero/biblioteca.routes');
 
+const prisma = require('./lib/prisma');
+const { crearSonda } = require('./lib/sondaBase');
+
 const router = Router();
 
 router.get('/health', (_req, res) =>
   res.json({ success: true, data: { status: 'ok', uptime: process.uptime() } }),
 );
+
+// `/health` dice si el proceso está vivo y no toca la base, así que con la base
+// caída sigue contestando ok. Esta es la que pregunta la pantalla de
+// mantenimiento de la web para saber cuándo quitarse. Si la base no está, el
+// error llega al manejador de errores y sale como 503.
+const comprobarBase = crearSonda({ consultar: () => prisma.$queryRaw`SELECT 1` });
+
+router.get('/health/bd', async (_req, res, next) => {
+  try {
+    await comprobarBase();
+    res.json({ success: true, data: { status: 'ok' } });
+  } catch (error) {
+    next(error);
+  }
+});
 
 router.use('/auth', authRoutes);
 router.use('/users', userRoutes);

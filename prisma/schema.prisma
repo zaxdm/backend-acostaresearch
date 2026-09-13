@@ -130,8 +130,9 @@ model TrialLink {
   /// Ya no se lee: la duración va en `accessMinutes`. Se queda para que el
   /// despliegue que la sustituye no rompa nada mientras arranca el código nuevo.
   accessDays    Int @default(0)
-  /// Cuánto dura cada conector, en minutos, desde que lo recoge cada invitado.
-  /// 0 = sin límite: el conector no caduca y se corta apagando el enlace.
+  /// Cuánto dura la prueba, en minutos, desde `createdAt`. Pasada esa hora dejan
+  /// de funcionar todos sus conectores y no entrega más.
+  /// 0 = sin límite: el enlace no termina y se corta apagándolo.
   accessMinutes Int @default(0)
 
   /// Topes de cada conector. 0 = sin tope, como en las licencias.

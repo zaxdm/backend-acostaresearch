@@ -12,6 +12,7 @@ const limites = require('./license.limits');
 const watch = require('./license.watch');
 const prisma = require('../../lib/prisma');
 const proofStorage = require('../payments/proof.storage');
+const { enlaceTerminado } = require('../trials/trial.plazo');
 const {
   generateOpaqueToken,
   hashToken,
@@ -685,10 +686,13 @@ const licenseService = {
       });
     }
 
-    // Conector de prueba con el enlace apagado. Se mira aquí, en cada llamada,
-    // y no revocando las licencias una a una: así el administrador corta a los
-    // treinta de golpe, y si vuelve a encender el enlace vuelven como estaban.
-    if (licencia.user.trialLink && !licencia.user.trialLink.active) {
+    // Conector de prueba con el enlace apagado o pasado de su hora de fin. Se
+    // mira aquí, en cada llamada, y no revocando las licencias una a una: así
+    // el administrador corta a los treinta de golpe, y si vuelve a encender el
+    // enlace vuelven como estaban. La hora de fin cuenta desde que se creó el
+    // enlace, y corta también los conectores entregados antes de que fuera así.
+    const enlace = licencia.user.trialLink;
+    if (enlace && (!enlace.active || enlaceTerminado(enlace))) {
       throw new AppError(
         'Esta prueba del conector terminó. Si quieres seguir, tienes los planes en acostaresearch.com/planes.',
         { statusCode: 403, code: ERROR_CODES.LICENSE_REVOKED },

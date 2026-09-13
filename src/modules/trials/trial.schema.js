@@ -24,10 +24,11 @@ const createTrialSchema = z.object({
     .max(500, 'Como mucho 500 cupos por enlace.')
     .default(30),
   /**
-   * Cuánto dura cada conector, en minutos, desde que el invitado lo recoge.
+   * Cuánto dura la prueba, en minutos, desde que se crea el enlace. Al acabar
+   * dejan de funcionar todos sus conectores, se recogieran cuando se recogieran.
    *
    * En minutos y no en días porque una prueba de un taller o de un directo dura
-   * horas. 0 = sin límite: el conector no caduca, y se corta apagando el enlace.
+   * horas. 0 = sin límite: el enlace no termina, y se corta apagándolo.
    * El techo es un año.
    */
   accessMinutes: z.coerce

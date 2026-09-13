@@ -5,13 +5,14 @@ const env = require('../../config/env');
 const logger = require('../../config/logger');
 const { ERROR_CODES } = require('../../config/constants');
 const prisma = require('../../lib/prisma');
-const { generateOpaqueToken, hashToken, addMinutes } = require('../../shared/utils/tokens');
+const { generateOpaqueToken, hashToken } = require('../../shared/utils/tokens');
 const { AppError, NotFoundError, ValidationError } = require('../../shared/errors/AppError');
 const {
   urlDelConector,
   contratoDelProducto,
 } = require('../licensing/license.service');
 const projectStorage = require('../projects/project.storage');
+const { finDelEnlace, enlaceTerminado } = require('./trial.plazo');
 
 /**
  * Enlaces de prueba del conector.
@@ -61,12 +62,14 @@ function urlDelEnlace(slug) {
 /**
  * En qué punto está un enlace, dicho en una palabra.
  *
- * APAGADO manda sobre LLENO: un enlace apagado corta sus conectores, y eso es
- * lo primero que tiene que saber quien lo mira.
+ * APAGADO manda sobre todo: un enlace apagado corta sus conectores, y eso es lo
+ * primero que tiene que saber quien lo mira. Después TERMINADO, que también los
+ * corta, y solo entonces si quedan cupos.
  */
-function estadoDelEnlace({ active, seats, claimed }) {
-  if (!active) return 'APAGADO';
-  if (claimed >= seats) return 'LLENO';
+function estadoDelEnlace(enlace, ahora = new Date()) {
+  if (!enlace.active) return 'APAGADO';
+  if (enlaceTerminado(enlace, ahora)) return 'TERMINADO';
+  if (enlace.claimed >= enlace.seats) return 'LLENO';
   return 'ABIERTO';
 }
 
@@ -77,7 +80,7 @@ function enlaceInvalido() {
 
 function enlaceCerrado(estado) {
   const mensaje =
-    estado === 'APAGADO'
+    estado === 'APAGADO' || estado === 'TERMINADO'
       ? 'Esta prueba del conector ya terminó.'
       : 'Ya se entregaron todos los conectores de esta prueba.';
   return new AppError(mensaje, { statusCode: 409, code: ERROR_CODES.LICENSE_CODE_USED });
@@ -117,24 +120,14 @@ function presentar(enlace, nombres, uso) {
     ...enlace,
     url: urlDelEnlace(enlace.slug),
     estado: estadoDelEnlace(enlace),
+    // Cuándo dejan de funcionar todos sus conectores. Nulo = sin límite.
+    terminaAt: finDelEnlace(enlace),
     productName: nombres.get(enlace.productCode) ?? enlace.productCode,
     // Cuántos de los entregados llegaron a usar el conector, y cuánto. Es la
     // pregunta de después de un taller: ¿lo probaron o solo lo recogieron?
     conectados: uso?.conectados ?? 0,
     consultas: uso?.consultas ?? 0,
   };
-}
-
-/**
- * Cuándo deja de funcionar un conector recién entregado.
- *
- * Nulo con 0 minutos: sin límite. Una licencia sin fecha no caduca nunca —así
- * funcionan ya las de por vida—, y el administrador la corta apagando el enlace,
- * que se comprueba en cada llamada del conector.
- */
-function caducidadDelConector(accessMinutes, ahora = new Date()) {
-  const minutos = Number(accessMinutes) || 0;
-  return minutos > 0 ? addMinutes(ahora, minutos) : null;
 }
 
 const trialService = {
@@ -195,8 +188,16 @@ const trialService = {
 
   /** Los conectores entregados por un enlace, uno por invitado. */
   async guests(id) {
-    const enlace = await prisma.trialLink.findUnique({ where: { id }, select: { id: true } });
+    const enlace = await prisma.trialLink.findUnique({
+      where: { id },
+      select: { id: true, createdAt: true, accessMinutes: true },
+    });
     if (!enlace) throw new NotFoundError('Ese enlace de prueba no existe.');
+
+    // Todos terminan con el enlace. Los que se entregaron cuando el plazo aún
+    // contaba desde la recogida guardan una fecha posterior, pero la puerta de
+    // las licencias los corta igual a esta hora: se enseña la que manda.
+    const fin = finDelEnlace(enlace);
 
     const invitados = await prisma.user.findMany({
       where: { trialLinkId: id },
@@ -219,7 +220,7 @@ const trialService = {
         tokenHint: licencia?.tokenHint ?? null,
         consultas: licencia?.callsTotal ?? 0,
         ultimoUso: licencia?.lastUsedAt ?? null,
-        expiresAt: licencia?.expiresAt ?? null,
+        expiresAt: fin ?? licencia?.expiresAt ?? null,
       };
     });
   },
@@ -299,6 +300,7 @@ const trialService = {
       name: enlace.name,
       productName: nombres.get(enlace.productCode) ?? enlace.productCode,
       estado: estadoDelEnlace(enlace),
+      terminaAt: finDelEnlace(enlace),
       quedan: Math.max(0, enlace.seats - enlace.claimed),
       seats: enlace.seats,
       accessMinutes: enlace.accessMinutes,
@@ -323,7 +325,9 @@ const trialService = {
 
     const contrato = await contratoDelProducto(enlace.productCode);
     const token = generateOpaqueToken(32);
-    const expiresAt = caducidadDelConector(enlace.accessMinutes);
+    // La hora de fin del enlace, la misma para todos: recogerlo tarde no
+    // alarga la prueba.
+    const expiresAt = finDelEnlace(enlace);
 
     const entrega = await prisma.$transaction(async (tx) => {
       const { count } = await tx.trialLink.updateMany({
@@ -401,4 +405,5 @@ module.exports = trialService;
 module.exports.estadoDelEnlace = estadoDelEnlace;
 module.exports.generarSlug = generarSlug;
 module.exports.correoDeInvitado = correoDeInvitado;
-module.exports.caducidadDelConector = caducidadDelConector;
+module.exports.finDelEnlace = finDelEnlace;
+module.exports.enlaceTerminado = enlaceTerminado;

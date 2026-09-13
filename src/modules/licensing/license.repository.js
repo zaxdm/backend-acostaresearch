@@ -225,9 +225,12 @@ const licenseRepository = {
             email: true,
             status: true,
             firstName: true,
-            // Si es un conector de prueba, el enlace del que salió: apagarlo
-            // tiene que cortar este token en la llamada siguiente.
-            trialLink: { select: { id: true, name: true, active: true } },
+            // Si es un conector de prueba, el enlace del que salió: apagarlo,
+            // o que pase su hora de fin, tiene que cortar este token en la
+            // llamada siguiente.
+            trialLink: {
+              select: { id: true, name: true, active: true, createdAt: true, accessMinutes: true },
+            },
           },
         },
       },

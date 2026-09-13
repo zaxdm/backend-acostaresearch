@@ -7,7 +7,8 @@ const {
   estadoDelEnlace,
   generarSlug,
   correoDeInvitado,
-  caducidadDelConector,
+  finDelEnlace,
+  enlaceTerminado,
 } = require('../src/modules/trials/trial.service');
 const { createTrialSchema, slugParamSchema } = require('../src/modules/trials/trial.schema');
 
@@ -92,16 +93,35 @@ test('un enlace de prueba no lleva tope total: si llega uno, se descarta', () =>
 
 // ── El tiempo de acceso ─────────────────────────────────────────────────────
 
-test('0 minutos de acceso es sin límite: el conector no tiene fecha de caducidad', () => {
+const creado = new Date('2026-09-12T20:00:00Z');
+
+test('0 minutos de acceso es sin límite: el enlace no termina nunca', () => {
   const datos = createTrialSchema.parse({ name: 'Taller', productCode: 'METODO_9_SKILLS', accessMinutes: 0 });
+  const enlace = { createdAt: creado, accessMinutes: 0, active: true, seats: 30, claimed: 0 };
 
   assert.equal(datos.accessMinutes, 0);
-  assert.equal(caducidadDelConector(0), null);
+  assert.equal(finDelEnlace(enlace), null);
+  assert.equal(enlaceTerminado(enlace, new Date('2036-01-01T00:00:00Z')), false);
+  assert.equal(estadoDelEnlace(enlace, new Date('2036-01-01T00:00:00Z')), 'ABIERTO');
 });
 
-test('con minutos, el conector caduca exactamente esos minutos después de recogerlo', () => {
-  const recogido = new Date('2026-09-12T20:00:00Z');
+test('el plazo cuenta desde que se crea el enlace, no desde que se recoge', () => {
+  assert.equal(finDelEnlace({ createdAt: creado, accessMinutes: 90 }).toISOString(), '2026-09-12T21:30:00.000Z');
+  assert.equal(
+    finDelEnlace({ createdAt: creado, accessMinutes: 24 * 60 }).toISOString(),
+    '2026-09-13T20:00:00.000Z',
+  );
+});
 
-  assert.equal(caducidadDelConector(90, recogido).toISOString(), '2026-09-12T21:30:00.000Z');
-  assert.equal(caducidadDelConector(24 * 60, recogido).toISOString(), '2026-09-13T20:00:00.000Z');
+test('pasada la hora de fin el enlace está terminado, aunque le queden cupos', () => {
+  const enlace = { createdAt: creado, accessMinutes: 60, active: true, seats: 30, claimed: 3 };
+
+  assert.equal(estadoDelEnlace(enlace, new Date('2026-09-12T20:59:59Z')), 'ABIERTO');
+  assert.equal(estadoDelEnlace(enlace, new Date('2026-09-12T21:00:00Z')), 'TERMINADO');
+  assert.equal(estadoDelEnlace({ ...enlace, claimed: 30 }, new Date('2026-09-12T22:00:00Z')), 'TERMINADO');
+});
+
+test('apagado manda sobre terminado', () => {
+  const enlace = { createdAt: creado, accessMinutes: 60, active: false, seats: 30, claimed: 3 };
+  assert.equal(estadoDelEnlace(enlace, new Date('2026-09-12T22:00:00Z')), 'APAGADO');
 });

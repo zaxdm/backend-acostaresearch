@@ -1,6 +1,7 @@
 'use strict';
 
 const { z } = require('zod');
+const { revisarCorreo } = require('../../shared/utils/correo');
 
 const email = z
   .string({ required_error: 'El correo es obligatorio.' })
@@ -27,7 +28,17 @@ const name = (campo) =>
 const registerSchema = z.object({
   firstName: name('El nombre'),
   lastName: name('El apellido'),
-  email,
+  // Solo al registrarse se buscan erratas como `gamail.com`: a ese correo va el
+  // código de activación. En el acceso no, para no dejar fuera a nadie que ya
+  // tenga cuenta. El panel avisa mientras se escribe; esto es lo que no se salta.
+  email: email.superRefine((valor, ctx) => {
+    const { problema, sugerencia } = revisarCorreo(valor);
+    if (!problema) return;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: sugerencia ? `${problema} ¿Quisiste decir ${sugerencia}?` : problema,
+    });
+  }),
   password,
 });
 

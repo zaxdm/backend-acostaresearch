@@ -106,6 +106,20 @@ const asistenteLimiter = build({
 });
 
 /**
+ * Hojas del Libro de Reclamaciones.
+ *
+ * Diez por hora es más de lo que presenta una persona con motivo, y deja sitio a
+ * varias detrás de la misma IP de operador. Cada hoja manda dos correos y ocupa
+ * un número del libro que ya no se puede borrar: sin freno, un script llenaría
+ * el libro de basura con numeración legal.
+ */
+const reclamoLimiter = build({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  message: 'Has enviado varias hojas seguidas. Si falta algo, escríbenos por WhatsApp.',
+});
+
+/**
  * Límite del conector MCP, contado POR LICENCIA y no por IP.
  *
  * Es obligatorio que sea así: Claude llama desde la infraestructura de
@@ -137,5 +151,6 @@ module.exports = {
   trialClaimLimiter,
   zoteroSyncLimiter,
   asistenteLimiter,
+  reclamoLimiter,
   mcpLimiter,
 };

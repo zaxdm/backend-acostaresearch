@@ -1323,3 +1323,66 @@ model ZoteroOauthRequest {
   @@index([createdAt])
   @@map("zotero_oauth_requests")
 }
+
+enum ReclamoTipo {
+  /// Disconformidad con el producto o el servicio.
+  RECLAMO
+  /// Disconformidad que no es con el producto o el servicio, o con la atención.
+  QUEJA
+}
+
+enum ReclamoDocumento {
+  DNI
+  CE
+  PASAPORTE
+}
+
+enum ReclamoBien {
+  PRODUCTO
+  SERVICIO
+}
+
+/// Una hoja del Libro de Reclamaciones.
+///
+/// Los campos son los del anexo del reglamento (D.S. 011-2011-PCM). La hoja y
+/// su respuesta no se editan ni se borran desde la aplicación: es un libro, y
+/// vale porque lo que dice hoy es lo que decía el día en que se escribió.
+///
+/// No cuelga de ninguna cuenta: la presenta cualquiera, con cuenta o sin ella,
+/// y borrar una cuenta no puede llevarse sus hojas.
+model Reclamo {
+  /// El correlativo de la hoja. Lo da la base para que no se repita nunca.
+  numero Int @id @default(autoincrement())
+
+  tipo ReclamoTipo
+
+  nombre          String           @db.VarChar(160)
+  tipoDocumento   ReclamoDocumento
+  numeroDocumento String           @db.VarChar(20)
+  domicilio       String           @db.VarChar(250)
+  telefono        String?          @db.VarChar(20)
+  email           String           @db.VarChar(255)
+  /// Padre, madre o apoderado, cuando reclama un menor de edad.
+  apoderado       String?          @db.VarChar(160)
+
+  tipoBien        ReclamoBien
+  /// En soles. Nulo = no reclama un importe.
+  montoReclamado  Decimal?         @db.Decimal(10, 2)
+  descripcionBien String           @db.VarChar(500)
+
+  detalle String @db.Text
+  pedido  String @db.Text
+
+  /// Quince días hábiles contados en Lima. Ver `reclamo.plazo`.
+  fechaLimite DateTime
+
+  respuesta       String?   @db.Text
+  respondidoAt    DateTime?
+  /// Sin relación a propósito: si ese administrador se va, lo contestado se queda.
+  respondidoPorId String?   @db.Char(36)
+
+  createdAt DateTime @default(now())
+
+  @@index([respondidoAt])
+  @@map("reclamos")
+}

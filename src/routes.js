@@ -15,6 +15,7 @@ const projectRoutes = require('./modules/projects/project.routes');
 const trialRoutes = require('./modules/trials/trial.routes');
 const zoteroRoutes = require('./modules/zotero/biblioteca.routes');
 const asistenteRoutes = require('./modules/asistente/asistente.routes');
+const reclamoRoutes = require('./modules/reclamos/reclamo.routes');
 
 const prisma = require('./lib/prisma');
 const { crearSonda } = require('./lib/sondaBase');
@@ -59,5 +60,8 @@ router.use('/pruebas', trialRoutes);
 router.use('/mi-zotero', zoteroRoutes);
 // El chat de la web. Público: está para quien todavía no tiene cuenta.
 router.use('/asistente', asistenteRoutes);
+// El Libro de Reclamaciones. Presentar una hoja es público; responderla, del
+// administrador.
+router.use('/reclamos', reclamoRoutes);
 
 module.exports = router;

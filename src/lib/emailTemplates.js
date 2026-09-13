@@ -884,6 +884,262 @@ function activationCode({ codes, planName, expiresAt }) {
   };
 }
 
+// ── Libro de Reclamaciones ─────────────────────────────────────────────────
+
+/**
+ * Lo que escribió un visitante, listo para ir dentro del HTML.
+ *
+ * Hasta el Libro de Reclamaciones, todo lo que entraba en un correo lo había
+ * escrito alguien de la casa: un plan, un motivo de rechazo. Una hoja la rellena
+ * cualquiera desde la web, y un «<a href>» en el detalle llegaría como enlace de
+ * verdad al buzón del consumidor, con nuestra firma debajo.
+ */
+function escapar(texto) {
+  return String(texto ?? '').replace(
+    /[&<>"']/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c],
+  );
+}
+
+/** Igual, conservando los saltos de línea de un texto largo. */
+function parrafo(texto) {
+  return escapar(texto).replace(/\r?\n/g, '<br />');
+}
+
+const TIPO_DE_HOJA = { RECLAMO: 'Reclamo', QUEJA: 'Queja' };
+const TIPO_DE_BIEN = { PRODUCTO: 'Producto', SERVICIO: 'Servicio' };
+const DOCUMENTO = { DNI: 'DNI', CE: 'Carné de extranjería', PASAPORTE: 'Pasaporte' };
+
+/** Las leyendas del anexo del reglamento. Van literales: no se adornan. */
+const LEYENDAS_DEL_LIBRO = [
+  'Reclamo: disconformidad relacionada con los productos o servicios. Queja: disconformidad no ' +
+    'relacionada con los productos o servicios, o malestar o descontento respecto a la atención al público.',
+  'La formulación del reclamo no impide acudir a otras vías de solución de controversias ni es ' +
+    'requisito previo para interponer una denuncia ante el INDECOPI.',
+  'El proveedor debe dar respuesta al reclamo o queja en un plazo no mayor a quince (15) días ' +
+    'hábiles improrrogables.',
+];
+
+const conValor = ([, valor]) => valor !== null && valor !== undefined && valor !== '';
+
+function bloqueDeDatos(titulo, pares) {
+  const filas = pares
+    .filter(conValor)
+    .map(
+      ([clave, valor]) => `<tr>
+           <td style="padding:4px 14px 4px 0;vertical-align:top;white-space:nowrap;color:#7b8794">${clave}</td>
+           <td style="padding:4px 0;vertical-align:top;color:#1a2233">${parrafo(valor)}</td>
+         </tr>`,
+    )
+    .join('');
+
+  return `<p style="margin:22px 0 6px;font-size:12.5px;font-weight:650;letter-spacing:.03em;color:#52606d">${titulo}</p>
+     <table role="presentation" cellpadding="0" cellspacing="0" border="0"
+            style="font-size:14px;line-height:1.55">${filas}</table>`;
+}
+
+/** La hoja entera, en HTML y en texto, tal como la ve el consumidor en la web. */
+function hojaDeReclamacion({ reclamo, proveedor, fechaTexto }) {
+  const secciones = [
+    [
+      'PROVEEDOR',
+      [
+        ['Razón social', proveedor.razonSocial],
+        ['RUC', proveedor.ruc],
+        ['Domicilio', proveedor.domicilio],
+      ],
+    ],
+    [
+      '1. IDENTIFICACIÓN DEL CONSUMIDOR RECLAMANTE',
+      [
+        ['Nombre', reclamo.nombre],
+        [DOCUMENTO[reclamo.tipoDocumento] ?? reclamo.tipoDocumento, reclamo.numeroDocumento],
+        ['Domicilio', reclamo.domicilio],
+        ['Teléfono', reclamo.telefono],
+        ['Correo', reclamo.email],
+        ['Padre, madre o apoderado', reclamo.apoderado],
+      ],
+    ],
+    [
+      '2. IDENTIFICACIÓN DEL BIEN CONTRATADO',
+      [
+        ['Tipo', TIPO_DE_BIEN[reclamo.tipoBien]],
+        [
+          'Monto reclamado',
+          reclamo.montoReclamado === null ? null : `S/ ${Number(reclamo.montoReclamado).toFixed(2)}`,
+        ],
+        ['Descripción', reclamo.descripcionBien],
+      ],
+    ],
+    [
+      '3. DETALLE DE LA RECLAMACIÓN Y PEDIDO DEL CONSUMIDOR',
+      [
+        ['Tipo', TIPO_DE_HOJA[reclamo.tipo]],
+        ['Detalle', reclamo.detalle],
+        ['Pedido', reclamo.pedido],
+      ],
+    ],
+  ];
+
+  return {
+    html:
+      `<p style="margin:18px 0 0;font-size:14px;color:#52606d">Hoja de reclamación
+         Nº <strong style="color:#1a2233">${reclamo.codigo}</strong> · ${escapar(fechaTexto)}</p>` +
+      secciones.map(([titulo, pares]) => bloqueDeDatos(titulo, pares)).join(''),
+    text: [
+      `Hoja de reclamación Nº ${reclamo.codigo}`,
+      `Fecha: ${fechaTexto}`,
+      '',
+      ...secciones.flatMap(([titulo, pares]) => [
+        titulo,
+        ...pares.filter(conValor).map(([clave, valor]) => `  ${clave}: ${valor}`),
+        '',
+      ]),
+    ],
+  };
+}
+
+const leyendasHtml = (leyendas) =>
+  `<p style="margin:24px 0 0;font-size:12.5px;line-height:1.6;color:#7b8794">${leyendas.join('<br /><br />')}</p>`;
+
+const nombreDePila = (nombre) => escapar(String(nombre).trim().split(/\s+/)[0]);
+
+/**
+ * Al consumidor: la copia de su hoja.
+ *
+ * El reglamento pide entregarla en el momento. Va entera —no un «hemos recibido
+ * tu reclamo»— porque es su constancia: si mañana tiene que ir a INDECOPI, esto
+ * es lo que enseña.
+ */
+function reclamoRegistrado({ reclamo, proveedor, fechaTexto, limiteTexto }) {
+  const tipo = TIPO_DE_HOJA[reclamo.tipo].toLowerCase();
+  const hoja = hojaDeReclamacion({ reclamo, proveedor, fechaTexto });
+
+  return {
+    subject: `Hoja de reclamación Nº ${reclamo.codigo} · Acosta Research`,
+    text: [
+      `Hola ${reclamo.nombre}:`,
+      '',
+      `Registramos tu ${tipo} en nuestro Libro de Reclamaciones. Esta es la copia de tu hoja: guárdala.`,
+      `Te responderemos a este correo a más tardar el ${limiteTexto}.`,
+      '',
+      ...hoja.text,
+      ...LEYENDAS_DEL_LIBRO,
+    ].join('\n'),
+    html: layout(
+      `Registramos tu ${tipo}`,
+      `<p style="margin:0 0 14px;font-size:15px;line-height:1.6">Hola ${nombreDePila(reclamo.nombre)}:
+         registramos tu ${tipo} en nuestro Libro de Reclamaciones. Esta es la copia de tu hoja;
+         guárdala.</p>
+       <p style="margin:0;padding:14px 16px;background:#f2f6fe;border-radius:10px;font-size:14px;
+                 line-height:1.6;color:#1a3fa8">
+         Te responderemos a este correo a más tardar el <strong>${escapar(limiteTexto)}</strong>.
+       </p>
+       ${hoja.html}
+       ${leyendasHtml(LEYENDAS_DEL_LIBRO)}`,
+      { preheader: `Hoja Nº ${reclamo.codigo}. Te respondemos a más tardar el ${limiteTexto}.` },
+    ),
+  };
+}
+
+/**
+ * Al administrador: ha llegado una hoja, y cuándo vence.
+ *
+ * El plazo va en el asunto porque es lo único que no espera: se ve en la bandeja
+ * sin abrir el correo.
+ */
+function reclamoRecibidoAdmin({ reclamo, fechaTexto, limiteTexto }) {
+  const enlace = `${appUrl()}/admin`;
+  const tipo = TIPO_DE_HOJA[reclamo.tipo];
+
+  return {
+    subject: `${tipo} Nº ${reclamo.codigo}: responder antes del ${limiteTexto}`,
+    text: [
+      'Ha llegado una hoja al Libro de Reclamaciones.',
+      '',
+      `De:       ${reclamo.nombre} <${reclamo.email}>`,
+      `Fecha:    ${fechaTexto}`,
+      `Sobre:    ${reclamo.descripcionBien}`,
+      '',
+      `Detalle:  ${reclamo.detalle}`,
+      '',
+      `Pedido:   ${reclamo.pedido}`,
+      '',
+      `Plazo:    ${limiteTexto} (15 días hábiles, improrrogables).`,
+      `Respóndela desde el panel: ${enlace}`,
+    ].join('\n'),
+    html: layout(
+      `${tipo} en el Libro de Reclamaciones`,
+      `<p style="margin:0 0 14px;font-size:15px;line-height:1.6">
+         <strong>${escapar(reclamo.nombre)}</strong> (${escapar(reclamo.email)}) presentó la hoja
+         Nº <strong>${reclamo.codigo}</strong> el ${escapar(fechaTexto)}.
+       </p>
+       <p style="margin:0;padding:14px 16px;background:#fdf1f1;border-radius:10px;font-size:14px;
+                 line-height:1.6;color:#8b2c2c">
+         Hay que responderla a más tardar el <strong>${escapar(limiteTexto)}</strong>. El plazo es
+         improrrogable y no responder es sancionable.
+       </p>
+       ${bloqueDeDatos('LO QUE CUENTA', [
+         ['Sobre', reclamo.descripcionBien],
+         ['Detalle', reclamo.detalle],
+         ['Pedido', reclamo.pedido],
+       ])}
+       <p style="margin:22px 0 0;font-size:14px">
+         <a href="${enlace}" style="color:#1a56db">Responder desde el panel</a>
+       </p>`,
+    ),
+  };
+}
+
+/**
+ * Al consumidor: la respuesta a su hoja.
+ *
+ * La respuesta la escribe el administrador y va tal cual, escapada: es la parte
+ * del libro que queda escrita a nuestro nombre. Debajo va su hoja, para que la
+ * respuesta se lea junto a lo que contesta.
+ */
+function reclamoRespondido({ reclamo, proveedor, fechaTexto, respuestaTexto }) {
+  const tipo = TIPO_DE_HOJA[reclamo.tipo].toLowerCase();
+  const hoja = hojaDeReclamacion({ reclamo, proveedor, fechaTexto });
+
+  return {
+    subject: `Respuesta a tu hoja de reclamación Nº ${reclamo.codigo} · Acosta Research`,
+    text: [
+      `Hola ${reclamo.nombre}:`,
+      '',
+      `Esta es nuestra respuesta a tu ${tipo} Nº ${reclamo.codigo}, del ${fechaTexto}:`,
+      '',
+      reclamo.respuesta,
+      '',
+      `Fecha de la respuesta: ${respuestaTexto}`,
+      '',
+      ...hoja.text,
+      LEYENDAS_DEL_LIBRO[1],
+      '',
+      'Si algo no te queda claro, responde a este correo.',
+    ].join('\n'),
+    html: layout(
+      'Respuesta a tu hoja de reclamación',
+      `<p style="margin:0 0 14px;font-size:15px;line-height:1.6">Hola ${nombreDePila(reclamo.nombre)}:
+         esta es nuestra respuesta a tu ${tipo} Nº <strong>${reclamo.codigo}</strong>, del
+         ${escapar(fechaTexto)}.</p>
+       <div style="margin:0;padding:16px 18px;background:#f2f6fe;border-left:3px solid #1a56db;
+                   border-radius:0 10px 10px 0;font-size:14.5px;line-height:1.65;color:#1a2233">
+         ${parrafo(reclamo.respuesta)}
+       </div>
+       ${bloqueDeDatos('4. OBSERVACIONES Y ACCIONES ADOPTADAS POR EL PROVEEDOR', [
+         ['Fecha de la respuesta', respuestaTexto],
+       ])}
+       ${hoja.html}
+       ${leyendasHtml([LEYENDAS_DEL_LIBRO[1]])}
+       <p style="margin:18px 0 0;font-size:13.5px;line-height:1.65;color:#7b8794">
+         Si algo no te queda claro, responde a este correo.
+       </p>`,
+      { preheader: `Nuestra respuesta a tu hoja Nº ${reclamo.codigo}.` },
+    ),
+  };
+}
+
 module.exports = {
   emailVerificationCode,
   passwordChangeCode,
@@ -901,5 +1157,9 @@ module.exports = {
   manualPaymentRejected,
   // Al comprador que pagó fuera de la web y todavía no tiene cuenta.
   activationCode,
+  // Los tres del Libro de Reclamaciones, que salen de `reclamo.service`.
+  reclamoRegistrado,
+  reclamoRecibidoAdmin,
+  reclamoRespondido,
   appUrl,
 };

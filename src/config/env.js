@@ -241,6 +241,14 @@ const schema = z.object({
   //
   // Vacío = se usa MAIL_FROM, que ya es una dirección nuestra y real.
   OPENALEX_MAILTO: vacioComoAusente(z.string()),
+
+  // ── Libro de Reclamaciones ──────────────────────────────────────────────
+  // Los datos del proveedor que encabezan cada hoja. Los pide el reglamento:
+  // quien reclama tiene que saber a quién. Sin RUC la hoja sale igual, pero
+  // incompleta, así que conviene rellenarlo en cuanto se tenga.
+  RECLAMOS_RAZON_SOCIAL: z.string().default('Benicio Gonzalo Acosta Enríquez'),
+  RECLAMOS_RUC: vacioComoAusente(z.string().regex(/^\d{11}$/, 'RECLAMOS_RUC tiene 11 dígitos')),
+  RECLAMOS_DOMICILIO: z.string().default('Trujillo, La Libertad, Perú'),
 });
 
 const parsed = schema.safeParse(process.env);

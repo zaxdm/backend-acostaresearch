@@ -43,11 +43,39 @@ async function guardarLote(userId, filas) {
 
   const conocidas = new Set(yaEstaban.map((fila) => fila.sourceRef));
 
+  // La misma fuente por otra puerta.
+  //
+  // `sourceRef` dice por dónde entró —su Zotero, un export, un DOI suelto—, así
+  // que el índice único no ve que el artículo de su colección y el que añadió
+  // por DOI son el mismo. El 13 de septiembre de 2026 una biblioteca de 62
+  // tenía tres repetidos así, y cada uno sale dos veces en las búsquedas. Lo
+  // nuevo cuyo DOI ya tiene por otro camino no se crea: se cuenta como repetido
+  // y se queda la que llegó primero.
+  const dois = [...new Set(filas.map((fila) => claveDoi(fila.doi)).filter(Boolean))];
+  const conEseDoi =
+    dois.length === 0
+      ? []
+      : await prisma.reference.findMany({
+          where: { ownerUserId: userId, doi: { in: dois } },
+          select: { doi: true, sourceRef: true },
+        });
+  const doiTomado = new Map(conEseDoi.map((fila) => [claveDoi(fila.doi), fila.sourceRef]));
+
+  let guardadas = 0;
+  let repetidas = 0;
+
   // De una en una y no en una sentencia gigante: son cientos de filas, no
   // decenas de miles como en el fondo de la casa, y el `upsert` de Prisma acierta
   // con el índice compuesto sin tener que escribir SQL crudo para esto.
   for (const fila of filas) {
     const { sourceRef, ...datos } = fila;
+    const doi = claveDoi(fila.doi);
+    const nueva = !conocidas.has(sourceRef);
+
+    if (nueva && doi && doiTomado.has(doi) && doiTomado.get(doi) !== sourceRef) {
+      repetidas += 1;
+      continue;
+    }
 
     await prisma.reference.upsert({
       where: { ownerUserId_sourceRef: { ownerUserId: userId, sourceRef } },
@@ -55,12 +83,23 @@ async function guardarLote(userId, filas) {
       update: datos,
       create: { ...datos, sourceRef, ownerUserId: userId },
     });
+
+    if (nueva) {
+      guardadas += 1;
+      conocidas.add(sourceRef);
+      if (doi) doiTomado.set(doi, sourceRef);
+    } else {
+      repetidas += 1;
+    }
   }
 
-  return {
-    guardadas: filas.filter((fila) => !conocidas.has(fila.sourceRef)).length,
-    repetidas: filas.filter((fila) => conocidas.has(fila.sourceRef)).length,
-  };
+  return { guardadas, repetidas };
+}
+
+/** El DOI para comparar: sin espacios y en minúsculas, que es como es único. */
+function claveDoi(doi) {
+  const limpio = String(doi ?? '').trim().toLowerCase();
+  return limpio || null;
 }
 
 /**

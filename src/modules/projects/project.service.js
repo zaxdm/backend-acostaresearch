@@ -1278,11 +1278,19 @@ function normasDisponibles() {
  */
 async function cambiarNorma({ userId, productCode, estiloCitas, idiomaCitas }) {
   const actual = await projectRepository.buscar(userId, productCode);
-  if (!actual) return null;
+
+  // El panel enseña en blanco los métodos comprados sin nada guardado, y desde
+  // ahí se puede elegir la norma. Se crea el proyecto, pero solo con licencia
+  // vigente de ese método: sin esto cualquiera con cuenta podría crearse el de
+  // uno que no compró.
+  if (!actual) {
+    const conLicencia = await projectRepository.productosConLicencia(userId);
+    if (!conLicencia.includes(productCode)) return null;
+  }
 
   const proyecto = await projectRepository.asegurar(userId, productCode, {
     estiloCitas,
-    idiomaCitas: idiomaCitas ?? actual.idiomaCitas ?? undefined,
+    idiomaCitas: idiomaCitas ?? actual?.idiomaCitas ?? undefined,
   });
 
   return normaDelProyecto(proyecto);
@@ -1304,8 +1312,44 @@ async function enlaceDelWord(userId, productCode) {
   return { ...descarga.enlace({ userId, productCode }), norma: normaDelProyecto(proyecto) };
 }
 
+/** Un método comprado sin nada guardado: todo en blanco, sin fila detrás. */
+function proyectoEnBlanco(productCode) {
+  return {
+    id: null,
+    productCode,
+    tema: null,
+    carrera: null,
+    universidad: null,
+    estiloCitas: null,
+    idiomaCitas: null,
+    plantillaAt: null,
+    plantillaNombre: null,
+    updatedAt: null,
+    stages: [],
+  };
+}
+
+/**
+ * Los proyectos del panel: los guardados y, detrás, los métodos con licencia
+ * vigente que todavía no tienen nada.
+ *
+ * Antes solo salían los guardados, y quien compraba dos métodos y borraba el
+ * progreso de uno dejaba de verlo, como si no lo tuviera. Un método comprado se
+ * enseña siempre; si no hay nada, desde cero.
+ *
+ * Las dos consultas van una detrás de otra y no a la vez: la base admite cinco
+ * conexiones y este panel lo abre cualquiera que entre en su perfil.
+ */
 async function deUsuario(userId) {
-  const proyectos = await projectRepository.listarDeUsuario(userId);
+  const guardados = await projectRepository.listarDeUsuario(userId);
+  const conLicencia = await projectRepository.productosConLicencia(userId);
+
+  const yaEstan = new Set(guardados.map((p) => p.productCode));
+  const proyectos = [
+    ...guardados,
+    ...conLicencia.filter((codigo) => !yaEstan.has(codigo)).map(proyectoEnBlanco),
+  ];
+
   const nombres = await projectRepository.nombresDeProducto(proyectos.map((p) => p.productCode));
 
   return Promise.all(
@@ -1332,6 +1376,8 @@ async function deUsuario(userId) {
 
       return {
         id: proyecto.id,
+        /** Falso = método comprado sin nada guardado todavía: no hay nada que borrar. */
+        guardado: proyecto.id !== null,
         productCode: proyecto.productCode,
         /** El nombre de venta. Si ningún plan lo nombra, el código: feo pero cierto. */
         productName: nombres.get(proyecto.productCode) ?? proyecto.productCode,

@@ -92,6 +92,26 @@ async function guardarEtapa(
   });
 }
 
+/**
+ * Los métodos de los que tiene licencia vigente: activa y sin caducar.
+ *
+ * Es el mismo criterio con el que se acepta un análisis desde la web. Sirve al
+ * panel para enseñar en blanco un método comprado que todavía no tiene nada
+ * guardado —o que se acaba de borrar—, en vez de hacer como si no lo tuviera.
+ */
+async function productosConLicencia(userId) {
+  const licencias = await prisma.license.findMany({
+    where: {
+      userId,
+      status: 'ACTIVE',
+      OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+    },
+    select: { productCode: true },
+    distinct: ['productCode'],
+  });
+  return licencias.map((l) => l.productCode);
+}
+
 /** Para el panel del comprador: sus proyectos, sin las etapas. */
 function listarDeUsuario(userId) {
   return prisma.project.findMany({
@@ -171,6 +191,7 @@ module.exports = {
   asegurar,
   guardarEtapa,
   listarDeUsuario,
+  productosConLicencia,
   reiniciar,
   nombreDe,
   marcarPlantilla,

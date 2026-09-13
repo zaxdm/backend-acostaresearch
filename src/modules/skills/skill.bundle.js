@@ -99,7 +99,11 @@ function leerFrontmatter(skillMd) {
     const encabezado = /^([a-zA-Z_][\w-]*):\s*(.*)$/.exec(linea);
     if (encabezado) {
       clave = encabezado[1];
-      campos[clave] = encabezado[2].trim();
+      const valor = encabezado[2].trim();
+      // `description: |` o `>` es YAML para «el texto viene en las líneas de
+      // abajo»: el símbolo no es parte del texto. Se colaba y el catálogo
+      // enseñaba «| Humaniza textos académicos…».
+      campos[clave] = /^[|>][+-]?$/.test(valor) ? '' : valor;
     } else if (clave && linea.trim()) {
       // Continuación de un valor que ocupa varias líneas.
       campos[clave] = `${campos[clave]} ${linea.trim()}`.trim();
@@ -251,3 +255,4 @@ const skillBundle = {
 };
 
 module.exports = skillBundle;
+module.exports.leerFrontmatter = leerFrontmatter;

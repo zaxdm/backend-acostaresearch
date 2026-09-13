@@ -107,7 +107,6 @@ const enlaceSelect = {
   claimed: true,
   accessDays: true,
   callsPerDay: true,
-  callsLimitTotal: true,
   active: true,
   createdAt: true,
 };
@@ -127,7 +126,7 @@ function presentar(enlace, nombres, uso) {
 }
 
 const trialService = {
-  async create({ name, productCode, seats, accessDays, callsPerDay, callsLimitTotal, createdById }) {
+  async create({ name, productCode, seats, accessDays, callsPerDay, createdById }) {
     // Sin plan activo no hay catálogo que servir: el invitado recibiría un
     // conector vacío. Mejor negarse aquí que descubrirlo en mitad del taller.
     const contrato = await contratoDelProducto(productCode);
@@ -143,7 +142,6 @@ const trialService = {
         seats,
         accessDays,
         callsPerDay,
-        callsLimitTotal,
         createdById,
       },
       select: enlaceSelect,
@@ -293,7 +291,6 @@ const trialService = {
       seats: enlace.seats,
       accessDays: enlace.accessDays,
       callsPerDay: enlace.callsPerDay,
-      callsLimitTotal: enlace.callsLimitTotal,
     };
   },
 
@@ -354,7 +351,11 @@ const trialService = {
           tokenHint: token.slice(0, 8),
           expiresAt,
           callsPerDay: enlace.callsPerDay,
-          callsLimitTotal: enlace.callsLimitTotal,
+          // Un conector de prueba solo tiene tope por día. Se pone a cero aquí
+          // y no se copia del enlace, para que ningún enlace antiguo pueda
+          // volver a entregar conectores con tope total. Los que ya se
+          // entregaron conservan el suyo: su licencia no se toca.
+          callsLimitTotal: 0,
           // Se comporta como el conector del producto: lo que se prueba es eso.
           delivery: contrato.topes.delivery,
         },

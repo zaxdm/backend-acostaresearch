@@ -29,7 +29,8 @@ const createTrialSchema = z.object({
     .min(1, 'Al menos un día de acceso.')
     .max(365, 'Como mucho 365 días.'),
   callsPerDay: z.coerce.number().int().min(0).max(1000).default(0),
-  callsLimitTotal: z.coerce.number().int().min(0).max(10000).default(0),
+  // Sin tope total: un enlace de prueba solo lleva tope por día. Si un panel
+  // antiguo manda «callsLimitTotal», zod lo descarta aquí sin dar error.
 });
 
 const updateTrialSchema = z.object({

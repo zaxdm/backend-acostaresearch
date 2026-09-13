@@ -68,6 +68,21 @@ test('un enlace nuevo trae 30 cupos si no se dice otra cosa', () => {
 test('los topes tienen techo: un cero de más no pasa', () => {
   const base = { name: 'Taller', productCode: 'METODO_9_SKILLS', accessDays: 15 };
   assert.throws(() => createTrialSchema.parse({ ...base, seats: 5000 }));
-  assert.throws(() => createTrialSchema.parse({ ...base, callsLimitTotal: 100000 }));
+  assert.throws(() => createTrialSchema.parse({ ...base, callsPerDay: 5000 }));
   assert.throws(() => createTrialSchema.parse({ ...base, accessDays: 0 }));
+});
+
+test('un enlace de prueba no lleva tope total: si llega uno, se descarta', () => {
+  // Un panel abierto desde antes del cambio todavía lo manda. No puede dar
+  // error —el administrador no sabría por qué—, pero tampoco puede entrar.
+  const datos = createTrialSchema.parse({
+    name: 'TIKTOK',
+    productCode: 'METODO_9_SKILLS',
+    accessDays: 1,
+    callsPerDay: 5,
+    callsLimitTotal: 5,
+  });
+
+  assert.equal(datos.callsPerDay, 5);
+  assert.equal('callsLimitTotal' in datos, false);
 });

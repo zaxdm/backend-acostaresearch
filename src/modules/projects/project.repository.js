@@ -15,6 +15,7 @@ const proyectoSelect = {
   ranura: true,
   nombre: true,
   activadaAt: true,
+  consejos: true,
   createdAt: true,
   updatedAt: true,
 };
@@ -220,6 +221,20 @@ function listarDeUsuario(userId) {
   });
 }
 
+/**
+ * Anota qué consejos se le dieron.
+ *
+ * Con su `updatedAt` de antes, a propósito: dar un consejo no es trabajar en la
+ * tesis, y sin esto el panel la tomaría por la última que tocó.
+ */
+function anotarConsejos(projectId, consejos, updatedAt) {
+  return prisma.project.update({
+    where: { id: projectId },
+    data: { consejos, ...(updatedAt && { updatedAt }) },
+    select: { id: true },
+  });
+}
+
 /** Deja constancia de que subió (o quitó) la plantilla de su facultad. */
 function marcarPlantilla(projectId, nombre) {
   return prisma.project.update({
@@ -296,6 +311,7 @@ module.exports = {
   productosConVariasTesis,
   reiniciar,
   nombreDe,
+  anotarConsejos,
   marcarPlantilla,
   nombresDeProducto,
 };

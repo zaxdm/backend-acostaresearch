@@ -1550,4 +1550,5 @@ module.exports = {
   siguientePaso,
   deUsuario,
   esApoyo,
+  CAPITULOS_DE_RESULTADOS,
 };

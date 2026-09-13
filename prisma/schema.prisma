@@ -1204,6 +1204,11 @@ model Project {
   /// conector y la que enseña el panel. Elegir otra es ponerle la fecha de ahora.
   activadaAt DateTime @default(now())
 
+  /// Qué consejos de la plataforma se le dieron por el conector y cuándo:
+  /// { "fuentes": "2026-09-14T…", "analisis": "…" }. Sirve para no repetir el
+  /// mismo cada conversación. Ver `project.consejos`.
+  consejos Json?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

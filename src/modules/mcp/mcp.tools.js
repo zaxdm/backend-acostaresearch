@@ -12,6 +12,7 @@ const prisma = require('../../lib/prisma');
 const referenceService = require('../references/reference.service');
 const propiasService = require('../references/propias.service');
 const projectService = require('../projects/project.service');
+const consejos = require('../projects/project.consejos');
 const normas = require('../projects/project.normas');
 const etapas = require('../projects/project.etapas');
 const bloquesDeAnalisis = require('../projects/project.bloques');
@@ -667,7 +668,16 @@ function construirServidor(licencia) {
         );
       }
 
-      return texto(panorama);
+      // Debajo del panorama, nunca delante: primero dónde está, luego qué más
+      // puede hacer en la web. Si falla, el panorama sale igual.
+      const consejo = await consejos
+        .consejoPara({ userId: licencia.user.id, productCode: licencia.productCode })
+        .catch((error) => {
+          logger.error({ err: error, licenseId: licencia.id }, 'No se pudo preparar el consejo');
+          return null;
+        });
+
+      return texto(consejo ? `${panorama}\n\n───────────\n\n${consejo}` : panorama);
     },
   );
 
@@ -1340,7 +1350,20 @@ function construirServidor(licencia) {
           // redactar un capítulo III que no cuadra con el I, y hoy nadie se lo
           // dice hasta que se lo dice su asesor. Puesto detrás del método, el
           // asistente ya se ha lanzado a redactar antes de llegar a leerlo.
-          const partes = [falta, memoria, contenido.texto].filter(Boolean);
+          // El consejo de la plataforma va al FINAL, detrás del método: la
+          // Skill es el producto y se lee primero. Si falla, el capítulo sale.
+          const consejo = await consejos
+            .consejoPara({
+              userId: licencia.user.id,
+              productCode: licencia.productCode,
+              capitulo: skill.code,
+            })
+            .catch((error) => {
+              logger.error({ err: error, licenseId: licencia.id }, 'No se pudo preparar el consejo');
+              return null;
+            });
+
+          const partes = [falta, memoria, contenido.texto, consejo].filter(Boolean);
           if (partes.length > 1) return texto(partes.join('\n\n───────────\n\n'));
         }
 

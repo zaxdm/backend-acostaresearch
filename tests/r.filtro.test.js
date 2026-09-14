@@ -46,6 +46,30 @@ MASS::polr(factor(nivel) ~ edad, data = datos)
   assert.equal(revisar(codigo), null);
 });
 
+test('los paquetes de tesis pasan: tidyverse, psych, lavaan, car, ggplot2, haven, flextable', () => {
+  const codigo = `
+library(tidyverse)
+library(psych); library(GPArotation)
+datos %>% select(starts_with("cd")) %>% psych::alpha()
+KMO(datos[, paste0("cd", 1:6)]); fa.parallel(datos[, paste0("cd", 1:6)])
+fa(datos[, paste0("cd", 1:6)], nfactors = 2, rotate = "oblimin")
+modelo <- "cd =~ cd1 + cd2 + cd3\\n pc =~ pc1 + pc2 + pc3"
+ajuste <- lavaan::cfa(modelo, data = datos); semTools::reliability(ajuste)
+car::leveneTest(puntaje ~ sexo, data = datos)
+rstatix::t_test(datos, puntaje ~ sexo); effectsize::cohens_d(puntaje ~ sexo, data = datos)
+ggplot2::ggplot(datos, ggplot2::aes(sexo, puntaje)) + ggplot2::geom_boxplot()
+x <- haven::zap_labels(haven::read_sav("datos.sav"))
+tabla <- flextable::flextable(head(broom::tidy(ajuste))); officer::read_docx()
+factanal(datos[, 1:6], factors = 2)
+`;
+  assert.equal(revisar(codigo), null);
+});
+
+test('un paquete de red que trae tidyverse sigue sin poder cargarse', () => {
+  assert.equal(revisar('library(httr)')?.regla, 'paquetes');
+  assert.equal(revisar('rvest::read_html("x")')?.regla, 'paquetes');
+});
+
 test('sin código no hay nada que parar', () => {
   assert.equal(revisar(''), null);
   assert.equal(revisar(undefined), null);

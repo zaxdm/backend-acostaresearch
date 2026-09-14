@@ -4,9 +4,9 @@
  * Qué archivo subió el tesista y con qué orden lo lee R.
  *
  * Es lo que hacía la página de análisis al subir un archivo (ver `formatoDe` en
- * `features/analisis/analisis.ts` de la web), traído al servidor y con dos cosas
- * que allí faltaban: el Excel de verdad (.xlsx y .xls) y los CSV que Excel guarda
- * en la codificación antigua de Windows.
+ * `features/analisis/analisis.ts` de la web), traído al servidor y con lo que
+ * allí faltaba: el Excel de verdad (.xlsx y .xls), el archivo de SPSS (.sav) y
+ * los CSV que Excel guarda en la codificación antigua de Windows.
  *
  * POR QUÉ HAY QUE MIRARLO
  * -----------------------
@@ -31,7 +31,7 @@ function empiezaPor(bytes, firma) {
 }
 
 /**
- * xlsx, xls, csv o null.
+ * xlsx, xls, sav, csv o null.
  *
  * Por los primeros bytes y no por la extensión: la extensión la pone quien sube
  * el archivo, y un .csv que en realidad es un .xlsx renombrado es de lo más
@@ -40,6 +40,10 @@ function empiezaPor(bytes, firma) {
 function tipoDe(bytes) {
   if (empiezaPor(bytes, [0x50, 0x4b, 0x03, 0x04])) return 'xlsx';
   if (empiezaPor(bytes, [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])) return 'xls';
+  // «$FL2», o «$FL3» si SPSS lo guardó comprimido.
+  if (empiezaPor(bytes, [0x24, 0x46, 0x4c, 0x32]) || empiezaPor(bytes, [0x24, 0x46, 0x4c, 0x33])) {
+    return 'sav';
+  }
 
   // Un texto no lleva bytes nulos. Un PDF, una imagen o un .docx sí.
   const muestra = bytes.subarray(0, MUESTRA);
@@ -120,6 +124,9 @@ function ordenDeLecturaCsv({ separador, decimal, codificacion }) {
   return `datos <- read.csv("datos.csv"${opciones.map((o) => `, ${o}`).join('')})`;
 }
 
+/** Los nombres pasan por make.names como hace read.csv: sin esto, «Me gusta» obliga a comillas invertidas. */
+const NOMBRES_LIMPIOS = 'names(datos) <- make.names(names(datos), unique = TRUE)';
+
 /**
  * Todo lo que hace falta para meter el archivo en R.
  *
@@ -136,12 +143,23 @@ function preparar(bytes) {
       tipo,
       archivo,
       contenido: bytes,
-      // Los nombres pasan por make.names como hace read.csv: sin esto, una
-      // columna «Me gusta» obliga a escribir comillas invertidas en cada prueba.
-      lectura:
-        `datos <- as.data.frame(readxl::read_excel("${archivo}"))\n` +
-        'names(datos) <- make.names(names(datos), unique = TRUE)',
+      lectura: `datos <- as.data.frame(readxl::read_excel("${archivo}"))\n${NOMBRES_LIMPIOS}`,
       aviso: null,
+    };
+  }
+
+  if (tipo === 'sav') {
+    return {
+      tipo,
+      archivo: 'datos.sav',
+      contenido: bytes,
+      // zap_labels y no as_factor: un ítem Likert etiquetado («Totalmente de
+      // acuerdo» = 5) tiene que quedar como 5 para calcular el alfa o una media.
+      // Con as_factor entraría como texto y ninguna prueba numérica funcionaría.
+      lectura: `datos <- as.data.frame(haven::zap_labels(haven::read_sav("datos.sav")))\n${NOMBRES_LIMPIOS}`,
+      aviso:
+        'Es un archivo de SPSS. Se leyó con los números de cada respuesta y sin las etiquetas de ' +
+        'valor, que es lo que necesitan las pruebas.',
     };
   }
 
@@ -168,7 +186,7 @@ function preparar(bytes) {
   }
 
   throw new ArchivoNoValido(
-    'Ese archivo no es una hoja de datos. Sube tu matriz en Excel (.xlsx) o en CSV.',
+    'Ese archivo no es una hoja de datos. Sube tu matriz en Excel (.xlsx), CSV o SPSS (.sav).',
   );
 }
 

@@ -66,6 +66,7 @@ const INTERNOS = new Set([
   'guion.R',
   'consola.txt',
   'lectura.R',
+  'paquetes.txt',
 ]);
 
 const MAXIMO_SALIDA = 2 * 1024 * 1024;
@@ -234,7 +235,7 @@ async function listarArchivos(carpeta) {
   for (const entrada of entradas) {
     const nombre = entrada.name;
     if (!entrada.isFile() || INTERNOS.has(nombre) || !ARCHIVO_SEGURO.test(nombre)) continue;
-    if (/^datos\.(?:csv|xlsx|xls)$/.test(nombre)) continue;
+    if (/^datos\.(?:csv|xlsx|xls|sav)$/.test(nombre)) continue;
     const info = await fs.lstat(path.join(carpeta, nombre)).catch(() => null);
     if (info?.isFile()) archivos.push({ nombre, bytes: info.size });
   }
@@ -494,7 +495,7 @@ function crearMotor({
 
   async function borrarSesionSinTurno(carpeta) {
     await Promise.all(
-      ['entorno.RData', 'guion.R', 'consola.txt', 'estado.tsv', 'salida.txt', 'fin'].map((n) =>
+      ['entorno.RData', 'paquetes.txt', 'guion.R', 'consola.txt', 'estado.tsv', 'salida.txt', 'fin'].map((n) =>
         fs.rm(path.join(carpeta, n), BORRAR),
       ),
     );
@@ -543,7 +544,7 @@ function crearMotor({
         const g = await grupo();
         await borrarSesionSinTurno(carpeta);
         await Promise.all(
-          ['datos.csv', 'datos.xlsx', 'datos.xls'].map((n) => fs.rm(path.join(carpeta, n), BORRAR)),
+          ['datos.csv', 'datos.xlsx', 'datos.xls', 'datos.sav'].map((n) => fs.rm(path.join(carpeta, n), BORRAR)),
         );
         await escribirSeguro(carpeta, archivo, contenido, g);
         await escribirSeguro(carpeta, 'lectura.R', lectura, g);

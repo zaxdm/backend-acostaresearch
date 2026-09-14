@@ -79,6 +79,21 @@ test('un CSV en UTF-8 con tildes no se toma por latin1', () => {
   assert.doesNotMatch(p.lectura, /fileEncoding/);
 });
 
+test('un .sav de SPSS se lee con haven y sin etiquetas de valor', () => {
+  const sav = Buffer.concat([bytes('$FL2@(#) IBM SPSS STATISTICS'), Buffer.alloc(40)]);
+  const p = formato.preparar(sav);
+
+  assert.equal(p.tipo, 'sav');
+  assert.equal(p.archivo, 'datos.sav');
+  assert.match(p.lectura, /haven::zap_labels\(haven::read_sav\("datos\.sav"\)\)/);
+  assert.doesNotMatch(p.lectura, /as_factor/, 'un ítem Likert tiene que quedar como número');
+  assert.match(p.aviso, /SPSS/);
+});
+
+test('un .zsav comprimido también es SPSS', () => {
+  assert.equal(formato.tipoDe(Buffer.concat([bytes('$FL3'), Buffer.alloc(20)])), 'sav');
+});
+
 test('un PDF o una imagen no es una hoja de datos', () => {
   const pdf = Buffer.concat([bytes('%PDF-1.7\n'), Buffer.from([0x00, 0x01, 0x02])]);
   assert.throws(() => formato.preparar(pdf), formato.ArchivoNoValido);

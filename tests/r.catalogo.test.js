@@ -28,6 +28,17 @@ test('varias pruebas en una orden, cada una una vez y en orden', () => {
   assert.match(lecturas[1], /t de Student/);
 });
 
+test('el AFE, el AFC y Levene traen sus criterios', () => {
+  assert.match(comoSeLee('fa(datos[, 1:6], nfactors = 2)')[0], /KMO/);
+  assert.match(comoSeLee('factanal(datos[, 1:6], factors = 2)')[0], /KMO/);
+  assert.match(comoSeLee('ajuste <- lavaan::cfa(modelo, data = datos)')[0], /RMSEA/);
+  assert.match(comoSeLee('car::leveneTest(y ~ g, data = datos)')[0], /Welch/);
+});
+
+test('psych::alpha se explica como el alfa de la casa', () => {
+  assert.match(comoSeLee('psych::alpha(datos[, 1:4])')[0], /0,70/);
+});
+
 test('código sin pruebas no trae lecturas', () => {
   assert.deepEqual(comoSeLee('datos$x <- datos$a * 2'), []);
   assert.deepEqual(comoSeLee(undefined), []);

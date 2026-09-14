@@ -49,8 +49,15 @@ comprobar "polkit deja arrancar la jaula y R responde" '[ -f "$CARPETA/fin" ] &&
 ejecutar 'x <- rnorm(50); png("prueba.png"); hist(x); invisible(dev.off()); cat(file.exists("prueba.png"), "\n")'
 comprobar "puede dibujar y guardar en su carpeta" 'grep -q "TRUE" <<<"$SALIDA"'
 comprobar "lo que escribe R lo lee la API" 'sudo -u acosta test -r "$CARPETA/prueba.png"'
-ejecutar 'cat("readxl:", requireNamespace("readxl", quietly = TRUE), "\n")'
-comprobar "readxl está instalado" 'grep -q "readxl: TRUE" <<<"$SALIDA"'
+# Sin cargarlos: solo si están. Cargarlos todos a la vez pasaría de 400 MB.
+ejecutar 'p <- c("readxl","haven","writexl","openxlsx","flextable","officer","tidyverse","dplyr","tidyr","readr","forcats","stringr","purrr","tibble","ggplot2","ggpubr","corrplot","psych","GPArotation","psy","lavaan","semTools","car","rstatix","nortest","effectsize","performance","broom","emmeans","lme4"); f <- p[!nzchar(vapply(p, function(x) system.file(package = x), ""))]; cat("faltan:", if (length(f)) f else "ninguno", "\n")'
+comprobar "están los paquetes de tesis" 'grep -q "faltan: ninguno" <<<"$SALIDA"'
+ejecutar 'suppressPackageStartupMessages({ library(lavaan); library(psych) }); ajuste <- cfa("visual =~ x1 + x2 + x3", data = HolzingerSwineford1939); cat("cfi:", round(fitMeasures(ajuste, "cfi"), 3), "\n"); cat("alfa:", round(psych::alpha(HolzingerSwineford1939[, c("x1","x2","x3")])$total$raw_alpha, 3), "\n")'
+comprobar "lavaan y psych cargan y calculan dentro de la jaula" 'grep -q "cfi:" <<<"$SALIDA" && grep -q "alfa:" <<<"$SALIDA"'
+ejecutar 'cat("psych sigue cargado:", "package:psych" %in% search(), "\n")'
+comprobar "los library() se recuerdan en la orden siguiente" 'grep -q "psych sigue cargado: TRUE" <<<"$SALIDA"'
+ejecutar 'suppressPackageStartupMessages(library(ggplot2)); print(ggplot(mtcars, aes(wt, mpg)) + geom_point()); cat("ggplot ok\n")'
+comprobar "ggplot2 dibuja dentro de la jaula" 'grep -q "ggplot ok" <<<"$SALIDA" && ls "$CARPETA"/graficos/grafico-*.png >/dev/null 2>&1'
 
 echo "── Secretos ──"
 ejecutar 'print(names(Sys.getenv()))'

@@ -14,15 +14,16 @@
 #   estado.tsv    los objetos de la sesion y las columnas de `datos`
 #   graficos/     un PNG por cada grafico que se dibujo
 #   entorno.RData los objetos, para la siguiente orden
+#   paquetes.txt  los paquetes cargados con library(), para la siguiente orden
 #   fin           "ok" o "error". Si NO existe, el proceso se corto: tiempo o memoria.
 #
 # POR QUE UN PROCESO POR ORDEN Y NO UNA SESION VIVA
 # -------------------------------------------------
 # Un R esperando ordenes es memoria ocupada aunque nadie trabaje, y un proceso
 # de larga vida que ejecuta codigo ajeno es justo lo que no se quiere tener en
-# marcha. Arrancar R cuesta menos de un segundo y `entorno.RData` conserva los
-# objetos entre una orden y la siguiente, que es lo que el tesista ve como
-# "la sesion".
+# marcha. Arrancar R cuesta menos de un segundo, `entorno.RData` conserva los
+# objetos y `paquetes.txt` los library(): entre las dos cosas, el tesista ve
+# "la sesion" como la veria en RStudio.
 #
 # Todo va dentro de local() para que ninguna variable de este guion acabe en el
 # entorno del tesista. Sin tildes en este archivo: se lee igual en cualquier
@@ -57,6 +58,19 @@ local({
         cat("No se pudo recuperar la sesion anterior:", conditionMessage(e), "\n")
       }
     )
+  }
+
+  # Los paquetes de ordenes anteriores se vuelven a cargar, en el mismo orden.
+  # Sin esto, un library(psych) de hace dos mensajes dejaria de valer sin avisar
+  # y Claude se encontraria con "no se encontro la funcion alpha".
+  if (file.exists("paquetes.txt")) {
+    for (paquete in readLines("paquetes.txt", warn = FALSE)) {
+      if (!nzchar(paquete)) next
+      tryCatch(
+        suppressPackageStartupMessages(library(paquete, character.only = TRUE)),
+        error = function(e) cat("No se pudo volver a cargar el paquete", paquete, "\n")
+      )
+    }
   }
 
   # Las de la casa se cargan SIEMPRE, encima de lo recuperado: si se corrige una,
@@ -129,6 +143,12 @@ local({
       # Cierra tambien los que abrio el tesista con png() y olvido cerrar: sin
       # esto, su archivo se queda vacio.
       while (grDevices::dev.cur() > 1L) grDevices::dev.off()
+
+      # Los paquetes cargados, del mas antiguo al mas reciente, para volver a
+      # cargarlos en el mismo orden (el ultimo cargado es el que manda si dos
+      # funciones se llaman igual).
+      de_serie <- c("stats", "graphics", "grDevices", "utils", "datasets", "methods", "base")
+      writeLines(setdiff(rev(.packages()), de_serie), "paquetes.txt")
 
       # Las de la casa no se guardan, salvo que el tesista las haya cambiado.
       for (nombre in ls(casa)) {

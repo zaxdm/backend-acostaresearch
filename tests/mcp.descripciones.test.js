@@ -167,6 +167,15 @@ test('trabajar_en_r: Claude corre R, pregunta antes y cuida los datos', () => {
   assert.match(d, /guardar_analisis/, 'las cifras se siguen guardando como siempre');
 });
 
+test('trabajar_en_r dice qué paquetes hay y cuáles no', () => {
+  const d = descripcion('trabajar_en_r');
+  for (const paquete of ['tidyverse', 'psych', 'lavaan', 'car', 'haven', 'flextable']) {
+    assert.match(d, new RegExp(paquete), paquete);
+  }
+  assert.match(d, /NO hay/, 'sin esto, Claude intenta library(DescTools) y falla');
+  assert.match(d, /se recuerdan entre llamadas/);
+});
+
 test('trabajar_en_r no obliga a mandar nada: sin argumentos da el estado', () => {
   const e = esquema('trabajar_en_r');
   assert.equal(e.required, undefined);

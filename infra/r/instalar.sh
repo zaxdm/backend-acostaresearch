@@ -32,7 +32,17 @@ SESIONES=/var/lib/acostaresearch-r/sesiones
 echo "── R ──"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq --no-install-recommends r-base-core r-recommended r-cran-readxl
+# Todos de los repositorios de Ubuntu, ya compilados: nada se compila aquí.
+# No están (y no se compilan): moments, DescTools, MVN, irr, apaTables y mirt;
+# psych y rstatix cubren lo que se usa de ellos en una tesis.
+apt-get install -y -qq --no-install-recommends \
+  r-base-core r-recommended \
+  r-cran-readxl r-cran-haven r-cran-writexl r-cran-openxlsx r-cran-flextable r-cran-officer \
+  r-cran-tidyverse r-cran-dplyr r-cran-tidyr r-cran-readr r-cran-forcats r-cran-stringr \
+  r-cran-purrr r-cran-tibble r-cran-ggplot2 r-cran-ggpubr r-cran-corrplot \
+  r-cran-psych r-cran-gparotation r-cran-psy r-cran-lavaan r-cran-semtools \
+  r-cran-car r-cran-rstatix r-cran-nortest r-cran-effectsize r-cran-performance \
+  r-cran-broom r-cran-emmeans r-cran-lme4
 Rscript --version
 
 echo "── Usuario de la jaula ──"

@@ -2138,8 +2138,16 @@ function construirServidor(licencia) {
         'en una o dos frases, sin jerga.\n\n' +
         'SUS DATOS SON PERSONALES: no imprimas la matriz ni filas enteras. Si necesitas ver ' +
         'valores para encontrar un error, head() de pocas filas y solo de las columnas necesarias.\n\n' +
-        'LÍMITES: R base, los paquetes recomendados y readxl. Sin internet, sin install.packages ' +
-        `y sin salir de su carpeta. Cada llamada tiene ${env.R_LIMITE_SEGUNDOS} segundos y 400 MB.\n\n` +
+        'PAQUETES: además de R base (factanal, prcomp, glm…) y los recomendados (MASS, nlme…), ' +
+        'tienes tidyverse (dplyr, tidyr, readr, stringr, forcats, purrr), ggplot2, ggpubr, ' +
+        'corrplot, psych, GPArotation, psy, lavaan, semTools, car, rstatix, nortest, effectsize, ' +
+        'performance, broom, emmeans, lme4, readxl, haven, writexl, openxlsx, flextable y officer ' +
+        '(tablas en Word que el tesista puede bajar). Los library() se recuerdan entre llamadas. ' +
+        'Carga solo lo que uses: tidyverse entero tarda unos segundos en cada llamada. NO hay ' +
+        'moments, DescTools, MVN, irr, apaTables ni mirt: usa psych (skew, kurtosi, mardia, ICC, ' +
+        'cohen.kappa) o rstatix.\n\n' +
+        'LÍMITES: sin internet, sin install.packages y sin salir de su carpeta. Cada llamada ' +
+        `tiene ${env.R_LIMITE_SEGUNDOS} segundos y 400 MB.\n\n` +
         'Todo lo que ejecutas queda guardado en su análisis: "ver_analisis" lo lee, y las cifras ' +
         'que vayan al texto se guardan con "guardar_analisis" (resultados), como siempre.',
       inputSchema: ESQUEMA_TRABAJAR_EN_R,

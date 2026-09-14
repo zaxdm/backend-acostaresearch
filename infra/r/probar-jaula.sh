@@ -78,6 +78,40 @@ comprobar "un bucle infinito se corta a los 45 s" '[ ! -f "$CARPETA/fin" ] && [ 
 ejecutar 'for (i in 1:60) system("sleep 20 &"); cat("LANZADOS\n")'
 comprobar "no puede multiplicar procesos" '[ "$(systemctl show -p TasksMax --value "acostaresearch-r@$ID.service")" = "16" ]'
 
+echo "── Desde las restricciones de la API ──"
+# Lo de arriba lanza la jaula con sudo, que no lleva las restricciones de
+# acostaresearch.service. Con ellas (RestrictSUIDSGID, ProtectSystem=strict…)
+# una carpeta creada con el bit setgid da EPERM y en ninguna otra prueba se
+# ve: pasó el 14-sep-2026, y la herramienta decía «no disponible» sin crear
+# nada. Esto sube datos y ejecuta con el motor de verdad y esas restricciones.
+DIAG="/opt/acostaresearch/diag-jaula-$$.js"
+cat > "$DIAG" <<'J'
+const { crearMotor, conductorSystemd } = require('/opt/acostaresearch/app/src/modules/r/r.motor');
+const motor = crearMotor({
+  carpetaBase: '/var/lib/acostaresearch-r/sesiones',
+  conductor: conductorSystemd({ limiteSegundos: 45 }),
+});
+const sesion = process.argv[2];
+motor
+  .subirDatos(sesion, { archivo: 'datos.csv', contenido: Buffer.from('a,b\n1,2\n'), lectura: 'datos <- read.csv("datos.csv")' })
+  .then((r) => {
+    console.log('SUBIDA ' + r.resultado);
+    return motor.ejecutar(sesion, 'cat("columnas:", ncol(datos), "\\n")');
+  })
+  .then((r) => console.log(r.salida))
+  .catch((e) => console.log('ERROR ' + e.constructor.name + ' ' + e.message));
+J
+chmod 644 "$DIAG"
+SALIDA="$(systemd-run --wait --pipe --quiet \
+  -p User=acosta -p NoNewPrivileges=yes -p ProtectSystem=strict -p ProtectHome=yes -p PrivateTmp=yes \
+  -p RestrictSUIDSGID=yes -p UMask=0022 -p WorkingDirectory=/opt/acostaresearch/app \
+  -p ReadWritePaths=/var/lib/acostaresearch -p ReadWritePaths="$SESIONES" \
+  /usr/bin/node "$DIAG" "$ID-api" 2>&1)"
+rm -f "$DIAG"
+rm -rf "$SESIONES/$ID-api"
+comprobar "la API sube datos y ejecuta R con sus propias restricciones" \
+  'grep -q "SUBIDA ok" <<<"$SALIDA" && grep -q "columnas: 2" <<<"$SALIDA"'
+
 echo "── La API sigue viva ──"
 comprobar "acostaresearch sigue activo" 'systemctl is-active --quiet acostaresearch'
 

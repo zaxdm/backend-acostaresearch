@@ -15,6 +15,7 @@ const express = require('express');
 const { Router } = require('express');
 
 const env = require('../../config/env');
+const logger = require('../../config/logger');
 const { ERROR_CODES } = require('../../config/constants');
 const asyncHandler = require('../../shared/http/asyncHandler');
 const { ok } = require('../../shared/http/apiResponse');
@@ -119,6 +120,9 @@ router.post(
         });
       }
       if (error instanceof MotorNoDisponible) {
+        // La causa de verdad —permiso, polkit, unidad sin instalar— solo va al
+        // registro: al tesista no le sirve y al que lo arregla sí.
+        logger.error({ err: error, userId }, 'Subida a R: el motor no está disponible');
         throw new AppError('El análisis en R no está disponible ahora mismo. Inténtalo más tarde.', {
           statusCode: 503,
           code: ERROR_CODES.R_UNAVAILABLE,

@@ -30,6 +30,17 @@
  * que es un archivo normal, se abre con O_NOFOLLOW, y se escribe creando un
  * temporal con nombre aleatorio y renombrándolo encima, que sustituye el enlace
  * en vez de escribir a través de él.
+ *
+ * EL GRUPO, SIN EL BIT SETGID
+ * ---------------------------
+ * El backend y R comparten un grupo (`acosta-r`): así R lee lo que deja el
+ * backend y el backend lee lo que devuelve R. Lo natural sería marcar las
+ * carpetas con setgid para que todo herede ese grupo, pero la unidad de la API
+ * lleva `RestrictSUIDSGID=yes`, y crear o cambiar una carpeta con ese bit da
+ * EPERM. Pasó el 14 de septiembre de 2026: la herramienta decía «no disponible»
+ * sin llegar a crear nada. Por eso el grupo se pone a mano con `chown` —cambiar
+ * al grupo propio no es un privilegio y esa restricción no lo toca— copiándolo
+ * de la carpeta de sesiones.
  */
 
 const fs = require('node:fs/promises');
@@ -119,20 +130,34 @@ async function leerTexto(ruta, maximo) {
   return leido ? leido.bytes.toString('utf8') : null;
 }
 
-/** Escribe en un temporal nuevo y lo renombra encima: nunca a través de un enlace. */
-async function escribirSeguro(carpeta, nombre, contenido) {
+/**
+ * Pone el grupo compartido. Sin grupo conocido —en desarrollo— no hace nada, y
+ * un fallo tampoco para nada: en Windows chown no existe.
+ */
+async function ponerGrupo(ruta, gid) {
+  if (gid === null || gid === undefined) return;
+  await fs.chown(ruta, -1, gid).catch(() => {});
+}
+
+/**
+ * Escribe en un temporal nuevo y lo renombra encima: nunca a través de un enlace.
+ * El temporal lleva el grupo compartido antes de aparecer con su nombre, para
+ * que R pueda leerlo.
+ */
+async function escribirSeguro(carpeta, nombre, contenido, gid = null) {
   const temporal = path.join(carpeta, `.escribiendo-${crypto.randomBytes(8).toString('hex')}`);
   await fs.writeFile(temporal, contenido, { flag: 'wx', mode: 0o660 });
+  await ponerGrupo(temporal, gid);
   await fs.rename(temporal, path.join(carpeta, nombre));
 }
 
 /**
- * Una carpeta de verdad en esa ruta.
+ * Una carpeta de verdad en esa ruta, que el backend y R pueden usar.
  *
- * 2770: el backend y R comparten el grupo, nadie más entra, y lo que se crea
- * dentro hereda el grupo. Si en su lugar hay un enlace o un archivo, se quita.
+ * 770 y el grupo compartido; nadie más entra. SIN el bit setgid: ver la
+ * cabecera. Si en su lugar hay un enlace o un archivo, se quita.
  */
-async function asegurarCarpeta(ruta) {
+async function asegurarCarpeta(ruta, gid = null) {
   try {
     const info = await fs.lstat(ruta);
     if (info.isDirectory()) return;
@@ -140,8 +165,10 @@ async function asegurarCarpeta(ruta) {
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;
   }
-  await fs.mkdir(ruta, { mode: 0o2770 });
-  await fs.chmod(ruta, 0o2770).catch(() => {});
+  await fs.mkdir(ruta, { mode: 0o770 });
+  // El umask de la API quita la escritura del grupo al crear: se devuelve.
+  await fs.chmod(ruta, 0o770).catch(() => {});
+  await ponerGrupo(ruta, gid);
 }
 
 /** Vacía una carpeta. `fs.rm` no sigue enlaces: borra el enlace, no su destino. */
@@ -359,6 +386,23 @@ function crearMotor({
     }
   }
 
+  /**
+   * El grupo que comparten el backend y R: el de la carpeta de sesiones, que
+   * pone infra/r/instalar.sh. Se mira una vez. En desarrollo es el del propio
+   * usuario y ponerlo no cambia nada.
+   */
+  let gid;
+  async function grupo() {
+    if (gid === undefined) {
+      try {
+        gid = (await fs.stat(carpetaBase)).gid;
+      } catch {
+        gid = null;
+      }
+    }
+    return gid;
+  }
+
   function carpetaDe(sesion) {
     if (!SESION_SEGURA.test(String(sesion))) throw new Error('Identificador de sesión no válido');
     return path.join(carpetaBase, sesion);
@@ -368,16 +412,17 @@ function crearMotor({
    * La carpeta de la sesión, creada si hace falta.
    *
    * Sin permiso para crearla es que la instalación del servidor no está hecha
-   * (infra/r/instalar.sh): eso es «no disponible», no un fallo del código.
+   * (infra/r/instalar.sh): eso es «no disponible», no un fallo del código. El
+   * código del error va en el mensaje, para que quien lo arregle sepa cuál.
    */
   async function prepararCarpeta(sesion) {
     const carpeta = carpetaDe(sesion);
     try {
       await fs.mkdir(carpetaBase, { recursive: true });
-      await asegurarCarpeta(carpeta);
+      await asegurarCarpeta(carpeta, await grupo());
     } catch (error) {
       if (['EACCES', 'EPERM', 'EROFS'].includes(error.code)) {
-        throw new MotorNoDisponible(`Sin permiso sobre ${carpetaBase}: ${error.code}`);
+        throw new MotorNoDisponible(`Sin permiso sobre ${carpetaBase}: ${error.code} en ${error.syscall ?? '?'}`);
       }
       throw error;
     }
@@ -387,11 +432,12 @@ function crearMotor({
   /** Ejecuta el código tal cual. Solo se llama dentro del turno de la sesión. */
   async function correr(sesion, codigo) {
     const carpeta = await prepararCarpeta(sesion);
+    const g = await grupo();
     const graficos = path.join(carpeta, 'graficos');
-    await asegurarCarpeta(graficos);
+    await asegurarCarpeta(graficos, g);
     await vaciar(graficos);
     await Promise.all(['fin', 'salida.txt', 'estado.tsv'].map((n) => fs.rm(path.join(carpeta, n), BORRAR)));
-    await escribirSeguro(carpeta, 'orden.R', codigo);
+    await escribirSeguro(carpeta, 'orden.R', codigo, g);
 
     await pedirPlaza();
     const inicio = Date.now();
@@ -440,8 +486,9 @@ function crearMotor({
     const guion = conGuion ? cola(`${guionPrevio.replace(/\n*$/, '\n\n')}${codigo.trim()}\n`) : guionPrevio;
     const consola = cola(consolaPrevia ? `${consolaPrevia.replace(/\n*$/, '\n')}${salida}` : salida);
 
-    await escribirSeguro(carpeta, 'guion.R', guion);
-    await escribirSeguro(carpeta, 'consola.txt', consola);
+    const g = await grupo();
+    await escribirSeguro(carpeta, 'guion.R', guion, g);
+    await escribirSeguro(carpeta, 'consola.txt', consola, g);
     return { guion, consola };
   }
 
@@ -493,12 +540,13 @@ function crearMotor({
     subirDatos(sesion, { archivo, contenido, lectura }) {
       return enSuTurno(sesion, async () => {
         const carpeta = await prepararCarpeta(sesion);
+        const g = await grupo();
         await borrarSesionSinTurno(carpeta);
         await Promise.all(
           ['datos.csv', 'datos.xlsx', 'datos.xls'].map((n) => fs.rm(path.join(carpeta, n), BORRAR)),
         );
-        await escribirSeguro(carpeta, archivo, contenido);
-        await escribirSeguro(carpeta, 'lectura.R', lectura);
+        await escribirSeguro(carpeta, archivo, contenido, g);
+        await escribirSeguro(carpeta, 'lectura.R', lectura, g);
 
         const hecho = await correr(sesion, `${lectura}\ndim(datos)\nnames(datos)`);
         const acumulado = await anotar(carpeta, {

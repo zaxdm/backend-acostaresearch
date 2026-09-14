@@ -2180,21 +2180,32 @@ function construirServidor(licencia) {
         'GGally, ggthemes, viridis, ggalluvial, corrplot, sjPlot, ggeffects.\n' +
         '· Tablas para el tesista: flextable y officer (Word), kableExtra, writexl, openxlsx; ' +
         'leer: readxl, haven.\n' +
-        '· Psicometría: psych, GPArotation, psy, lavaan, semTools, eRm, polycor, qgraph.\n' +
+        '· Psicometría: psych, GPArotation, psy, lavaan, semTools, semPlot (diagramas de ruta), ' +
+        'eRm, polycor, qgraph, MVN (normalidad multivariante), nFactors y paran (factores a ' +
+        'retener), mirt y ltm (teoría de respuesta al ítem), difR (DIF), irr (acuerdo entre jueces).\n' +
+        '· PLS-SEM: seminr, cSEM, plspm. El bootstrap, con cores = 1 y unos 1000 remuestreos: la ' +
+        'sesión no deja paralelizar y 5000 no caben en el tiempo.\n' +
         '· Inferencia: car, rstatix, nortest, coin, multcomp, effectsize, performance, broom, ' +
-        'emmeans, pwr (tamaño de muestra), vcd, ordinal, pscl, lme4, lmerTest.\n' +
-        '· Salud: epitools, epiR, pROC, survminer, metafor (metaanálisis).\n' +
+        'emmeans, pwr (tamaño de muestra), vcd, ordinal, pscl, lme4, lmerTest, moments, DescTools, ' +
+        'BayesFactor (factores de Bayes).\n' +
+        '· Salud: epitools, epiR, pROC, survival, survminer, metafor y meta (metaanálisis).\n' +
         '· Encuestas con muestreo complejo: survey.\n' +
-        '· Economía: plm, AER, lmtest, sandwich, forecast, tseries, urca, zoo, xts.\n' +
+        '· Economía y finanzas: plm, fixest, panelr, pdynmc (panel dinámico GMM), AER, lmtest, ' +
+        'sandwich, forecast, tseries, urca, zoo, xts.\n' +
+        '· Diseño experimental y agronomía: agricolae (DCA, DBCA, parcelas divididas; HSD, LSD, Duncan).\n' +
         '· Biología y ambiente: vegan, ade4.\n' +
+        '· Datos espaciales: sf y terra, con coordenadas o archivos que suba el tesista; sin mapas ' +
+        'base de fondo, que se descargan de internet.\n' +
         '· Multivariante y machine learning: FactoMineR, factoextra, dendextend, caret, ' +
         'randomForest, glmnet, e1071.\n' +
-        '· Texto (respuestas abiertas, entrevistas): tidytext, tm, SnowballC, wordcloud.\n' +
+        '· Texto (respuestas abiertas, entrevistas): tidytext, tm, SnowballC, wordcloud, quanteda ' +
+        '(con quanteda.textstats y quanteda.textplots), topicmodels.\n' +
+        '· Tablas listas: gtsummary («Tabla 1» y regresiones; al Word con as_flex_table), ' +
+        'apaTables, janitor.\n' +
         'Los library() se recuerdan entre llamadas. Carga solo lo que uses: cada paquete suma ' +
-        'segundos a cada llamada. NO hay moments, DescTools, MVN, irr, apaTables, mirt, ' +
-        'gtsummary, janitor, meta, semPlot (los diagramas SEM: reporta cargas y ajuste en tabla) ' +
-        'ni paquetes de mapas (sf, terra): usa psych (skew, kurtosi, ' +
-        'mardia, ICC, cohen.kappa), rstatix, flextable o metafor.\n\n' +
+        'segundos a cada llamada. NO hay brms, rstanarm ni blavaan (Stan compila cada modelo y aquí ' +
+        'no hay compilador; para lo bayesiano, BayesFactor), ni leaflet, tmap o FielDHub (mapas y ' +
+        'aplicaciones interactivas que no se ven en el chat ni en un Word).\n\n' +
         'INFORME EN WORD: cuando pida su informe o su capítulo de resultados en Word, manda solo ' +
         '«informe». El servidor pone las tablas en APA, mete las figuras de la sesión, pone las citas y ' +
         'las referencias en la norma que elija y te da el enlace.\n' +

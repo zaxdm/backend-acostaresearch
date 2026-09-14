@@ -15,7 +15,7 @@
 const PRUEBAS = [
   {
     clave: 'descriptivos',
-    patron: /\bdescriptivos\s*\(|\bdescribe\s*\(/,
+    patron: /\b(?:descriptivos|describe|skewness|kurtosis|Desc)\s*\(/,
     texto:
       'Descriptivos: la media dice por dónde va el grupo y la DE cuánto se dispersa. Una DE muy ' +
       'pequeña en una escala Likert suele significar que todos contestaron parecido. Asimetría y ' +
@@ -150,7 +150,7 @@ const PRUEBAS = [
   },
   {
     clave: 'metaanalisis',
-    patron: /\brma(?:\.\w+)?\s*\(/,
+    patron: /\brma(?:\.\w+)?\s*\(|\bmeta(?:gen|cont|bin|prop|cor)\s*\(/,
     texto:
       'Metaanálisis: el efecto combinado es significativo si su IC 95 % no cruza el valor nulo. ' +
       'I² mide la heterogeneidad (25 % baja, 50 % moderada, 75 % alta); con heterogeneidad alta, ' +
@@ -192,6 +192,63 @@ const PRUEBAS = [
       'Diversidad y comunidades: Shannon suele ir de 1,5 a 3,5 (más alto, más diverso) y Simpson ' +
       'de 0 a 1. En PERMANOVA (adonis2), p < 0,05 dice que la composición difiere entre grupos; ' +
       'en un NMDS, un stress < 0,20 es aceptable.',
+  },
+  // ── Psicometría avanzada, PLS-SEM, diseño experimental y bayesiano ──
+  {
+    clave: 'tri',
+    patron: /\b(?:mirt|itemfit|M2|rasch|grm|ltm)\s*\(/,
+    texto:
+      'Teoría de respuesta al ítem: el ajuste global se mira con M2 (RMSEA ≤ 0,06 y CFI/TLI ≥ 0,95 ' +
+      'son buenos) y cada ítem con itemfit (S-X² con p ≥ 0,05 ajusta). Una discriminación a > 0,65 ' +
+      'es aceptable y > 1,35 alta; la dificultad b dice en qué nivel del rasgo informa más el ítem.',
+  },
+  {
+    clave: 'dif',
+    patron: /\b(?:difLogistic|difMH|difLord|difRaju|difGenLogistic|dichoDif)\s*\(/,
+    texto:
+      'Funcionamiento diferencial del ítem: con DIF significativo, el ítem funciona distinto en los ' +
+      'grupos aunque tengan el mismo nivel del rasgo. Con Mantel-Haenszel, |ΔMH| < 1 es despreciable ' +
+      '(A), de 1 a 1,5 moderado (B) y > 1,5 grande (C), según la clasificación del ETS.',
+  },
+  {
+    clave: 'pls',
+    patron: /\b(?:estimate_pls|bootstrap_model|csem|plspm)\s*\(/,
+    texto:
+      'PLS-SEM: fiabilidad compuesta y alfa ≥ 0,70, AVE ≥ 0,50 (validez convergente) y HTMT < 0,85 ' +
+      '(0,90 si los constructos son parecidos). Un camino es significativo si su intervalo bootstrap ' +
+      'no incluye el 0. R² de 0,25, 0,50 y 0,75: débil, moderado y sustancial. En esta sesión, ' +
+      'bootstrap con cores = 1 y unos 1000 remuestreos, o se pasa del tiempo.',
+  },
+  {
+    clave: 'comparacion-de-medias',
+    patron: /\b(?:HSD\.test|LSD\.test|duncan\.test|SNK\.test|scheffe\.test|waller\.test|cv\.model)\s*\(/,
+    texto:
+      'Comparación de medias (agricolae): los tratamientos que comparten letra no difieren ' +
+      'significativamente; con letras distintas, sí. Reporta también el coeficiente de variación ' +
+      '(cv.model): en ensayos de campo, por debajo del 20 % se suele considerar aceptable.',
+  },
+  {
+    clave: 'bayes',
+    patron: /\b(?:ttestBF|anovaBF|correlationBF|regressionBF|lmBF|contingencyTableBF|proportionBF)\s*\(/,
+    texto:
+      'Factor de Bayes: BF₁₀ de 1 a 3 es evidencia anecdótica a favor de la hipótesis alternativa, ' +
+      'de 3 a 10 moderada, de 10 a 30 fuerte y más de 30 muy fuerte. Por debajo de 1 favorece la ' +
+      'nula: 1/3 es evidencia moderada a su favor.',
+  },
+  {
+    clave: 'acuerdo',
+    patron: /\b(?:kappa2|kappam\.fleiss|kappam\.light|icc|ICC|cohen\.kappa|KappaM|CohenKappa)\s*\(/,
+    texto:
+      'Acuerdo entre jueces: kappa de 0,41 a 0,60 es moderado, de 0,61 a 0,80 considerable y más ' +
+      'de 0,80 casi perfecto (Landis y Koch). En el ICC, < 0,50 es pobre, de 0,50 a 0,75 moderado, ' +
+      'de 0,75 a 0,90 bueno y > 0,90 excelente.',
+  },
+  {
+    clave: 'normalidad-multivariante',
+    patron: /\b(?:mvn|mardia)\s*\(/,
+    texto:
+      'Normalidad multivariante: con Mardia, asimetría y curtosis con p ≥ 0,05 indican normalidad. ' +
+      'Si no se cumple, en un AFC o un SEM usa un estimador robusto (MLR, o WLSMV con ítems ordinales).',
   },
   {
     clave: 'componentes',

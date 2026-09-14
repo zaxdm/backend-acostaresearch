@@ -29,13 +29,54 @@ SESIONES=/var/lib/acostaresearch-r/sesiones
 [ "$(id -u)" = "0" ] || { echo "Hay que ejecutarlo como root."; exit 1; }
 [ -f "$APP/r/ejecutar.R" ] || { echo "Falta $APP/r/ejecutar.R: despliega antes el código."; exit 1; }
 
-echo "── R ──"
+echo "── R, de CRAN y compilado (r2u) ──"
+# r2u: todo CRAN como paquetes de Ubuntu ya compilados, con R 4.6. Ubuntu solo
+# traía unos pocos paquetes de R y en R 4.3.3, y el servidor no tiene compilador
+# (ni debe tenerlo). Son los pasos 1-4 del script oficial para noble
+# (github.com/eddelbuettel/r2u, inst/scripts/add_cranapt_noble.sh). El paso 5,
+# bspm, NO: conecta install.packages() con apt, e install.packages() está
+# bloqueado a propósito en la jaula.
 export DEBIAN_FRONTEND=noninteractive
-apt-get update -qq
-# Todos de los repositorios de Ubuntu, ya compilados: nada se compila aquí.
-# No están (y no se compilan): moments, DescTools, MVN, irr, apaTables y mirt;
-# psych y rstatix cubren lo que se usa de ellos en una tesis.
-apt-get install -y -qq --no-install-recommends \
+APT="apt-get -o DPkg::Lock::Timeout=300 -qq"
+$APT update
+$APT install -y --no-install-recommends ca-certificates gnupg
+if [ ! -s /usr/share/keyrings/r2u.gpg ]; then
+  gpg --homedir /tmp --no-default-keyring --keyring /usr/share/keyrings/r2u.gpg \
+    --keyserver keyserver.ubuntu.com --recv-keys A1489FE2AB99A21A 67C2D66C4B1D4339 51716619E084DAB9
+fi
+cat > /etc/apt/sources.list.d/r2u.sources <<'FUENTE'
+Types: deb
+URIs: https://r2u.stat.illinois.edu/ubuntu
+Suites: noble
+Components: main
+Architectures: amd64 arm64
+Signed-By: /usr/share/keyrings/r2u.gpg
+FUENTE
+cat > /etc/apt/sources.list.d/cran.sources <<'FUENTE'
+Types: deb
+URIs: https://cloud.r-project.org/bin/linux/ubuntu
+Suites: noble-cran40/
+Components:
+Architectures: amd64 arm64
+Signed-By: /usr/share/keyrings/r2u.gpg
+FUENTE
+cat > /etc/apt/preferences.d/99cranapt <<'FIJAR'
+Package: *
+Pin: release o=CRAN-Apt Project
+Pin: release l=CRAN-Apt Packages
+Pin-Priority: 700
+FIJAR
+$APT update
+
+# Lo que ya hubiera de Ubuntu, a su versión de r2u: un paquete compilado para
+# R 4.3 dentro de R 4.6 es un fallo esperando a pasar.
+INSTALADOS=$(dpkg-query -W -f='${db:Status-Abbrev} ${Package}\n' 'r-cran-*' 2>/dev/null | awk '/^ii/ {print $2}')
+# shellcheck disable=SC2086
+[ -n "$INSTALADOS" ] && $APT install -y --no-install-recommends --only-upgrade $INSTALADOS
+
+# Los que usan las tesis. Si se añade uno, va también al filtro (r.filtro.js),
+# a la descripción de trabajar_en_r y a probar-jaula.sh.
+$APT install -y --no-install-recommends \
   r-base-core r-recommended \
   r-cran-readxl r-cran-haven r-cran-writexl r-cran-openxlsx r-cran-flextable r-cran-officer \
   r-cran-tidyverse r-cran-dplyr r-cran-tidyr r-cran-readr r-cran-forcats r-cran-stringr \
@@ -47,18 +88,26 @@ apt-get install -y -qq --no-install-recommends \
   r-cran-ggeffects r-cran-ggally r-cran-ggthemes r-cran-viridis r-cran-mice r-cran-hmisc \
   r-cran-ggalluvial r-cran-dendextend r-cran-rio \
   r-cran-pwr r-cran-coin r-cran-multcomp r-cran-lmertest r-cran-ordinal r-cran-pscl \
-  r-cran-polycor r-cran-vcd r-cran-erm r-cran-qgraph \
+  r-cran-polycor r-cran-vcd r-cran-erm r-cran-qgraph r-cran-semplot \
   r-cran-epitools r-cran-epir r-cran-metafor r-cran-survminer r-cran-proc r-cran-survey \
   r-cran-plm r-cran-aer r-cran-lmtest r-cran-sandwich r-cran-forecast r-cran-tseries \
   r-cran-urca r-cran-zoo r-cran-xts \
   r-cran-vegan r-cran-ade4 \
   r-cran-factominer r-cran-factoextra r-cran-randomforest r-cran-glmnet r-cran-e1071 r-cran-caret \
-  r-cran-tidytext r-cran-tm r-cran-wordcloud r-cran-snowballc
+  r-cran-tidytext r-cran-tm r-cran-wordcloud r-cran-snowballc \
+  r-cran-nfactors r-cran-paran r-cran-mirt r-cran-ltm r-cran-difr r-cran-irr r-cran-mvn \
+  r-cran-seminr r-cran-plspm r-cran-csem \
+  r-cran-moments r-cran-desctools r-cran-bayesfactor \
+  r-cran-gtsummary r-cran-apatables r-cran-janitor r-cran-meta \
+  r-cran-fixest r-cran-panelr r-cran-pdynmc \
+  r-cran-agricolae \
+  r-cran-sf r-cran-terra \
+  r-cran-quanteda r-cran-quanteda.textstats r-cran-quanteda.textplots r-cran-topicmodels
 # A propósito NO: devtools y remotes (instalar desde GitHub es lo que la jaula
 # impide), quarto y rmarkdown (la tesis la redacta Claude y el Word lo arma el
-# backend), quantmod (descarga datos de internet y la jaula no tiene red), y sf
-# y terra (mapas de varios archivos y rásteres que no caben en 400 MB). Tampoco
-# semPlot: al cargarse ejecuta una orden del sistema y la jaula no lo permite.
+# backend), quantmod y leaflet (descargan de internet y la jaula no tiene red),
+# tmap y FielDHub (mapas y aplicaciones interactivas), y brms, rstanarm y
+# blavaan (Stan compila cada modelo al vuelo y aquí no hay compilador).
 Rscript --version
 
 echo "── Usuario de la jaula ──"

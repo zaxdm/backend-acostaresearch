@@ -125,10 +125,46 @@ const PAQUETES_PERMITIDOS = new Set([
   'pscl',
   'polycor',
   'vcd',
-  // Psicometría. semPlot NO: al cargarse ejecuta una orden del sistema y la
-  // jaula no deja lanzar procesos (probado el 14-sep-2026).
+  // Psicometría. semPlot vuelve con r2u: la versión de Ubuntu lanzaba una orden
+  // del sistema al cargarse y la jaula no lo deja; la de CRAN no (14-sep-2026).
   'eRm',
   'qgraph',
+  'semPlot',
+  'nFactors',
+  'paran',
+  'mirt',
+  'ltm',
+  'difR',
+  'irr',
+  'MVN',
+  // PLS-SEM.
+  'seminr',
+  'cSEM',
+  'plspm',
+  // Descriptivos y bayesiano.
+  'moments',
+  'DescTools',
+  'BayesFactor',
+  // Tablas listas para el informe.
+  'gtsummary',
+  'apaTables',
+  'janitor',
+  // Metaanálisis, además de metafor.
+  'meta',
+  // Panel de datos.
+  'fixest',
+  'panelr',
+  'pdynmc',
+  // Diseño experimental y agronomía.
+  'agricolae',
+  // Datos espaciales: coordenadas o archivos del tesista, sin mapas base (red).
+  'sf',
+  'terra',
+  // Texto.
+  'quanteda',
+  'quanteda.textstats',
+  'quanteda.textplots',
+  'topicmodels',
   // Ciencias de la salud.
   'epitools',
   'epiR',

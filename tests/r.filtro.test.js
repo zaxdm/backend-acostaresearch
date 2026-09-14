@@ -85,14 +85,37 @@ x <- rio::import("datos.xlsx")
   assert.equal(revisar(codigo), null);
 });
 
+test('los paquetes que llegaron con r2u pasan: TRI, PLS-SEM, agronomía, panel, espacial, texto', () => {
+  const codigo = `
+library(mirt); ajuste <- mirt(items, 1, itemtype = "graded"); itemfit(ajuste)
+difR::difMH(datos, group = "sexo", focal.name = "F"); nFactors::nScree(eigen(cor(items))$values)
+paran::paran(items); irr::kappa2(jueces); MVN::mvn(items)
+semPlot::semPaths(ajuste_lavaan, "std")
+modelo <- seminr::estimate_pls(datos, medida, estructura); seminr::bootstrap_model(modelo, nboot = 1000, cores = 1)
+cSEM::csem(datos, modelo_csem); plspm::plspm(datos, camino, bloques)
+agricolae::HSD.test(aov(rendimiento ~ tratamiento + bloque, data = campo), "tratamiento")
+fixest::feols(liquidez ~ apalancamiento | empresa + anio, data = panel)
+pdynmc::pdynmc(dat = panel, varname.i = "empresa", varname.t = "anio", use.mc.diff = TRUE)
+puntos <- sf::st_as_sf(flota, coords = c("lon", "lat"), crs = 4326)
+quanteda::dfm(quanteda::tokens(textos)); quanteda.textstats::textstat_frequency(dfm_textos)
+topicmodels::LDA(dtm, k = 4); BayesFactor::ttestBF(formula = y ~ g, data = datos)
+gtsummary::tbl_summary(datos, by = grupo) |> gtsummary::as_flex_table()
+janitor::clean_names(datos); meta::metagen(TE, seTE, data = estudios); moments::skewness(datos$y)
+`;
+  assert.equal(revisar(codigo), null);
+});
+
 test('lo que se dejó fuera a propósito no pasa', () => {
   for (const codigo of [
     'library(devtools)',
     'remotes::install_github("x/y")',
     'library(quantmod)',
-    'sf::st_read("mapa.shp")',
-    // Instalado pero no carga en la jaula: mejor que Claude lo sepa antes.
-    'semPlot::semPaths(ajuste)',
+    // Descargan de internet o son interactivos: no sirven en la jaula ni en un Word.
+    'leaflet::leaflet(datos)',
+    'library(tmap)',
+    // Stan compila cada modelo al vuelo y en el servidor no hay compilador.
+    'brms::brm(y ~ x, data = datos)',
+    'library(rstanarm)',
   ]) {
     assert.equal(revisar(codigo)?.regla, 'paquetes', codigo);
   }

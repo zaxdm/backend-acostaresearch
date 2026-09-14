@@ -52,6 +52,16 @@ test('las pruebas de otras carreras traen su criterio', () => {
     ['tseries::adf.test(serie)', /estacionaria/],
     ['vegan::diversity(abund, "shannon")', /Shannon/],
     ['FactoMineR::PCA(datos)', /autovalor/],
+    // Los que llegaron con r2u.
+    ['ajuste <- mirt::mirt(items, 1, itemtype = "graded")', /discriminación/],
+    ['difR::difMH(datos, group = "sexo", focal.name = "F")', /Mantel-Haenszel/],
+    ['modelo <- seminr::estimate_pls(datos, medida, estructura)', /HTMT/],
+    ['agricolae::HSD.test(modelo, "tratamiento")', /letra/],
+    ['BayesFactor::ttestBF(formula = y ~ g, data = datos)', /BF₁₀/],
+    ['irr::kappa2(jueces)', /Landis/],
+    ['MVN::mvn(datos[, 1:6])', /Mardia/],
+    ['meta::metagen(TE, seTE, data = estudios)', /I²/],
+    ['moments::skewness(datos$y)', /Asimetría/],
   ];
   for (const [codigo, criterio] of casos) {
     assert.ok(comoSeLee(codigo).some((l) => criterio.test(l)), codigo);

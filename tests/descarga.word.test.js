@@ -21,7 +21,13 @@ const { urisDeZotero } = require('../src/modules/projects/project.zotero-campos'
 
 test('un enlace firmado dice de quién es y de qué proyecto', () => {
   const token = descarga.firmar({ userId: 'u1', productCode: 'METODO_9_SKILLS' });
-  assert.deepEqual(descarga.verificar(token), { userId: 'u1', productCode: 'METODO_9_SKILLS' });
+  assert.deepEqual(descarga.verificar(token), { userId: 'u1', productCode: 'METODO_9_SKILLS', que: 'word' });
+});
+
+test('el enlace del documento subido lo dice dentro, y uno normal sigue siendo del Word', () => {
+  const token = descarga.firmar({ userId: 'u1', productCode: 'METODO_9_SKILLS', que: 'documento' });
+  assert.equal(descarga.verificar(token).que, 'documento');
+  assert.match(descarga.enlace({ userId: 'u1', productCode: 'METODO_9_SKILLS', que: 'documento' }).url, /\/proyectos\/descarga\//);
 });
 
 test('una sesión no vale como enlace de descarga', () => {

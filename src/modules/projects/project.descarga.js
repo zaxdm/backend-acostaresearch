@@ -30,8 +30,14 @@ const MINUTOS = 30;
 
 const audiencia = () => `${env.JWT_AUDIENCE}:${TIPO}`;
 
-function firmar({ userId, productCode }) {
-  return jwt.sign({ typ: TIPO, pc: productCode }, env.JWT_ACCESS_SECRET, {
+/**
+ * `que` distingue la tesis armada con los capítulos del Word que subió el
+ * tesista y citó Claude (ver `documento.service`). Va dentro del enlace
+ * firmado, así que tampoco se puede cambiar tocando la dirección.
+ */
+function firmar({ userId, productCode, que = 'word' }) {
+  const datos = { typ: TIPO, pc: productCode, ...(que === 'documento' ? { q: que } : {}) };
+  return jwt.sign(datos, env.JWT_ACCESS_SECRET, {
     subject: userId,
     expiresIn: DURACION,
     issuer: env.JWT_ISSUER,
@@ -50,7 +56,7 @@ function verificar(token) {
     throw new Error('No es un enlace de descarga.');
   }
 
-  return { userId: datos.sub, productCode: datos.pc };
+  return { userId: datos.sub, productCode: datos.pc, que: datos.q === 'documento' ? 'documento' : 'word' };
 }
 
 /**
@@ -64,8 +70,8 @@ function baseDeLaApi() {
   return String(env.MCP_PUBLIC_URL).replace(/\/mcp\/?$/, '') + env.API_PREFIX;
 }
 
-function enlace({ userId, productCode }) {
-  const token = firmar({ userId, productCode });
+function enlace({ userId, productCode, que = 'word' }) {
+  const token = firmar({ userId, productCode, que });
   return { url: `${baseDeLaApi()}/proyectos/descarga/${token}`, minutos: MINUTOS };
 }
 

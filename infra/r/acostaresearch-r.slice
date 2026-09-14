@@ -1,0 +1,17 @@
+# Todas las sesiones de R juntas.
+#
+# Cada una tiene su tope (400 MB, un núcleo); este es el de todas a la vez, para
+# que la API, Caddy y el sistema conserven siempre al menos 2 GB y medio núcleo
+# aunque haya muchos tesistas analizando a la vez. El VPS tiene 3,8 GB y 2
+# núcleos, sin contar el swap.
+
+[Unit]
+Description=Acosta Research · sesiones de R
+
+[Slice]
+MemoryAccounting=yes
+MemoryHigh=1300M
+MemoryMax=1500M
+MemorySwapMax=0
+CPUQuota=150%
+TasksMax=128

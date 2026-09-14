@@ -116,15 +116,9 @@ test('todas las fases terminadas: humanizador y Word; pero no si ya está abrien
   assert.notEqual(elegir({ ...base, actual: fase('humanizador-academico') }), 'terminada');
 });
 
-test('en los últimos capítulos, con texto y sin plantilla: subir el formato', () => {
-  // Con fuentes: la discusión cita, y sin ellas ganaría el consejo de fuentes.
-  const base = { fases: FASES, fuentes: 40, palabras: 3000, estiloCitas: 'apa' };
-  assert.equal(elegir({ ...base, actual: fase('discusion') }), 'plantilla');
-  assert.equal(
-    elegir({ ...base, actual: fase('metodologia') }),
-    null,
-    'a mitad del método todavía no',
-  );
+test('ya no se manda a subir el formato: el panel no tiene ese recuadro', () => {
+  const fases = FASES;
+  assert.notEqual(elegir({ actual: fase('discusion'), fases, palabras: 5000, estiloCitas: 'apa' }), 'plantilla');
 });
 
 test('con texto y sin norma elegida: la norma de citas', () => {
@@ -194,8 +188,10 @@ test('desde mi_proyecto se toma la fase en curso', async () => {
   assert.match(t, /fuentes propias/);
 });
 
-test('en el artículo, la plantilla es la de la revista', async () => {
+test('la norma se pregunta en la conversación, no en el panel', () => {
   const { redactar } = require('../src/modules/projects/project.consejos');
-  assert.match(redactar('plantilla', { esArticulo: true }), /plantilla de la revista/);
-  assert.match(redactar('plantilla', { esArticulo: false }), /formato de su facultad/);
+  const texto = redactar('norma');
+  assert.match(texto, /guardar_avance/);
+  assert.doesNotMatch(texto, /perfil/);
 });
+

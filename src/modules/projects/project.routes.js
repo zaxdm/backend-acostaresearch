@@ -17,6 +17,14 @@ const {
 } = require('./project.schema');
 const descarga = require('./project.descarga');
 const { PlantillaNoValida, MAXIMO_BYTES } = require('./project.plantilla');
+const documentoService = require('./documento.service');
+const {
+  DocumentoNoValido,
+  NormaConNotas,
+  MAXIMO_BYTES: MAXIMO_DOCUMENTO,
+} = require('./project.documento');
+
+const TIPO_DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
 const router = Router();
 
@@ -68,6 +76,28 @@ router.get(
           'Este enlace ya no sirve: caduca a la media hora. Pídele a Claude uno nuevo, o ' +
             'descarga tu tesis desde tu perfil en acostaresearch.com.',
         );
+    }
+
+    // El Word que subió el tesista, con las citas que puso Claude.
+    if (destino.que === 'documento') {
+      let citado;
+      try {
+        citado = await documentoService.armar(destino.userId, destino.productCode);
+      } catch (error) {
+        if (!(error instanceof NormaConNotas)) throw error;
+        return res.status(422).type('text/plain; charset=utf-8').send(error.message);
+      }
+      if (!citado) {
+        return res
+          .status(404)
+          .type('text/plain; charset=utf-8')
+          .send('Ya no hay ningún documento subido en esta tesis. Súbelo otra vez desde tu perfil.');
+      }
+      res.setHeader('Content-Type', TIPO_DOCX);
+      res.setHeader('Content-Disposition', `attachment; filename="${citado.nombreArchivo}"`);
+      res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('Referrer-Policy', 'no-referrer');
+      return res.send(citado.buffer);
     }
 
     const documento = await projectService.armarWord(destino.userId, destino.productCode);
@@ -414,6 +444,81 @@ router.delete(
         ? 'Plantilla quitada. Las próximas descargas saldrán con el formato de tesis por defecto.'
         : 'No había ninguna plantilla puesta.',
     });
+  }),
+);
+
+/**
+ * La tesis o el artículo que el tesista escribió por su cuenta, para que Claude
+ * le ponga las citas (ver `documento.service`).
+ *
+ * Crudo y con su propio techo, como la plantilla, pero más alto: aquí llega el
+ * documento entero, con sus figuras. Solo con licencia vigente del método.
+ */
+router.post(
+  '/:productCode/documento',
+  express.raw({ type: [TIPO_DOCX, 'application/octet-stream'], limit: MAXIMO_DOCUMENTO }),
+  asyncHandler(async (req, res) => {
+    let subido;
+    try {
+      subido = await documentoService.subir({
+        userId: req.user.id,
+        productCode: req.params.productCode,
+        buffer: req.body,
+        nombre: decodificar(req.get('X-Nombre-Archivo')),
+      });
+    } catch (error) {
+      if (error instanceof DocumentoNoValido) throw new ValidationError(error.message);
+      throw error;
+    }
+
+    if (!subido) {
+      throw new ForbiddenError('Necesitas una licencia vigente de este método para subir tu documento.');
+    }
+
+    const conservadas =
+      subido.citados > 0 ? ` Se conservaron las citas de ${subido.citados} párrafos que ya tenías.` : '';
+    const perdidas =
+      subido.perdidos > 0
+        ? ` ${subido.perdidos} párrafos citados ya no están igual en esta versión: pídele a Claude que los revise.`
+        : '';
+
+    return ok(res, subido, {
+      message:
+        `Listo: «${subido.nombre}», ${subido.parrafos} párrafos.${conservadas}${perdidas} ` +
+        'Ahora abre Claude y dile: «cita mi documento».',
+    });
+  }),
+);
+
+router.delete(
+  '/:productCode/documento',
+  asyncHandler(async (req, res) => {
+    const quitado = await documentoService.quitar(req.user.id, req.params.productCode);
+    return ok(res, { quitado }, {
+      message: quitado ? 'Documento quitado, con sus citas.' : 'No había ningún documento subido.',
+    });
+  }),
+);
+
+/** Su documento con las citas y la lista de referencias, en la norma del proyecto. */
+router.get(
+  '/:productCode/documento',
+  asyncHandler(async (req, res) => {
+    let citado;
+    try {
+      citado = await documentoService.armar(req.user.id, req.params.productCode);
+    } catch (error) {
+      if (error instanceof NormaConNotas) throw new ValidationError(error.message);
+      throw error;
+    }
+
+    if (!citado) {
+      return res.status(404).json({ success: false, message: 'No has subido ningún documento.' });
+    }
+
+    res.setHeader('Content-Type', TIPO_DOCX);
+    res.setHeader('Content-Disposition', `attachment; filename="${citado.nombreArchivo}"`);
+    return res.send(citado.buffer);
   }),
 );
 

@@ -33,7 +33,7 @@ sustituir('../src/modules/projects/project.repository', {
   },
 });
 
-sustituir('../src/modules/projects/project.storage', {});
+sustituir('../src/modules/projects/project.storage', { leerFichaDeDocumento: async () => null });
 sustituir('../src/modules/skills/skill.service', {
   listCatalog: async () => [
     { code: 'tema', displayName: 'Fase 0 — Tema y orientación' },

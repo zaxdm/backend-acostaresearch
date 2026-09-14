@@ -242,6 +242,32 @@ const schema = z.object({
   // Vacío = se usa MAIL_FROM, que ya es una dirección nuestra y real.
   OPENALEX_MAILTO: vacioComoAusente(z.string()),
 
+  // ── R en la conversación ────────────────────────────────────────────────
+  // Claude corre el análisis del tesista con la herramienta «trabajar_en_r».
+  //
+  // Quién arranca R:
+  //   · systemd — en el servidor, dentro de la jaula de infra/r/. Es lo que se
+  //     usa en producción si no se dice otra cosa.
+  //   · local   — Rscript a pelo, SOLO en desarrollo: sin jaula, el código que
+  //     llegue por el conector correría con los permisos de este proceso. El
+  //     arranque lo impide en producción.
+  //   · apagado — la herramienta existe pero dice que no está disponible. Es lo
+  //     de por defecto fuera de producción, para no depender de tener R.
+  R_MOTOR: z.enum(['apagado', 'local', 'systemd']).optional(),
+  // Una carpeta por proyecto. En producción la crea infra/r/instalar.sh con el
+  // dueño y los permisos que la jaula espera; no se cambia sin cambiar la unidad.
+  R_SESIONES_DIR: vacioComoAusente(z.string()),
+  // Solo para el modo local. En Windows, la ruta entera a Rscript.exe.
+  RSCRIPT: z.string().default('Rscript'),
+  // Procesos de R a la vez en todo el servidor. Cuatro caben holgados en el
+  // tope de 1,5 GB del slice con 400 MB cada uno.
+  R_MAX_SIMULTANEAS: z.coerce.number().int().positive().default(4),
+  // TIENE QUE COINCIDIR con TimeoutStartSec de infra/r/acostaresearch-r@.service:
+  // con él se distingue «se acabó el tiempo» de «se quedó sin memoria».
+  R_LIMITE_SEGUNDOS: z.coerce.number().int().positive().default(45),
+  // Una matriz de tesis con cientos de encuestados no llega a un mega.
+  R_SUBIDA_MAX_BYTES: z.coerce.number().int().positive().default(5 * 1024 * 1024),
+
   // ── Libro de Reclamaciones ──────────────────────────────────────────────
   // Los datos del proveedor que encabezan cada hoja. Los pide el reglamento:
   // quien reclama tiene que saber a quién. Sin RUC la hoja sale igual, pero
@@ -289,6 +315,12 @@ if (raw.NODE_ENV === 'production') {
       'SKILLS_SIMULADAS está activo: el conector devolvería texto de mentira a clientes reales.',
     );
   }
+  if (raw.R_MOTOR === 'local') {
+    problemas.push(
+      'R_MOTOR=local ejecuta el R que llega por el conector SIN JAULA, con los permisos de la API. ' +
+        'En producción, systemd (o apagado).',
+    );
+  }
 
   if (problemas.length > 0) {
     console.error(`Configuración inválida para producción:\n${problemas.map((p) => `  · ${p}`).join('\n')}`);
@@ -332,6 +364,16 @@ const env = Object.freeze({
   // él y nadie tiene que acordarse de que existía una segunda ruta.
   capitulosDir:
     raw.CAPITULOS_DIR ?? path.join(path.dirname(raw.PROOFS_DIR), 'capitulos'),
+  // R en la conversación (ver R_MOTOR): la jaula en producción, apagado fuera.
+  rMotor: raw.R_MOTOR ?? (raw.NODE_ENV === 'production' ? 'systemd' : 'apagado'),
+  // Fuera de /var/lib/acostaresearch a propósito: la jaula tapa /var entero y
+  // vuelve a montar solo la carpeta de la sesión. Tampoco va en el respaldo
+  // diario: son copias de trabajo de la matriz, que el tesista conserva.
+  rSesionesDir:
+    raw.R_SESIONES_DIR ??
+    (raw.NODE_ENV === 'production'
+      ? '/var/lib/acostaresearch-r/sesiones'
+      : path.resolve(__dirname, '../../storage/r-sesiones')),
   // El corpus solo se activa con clave y con una biblioteca a la que apuntar.
   zoteroEnabled: Boolean(raw.ZOTERO_API_KEY && (raw.ZOTERO_GROUP_ID || raw.ZOTERO_USER_ID)),
   // La ruta de la biblioteca dentro de la API. Un grupo manda sobre la cuenta

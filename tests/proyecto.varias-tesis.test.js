@@ -45,6 +45,7 @@ sustituir('../src/modules/projects/project.repository', {
   },
 });
 sustituir('../src/modules/projects/project.storage', {
+  leerFichaDeDocumento: async () => null,
   borrarProyecto: async (id) => {
     estado.pasos.push(`disco:${id}`);
   },

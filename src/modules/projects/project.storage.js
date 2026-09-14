@@ -105,6 +105,9 @@ async function borrar(projectId, skillCode) {
 async function borrarProyecto(projectId) {
   if (!SEGURO.test(projectId)) throw new Error('Identificador de proyecto no válido');
   await fs.rm(path.join(env.capitulosDir, projectId), { recursive: true, force: true });
+  // Y su sesión de R, con la matriz que subió: sus datos no se quedan aquí
+  // cuando se va. La carpeta se llama como el proyecto (ver `r.motor`).
+  await fs.rm(path.join(env.rSesionesDir, projectId), { recursive: true, force: true });
 }
 
 /**
@@ -307,7 +310,79 @@ async function borrarPlantilla(projectId) {
   }
 }
 
+/**
+ * El Word que subió el tesista para que Claude lo cite (ver `project.documento`).
+ *
+ * Se guarda ENTERO y tal cual, al revés que la plantilla: aquí el contenido es
+ * justo lo que hay que devolverle, con sus citas puestas. Al lado van la ficha
+ * —cómo se llamaba, cuándo se subió— y lo que Claude marcó en cada párrafo. El
+ * Word citado no se guarda: se arma en cada descarga, así que cambiar de norma
+ * no obliga a volver a citar.
+ */
+function rutaDeDocumento(projectId, que) {
+  if (!SEGURO.test(projectId)) throw new Error('Identificador de proyecto no válido');
+  const nombres = { original: 'documento-original.docx', ficha: 'documento.json', citas: 'documento-citas.json' };
+  return path.join(env.capitulosDir, projectId, nombres[que]);
+}
+
+async function guardarDocumento(projectId, buffer, ficha) {
+  const ruta = rutaDeDocumento(projectId, 'original');
+  await fs.mkdir(path.dirname(ruta), { recursive: true });
+  const temporal = `${ruta}.parcial`;
+  await fs.writeFile(temporal, buffer);
+  await fs.rename(temporal, ruta);
+  await escribirJson(rutaDeDocumento(projectId, 'ficha'), ficha);
+}
+
+async function leerJson(ruta) {
+  try {
+    return JSON.parse(await fs.readFile(ruta, 'utf8'));
+  } catch (error) {
+    if (error.code === 'ENOENT' || error instanceof SyntaxError) return null;
+    throw error;
+  }
+}
+
+/** Null si no subió ninguno. */
+async function leerDocumento(projectId) {
+  try {
+    return await fs.readFile(rutaDeDocumento(projectId, 'original'));
+  } catch (error) {
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
+const leerFichaDeDocumento = (projectId) => leerJson(rutaDeDocumento(projectId, 'ficha'));
+
+/** `{ id del párrafo: texto con marcas }`. Vacío si todavía no se citó nada. */
+async function leerCitasDeDocumento(projectId) {
+  return (await leerJson(rutaDeDocumento(projectId, 'citas'))) ?? {};
+}
+
+const guardarCitasDeDocumento = (projectId, citados) =>
+  escribirJson(rutaDeDocumento(projectId, 'citas'), citados);
+
+async function borrarDocumento(projectId) {
+  let habia = false;
+  for (const que of ['original', 'ficha', 'citas']) {
+    try {
+      await fs.unlink(rutaDeDocumento(projectId, que));
+      habia = true;
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+  }
+  return habia;
+}
+
 module.exports = {
+  guardarDocumento,
+  leerDocumento,
+  leerFichaDeDocumento,
+  leerCitasDeDocumento,
+  guardarCitasDeDocumento,
+  borrarDocumento,
   guardar,
   leer,
   borrar,

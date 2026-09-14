@@ -12,10 +12,12 @@ const prisma = require('../../lib/prisma');
 const referenceService = require('../references/reference.service');
 const propiasService = require('../references/propias.service');
 const projectService = require('../projects/project.service');
+const documentoService = require('../projects/documento.service');
 const consejos = require('../projects/project.consejos');
 const normas = require('../projects/project.normas');
 const etapas = require('../projects/project.etapas');
 const bloquesDeAnalisis = require('../projects/project.bloques');
+const rService = require('../r/r.service');
 
 /**
  * Los esquemas de las herramientas van en JSON Schema, no en Zod.
@@ -353,7 +355,7 @@ const ESQUEMA_VER_ANALISIS = fromJsonSchema({
       type: 'string',
       description:
         'Clave del capítulo. Déjala vacía para el de resultados del método, que es donde ' +
-        'cae lo que el tesista manda desde la página de análisis.',
+        'cae lo que se corre con trabajar_en_r.',
     },
     // Lista cerrada a propósito. Un texto libre sobre la consola de R devuelve
     // el bloque equivocado sin avisar: «ANOVA» casa con el veredicto de
@@ -381,6 +383,32 @@ const ESQUEMA_VER_ANALISIS = fromJsonSchema({
       type: 'integer',
       minimum: 1,
       description: `Última línea del tramo. Se sirven ${bloquesDeAnalisis.MAXIMO_LINEAS} como máximo por petición.`,
+    },
+  },
+  additionalProperties: false,
+});
+
+const ESQUEMA_TRABAJAR_EN_R = fromJsonSchema({
+  type: 'object',
+  properties: {
+    codigo: {
+      type: 'string',
+      maxLength: 20000,
+      description:
+        'El código de R que ejecutar, tal cual. Varias líneas valen: se ejecutan en orden, como ' +
+        'en la consola, y se para en el primer error. Déjalo vacío para ver qué hay en la sesión.',
+    },
+    reiniciar: {
+      type: 'boolean',
+      description:
+        'Borra todos los objetos y el guion y vuelve a leer sus datos desde el archivo. Solo si la ' +
+        'sesión quedó enredada, no antes de cada prueba.',
+    },
+    descargar: {
+      type: 'string',
+      description:
+        'Nombre de un archivo de la sesión para darle al tesista un enlace de descarga: ' +
+        '«resultados.csv», «figura1.png» o «graficos/grafico-01.png». Los que hay salen en la respuesta.',
     },
   },
   additionalProperties: false,
@@ -665,6 +693,13 @@ function construirServidor(licencia) {
       await licenseService.recordUsage({ licenseId: licencia.id, tool: 'mi_proyecto' });
 
       const panorama = await projectService.resumen(licencia.user.id, licencia.productCode);
+      // Un documento subido para citar no es avance de capítulos: se dice aparte,
+      // y también a quien no tiene nada más guardado.
+      const subido = await documentoService
+        .aviso(licencia.user.id, licencia.productCode)
+        .catch(() => null);
+
+      if (!panorama && subido) return texto(subido);
 
       if (!panorama) {
         return texto(
@@ -684,7 +719,8 @@ function construirServidor(licencia) {
           return null;
         });
 
-      return texto(consejo ? `${panorama}\n\n───────────\n\n${consejo}` : panorama);
+      const conDocumento = subido ? `${panorama}\n\n${subido}` : panorama;
+      return texto(consejo ? `${conDocumento}\n\n───────────\n\n${consejo}` : conDocumento);
     },
   );
 
@@ -908,10 +944,9 @@ function construirServidor(licencia) {
       title: 'Guardar el análisis y sus cifras',
       description:
         'Guarda el script de R, lo que devolvió la consola y las cifras obtenidas. ' +
-        'ESTE SERVIDOR NO EJECUTA R: el tesista corre el análisis en su propio RStudio o en ' +
-        'la página de análisis de la web. Si te pega el resultado, guárdalo EN CUANTO te lo ' +
-        'pegue. Si lo mandó desde la web, el script y la salida ya están guardados: léelos ' +
-        'con "ver_analisis" y usa esta herramienta solo para las cifras.\n\n' +
+        'Si el análisis lo corriste tú con "trabajar_en_r", el script y la salida YA ESTÁN ' +
+        'guardados: usa esta herramienta solo para las cifras. Si el tesista lo corrió en su ' +
+        'propio RStudio y te pega el resultado, guárdalo EN CUANTO te lo pegue.\n\n' +
         'Por qué importa: a partir de ese momento, cualquier cifra que aparezca en el ' +
         'capítulo de resultados y no esté entre las guardadas sale marcada en el repaso. ' +
         'Es lo que impide que un número se escriba solo porque ahí pegaba un número.',
@@ -995,8 +1030,8 @@ function construirServidor(licencia) {
     {
       title: 'Leer el análisis del tesista',
       description:
-        'El análisis de R que guardó el tesista —normalmente desde la página de análisis de ' +
-        'la web, con el botón «Enviar a mi conector»—. LLÁMALA ANTES DE REDACTAR LOS ' +
+        'El análisis de R guardado en el proyecto: lo que corriste con "trabajar_en_r" o lo ' +
+        'que el tesista trajo de su RStudio. LLÁMALA ANTES DE REDACTAR LOS ' +
         'RESULTADOS y cada vez que diga que ya corrió su análisis: cada cifra del capítulo ' +
         'tiene que salir de aquí.\n\n' +
         'SIN ARGUMENTOS devuelve el índice: qué pruebas hay en la consola y en qué líneas. ' +
@@ -1041,9 +1076,9 @@ function construirServidor(licencia) {
 
       if (!respuesta) {
         return texto(
-          'Todavía no hay ningún análisis guardado. Pídele al tesista que lo corra en la ' +
-            'página de análisis de la web (acostaresearch.com/analisis) y pulse «Enviar a mi ' +
-            'conector», o que te pegue aquí el script y la salida de su RStudio.',
+          'Todavía no hay ningún análisis guardado. Córrelo tú con "trabajar_en_r": pregúntale ' +
+            'por sus variables y su hipótesis, y la herramienta le da el enlace para subir sus ' +
+            'datos. Si ya lo hizo en su RStudio, que te pegue el script y la salida.',
         );
       }
 
@@ -2073,6 +2108,242 @@ function construirServidor(licencia) {
     },
   );
 
+  // ── R, en la conversación ────────────────────────────────────────────────
+  //
+  // El tesista ya no abre ninguna página ni escribe código: Claude le pregunta
+  // lo que necesita y corre el análisis aquí. R va dentro de la jaula de
+  // infra/r/, nunca en este proceso, y cada ejecución se guarda en el análisis
+  // del proyecto, donde la leen ver_analisis y el repaso de cifras.
+  server.registerTool(
+    'trabajar_en_r',
+    {
+      title: 'Correr el análisis en R',
+      description:
+        'Una sesión de R de verdad para el análisis del tesista, que manejas TÚ: él no escribe ' +
+        'código ni instala nada. Es la sesión de su proyecto y conserva los objetos entre llamadas.\n\n' +
+        'CÓMO SE USA\n' +
+        '· Sin argumentos: qué hay en la sesión —las columnas de sus datos, los objetos, los ' +
+        'archivos—. Si todavía no subió sus datos, devuelve un enlace para que los suba desde su ' +
+        'navegador: dáselo tal cual.\n' +
+        '· codigo: ejecuta R y devuelve la consola, los gráficos como imagen y cómo se lee cada ' +
+        'prueba. Ya existen `datos` (su matriz) y estas funciones: alfa_de_cronbach(items), ' +
+        'puntaje(datos, columnas), normalidad(x), descriptivos(datos), frecuencias(x) y ' +
+        'escribir_csv(tabla, "archivo.csv").\n' +
+        '· descargar: un enlace para que baje un archivo que creó el análisis.\n' +
+        '· reiniciar: borra los objetos y vuelve a leer sus datos.\n\n' +
+        'ANTES DE CORRER PRUEBAS, PREGÚNTALE lo que no sepas —sus variables y dimensiones, qué ' +
+        'ítems forman cada una, si su hipótesis es de relación o de diferencia—, y mira antes ' +
+        '"mi_proyecto" o "ver_capitulo": la metodología puede estar ya acordada. Ve por pasos ' +
+        '(confiabilidad, puntajes, normalidad y la prueba que toque) y explícale cada resultado ' +
+        'en una o dos frases, sin jerga.\n\n' +
+        'SUS DATOS SON PERSONALES: no imprimas la matriz ni filas enteras. Si necesitas ver ' +
+        'valores para encontrar un error, head() de pocas filas y solo de las columnas necesarias.\n\n' +
+        'LÍMITES: R base, los paquetes recomendados y readxl. Sin internet, sin install.packages ' +
+        `y sin salir de su carpeta. Cada llamada tiene ${env.R_LIMITE_SEGUNDOS} segundos y 400 MB.\n\n` +
+        'Todo lo que ejecutas queda guardado en su análisis: "ver_analisis" lo lee, y las cifras ' +
+        'que vayan al texto se guardan con "guardar_analisis" (resultados), como siempre.',
+      inputSchema: ESQUEMA_TRABAJAR_EN_R,
+    },
+    async ({ codigo, reiniciar, descargar }) => {
+      // Solo ejecutar gasta cupo en un conector de prueba: mirar la sesión no.
+      if (typeof codigo === 'string' && codigo.trim() !== '') {
+        const cupo = await cupoDePrueba('trabajar_en_r');
+        if (cupo.bloqueo) return cupo.bloqueo;
+      }
+      await licenseService.recordUsage({ licenseId: licencia.id, tool: 'trabajar_en_r' });
+
+      try {
+        const { contenido, bloqueo } = await rService.trabajar({
+          userId: licencia.user.id,
+          productCode: licencia.productCode,
+          codigo,
+          reiniciar,
+          descargar,
+        });
+
+        // El intento queda en el uso de la licencia, donde lo ve la vigilancia.
+        if (bloqueo) {
+          await licenseService.recordUsage({
+            licenseId: licencia.id,
+            tool: `trabajar_en_r:${bloqueo.regla}`.slice(0, 60),
+            ok: false,
+          });
+        }
+        return contenido;
+      } catch (error) {
+        logger.error({ err: error, licenseId: licencia.id }, 'Falló trabajar_en_r');
+        return texto(
+          'No se pudo ejecutar el análisis por un fallo del servidor. No es nada del código: ' +
+            'vuelve a intentarlo en un momento y, si se repite, díselo al tesista.',
+        );
+      }
+    },
+  );
+
+  // ── Citar el Word que escribió por su cuenta ─────────────────────────────
+  //
+  // Quien llega con la tesis ya escrita la sube desde su perfil. Claude la lee
+  // por párrafos, busca fuentes, le enseña un resumen y guarda dónde va cada
+  // cita. Las citas se escriben DENTRO de su mismo Word al descargarlo (ver
+  // `project.documento`): su formato, sus tablas y sus figuras no se tocan.
+  server.registerTool(
+    'ver_mi_documento',
+    {
+      title: 'Leer el documento que subió para citar',
+      description:
+        `Lee el Word que el tesista SUBIÓ desde su perfil para que le pongas las citas: ${SU_OBRA} ` +
+        'ya escrita por su cuenta, sin referencias. Devuelve los párrafos numerados (¶12) por ' +
+        'tandas. ÚSALA cuando diga «cita mi documento», «ponle las referencias», «ya subí mi ' +
+        'tesis», o cuando "mi_proyecto" diga que hay un documento subido. ' +
+        'CÓMO SE CITA, EN ORDEN: ' +
+        '1) Si la norma no está elegida, PREGÚNTASELA y guárdala con "guardar_avance" ' +
+        '(estiloCitas); las de notas al pie no sirven para un documento subido. ' +
+        '2) Lee el documento entero, tanda a tanda. ' +
+        '3) Para cada afirmación que necesite respaldo busca fuente: "mis_fuentes" y ' +
+        '"buscar_fuentes" (su Zotero y la biblioteca de Acosta, de artículos indexados en Scopus) ' +
+        'y "buscar_en_la_literatura" (OpenAlex). ' +
+        '4) ANTES DE GUARDAR NADA, enséñale un resumen: cuántas citas pondrás y con qué fuentes, ' +
+        'qué fuentes nuevas añadirías a su biblioteca —añade con "anadir_a_mis_fuentes" SOLO las ' +
+        'que apruebe— y qué afirmaciones quedarían [FALTA FUENTE]. ' +
+        '5) Con su visto bueno, guarda con "citar_mi_documento". ' +
+        '6) Dale el enlace con "enlace_del_word". ' +
+        'NUNCA inventes una fuente: lo que no tenga respaldo va [FALTA FUENTE].',
+      inputSchema: fromJsonSchema({
+        type: 'object',
+        properties: {
+          desde: {
+            type: 'integer',
+            minimum: 1,
+            description:
+              'Número de párrafo desde el que seguir leyendo. La primera vez, nada: la respuesta ' +
+              'dice desde dónde pedir la tanda siguiente.',
+          },
+        },
+        additionalProperties: false,
+      }),
+    },
+    async ({ desde }) => {
+      await licenseService.recordUsage({ licenseId: licencia.id, tool: 'ver_mi_documento' });
+
+      const leido = await documentoService.ver(licencia.user.id, licencia.productCode, { desde });
+      if (!leido) {
+        return texto(
+          'El tesista no ha subido ningún documento. Dile que entre en su perfil de ' +
+            'acostaresearch.com y, en «Mi tesis», pulse «Subir mi documento» con su Word (.docx); ' +
+            'luego que vuelva y te diga «cita mi documento».',
+        );
+      }
+
+      const { norma } = leido;
+      const lineaDeNorma =
+        norma.familia === 'notas'
+          ? `Norma: ${norma.nombre}, de notas al pie, que NO se puede aplicar a un documento subido. ` +
+            'Pregúntale otra y guárdala con "guardar_avance" (estiloCitas).'
+          : norma.elegida
+            ? `Norma: ${norma.nombre}.`
+            : `Norma: sin elegir (saldría en ${norma.nombre}). PREGÚNTALE cuál le piden y guárdala con ` +
+              '"guardar_avance" (estiloCitas) antes de citar.';
+
+      const tanda =
+        leido.lineas.length > 0
+          ? leido.lineas.join(N)
+          : `No hay párrafos desde el ¶${desde}: el documento va del ¶${leido.primero} al ¶${leido.ultimo}.`;
+
+      return texto(
+        `Documento: «${leido.nombre}» · ${leido.total} párrafos con texto (¶${leido.primero} a ` +
+          `¶${leido.ultimo}) · ${leido.citados} ya citados.${N}${lineaDeNorma}${N}${N}` +
+          `${tanda}${N}${N}` +
+          (leido.siguiente
+            ? `SIGUE: pide "desde": ${leido.siguiente} para la tanda siguiente.${N}${N}`
+            : `Es el final del documento.${N}${N}`) +
+          'Los marcados [citado] ya tienen sus marcas guardadas. Lo que va entre corchetes al ' +
+          'principio de cada línea NO es del texto: no lo copies. ' +
+          'No guardes nada hasta haberle enseñado el resumen y tener su visto bueno.',
+      );
+    },
+  );
+
+  server.registerTool(
+    'citar_mi_documento',
+    {
+      title: 'Guardar las citas del documento subido',
+      description:
+        'Guarda dónde va cada cita en el documento que subió el tesista. Manda cada párrafo con su ' +
+        'número y su texto COPIADO TAL CUAL de "ver_mi_documento", con las marcas añadidas donde ' +
+        'va cada cita: «…afecta al rendimiento [AR97D22F86].»; «[AR97D22F86:n]» detrás del autor ' +
+        'si su nombre ya está en la frase («Braun y Clarke [AR97D22F86:n] proponen»); ' +
+        '«[AR97D22F86:p. 45]» con página; y «[FALTA FUENTE]» donde no hay fuente. ' +
+        'NO CAMBIES NI UNA PALABRA ni corrijas nada: solo se añaden marcas, y un párrafo con el ' +
+        'texto cambiado se rechaza. Usa SOLO claves que te haya dado una búsqueda. ' +
+        'Manda solo los párrafos que llevan marcas, hasta 40 por llamada; uno mandado sin marcas ' +
+        'pierde las que tuviera. ' +
+        'NO LA USES sin haberle enseñado antes el resumen y tener su visto bueno. ' +
+        'El Word no se toca ahora: las citas y la lista de referencias se escriben al descargarlo, ' +
+        'en la norma del proyecto, así que cambiar de norma no obliga a volver a citar.',
+      inputSchema: fromJsonSchema({
+        type: 'object',
+        properties: {
+          parrafos: {
+            type: 'array',
+            minItems: 1,
+            maxItems: 40,
+            description: 'Los párrafos con sus marcas.',
+            items: {
+              type: 'object',
+              properties: {
+                p: { type: 'integer', minimum: 1, description: 'El número del párrafo: 12 para ¶12.' },
+                texto: {
+                  type: 'string',
+                  minLength: 1,
+                  maxLength: 8000,
+                  description: 'El texto del párrafo tal cual, con las marcas añadidas.',
+                },
+              },
+              required: ['p', 'texto'],
+              additionalProperties: false,
+            },
+          },
+        },
+        required: ['parrafos'],
+        additionalProperties: false,
+      }),
+    },
+    async ({ parrafos }) => {
+      await licenseService.recordUsage({ licenseId: licencia.id, tool: 'citar_mi_documento' });
+
+      try {
+        const r = await documentoService.citar(licencia.user.id, licencia.productCode, parrafos);
+        if (!r) {
+          return texto(
+            'No hay ningún documento subido, así que no se ha guardado nada. Dile que lo suba ' +
+              'desde «Mi tesis» en su perfil de acostaresearch.com.',
+          );
+        }
+
+        const rechazos =
+          r.rechazados.length > 0
+            ? `${N}${N}RECHAZADOS (${r.rechazados.length}), corrígelos y vuelve a mandarlos:${N}` +
+              r.rechazados.map((x) => `¶${x.p}: ${x.motivo}`).join(N)
+            : '';
+
+        return texto(
+          `Guardados ${r.guardados} párrafos.${rechazos}${N}${N}` +
+            `El documento lleva ahora ${r.citas} citas en ${r.parrafos} párrafos, y ${r.faltas} ` +
+            `[FALTA FUENTE]. Saldrán en ${r.norma.nombre}` +
+            (r.norma.elegida ? '.' : ', que es la de por defecto: si no se la preguntaste, hazlo.') +
+            `${N}${N}Cuando termines, dale su Word con "enlace_del_word". Lo marcado [FALTA FUENTE] ` +
+            'sale resaltado en amarillo para que lo encuentre.',
+        );
+      } catch (error) {
+        logger.error({ err: error, licenseId: licencia.id }, 'No se pudieron guardar las citas del documento');
+        return texto(
+          'NO se pudieron guardar las citas: error del servidor. Vuelve a intentarlo; si insiste, ' +
+            'avísale de que no han quedado guardadas.',
+        );
+      }
+    },
+  );
+
   // ── El Word, desde la conversación ───────────────────────────────────────
   //
   // Sin esto, quien terminaba un capítulo hablando con Claude no tenía el Word
@@ -2090,6 +2361,8 @@ function construirServidor(licencia) {
         'ÚSALA cuando pida su Word, su documento o descargar, y después de guardar un ' +
         'capítulo. NUNCA ARMES TÚ EL WORD NI ESCRIBAS TÚ LA BIBLIOGRAFÍA: el tuyo no ' +
         'llevaría la norma ni los campos de Zotero, y podría no coincidir con las fichas. ' +
+        'Si el tesista SUBIÓ su propio documento para citar, el enlace es el de ese documento con ' +
+        'las citas puestas. ' +
         'El enlace caduca a la media hora; si ya pasó, pide otro.',
       inputSchema: fromJsonSchema({ type: 'object', properties: {}, additionalProperties: false }),
     },
@@ -2097,6 +2370,32 @@ function construirServidor(licencia) {
       await licenseService.recordUsage({ licenseId: licencia.id, tool: 'enlace_del_word' });
 
       const resultado = await projectService.enlaceDelWord(licencia.user.id, licencia.productCode);
+
+      // Si subió su propio documento para citar, «su Word» es ese.
+      const subido = await documentoService.enlace(licencia.user.id, licencia.productCode);
+      if (subido) {
+        const { norma } = subido;
+        return texto(
+          `Enlace para descargar SU DOCUMENTO con las citas y la lista de referencias (caduca en ` +
+            `${subido.minutos} minutos):${N}${subido.url}${N}${N}` +
+            (norma.familia === 'notas'
+              ? `OJO: la norma del proyecto es ${norma.nombre}, de notas al pie, y en un documento ` +
+                'subido no se pueden poner: el enlace dará error. Pregúntale otra norma y guárdala ' +
+                `con "guardar_avance" (estiloCitas) antes de dárselo.${N}${N}`
+              : `Las citas salen en ${norma.nombre}` +
+                (norma.elegida
+                  ? `.${N}${N}`
+                  : ', la de por defecto: nadie eligió otra. Si su universidad pide otra, ' +
+                    `pregúntasela y guárdala con "guardar_avance" (estiloCitas).${N}${N}`)) +
+            'Es SU MISMO WORD, con su formato, sus tablas y sus figuras: solo se añadieron las ' +
+            'citas, lo marcado [falta fuente] en amarillo y la lista de referencias. DÁSELO TAL ' +
+            'CUAL y NO le prepares tú otro documento.' +
+            (resultado
+              ? `${N}${N}Aparte, la tesis armada con los capítulos del método: ${resultado.url}`
+              : ''),
+        );
+      }
+
       if (!resultado) {
         return texto(
           'Todavía no hay ningún capítulo guardado, así que no hay Word que descargar. ' +

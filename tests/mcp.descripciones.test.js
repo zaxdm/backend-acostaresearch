@@ -156,11 +156,61 @@ test('ampliar_desde_mis_fuentes cuenta su Zotero entre las semillas', () => {
   assert.match(descripcion('ampliar_desde_mis_fuentes'), /Zotero/);
 });
 
-test('siguen registradas las mismas 18 herramientas', () => {
+// ── R en la conversación ───────────────────────────────────────────────────
+
+test('trabajar_en_r: Claude corre R, pregunta antes y cuida los datos', () => {
+  const d = descripcion('trabajar_en_r');
+  assert.match(d, /manejas TÚ/);
+  assert.match(d, /PREGÚNTALE/);
+  assert.match(d, /SUS DATOS SON PERSONALES/);
+  assert.match(d, /enlace para que los suba/);
+  assert.match(d, /guardar_analisis/, 'las cifras se siguen guardando como siempre');
+});
+
+test('trabajar_en_r no obliga a mandar nada: sin argumentos da el estado', () => {
+  const e = esquema('trabajar_en_r');
+  assert.equal(e.required, undefined);
+  assert.deepEqual(Object.keys(e.properties).sort(), ['codigo', 'descargar', 'reiniciar']);
+  assert.equal(e.additionalProperties, false);
+});
+
+test('ya no se manda al tesista a la página de análisis', () => {
+  for (const nombre of ['ver_analisis', 'guardar_analisis']) {
+    const d = descripcion(nombre);
+    assert.doesNotMatch(d, /acostaresearch\.com\/analisis|Enviar a mi conector|página de análisis/);
+    assert.match(d, /trabajar_en_r/);
+  }
+  assert.doesNotMatch(descripcion('guardar_analisis'), /NO EJECUTA R/);
+});
+
+// ── Citar el documento que subió ────────────────────────────────────────────
+
+test('ver_mi_documento marca el orden: norma, leer, buscar, resumen, guardar, enlace', () => {
+  const d = descripcion('ver_mi_documento');
+  assert.match(d, /cita mi documento/);
+  assert.match(d, /guardar_avance/);
+  for (const herramienta of ['mis_fuentes', 'buscar_fuentes', 'buscar_en_la_literatura', 'anadir_a_mis_fuentes', 'citar_mi_documento', 'enlace_del_word']) {
+    assert.match(d, new RegExp(herramienta), herramienta);
+  }
+  assert.match(d, /ANTES DE GUARDAR NADA/);
+  assert.match(d, /NUNCA inventes/);
+});
+
+test('citar_mi_documento exige copiar el texto tal cual y el visto bueno', () => {
+  const d = descripcion('citar_mi_documento');
+  assert.match(d, /NO CAMBIES NI UNA PALABRA/);
+  assert.match(d, /[FALTA FUENTE]/);
+  assert.match(d, /visto bueno/);
+  assert.deepEqual(Object.keys(esquema('citar_mi_documento').properties), ['parrafos']);
+});
+
+test('siguen registradas las mismas 21 herramientas', () => {
   // 17 desde que existe «enlace_del_word»: el Word lo arma el servidor, en la
   // norma del proyecto, y Claude da el enlace en vez de fabricarlo él.
   // 18 desde «mis_fuentes»: ver su biblioteca y su Zotero sin tener un tema.
-  assert.equal(registradas.size, 18);
+  // 19 desde «trabajar_en_r»: Claude corre el análisis en R en la conversación.
+  // 21 desde «ver_mi_documento» y «citar_mi_documento»: citar el Word que subió.
+  assert.equal(registradas.size, 21);
   for (const nombre of [
     'listar_capitulos',
     'mi_proyecto',
@@ -170,6 +220,9 @@ test('siguen registradas las mismas 18 herramientas', () => {
     'redactar',
     'enlace_del_word',
     'mis_fuentes',
+    'trabajar_en_r',
+    'ver_mi_documento',
+    'citar_mi_documento',
   ]) {
     assert.ok(registradas.has(nombre), `falta ${nombre}`);
   }

@@ -65,6 +65,7 @@ sustituir('../src/modules/projects/project.repository', {
 });
 
 sustituir('../src/modules/projects/project.storage', {
+  leerFichaDeDocumento: async () => null,
   leer: async () => 'Uno [AR11111111].\n\n[AR22222222:n] proponen seis fases.',
   leerPlantilla: async () => null,
 });

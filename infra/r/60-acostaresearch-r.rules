@@ -1,0 +1,25 @@
+// El backend (usuario «acosta») puede arrancar y parar la jaula de R. Nada más.
+//
+// Solo la plantilla acostaresearch-r@<id>.service, con un id de letras, cifras
+// y guiones, y solo start y stop. No puede arrancar otras unidades, ni cambiar
+// cómo es la jaula, ni lanzar systemd-run con opciones a su gusto: aunque
+// alguien tomara el control de la API, lo único que conseguiría es lanzar más
+// jaulas igual de cerradas.
+//
+// Va en /etc/polkit-1/rules.d/. polkit relee la carpeta solo.
+
+polkit.addRule(function (action, subject) {
+  if (action.id !== "org.freedesktop.systemd1.manage-units") return;
+  if (subject.user !== "acosta") return;
+
+  var unidad = action.lookup("unit");
+  var verbo = action.lookup("verb");
+
+  if (
+    typeof unidad === "string" &&
+    /^acostaresearch-r@[A-Za-z0-9][A-Za-z0-9_-]{0,80}\.service$/.test(unidad) &&
+    (verbo === "start" || verbo === "stop")
+  ) {
+    return polkit.Result.YES;
+  }
+});

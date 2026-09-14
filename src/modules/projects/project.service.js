@@ -32,6 +32,7 @@ const plantilla = require('./project.plantilla');
 const partesDePlantilla = require('./project.plantilla-partes');
 const portadaAuto = require('./project.portada-auto');
 const auditoria = require('./project.auditoria');
+const documentoService = require('./documento.service');
 const skillService = require('../skills/skill.service');
 const referenceService = require('../references/reference.service');
 const { guardarAvanceSchema, guardarCapituloSchema } = require('./project.schema');
@@ -1061,9 +1062,9 @@ function agruparPorMetodo(guardados) {
 /**
  * Guarda el análisis: el script, lo que devolvió, y las cifras.
  *
- * NO SE EJECUTA NADA AQUÍ, y es a propósito. El tesista corre su análisis en su
- * propio RStudio, con sus datos, y pega el resultado. Ejecutar R de terceros en
- * este servidor sería un problema de seguridad, no una función.
+ * NO SE EJECUTA NADA AQUÍ. Lo que se guarda llega de «trabajar_en_r» —que corre
+ * R dentro de la jaula de infra/r/, nunca en este proceso— o del RStudio del
+ * propio tesista, pegado en la conversación.
  *
  * Lo que aporta guardarlo: el script queda para poder responder, dentro de un
  * año, «¿de dónde salió este 0,42?», y las cifras quedan para que el repaso
@@ -1243,7 +1244,7 @@ function resumenDeAnalisis({ capitulo, script, salida, cifras, fecha }) {
   if (hallados.length === 0) {
     partes.push(
       'No se ha reconocido ningún resultado estadístico en esta consola. Puede que el análisis ' +
-        'venga de un RStudio propio y no de la página de análisis. Pídela entera con ' +
+        'venga de un RStudio propio. Pídela entera con ' +
         'ver_analisis(bloque: "todo") o por tramos con desde y hasta.',
     );
   } else {
@@ -1641,6 +1642,8 @@ async function deUsuario(userId, { esAdmin = false } = {}) {
         asesor: proyecto.asesor ?? null,
         norma: normaDelProyecto(proyecto),
         plantilla: proyecto.plantillaAt ? await plantillaDelPanel(proyecto) : null,
+        /** El Word que subió para que Claude lo cite, o null. */
+        documento: await documentoService.fichaDelPanel(proyecto),
         updatedAt: proyecto.updatedAt,
         etapas,
         avance: { listos, total: fases.length },

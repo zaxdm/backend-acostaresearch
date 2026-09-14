@@ -16,6 +16,7 @@ const trialRoutes = require('./modules/trials/trial.routes');
 const zoteroRoutes = require('./modules/zotero/biblioteca.routes');
 const asistenteRoutes = require('./modules/asistente/asistente.routes');
 const reclamoRoutes = require('./modules/reclamos/reclamo.routes');
+const rRoutes = require('./modules/r/r.routes');
 
 const comprobarBase = require('./lib/comprobarBase');
 
@@ -61,5 +62,8 @@ router.use('/asistente', asistenteRoutes);
 // El Libro de Reclamaciones. Presentar una hoja es público; responderla, del
 // administrador.
 router.use('/reclamos', reclamoRoutes);
+// R en la conversación: subir la matriz y bajar lo que produce el análisis,
+// desde los enlaces que da Claude. Sin sesión: el enlace firmado es la llave.
+router.use('/r', rRoutes);
 
 module.exports = router;

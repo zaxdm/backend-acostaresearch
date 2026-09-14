@@ -1,0 +1,94 @@
+# La jaula de R: una ejecución de la sesión %i (el id del proyecto).
+#
+# La arranca el backend con `systemctl start acostaresearch-r@<id>.service`, y
+# polkit (60-acostaresearch-r.rules) solo le deja arrancar ESTA plantilla: el
+# backend no puede elegir cómo es la jaula, solo usarla.
+#
+# Lo que R NO puede hacer aquí dentro, aunque le manden cualquier código:
+#   - ver la red, ni siquiera la base de datos;
+#   - ver /opt (el código y el .env), /var (skills, comprobantes, tesis de
+#     todos, las otras sesiones) ni /home o /root;
+#   - leer los secretos del entorno: el servicio arranca con un entorno vacío;
+#   - ganar privilegios, cargar módulos, tocar el reloj o el kernel;
+#   - pasar de 400 MB, de un núcleo, de 16 procesos o de 45 segundos.
+#
+# Lo único que ve con escritura es SU carpeta. Lo único que ve de /opt es la
+# carpeta r/ de la aplicación, en solo lectura, que es el guion que lo ejecuta.
+
+[Unit]
+Description=Acosta Research · ejecución de R de la sesión %i
+# Sin dependencias: se arranca a demanda y termina solo.
+
+[Service]
+Type=oneshot
+User=acosta-r
+Group=acosta-r
+# Lo que crea R lo lee el backend por el grupo; nadie más.
+UMask=0007
+Slice=acostaresearch-r.slice
+
+WorkingDirectory=/var/lib/acostaresearch-r/sesiones/%i
+ExecStart=/usr/bin/Rscript --vanilla /opt/acostaresearch/app/r/ejecutar.R
+
+# TIENE QUE COINCIDIR con R_LIMITE_SEGUNDOS del backend.
+TimeoutStartSec=45s
+
+# ── Entorno limpio ──────────────────────────────────────────────────────────
+# systemd no hereda el entorno de quien llama: aquí no llega DATABASE_URL, ni
+# las claves de pago, ni nada del .env. Solo esto.
+Environment=LANG=C.UTF-8 HOME=/tmp TMPDIR=/tmp R_LIBS_USER=/nonexistent
+
+# ── Sistema de archivos ─────────────────────────────────────────────────────
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+# Se tapan enteros con un tmpfs vacío y se vuelve a montar encima SOLO lo que
+# hace falta. Es el patrón del manual de systemd.exec para TemporaryFileSystem.
+# /var/lib y no /var entero: /var/tmp lo monta PrivateTmp, y el resto de /var
+# que podría decir algo se cierra aparte en InaccessiblePaths.
+TemporaryFileSystem=/var/lib:ro /opt:ro /srv:ro /mnt:ro /media:ro
+BindPaths=/var/lib/acostaresearch-r/sesiones/%i
+BindReadOnlyPaths=/opt/acostaresearch/app/r
+ReadWritePaths=/var/lib/acostaresearch-r/sesiones/%i
+InaccessiblePaths=-/var/log -/var/backups -/var/cache -/var/mail -/var/spool -/var/www -/var/opt
+InaccessiblePaths=-/etc/caddy -/etc/ssh -/etc/sudoers -/etc/sudoers.d -/etc/polkit-1 -/root -/boot
+
+# ── Red ─────────────────────────────────────────────────────────────────────
+PrivateNetwork=yes
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+
+# ── Privilegios ─────────────────────────────────────────────────────────────
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateUsers=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+RemoveIPC=yes
+KeyringMode=private
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @mount @debug @module @raw-io @reboot @swap @cpu-emulation @obsolete
+SystemCallErrorNumber=EPERM
+
+# ── Recursos ────────────────────────────────────────────────────────────────
+MemoryMax=400M
+MemorySwapMax=0
+CPUQuota=100%
+TasksMax=16
+LimitNOFILE=256
+LimitFSIZE=50M
+LimitCORE=0
+OOMPolicy=kill

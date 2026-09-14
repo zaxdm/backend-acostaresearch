@@ -19,6 +19,29 @@ si algún día divergen, manda el servidor.
 | `systemd/acostaresearch-caducidad.*` | `/etc/systemd/system/` | Lanza el aviso de caducidad cada día a las 13:00 UTC, las 8 de la mañana en Lima |
 | `systemd/acostaresearch-corpus.*` | `/etc/systemd/system/` | Sincroniza el corpus con Zotero cada noche a las 04:30 UTC, las 23:30 en Lima |
 | `systemd/acostaresearch-bibliotecas.*` | `/etc/systemd/system/` | Trae la colección de Zotero de cada comprador que la conectó, a las 05:30 UTC, las 00:30 en Lima |
+| `r/acostaresearch-r@.service` | `/etc/systemd/system/` | La jaula donde corre el R de «trabajar_en_r»: sin red, sin ver /opt ni /var, sin el entorno de la API, 400 MB, un núcleo, 16 procesos y 45 s |
+| `r/acostaresearch-r.slice` | `/etc/systemd/system/` | El tope de todas las sesiones de R juntas: 1,5 GB y núcleo y medio |
+| `r/60-acostaresearch-r.rules` | `/etc/polkit-1/rules.d/` | Deja al usuario de la API arrancar y parar esa plantilla, y nada más |
+| `r/instalar.sh` | se ejecuta desde `/opt/acostaresearch/app/infra/r/` | Instala R, el usuario `acosta-r`, la carpeta de sesiones, lo de arriba y 2 GB de swap |
+| `r/probar-jaula.sh` | se ejecuta desde `/opt/acostaresearch/app/infra/r/` | Intenta escapar de la jaula (secretos, red, memoria, tiempo, procesos) y dice si lo consigue |
+
+## R en la conversación
+
+El R de la herramienta `trabajar_en_r` **no corre en el proceso de la API**.
+El backend deja el código en `/var/lib/acostaresearch-r/sesiones/<proyecto>/` y
+arranca `acostaresearch-r@<proyecto>.service`, que ejecuta `r/ejecutar.R`
+dentro de la jaula. Ver la cabecera de la unidad para lo que R no puede hacer.
+
+Instalación, una vez y después de desplegar el código que la trae:
+
+```bash
+bash /opt/acostaresearch/app/infra/r/instalar.sh
+bash /opt/acostaresearch/app/infra/r/probar-jaula.sh   # todo tiene que salir OK
+```
+
+`R_LIMITE_SEGUNDOS` del `.env` y `TimeoutStartSec` de la unidad tienen que
+coincidir (45 por defecto). Las sesiones no van en el respaldo diario: son
+copias de trabajo de la matriz, y se borran con el proyecto.
 
 ## Las cuatro horas
 

@@ -41,6 +41,8 @@ const ERROR_CODES = Object.freeze({
   // Propio y no SERVICE_UNAVAILABLE: ese enciende la pantalla de mantenimiento
   // de la web, y que el chat no conteste no es motivo para tapar el sitio.
   ASSISTANT_UNAVAILABLE: 'ASSISTANT_UNAVAILABLE',
+  // Lo mismo para R: que no se pueda analizar no es que la web esté caída.
+  R_UNAVAILABLE: 'R_UNAVAILABLE',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
 });
 

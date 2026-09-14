@@ -5,9 +5,9 @@
  *
  * POR QUÉ EXISTE
  * --------------
- * Lo que la web ofrece —conectar Zotero, correr R en el navegador, elegir la
- * norma, subir el formato de la facultad— solo lo usa quien lo descubre, y el
- * tesista pasa el tiempo en Claude, no en su perfil. Así que el conector se lo
+ * Lo que la web ofrece —conectar Zotero, subir su propio documento para que
+ * Claude lo cite— solo lo usa quien lo descubre, y el tesista pasa el tiempo
+ * en Claude, no en su perfil. Así que el conector se lo
  * dice, en el momento en que le sirve: conectar Zotero al empezar el marco
  * teórico, la página de R al llegar a resultados.
  *
@@ -46,9 +46,6 @@ const DIA_MS = 24 * 60 * 60 * 1000;
 const CON_FUENTES =
   /problema|marco te[oó]rico|antecedentes|introducci[oó]n|revisi[oó]n de (la )?literatura|mapeo|discusi[oó]n/i;
 
-/** Cuántas fases del final cuentan como «los últimos capítulos». */
-const ULTIMAS_FASES = 3;
-
 /**
  * Qué consejo toca, o null.
  *
@@ -60,7 +57,6 @@ const ULTIMAS_FASES = 3;
 function elegir(estado) {
   const {
     actual = null,
-    fases = [],
     apoyos = [],
     fuentes = 0,
     zotero = null,
@@ -68,15 +64,11 @@ function elegir(estado) {
     todasListas = false,
     palabras = 0,
     estiloCitas = null,
-    plantillaAt = null,
     mostrados = {},
     ahora = new Date(),
   } = estado;
 
   const abriendoApoyo = Boolean(actual && esApoyo(actual.displayName));
-  const indice = actual ? fases.findIndex((f) => f.code === actual.code) : -1;
-  const enLasUltimas =
-    fases.length > ULTIMAS_FASES && (todasListas || indice >= fases.length - ULTIMAS_FASES);
 
   const candidatos = [
     // Conectado pero sin elegir colección: no se importa nada, en ninguna fase.
@@ -84,7 +76,6 @@ function elegir(estado) {
     fuentes === 0 && !zotero && actual && CON_FUENTES.test(actual.displayName) ? 'fuentes' : null,
     analisisPendiente ? 'analisis' : null,
     todasListas && apoyos.length > 0 && !abriendoApoyo ? 'terminada' : null,
-    palabras > 0 && !plantillaAt && enLasUltimas ? 'plantilla' : null,
     palabras > 0 && !estiloCitas ? 'norma' : null,
   ].filter(Boolean);
 
@@ -116,9 +107,9 @@ function redactar(clave, { esArticulo = false, apoyos = [] } = {}) {
       );
     case 'analisis':
       return (
-        'Para los resultados puede correr su análisis en R desde el navegador, sin instalar ' +
-        'nada, en acostaresearch.com/analisis. Al terminar, que pulse «Enviar a mi conector» y ' +
-        'lo leerás con "ver_analisis". Si prefiere RStudio, que te pegue el script y la salida.'
+        'Para los resultados puedes correr TÚ su análisis en R, aquí mismo, con "trabajar_en_r": ' +
+        'él no tiene que instalar nada ni escribir código, solo subir su matriz desde el enlace ' +
+        'que te da la herramienta. Si prefiere su RStudio, que te pegue el script y la salida.'
       );
     case 'terminada':
       return (
@@ -126,17 +117,12 @@ function redactar(clave, { esArticulo = false, apoyos = [] } = {}) {
         `${apoyos.join(' y ')}, y descargar el Word completo desde su perfil de ` +
         'acostaresearch.com.'
       );
-    case 'plantilla':
-      return (
-        `Va por los últimos capítulos y no ha subido ${esArticulo ? 'la plantilla de la revista' : 'el formato de su facultad'}. ` +
-        'Si lo sube en su perfil de acostaresearch.com («Mi tesis» → «Subir formato»), el Word ' +
-        'saldrá con sus títulos, fuentes y márgenes.'
-      );
     case 'norma':
       return (
         'Ya tiene texto escrito y no ha elegido norma de citas, así que el Word sale en APA 7. ' +
-        'Si su universidad o su asesor piden otra, que la elija en su perfil de ' +
-        'acostaresearch.com («Norma de citas»): no hay que reescribir nada.'
+        // Ya no hay selector en el panel: la norma se pregunta en la conversación.
+        'PREGÚNTALE qué norma le piden su universidad o su asesor y guárdala con "guardar_avance" ' +
+        '(estiloCitas): no hay que reescribir nada.'
       );
     default:
       return null;
@@ -211,7 +197,6 @@ async function consejoPara({ userId, productCode, capitulo = null, ahora = new D
     todasListas,
     palabras: (proyecto.stages ?? []).reduce((suma, e) => suma + (e.palabras ?? 0), 0),
     estiloCitas: proyecto.estiloCitas,
-    plantillaAt: proyecto.plantillaAt,
     mostrados,
     ahora,
   });

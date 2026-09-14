@@ -123,6 +123,28 @@ function avisarDelCambioDeProducto({ userId, planName, productCode }) {
     });
 }
 
+/**
+ * Al comprador, cuando se le revoca la licencia desde el panel.
+ *
+ * Sin await, como el del cambio de producto: la licencia ya está revocada en la
+ * base y un SMTP caído no puede hacer que el panel diga que falló. Devuelve la
+ * promesa solo para que las pruebas puedan esperarla.
+ */
+function avisarDeLaRevocacion({ userId, reason, licenseId }) {
+  return prisma.user
+    .findUnique({ where: { id: userId }, select: { email: true, firstName: true } })
+    .then((usuario) => {
+      if (!usuario?.email) return null;
+      return sendMail({
+        to: usuario.email,
+        ...plantillas.licenseRevoked({ firstName: usuario.firstName, reason }),
+      });
+    })
+    .catch((error) => {
+      logger.error({ err: error, licenseId }, 'No se pudo avisar de la revocación');
+    });
+}
+
 /** Mismo mensaje para código inexistente, ya usado o anulado: no se filtra cuál. */
 function codigoInvalido(code = ERROR_CODES.LICENSE_CODE_INVALID) {
   return new AppError('Ese código no es válido o ya se usó.', { statusCode: 400, code });
@@ -1175,6 +1197,13 @@ const licenseService = {
     });
 
     logger.warn({ licenseId: id, reason }, 'Licencia revocada');
+
+    // Revocar otra vez una ya revocada solo corrige el motivo: no se le manda
+    // un segundo correo por lo mismo.
+    if (licencia.status !== 'REVOKED') {
+      avisarDeLaRevocacion({ userId: licencia.userId, reason, licenseId: id });
+    }
+
     return actualizada;
   },
 

@@ -290,6 +290,60 @@ function licenseAlert({ firstName, motivos, revocada }) {
   };
 }
 
+/**
+ * Al comprador, cuando un administrador le revoca la licencia desde el panel.
+ *
+ * Hasta ahora solo avisaba la vigilancia automática; a quien se le revocaba a
+ * mano el conector le dejaba de responder sin una sola línea que explicara por
+ * qué, y lo primero que pensaba era que la herramienta se había roto.
+ *
+ * El motivo lo escribe el administrador en el panel y va tal cual: por eso se
+ * escapa, y por eso el diálogo avisa de que el cliente lo va a leer.
+ */
+function licenseRevoked({ firstName, reason }) {
+  const panel = `${appUrl()}/perfil`;
+  const motivo = String(reason ?? '').trim();
+  const saludo = firstName ? `Hola ${firstName}` : 'Hola';
+
+  return {
+    subject: 'Tu licencia del conector quedó desactivada · Acosta Research',
+    text: [
+      `${saludo}:`,
+      '',
+      'Hemos desactivado tu licencia del conector. Desde ahora Claude ya no podrá usar tus capítulos ni tus herramientas de tesis.',
+      ...(motivo ? ['', `Motivo: ${motivo}`] : []),
+      '',
+      'Lo que ya trabajaste no se borra: tu proyecto, tus capítulos y tus fuentes se conservan.',
+      '',
+      'Si crees que es un error o quieres hablarlo, responde a este correo y lo revisamos.',
+      '',
+      `Tu panel: ${panel}`,
+    ].join('\n'),
+    html: layout(
+      'Tu licencia quedó desactivada',
+      `<p style="margin:0 0 14px;font-size:15px;line-height:1.6">${escapar(saludo)}: hemos
+         desactivado tu licencia del conector. Desde ahora Claude ya no podrá usar tus capítulos
+         ni tus herramientas de tesis.</p>
+       ${
+         motivo
+           ? `<p style="margin:0 0 18px;padding:14px 16px;background:#f4f5f7;border-radius:10px;
+                        font-size:14px;line-height:1.6;color:#4b5563">
+                <strong>Motivo:</strong> ${escapar(motivo)}
+              </p>`
+           : ''
+       }
+       <p style="margin:0 0 14px;font-size:15px;line-height:1.6">Lo que ya trabajaste no se
+         borra: tu proyecto, tus capítulos y tus fuentes se conservan.</p>
+       <p style="margin:0 0 22px;font-size:15px;line-height:1.6">Si crees que es un error o
+         quieres hablarlo, <strong>responde a este correo</strong> y lo revisamos.</p>
+       <p style="margin:0;font-size:14px">
+         <a href="${panel}" style="color:#1a56db">Abrir mi panel</a>
+       </p>`,
+      { preheader: 'El conector dejó de responder. Lo que trabajaste se conserva.' },
+    ),
+  };
+}
+
 /** Importe en soles, para los correos del pago manual. */
 function soles(cents) {
   return `S/ ${(cents / 100).toFixed(2)}`;
@@ -1145,6 +1199,8 @@ module.exports = {
   passwordChangeCode,
   adminAccountCreated,
   licenseAlert,
+  // Al revocar a mano desde el panel. La vigilancia usa `licenseAlert`.
+  licenseRevoked,
   manualPaymentReceived,
   // Los tres de entrega salen de `payment.delivery`, que es el punto por donde
   // pasan por igual la pasarela y la aprobación de un Yape.

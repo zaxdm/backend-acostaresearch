@@ -116,6 +116,91 @@ const PRUEBAS = [
       'aproximación puede ser incorrecta, alguna casilla tiene menos de cinco casos: usa ' +
       'fisher.test.',
   },
+  // ── De otras carreras: salud, economía, biología, multivariante ──
+  {
+    clave: 'potencia',
+    // [\w.]+ y no \w+: los nombres llevan más de un punto (pwr.t.test, pwr.anova.test).
+    patron: /\bpwr\.[\w.]+\s*\(/,
+    texto:
+      'Potencia y tamaño de muestra: lo habitual es potencia ≥ 0,80 con α = 0,05. En ' +
+      'pwr.t.test la n es POR GRUPO. El tamaño del efecto hay que justificarlo con antecedentes ' +
+      'o con las convenciones de Cohen, no elegirlo para que salga la n que conviene.',
+  },
+  {
+    clave: 'roc',
+    patron: /\b(?:roc|auc|coords)\s*\(/,
+    texto:
+      'Curva ROC: un AUC de 0,5 es azar; ≥ 0,70 aceptable, ≥ 0,80 bueno y ≥ 0,90 excelente. El ' +
+      'mejor punto de corte (coords con "best") da la sensibilidad y la especificidad que se reportan.',
+  },
+  {
+    clave: 'riesgo',
+    patron: /\b(?:oddsratio|riskratio|epi\.2by2)\s*\(/,
+    texto:
+      'Odds ratio / riesgo relativo: 1 es no asociación; por encima de 1, factor de riesgo, y por ' +
+      'debajo, protector. Es significativo si su intervalo de confianza del 95 % no incluye el 1.',
+  },
+  {
+    clave: 'supervivencia',
+    patron: /\b(?:survfit|survdiff|coxph|ggsurvplot|cox\.zph)\s*\(/,
+    texto:
+      'Supervivencia: Kaplan-Meier da la mediana de supervivencia y log-rank (survdiff) con ' +
+      'p < 0,05 dice que las curvas difieren. En Cox, un HR > 1 es más riesgo; el supuesto de ' +
+      'riesgos proporcionales se comprueba con cox.zph (p ≥ 0,05).',
+  },
+  {
+    clave: 'metaanalisis',
+    patron: /\brma(?:\.\w+)?\s*\(/,
+    texto:
+      'Metaanálisis: el efecto combinado es significativo si su IC 95 % no cruza el valor nulo. ' +
+      'I² mide la heterogeneidad (25 % baja, 50 % moderada, 75 % alta); con heterogeneidad alta, ' +
+      'efectos aleatorios y buscar moderadores. El sesgo de publicación se mira con funnel y regtest.',
+  },
+  {
+    clave: 'vif',
+    patron: /\bvif\s*\(/,
+    texto:
+      'VIF: por encima de 5 (10 según el autor que cite) hay multicolinealidad entre los ' +
+      'predictores y sus coeficientes no son fiables.',
+  },
+  {
+    clave: 'supuestos-regresion',
+    patron: /\b(?:bptest|dwtest|durbinWatsonTest|ncvTest|resettest)\s*\(/,
+    texto:
+      'Supuestos de la regresión: Breusch-Pagan con p < 0,05 indica heterocedasticidad (usa ' +
+      'errores estándar robustos con sandwich y coeftest); Durbin-Watson cercano a 2 indica que ' +
+      'no hay autocorrelación de los residuos.',
+  },
+  {
+    clave: 'panel',
+    patron: /\bphtest\s*\(|\bplm\s*\(/,
+    texto:
+      'Datos de panel: la prueba de Hausman (phtest) con p < 0,05 favorece efectos fijos; con ' +
+      'p ≥ 0,05, efectos aleatorios.',
+  },
+  {
+    clave: 'series',
+    patron: /\b(?:adf\.test|kpss\.test|ur\.df|auto\.arima|Arima|Box\.test)\s*\(/,
+    texto:
+      'Series de tiempo: en Dickey-Fuller (ADF), p < 0,05 dice que la serie es estacionaria; en ' +
+      'KPSS es al revés. Un ARIMA se valida con sus residuos: Ljung-Box con p ≥ 0,05.',
+  },
+  {
+    clave: 'diversidad',
+    patron: /\b(?:diversity|specnumber|adonis2|metaMDS)\s*\(/,
+    texto:
+      'Diversidad y comunidades: Shannon suele ir de 1,5 a 3,5 (más alto, más diverso) y Simpson ' +
+      'de 0 a 1. En PERMANOVA (adonis2), p < 0,05 dice que la composición difiere entre grupos; ' +
+      'en un NMDS, un stress < 0,20 es aceptable.',
+  },
+  {
+    clave: 'componentes',
+    patron: /\b(?:PCA|MCA|CA|prcomp|princomp)\s*\(/,
+    texto:
+      'Componentes / correspondencias: se retienen las dimensiones con autovalor > 1 o las que ' +
+      'acumulan en torno al 70 % de la varianza. Las variables con más contribución (cos2) son ' +
+      'las que dan nombre a cada dimensión.',
+  },
 ];
 
 /** Cómo se leen las pruebas que aparecen en el código, en orden y sin repetir. */

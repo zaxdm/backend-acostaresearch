@@ -65,6 +65,32 @@ factanal(datos[, 1:6], factors = 2)
   assert.equal(revisar(codigo), null);
 });
 
+test('los paquetes de otras carreras pasan: salud, economía, biología, texto, ML', () => {
+  const codigo = `
+library(survival); library(survminer)
+ajuste <- survfit(Surv(tiempo, evento) ~ grupo, data = datos); ggsurvplot(ajuste)
+epitools::oddsratio(table(datos$expuesto, datos$caso)); epiR::epi.2by2(tabla)
+pROC::roc(datos$caso, datos$puntaje); metafor::rma(yi, vi, data = estudios)
+pwr::pwr.t.test(d = 0.5, power = 0.8, sig.level = 0.05)
+diseno <- survey::svydesign(ids = ~1, strata = ~estrato, weights = ~peso, data = datos)
+plm::plm(y ~ x, data = panel, model = "within"); lmtest::bptest(modelo); car::vif(modelo)
+forecast::auto.arima(serie); tseries::adf.test(serie)
+vegan::diversity(abundancias, index = "shannon")
+FactoMineR::PCA(datos[, 3:10]); factoextra::fviz_pca_biplot(pca)
+caret::train(y ~ ., data = datos, method = "rf")
+tidytext::unnest_tokens(respuestas, palabra, texto); tm::VCorpus(tm::VectorSource(textos))
+sjPlot::tab_model(modelo); patchwork::wrap_plots(g1, g2); mice::mice(datos, m = 5)
+x <- rio::import("datos.xlsx")
+`;
+  assert.equal(revisar(codigo), null);
+});
+
+test('lo que se dejó fuera a propósito no pasa', () => {
+  for (const codigo of ['library(devtools)', 'remotes::install_github("x/y")', 'library(quantmod)', 'sf::st_read("mapa.shp")']) {
+    assert.equal(revisar(codigo)?.regla, 'paquetes', codigo);
+  }
+});
+
 test('un paquete de red que trae tidyverse sigue sin poder cargarse', () => {
   assert.equal(revisar('library(httr)')?.regla, 'paquetes');
   assert.equal(revisar('rvest::read_html("x")')?.regla, 'paquetes');

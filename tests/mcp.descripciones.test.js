@@ -169,7 +169,22 @@ test('trabajar_en_r: Claude corre R, pregunta antes y cuida los datos', () => {
 
 test('trabajar_en_r dice qué paquetes hay y cuáles no', () => {
   const d = descripcion('trabajar_en_r');
-  for (const paquete of ['tidyverse', 'psych', 'lavaan', 'car', 'haven', 'flextable']) {
+  for (const paquete of [
+    'tidyverse',
+    'psych',
+    'lavaan',
+    'car',
+    'haven',
+    'flextable',
+    // Una por carrera: que Claude sepa que no es solo para psicología.
+    'metafor',
+    'survey',
+    'plm',
+    'vegan',
+    'FactoMineR',
+    'tidytext',
+    'pwr',
+  ]) {
     assert.match(d, new RegExp(paquete), paquete);
   }
   assert.match(d, /NO hay/, 'sin esto, Claude intenta library(DescTools) y falla');

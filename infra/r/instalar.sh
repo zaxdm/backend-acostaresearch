@@ -42,7 +42,22 @@ apt-get install -y -qq --no-install-recommends \
   r-cran-purrr r-cran-tibble r-cran-ggplot2 r-cran-ggpubr r-cran-corrplot \
   r-cran-psych r-cran-gparotation r-cran-psy r-cran-lavaan r-cran-semtools \
   r-cran-car r-cran-rstatix r-cran-nortest r-cran-effectsize r-cran-performance \
-  r-cran-broom r-cran-emmeans r-cran-lme4
+  r-cran-broom r-cran-emmeans r-cran-lme4 \
+  r-cran-patchwork r-cran-skimr r-cran-kableextra r-cran-sjplot r-cran-sjmisc r-cran-sjstats \
+  r-cran-ggeffects r-cran-ggally r-cran-ggthemes r-cran-viridis r-cran-mice r-cran-hmisc \
+  r-cran-ggalluvial r-cran-dendextend r-cran-rio \
+  r-cran-pwr r-cran-coin r-cran-multcomp r-cran-lmertest r-cran-ordinal r-cran-pscl \
+  r-cran-polycor r-cran-vcd r-cran-semplot r-cran-erm r-cran-qgraph \
+  r-cran-epitools r-cran-epir r-cran-metafor r-cran-survminer r-cran-proc r-cran-survey \
+  r-cran-plm r-cran-aer r-cran-lmtest r-cran-sandwich r-cran-forecast r-cran-tseries \
+  r-cran-urca r-cran-zoo r-cran-xts \
+  r-cran-vegan r-cran-ade4 \
+  r-cran-factominer r-cran-factoextra r-cran-randomforest r-cran-glmnet r-cran-e1071 r-cran-caret \
+  r-cran-tidytext r-cran-tm r-cran-wordcloud r-cran-snowballc
+# A propósito NO: devtools y remotes (instalar desde GitHub es lo que la jaula
+# impide), quarto y rmarkdown (la tesis la redacta Claude y el Word lo arma el
+# backend), quantmod (descarga datos de internet y la jaula no tiene red), y sf
+# y terra (mapas de varios archivos y rásteres que no caben en 400 MB).
 Rscript --version
 
 echo "── Usuario de la jaula ──"

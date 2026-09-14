@@ -2138,14 +2138,26 @@ function construirServidor(licencia) {
         'en una o dos frases, sin jerga.\n\n' +
         'SUS DATOS SON PERSONALES: no imprimas la matriz ni filas enteras. Si necesitas ver ' +
         'valores para encontrar un error, head() de pocas filas y solo de las columnas necesarias.\n\n' +
-        'PAQUETES: además de R base (factanal, prcomp, glm…) y los recomendados (MASS, nlme…), ' +
-        'tienes tidyverse (dplyr, tidyr, readr, stringr, forcats, purrr), ggplot2, ggpubr, ' +
-        'corrplot, psych, GPArotation, psy, lavaan, semTools, car, rstatix, nortest, effectsize, ' +
-        'performance, broom, emmeans, lme4, readxl, haven, writexl, openxlsx, flextable y officer ' +
-        '(tablas en Word que el tesista puede bajar). Los library() se recuerdan entre llamadas. ' +
-        'Carga solo lo que uses: tidyverse entero tarda unos segundos en cada llamada. NO hay ' +
-        'moments, DescTools, MVN, irr, apaTables ni mirt: usa psych (skew, kurtosi, mardia, ICC, ' +
-        'cohen.kappa) o rstatix.\n\n' +
+        'PAQUETES, además de R base (factanal, prcomp, glm…) y los recomendados (MASS, nlme, ' +
+        'survival…). Sirven a cualquier carrera:\n' +
+        '· Datos y gráficos: tidyverse, rio, skimr, Hmisc, mice, ggplot2, ggpubr, patchwork, ' +
+        'GGally, ggthemes, viridis, ggalluvial, corrplot, sjPlot, ggeffects.\n' +
+        '· Tablas para el tesista: flextable y officer (Word), kableExtra, writexl, openxlsx; ' +
+        'leer: readxl, haven.\n' +
+        '· Psicometría: psych, GPArotation, psy, lavaan, semTools, semPlot, eRm, polycor, qgraph.\n' +
+        '· Inferencia: car, rstatix, nortest, coin, multcomp, effectsize, performance, broom, ' +
+        'emmeans, pwr (tamaño de muestra), vcd, ordinal, pscl, lme4, lmerTest.\n' +
+        '· Salud: epitools, epiR, pROC, survminer, metafor (metaanálisis).\n' +
+        '· Encuestas con muestreo complejo: survey.\n' +
+        '· Economía: plm, AER, lmtest, sandwich, forecast, tseries, urca, zoo, xts.\n' +
+        '· Biología y ambiente: vegan, ade4.\n' +
+        '· Multivariante y machine learning: FactoMineR, factoextra, dendextend, caret, ' +
+        'randomForest, glmnet, e1071.\n' +
+        '· Texto (respuestas abiertas, entrevistas): tidytext, tm, SnowballC, wordcloud.\n' +
+        'Los library() se recuerdan entre llamadas. Carga solo lo que uses: cada paquete suma ' +
+        'segundos a cada llamada. NO hay moments, DescTools, MVN, irr, apaTables, mirt, ' +
+        'gtsummary, janitor, meta ni paquetes de mapas (sf, terra): usa psych (skew, kurtosi, ' +
+        'mardia, ICC, cohen.kappa), rstatix, flextable o metafor.\n\n' +
         'LÍMITES: sin internet, sin install.packages y sin salir de su carpeta. Cada llamada ' +
         `tiene ${env.R_LIMITE_SEGUNDOS} segundos y 400 MB.\n\n` +
         'Todo lo que ejecutas queda guardado en su análisis: "ver_analisis" lo lee, y las cifras ' +

@@ -47,7 +47,7 @@ apt-get install -y -qq --no-install-recommends \
   r-cran-ggeffects r-cran-ggally r-cran-ggthemes r-cran-viridis r-cran-mice r-cran-hmisc \
   r-cran-ggalluvial r-cran-dendextend r-cran-rio \
   r-cran-pwr r-cran-coin r-cran-multcomp r-cran-lmertest r-cran-ordinal r-cran-pscl \
-  r-cran-polycor r-cran-vcd r-cran-semplot r-cran-erm r-cran-qgraph \
+  r-cran-polycor r-cran-vcd r-cran-erm r-cran-qgraph \
   r-cran-epitools r-cran-epir r-cran-metafor r-cran-survminer r-cran-proc r-cran-survey \
   r-cran-plm r-cran-aer r-cran-lmtest r-cran-sandwich r-cran-forecast r-cran-tseries \
   r-cran-urca r-cran-zoo r-cran-xts \
@@ -57,7 +57,8 @@ apt-get install -y -qq --no-install-recommends \
 # A propósito NO: devtools y remotes (instalar desde GitHub es lo que la jaula
 # impide), quarto y rmarkdown (la tesis la redacta Claude y el Word lo arma el
 # backend), quantmod (descarga datos de internet y la jaula no tiene red), y sf
-# y terra (mapas de varios archivos y rásteres que no caben en 400 MB).
+# y terra (mapas de varios archivos y rásteres que no caben en 400 MB). Tampoco
+# semPlot: al cargarse ejecuta una orden del sistema y la jaula no lo permite.
 Rscript --version
 
 echo "── Usuario de la jaula ──"

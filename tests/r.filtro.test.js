@@ -86,7 +86,14 @@ x <- rio::import("datos.xlsx")
 });
 
 test('lo que se dejó fuera a propósito no pasa', () => {
-  for (const codigo of ['library(devtools)', 'remotes::install_github("x/y")', 'library(quantmod)', 'sf::st_read("mapa.shp")']) {
+  for (const codigo of [
+    'library(devtools)',
+    'remotes::install_github("x/y")',
+    'library(quantmod)',
+    'sf::st_read("mapa.shp")',
+    // Instalado pero no carga en la jaula: mejor que Claude lo sepa antes.
+    'semPlot::semPaths(ajuste)',
+  ]) {
     assert.equal(revisar(codigo)?.regla, 'paquetes', codigo);
   }
 });

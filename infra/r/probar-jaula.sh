@@ -49,9 +49,19 @@ comprobar "polkit deja arrancar la jaula y R responde" '[ -f "$CARPETA/fin" ] &&
 ejecutar 'x <- rnorm(50); png("prueba.png"); hist(x); invisible(dev.off()); cat(file.exists("prueba.png"), "\n")'
 comprobar "puede dibujar y guardar en su carpeta" 'grep -q "TRUE" <<<"$SALIDA"'
 comprobar "lo que escribe R lo lee la API" 'sudo -u acosta test -r "$CARPETA/prueba.png"'
-# Sin cargarlos: solo si están. Cargarlos todos a la vez pasaría de 400 MB.
-ejecutar 'p <- c("readxl","haven","writexl","openxlsx","flextable","officer","tidyverse","dplyr","tidyr","readr","forcats","stringr","purrr","tibble","ggplot2","ggpubr","corrplot","psych","GPArotation","psy","lavaan","semTools","car","rstatix","nortest","effectsize","performance","broom","emmeans","lme4","rio","patchwork","skimr","kableExtra","sjPlot","sjmisc","sjstats","ggeffects","GGally","ggthemes","viridis","mice","Hmisc","ggalluvial","dendextend","pwr","coin","multcomp","lmerTest","ordinal","pscl","polycor","vcd","semPlot","eRm","qgraph","epitools","epiR","metafor","survminer","pROC","survey","plm","AER","lmtest","sandwich","forecast","tseries","urca","zoo","xts","vegan","ade4","FactoMineR","factoextra","randomForest","glmnet","e1071","caret","tidytext","tm","wordcloud","SnowballC"); f <- p[!nzchar(vapply(p, function(x) system.file(package = x), ""))]; cat("faltan:", if (length(f)) f else "ninguno", "\n")'
-comprobar "están los paquetes de tesis" 'grep -q "faltan: ninguno" <<<"$SALIDA"'
+# Cada paquete que deja el filtro, cargado de verdad y en su propia orden, como
+# lo haría Claude. Estar instalado no basta: semPlot lo estaba y no cargaba,
+# porque al cargarse lanza un proceso y la jaula no lo deja. Todos a la vez en
+# una sola orden pasarían de 400 MB. Tarda un par de minutos.
+FALLAN=""
+for p in readxl haven writexl openxlsx flextable officer tidyverse dplyr tidyr readr forcats stringr purrr tibble lubridate magrittr glue scales ggplot2 ggpubr gridExtra cowplot ggrepel corrplot psych GPArotation psy lavaan semTools car carData rstatix nortest effectsize performance parameters insight datawizard bayestestR broom emmeans lme4 rio knitr patchwork skimr kableExtra sjPlot sjmisc sjstats ggeffects GGally ggthemes viridis ggalluvial dendextend mice Hmisc pwr coin multcomp lmerTest ordinal pscl polycor vcd eRm qgraph epitools epiR pROC survminer metafor survey plm AER lmtest sandwich forecast tseries urca zoo xts vegan ade4 FactoMineR factoextra randomForest glmnet e1071 caret tidytext tm NLP SnowballC wordcloud; do
+  rm -f "$CARPETA/paquetes.txt" "$CARPETA/entorno.RData"
+  ejecutar "suppressPackageStartupMessages(library($p)); cat(\"CARGA-OK\\n\")"
+  grep -q "CARGA-OK" <<<"$SALIDA" || FALLAN="$FALLAN $p"
+done
+rm -f "$CARPETA/paquetes.txt" "$CARPETA/entorno.RData"
+SALIDA="no cargan:$FALLAN"
+comprobar "cada paquete permitido carga dentro de la jaula" '[ -z "$FALLAN" ]'
 ejecutar 'suppressPackageStartupMessages({ library(lavaan); library(psych) }); ajuste <- cfa("visual =~ x1 + x2 + x3", data = HolzingerSwineford1939); cat("cfi:", round(fitMeasures(ajuste, "cfi"), 3), "\n"); cat("alfa:", round(psych::alpha(HolzingerSwineford1939[, c("x1","x2","x3")])$total$raw_alpha, 3), "\n")'
 comprobar "lavaan y psych cargan y calculan dentro de la jaula" 'grep -q "cfi:" <<<"$SALIDA" && grep -q "alfa:" <<<"$SALIDA"'
 ejecutar 'cat("psych sigue cargado:", "package:psych" %in% search(), "\n")'

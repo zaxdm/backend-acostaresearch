@@ -2144,7 +2144,7 @@ function construirServidor(licencia) {
         'GGally, ggthemes, viridis, ggalluvial, corrplot, sjPlot, ggeffects.\n' +
         '· Tablas para el tesista: flextable y officer (Word), kableExtra, writexl, openxlsx; ' +
         'leer: readxl, haven.\n' +
-        '· Psicometría: psych, GPArotation, psy, lavaan, semTools, semPlot, eRm, polycor, qgraph.\n' +
+        '· Psicometría: psych, GPArotation, psy, lavaan, semTools, eRm, polycor, qgraph.\n' +
         '· Inferencia: car, rstatix, nortest, coin, multcomp, effectsize, performance, broom, ' +
         'emmeans, pwr (tamaño de muestra), vcd, ordinal, pscl, lme4, lmerTest.\n' +
         '· Salud: epitools, epiR, pROC, survminer, metafor (metaanálisis).\n' +
@@ -2156,7 +2156,8 @@ function construirServidor(licencia) {
         '· Texto (respuestas abiertas, entrevistas): tidytext, tm, SnowballC, wordcloud.\n' +
         'Los library() se recuerdan entre llamadas. Carga solo lo que uses: cada paquete suma ' +
         'segundos a cada llamada. NO hay moments, DescTools, MVN, irr, apaTables, mirt, ' +
-        'gtsummary, janitor, meta ni paquetes de mapas (sf, terra): usa psych (skew, kurtosi, ' +
+        'gtsummary, janitor, meta, semPlot (los diagramas SEM: reporta cargas y ajuste en tabla) ' +
+        'ni paquetes de mapas (sf, terra): usa psych (skew, kurtosi, ' +
         'mardia, ICC, cohen.kappa), rstatix, flextable o metafor.\n\n' +
         'LÍMITES: sin internet, sin install.packages y sin salir de su carpeta. Cada llamada ' +
         `tiene ${env.R_LIMITE_SEGUNDOS} segundos y 400 MB.\n\n` +

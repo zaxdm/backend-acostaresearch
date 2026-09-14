@@ -125,8 +125,8 @@ const PAQUETES_PERMITIDOS = new Set([
   'pscl',
   'polycor',
   'vcd',
-  // Psicometría.
-  'semPlot',
+  // Psicometría. semPlot NO: al cargarse ejecuta una orden del sistema y la
+  // jaula no deja lanzar procesos (probado el 14-sep-2026).
   'eRm',
   'qgraph',
   // Ciencias de la salud.

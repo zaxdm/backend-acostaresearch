@@ -52,6 +52,18 @@ install -m 0644 "$ORIGEN/acostaresearch-r@.service" /etc/systemd/system/
 install -m 0644 "$ORIGEN/acostaresearch-r.slice" /etc/systemd/system/
 install -d -m 0755 /etc/polkit-1/rules.d
 install -m 0644 "$ORIGEN/60-acostaresearch-r.rules" /etc/polkit-1/rules.d/
+# La unidad de la API lleva ProtectSystem=strict y solo escribe en
+# /var/lib/acostaresearch: sin este añadido, la carpeta de sesiones le queda en
+# solo lectura aunque esté en el grupo, y la herramienta diría «no disponible».
+install -d -m 0755 /etc/systemd/system/acostaresearch.service.d
+cat > /etc/systemd/system/acostaresearch.service.d/r-sesiones.conf <<'CONF'
+# La API deja el código de R y lee lo que devuelve en esta carpeta.
+# Sin esto, ProtectSystem=strict de la unidad la deja en solo lectura.
+# Lo instala infra/r/instalar.sh.
+[Service]
+ReadWritePaths=/var/lib/acostaresearch-r/sesiones
+CONF
+
 systemctl daemon-reload
 systemd-analyze verify /etc/systemd/system/acostaresearch-r@.service 2>&1 | grep -v "^$" || true
 

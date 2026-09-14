@@ -191,10 +191,25 @@ test('trabajar_en_r dice qué paquetes hay y cuáles no', () => {
   assert.match(d, /se recuerdan entre llamadas/);
 });
 
+test('trabajar_en_r arma el informe en Word con la estructura como ejemplo, no como molde', () => {
+  const d = descripcion('trabajar_en_r');
+  assert.match(d, /INFORME EN WORD/);
+  assert.match(d, /es un ejemplo: adáptala a su diseño/);
+  assert.match(d, /\*\*Tabla 1\*\*/);
+  assert.match(d, /!\[\]\(figura1\.png\)/);
+  assert.match(d, /CADA CIFRA SALE DE LA CONSOLA/);
+
+  const informe = esquema('trabajar_en_r').properties.informe;
+  assert.deepEqual(informe.required, ['texto']);
+  assert.ok(informe.properties.norma.enum.includes('apa'));
+  assert.ok(informe.properties.norma.enum.includes('ieee'));
+  assert.match(informe.properties.norma.description, /PREGÚNTASELA/);
+});
+
 test('trabajar_en_r no obliga a mandar nada: sin argumentos da el estado', () => {
   const e = esquema('trabajar_en_r');
   assert.equal(e.required, undefined);
-  assert.deepEqual(Object.keys(e.properties).sort(), ['codigo', 'descargar', 'reiniciar']);
+  assert.deepEqual(Object.keys(e.properties).sort(), ['codigo', 'descargar', 'informe', 'reiniciar']);
   assert.equal(e.additionalProperties, false);
 });
 

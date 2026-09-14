@@ -17,10 +17,16 @@ const env = require('../../config/env');
 const logger = require('../../config/logger');
 const projectRepository = require('../projects/project.repository');
 const projectService = require('../projects/project.service');
+const referenceService = require('../references/reference.service');
+const citas = require('../projects/project.citas');
+const csl = require('../projects/project.csl');
+const cifras = require('../projects/project.cifras');
+const normas = require('../projects/project.normas');
 const formato = require('./r.formato');
 const filtro = require('./r.filtro');
 const catalogo = require('./r.catalogo');
 const enlaces = require('./r.enlaces');
+const informeWord = require('./r.informe');
 const {
   crearMotor,
   conductorSystemd,
@@ -383,6 +389,150 @@ async function subirDatos({ userId, productCode, bytes }) {
   };
 }
 
+// ── El informe en Word ──────────────────────────────────────────────────────
+
+const NOMBRE_DEL_INFORME = 'informe-de-resultados.docx';
+
+/**
+ * El texto del informe sin lo que tiene forma de cifra y no es un resultado.
+ *
+ * Los números de apartado («4.1. Resultados descriptivos»), de tabla y de
+ * figura, y la versión del programa («R 4.3.3») se leían como decimales y se
+ * marcaban en TODOS los informes. Un aviso que salta siempre se deja de leer, y
+ * entonces tampoco se lee el día que marca un p-valor inventado. Las cifras de
+ * las tablas y de los párrafos se siguen comprobando todas.
+ */
+function textoParaCifras(texto) {
+  return String(texto)
+    .split('\n')
+    .filter((linea) => !/^\s*#/.test(linea) && !/^\s*!\[/.test(linea))
+    .join('\n')
+    .replace(/\b\d+(?:\.\d+){2,}\b/g, '')
+    .replace(/\b(?:tabla|figura|apartado|secci[oó]n|cap[ií]tulo|anexo)\s+\d+(?:\.\d+)*\.?/gi, '')
+    .replace(/^\s*\d+(?:\.\d+)+\.?\s/gm, '');
+}
+
+/**
+ * El Word del análisis, en la norma que elija el tesista.
+ *
+ * Claude manda el contenido; aquí se buscan las figuras en la sesión, se ponen
+ * las citas en la norma, se arma el Word, se deja en la sesión y se da el
+ * enlace. Y se mira que cada cifra del informe esté en la consola de R: un
+ * informe de resultados con un número que no devolvió ninguna prueba es
+ * exactamente lo que este producto existe para evitar.
+ *
+ * Devuelve el contenido MCP tal cual.
+ */
+async function informe({ userId, productCode, titulo, texto: contenido, norma }) {
+  const m = motorActual();
+  if (!m || !(await m.listo())) return texto(NO_DISPONIBLE);
+
+  const cuerpo = String(contenido ?? '').trim();
+  if (!cuerpo) return texto('No mandaste el texto del informe: va en informe.texto.');
+
+  const proyecto = await projectRepository.asegurar(userId, productCode);
+  const sesion = proyecto.id;
+
+  // Las figuras, antes que nada: sin ellas no se arma un informe a medias.
+  const figuras = new Map();
+  const faltan = [];
+  for (const archivo of informeWord.figurasDe(cuerpo)) {
+    const bytes = await m.leerArchivo(sesion, archivo);
+    if (bytes && informeWord.dimensionesPng(bytes)) figuras.set(archivo, bytes);
+    else faltan.push(archivo);
+  }
+  if (faltan.length > 0) {
+    const hay = (await m.estado(sesion)).archivos.map((a) => a.nombre).filter((n) => /\.png$/i.test(n));
+    return texto(
+      `NO SE ARMÓ EL INFORME: no están en la sesión estas figuras: ${faltan.join(', ')}. ` +
+        (hay.length > 0 ? `Los PNG que hay: ${hay.join(', ')}. ` : 'No hay ningún PNG guardado. ') +
+        'Guárdalas antes con png("figura1.png", width = 1600, height = 1100, res = 200); …; dev.off() ' +
+        'y vuelve a mandar el informe con esos nombres.',
+    );
+  }
+
+  // Las citas, en la norma pedida o la del proyecto, con el APA de respaldo.
+  const claves = citas.clavesDe(cuerpo);
+  const fuentes = claves.length > 0 ? await referenceService.porClaves(claves, userId) : [];
+  const porClave = new Map(fuentes.map((f) => [f.ref, f]));
+  const idNorma = norma || proyecto.estiloCitas;
+
+  let resuelto;
+  try {
+    const r = csl.renderizar({
+      norma: idNorma,
+      idioma: proyecto.idiomaCitas,
+      capitulos: [{ titulo: titulo || 'Informe', texto: cuerpo }],
+      porClave,
+    });
+    resuelto = {
+      texto: r.textos[0],
+      citas: r.citas,
+      referencias: r.bibliografia ?? [],
+      perdidas: r.perdidas,
+      norma: r.norma,
+    };
+  } catch (error) {
+    logger.error({ err: error, userId, norma: idNorma }, 'Informe de R: la norma falló, sale en APA');
+    const r = citas.resolver(cuerpo, porClave);
+    resuelto = {
+      texto: r.texto,
+      citas: null,
+      referencias: citas.bibliografiaConCursivas([...r.usadas.values()]),
+      perdidas: r.perdidas,
+      norma: normas.normaDe('apa'),
+    };
+  }
+
+  const buffer = await informeWord.armar({
+    titulo,
+    tema: proyecto.tema,
+    texto: resuelto.texto,
+    citas: resuelto.citas,
+    referencias: resuelto.referencias,
+    figuras,
+  });
+  await m.guardarArchivo(sesion, NOMBRE_DEL_INFORME, buffer);
+
+  const { url, minutos } = enlaces.enlaceDeDescarga({ userId, productCode, archivo: NOMBRE_DEL_INFORME });
+  const referencias = Array.isArray(resuelto.referencias)
+    ? resuelto.referencias.length
+    : (resuelto.referencias?.entradas?.length ?? 0);
+
+  const partes = [
+    `Informe listo: ${informeWord.cuantasTablas(cuerpo)} tablas, ${figuras.size} figuras y ` +
+      `${referencias} referencias, con las citas en ${resuelto.norma.nombre}.`,
+    `Enlace para bajarlo (caduca en ${minutos} minutos):${N}${url}${N}DÁSELO AL TESISTA TAL CUAL.`,
+  ];
+
+  if (resuelto.perdidas.length > 0) {
+    partes.push(
+      `OJO: ${resuelto.perdidas.length} citas no corresponden a ninguna de sus fuentes ` +
+        `(${resuelto.perdidas.join(', ')}) y salen marcadas en el Word. Corrígelas y vuelve a armarlo.`,
+    );
+  }
+
+  const sinRespaldo = cifras.sinRespaldo(textoParaCifras(cuerpo), [await m.consola(sesion)]);
+  if (sinRespaldo.length > 0) {
+    partes.push(
+      `REVISA ESTAS CIFRAS: no aparecen en la consola de esta sesión, así que no salieron de R:${N}` +
+        sinRespaldo
+          .slice(0, 12)
+          .map((c) => `· ${c.bruto} — «${c.contexto}»`)
+          .join(N) +
+        (sinRespaldo.length > 12 ? `${N}· … y ${sinRespaldo.length - 12} más` : '') +
+        `${N}Si son un redondeo o un cálculo a mano, díselo al tesista; si no, corrígelas y vuelve a armar el informe.`,
+    );
+  }
+
+  partes.push(
+    'Si además quiere que forme parte de su tesis, guárdalo con "guardar_capitulo" en el capítulo ' +
+      'de resultados (las figuras no van en el Word de la tesis: se pegan a mano).',
+  );
+
+  return texto(partes.join(`${N}${N}`));
+}
+
 /** Un archivo de la sesión, para la ruta de descarga. */
 async function leerArchivo({ userId, productCode, archivo }) {
   const m = motorActual();
@@ -394,6 +544,7 @@ async function leerArchivo({ userId, productCode, archivo }) {
 
 module.exports = {
   trabajar,
+  informe,
   subirDatos,
   leerArchivo,
   disponible,

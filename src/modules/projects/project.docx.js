@@ -41,6 +41,11 @@ const {
   FootnoteReferenceRun,
   Tab,
   TabStopType,
+  Table,
+  TableRow,
+  TableCell,
+  WidthType,
+  BorderStyle,
 } = require('docx');
 
 const AdmZip = require('adm-zip');
@@ -85,13 +90,13 @@ function conCampo(tramos, clave, zotero) {
  */
 function corridas(texto, contexto) {
   const { citas = null, notas = null, zotero = false } = contexto ?? {};
-  if (!citas) return [new TextRun(texto)];
+  if (!citas) return conEnfasis(texto);
 
   const hijos = [];
   let desde = 0;
 
   for (const hueco of texto.matchAll(HUECO_RE)) {
-    if (hueco.index > desde) hijos.push(new TextRun(texto.slice(desde, hueco.index)));
+    if (hueco.index > desde) hijos.push(...conEnfasis(texto.slice(desde, hueco.index)));
     desde = hueco.index + hueco[0].length;
 
     const cita = citas.get(Number(hueco[1]));
@@ -109,8 +114,191 @@ function corridas(texto, contexto) {
     }
   }
 
+  if (desde < texto.length) hijos.push(...conEnfasis(texto.slice(desde)));
+  return hijos.length > 0 ? hijos : [new TextRun('')];
+}
+
+/**
+ * **Negrita** y *cursiva* de Markdown, hechas formato de Word.
+ *
+ * Las skills las usan donde APA las pide —el término del marco conceptual en
+ * negrita, los símbolos estadísticos como *p* o *M* en cursiva— y el Word las
+ * enseñaba como asteriscos. Solo cuentan pegadas al texto: «2 * 3» no es una
+ * cursiva. El guion bajo no se interpreta, porque aparece en los nombres de
+ * variables de R.
+ */
+const ENFASIS_RE = /\*\*(?=\S)([^*]+?)(?<=\S)\*\*|\*(?=[^\s*])([^*]+?)(?<=\S)\*/g;
+
+function conEnfasis(texto) {
+  const hijos = [];
+  let desde = 0;
+
+  for (const m of texto.matchAll(ENFASIS_RE)) {
+    if (m.index > desde) hijos.push(new TextRun(texto.slice(desde, m.index)));
+    // Solo se pone lo que se marca: un «sin cursiva» explícito en la negrita
+    // anularía la cursiva que traiga el estilo del párrafo o de la plantilla.
+    hijos.push(new TextRun(m[1] !== undefined ? { text: m[1], bold: true } : { text: m[2], italics: true }));
+    desde = m.index + m[0].length;
+  }
+
   if (desde < texto.length) hijos.push(new TextRun(texto.slice(desde)));
   return hijos.length > 0 ? hijos : [new TextRun('')];
+}
+
+// ── Tablas ─────────────────────────────────────────────────────────────────
+
+/** Una fila de tabla en Markdown: «| a | b |». */
+const FILA_RE = /^\s*\|.*\|\s*$/;
+/** La fila que separa la cabecera del cuerpo: «|---|:---:|». */
+const SEPARADOR_RE = /^\s*\|(\s*:?-{3,}:?\s*\|)+\s*$/;
+
+/** Las celdas de una fila. Un «\|» dentro de una celda es una barra de verdad. */
+function celdasDe(linea) {
+  const dentro = linea.trim().replace(/^\|/, '').replace(/\|$/, '');
+  return dentro.split(/(?<!\\)\|/).map((celda) => celda.trim().replace(/\\\|/g, '|'));
+}
+
+/** «**Tabla 1**» → «Tabla 1»: el formato lo pone el Word, no los asteriscos. */
+const sinEnfasis = (texto) => String(texto).trim().replace(/^[*_]+\s*/, '').replace(/\s*[*_]+$/, '').trim();
+
+/**
+ * Parte un bloque en lo que va antes de la tabla, la tabla y lo que va después.
+ *
+ * Null si el bloque no trae una tabla: hace falta la cabecera y, debajo, la fila
+ * de guiones. Sin esa fila, unas líneas que empiezan por «|» son texto.
+ */
+function partirTabla(lineas) {
+  const inicio = lineas.findIndex((l, i) => FILA_RE.test(l) && SEPARADOR_RE.test(lineas[i + 1] ?? ''));
+  if (inicio === -1) return null;
+
+  let fin = inicio + 2;
+  while (fin < lineas.length && FILA_RE.test(lineas[fin])) fin += 1;
+
+  return {
+    antes: lineas.slice(0, inicio).map((l) => l.trim()).filter(Boolean),
+    cabecera: celdasDe(lineas[inicio]),
+    filas: lineas.slice(inicio + 2, fin).map(celdasDe),
+    despues: lineas.slice(fin).map((l) => l.trim()).filter(Boolean),
+  };
+}
+
+const LINEA_APA = { style: BorderStyle.SINGLE, size: 8, color: '000000' };
+const SIN_LINEA = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' };
+
+/**
+ * Una tabla en el formato de APA 7.
+ *
+ * Encima, el número en negrita y el título en cursiva; tres líneas horizontales
+ * —arriba, bajo la cabecera y al final— y ninguna vertical; debajo, la nota.
+ * Es el formato que ya pedían las skills del método para la matriz de
+ * consistencia, la operacionalización y los resultados: hasta ahora solo lo
+ * conseguía el Word que armaba Claude, y en el del servidor la tabla salía como
+ * texto con barras.
+ *
+ * Lo que Claude escribe, sin líneas en blanco entre medias:
+ *
+ *   **Tabla 1**
+ *   *Matriz de consistencia*
+ *   | Problema | Objetivo |
+ *   |---|---|
+ *   | ¿Cómo influye…? | Determinar… [AR97D22F86] |
+ *   *Nota.* Elaboración propia.
+ *
+ * Las celdas admiten citas con clave, como el texto. El interlineado de la
+ * tabla es sencillo aunque el del capítulo sea doble: una tabla a doble
+ * espacio ocupa el doble y no la pide así ningún reglamento.
+ */
+function tablaApa({ antes, cabecera, filas, despues }, contexto) {
+  const elementos = [];
+  const [numero, ...titulo] = antes;
+  const columnas = cabecera.length;
+
+  if (numero) {
+    elementos.push(
+      new Paragraph({
+        children: [new TextRun({ text: sinEnfasis(numero), bold: true })],
+        keepNext: true,
+        spacing: { before: 240, after: 0 },
+      }),
+    );
+  }
+  if (titulo.length > 0) {
+    elementos.push(
+      new Paragraph({
+        children: [new TextRun({ text: sinEnfasis(titulo.join(' ')), italics: true })],
+        keepNext: true,
+        spacing: { after: 120 },
+      }),
+    );
+  }
+
+  const celda = (texto, { esCabecera = false, ultimaFila = false } = {}) => {
+    const negrita = /^\*\*.+\*\*$/.test(texto);
+    const limpio = negrita ? texto.slice(2, -2) : texto;
+    const hijos = negrita ? [new TextRun({ text: limpio, bold: true })] : corridas(limpio, contexto);
+    return new TableCell({
+      children: [
+        new Paragraph({
+          children: hijos,
+          alignment: esCabecera ? AlignmentType.CENTER : AlignmentType.LEFT,
+          spacing: { line: 240, before: 40, after: 40 },
+        }),
+      ],
+      borders: {
+        top: SIN_LINEA,
+        left: SIN_LINEA,
+        right: SIN_LINEA,
+        bottom: esCabecera || ultimaFila ? LINEA_APA : SIN_LINEA,
+      },
+    });
+  };
+
+  // Todas las filas con las mismas columnas que la cabecera: una celda de más o
+  // de menos en Markdown deja en Word una tabla con la fila descuadrada.
+  const ajustar = (fila) => Array.from({ length: columnas }, (_, i) => fila[i] ?? '');
+
+  elementos.push(
+    new Table({
+      width: { size: 100, type: WidthType.PERCENTAGE },
+      borders: {
+        top: LINEA_APA,
+        bottom: LINEA_APA,
+        left: SIN_LINEA,
+        right: SIN_LINEA,
+        insideHorizontal: SIN_LINEA,
+        insideVertical: SIN_LINEA,
+      },
+      rows: [
+        new TableRow({
+          tableHeader: true,
+          children: cabecera.map((texto) => celda(texto, { esCabecera: true })),
+        }),
+        ...filas.map(
+          (fila, i) =>
+            new TableRow({
+              children: ajustar(fila).map((texto) => celda(texto, { ultimaFila: i === filas.length - 1 })),
+            }),
+        ),
+      ],
+    }),
+  );
+
+  const nota = despues.join(' ');
+  const conNota = nota.match(/^[*_]*Nota\.?[*_]*\s*(.*)$/i);
+  elementos.push(
+    new Paragraph({
+      children: conNota
+        ? [new TextRun({ text: 'Nota.', italics: true }), ...corridas(` ${conNota[1]}`, contexto)]
+        : nota
+          ? corridas(nota, contexto)
+          : [new TextRun('')],
+      // Siempre hay un párrafo detrás: Word no deja escribir entre una tabla y
+      // lo que venga pegado a ella.
+      spacing: { before: 120, after: 240, line: 240 },
+    }),
+  );
+
+  return elementos;
 }
 
 /**
@@ -149,6 +337,12 @@ function comoParrafos(texto, contexto = {}) {
           ...(contexto.plantilla ? {} : { spacing: { before: 240, after: 120 } }),
         }),
       );
+      continue;
+    }
+
+    const tabla = partirTabla(bloque.split('\n'));
+    if (tabla) {
+      parrafos.push(...tablaApa(tabla, contexto));
       continue;
     }
 
@@ -539,4 +733,14 @@ function nombreDeArchivo(tema) {
   return `${base || 'tesis'}-${fecha}.docx`;
 }
 
-module.exports = { armar, nombreDeArchivo, comoParrafos, ajustarEstilos, tituloDelCapitulo };
+module.exports = {
+  armar,
+  nombreDeArchivo,
+  comoParrafos,
+  ajustarEstilos,
+  tituloDelCapitulo,
+  partirTabla,
+  tablaApa,
+  // Lo usa también el informe de R (`r.informe`): misma lista, misma maqueta.
+  referenciasDelDocumento,
+};

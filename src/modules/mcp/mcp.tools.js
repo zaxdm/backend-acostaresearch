@@ -291,7 +291,12 @@ const ESQUEMA_GUARDAR_CAPITULO = fromJsonSchema({
         'El texto del capítulo tal y como va a la tesis, en Markdown: ## para los ' +
         'subtítulos y párrafos separados por una línea en blanco. NADA de comentarios ' +
         'tuyos, ni «aquí tienes», ni notas entre corchetes: esto se convierte en el Word ' +
-        'que el tesista entrega. Si pasa de 30.000 caracteres, mándalo por partes.',
+        'que el tesista entrega. Si pasa de 30.000 caracteres, mándalo por partes. ' +
+        'LAS TABLAS van en Markdown y salen en el Word como tablas en formato APA, en un solo ' +
+        'bloque sin líneas en blanco: «**Tabla 1**», en la línea siguiente «*Título de la tabla*», ' +
+        'luego la cabecera «| Col A | Col B |», la fila «|---|---|», las filas, y si hace falta ' +
+        '«*Nota.* …» justo debajo. Las celdas admiten citas con clave. NO armes tú un Word para ' +
+        'tener las tablas: el servidor ya las pone.',
     },
     anadir: {
       type: 'boolean',
@@ -409,6 +414,36 @@ const ESQUEMA_TRABAJAR_EN_R = fromJsonSchema({
       description:
         'Nombre de un archivo de la sesión para darle al tesista un enlace de descarga: ' +
         '«resultados.csv», «figura1.png» o «graficos/grafico-01.png». Los que hay salen en la respuesta.',
+    },
+    informe: {
+      type: 'object',
+      description:
+        'SOLO cuando el tesista pida el informe o el capítulo de resultados en Word. Mándalo solo, ' +
+        'sin código en la misma llamada. Ver INFORME EN WORD en la descripción de la herramienta.',
+      properties: {
+        titulo: {
+          type: 'string',
+          maxLength: 200,
+          description: 'El título, un renglón por línea: «CAPÍTULO IV\nRESULTADOS» o «Informe de resultados».',
+        },
+        texto: {
+          type: 'string',
+          minLength: 1,
+          maxLength: 60000,
+          description:
+            'El informe en Markdown, con las tablas y las figuras en la sintaxis de la descripción y las ' +
+            'citas con las claves de sus fuentes.',
+        },
+        norma: {
+          type: 'string',
+          enum: normas.IDS_DE_NORMA,
+          description:
+            'La norma de citas que eligió el tesista para este informe. PREGÚNTASELA si su proyecto no ' +
+            'tiene una. Sin ella sale la de su proyecto, o APA 7.',
+        },
+      },
+      required: ['texto'],
+      additionalProperties: false,
     },
   },
   additionalProperties: false,
@@ -2130,7 +2165,8 @@ function construirServidor(licencia) {
         'puntaje(datos, columnas), normalidad(x), descriptivos(datos), frecuencias(x) y ' +
         'escribir_csv(tabla, "archivo.csv").\n' +
         '· descargar: un enlace para que baje un archivo que creó el análisis.\n' +
-        '· reiniciar: borra los objetos y vuelve a leer sus datos.\n\n' +
+        '· reiniciar: borra los objetos y vuelve a leer sus datos.\n' +
+        '· informe: arma el informe en Word del análisis y da el enlace (ver INFORME EN WORD).\n\n' +
         'ANTES DE CORRER PRUEBAS, PREGÚNTALE lo que no sepas —sus variables y dimensiones, qué ' +
         'ítems forman cada una, si su hipótesis es de relación o de diferencia—, y mira antes ' +
         '"mi_proyecto" o "ver_capitulo": la metodología puede estar ya acordada. Ve por pasos ' +
@@ -2159,13 +2195,56 @@ function construirServidor(licencia) {
         'gtsummary, janitor, meta, semPlot (los diagramas SEM: reporta cargas y ajuste en tabla) ' +
         'ni paquetes de mapas (sf, terra): usa psych (skew, kurtosi, ' +
         'mardia, ICC, cohen.kappa), rstatix, flextable o metafor.\n\n' +
+        'INFORME EN WORD: cuando pida su informe o su capítulo de resultados en Word, manda solo ' +
+        '«informe». El servidor pone las tablas en APA, mete las figuras de la sesión, pone las citas y ' +
+        'las referencias en la norma que elija y te da el enlace.\n' +
+        'El texto va en Markdown, como un capítulo: «# 4.1. Resultados descriptivos», «## 4.1.1. …» y ' +
+        'párrafos separados por una línea en blanco.\n' +
+        'Una TABLA es un bloque sin líneas en blanco: «**Tabla 1**», «*Título*», la tabla con «|» y su ' +
+        'fila «|---|», y «*Nota.* …».\n' +
+        'Una FIGURA, igual: «**Figura 1**», «*Título*», «![](figura1.png)» y «*Nota.* Procesado en R ' +
+        '4.3.3.». El PNG tiene que estar en la sesión: guárdalo antes con png("figura1.png", width = ' +
+        '1600, height = 1100, res = 200); …; dev.off().\n' +
+        'ESTRUCTURA DE REFERENCIA —es un ejemplo: adáptala a su diseño y a sus objetivos, y no pongas ' +
+        'apartados que no apliquen—: un párrafo de apertura (qué se analizó, con cuántos participantes ' +
+        'y qué instrumento); resultados descriptivos, con una tabla por variable u objetivo ' +
+        '(niveles, frecuencia, porcentaje), su figura si aporta y un párrafo que la interprete; ' +
+        'resultados inferenciales, con los supuestos (normalidad) y la decisión que justifican, y una ' +
+        'sección por hipótesis con la tabla de la prueba (estadístico, p, decisión, magnitud o tamaño ' +
+        'del efecto), su figura si aporta y la interpretación contra la hipótesis; y los resultados ' +
+        'complementarios, si los hubo. Tablas y figuras numeradas en orden, cada una con título y nota, ' +
+        'y nombradas en el texto («la Tabla 3 muestra…»). Un estudio cualitativo, experimental o ' +
+        'comparativo lleva sus propios apartados.\n' +
+        'CADA CIFRA SALE DE LA CONSOLA DE ESTA SESIÓN: la respuesta te marca las que no encuentre.\n\n' +
         'LÍMITES: sin internet, sin install.packages y sin salir de su carpeta. Cada llamada ' +
         `tiene ${env.R_LIMITE_SEGUNDOS} segundos y 400 MB.\n\n` +
         'Todo lo que ejecutas queda guardado en su análisis: "ver_analisis" lo lee, y las cifras ' +
         'que vayan al texto se guardan con "guardar_analisis" (resultados), como siempre.',
       inputSchema: ESQUEMA_TRABAJAR_EN_R,
     },
-    async ({ codigo, reiniciar, descargar }) => {
+    async ({ codigo, reiniciar, descargar, informe }) => {
+      // El informe va aparte: no ejecuta R, arma un Word con lo que ya salió.
+      if (informe) {
+        const cupo = await cupoDePrueba('trabajar_en_r');
+        if (cupo.bloqueo) return cupo.bloqueo;
+        await licenseService.recordUsage({ licenseId: licencia.id, tool: 'trabajar_en_r:informe' });
+        try {
+          return await rService.informe({
+            userId: licencia.user.id,
+            productCode: licencia.productCode,
+            titulo: informe.titulo,
+            texto: informe.texto,
+            norma: informe.norma,
+          });
+        } catch (error) {
+          logger.error({ err: error, licenseId: licencia.id }, 'Falló el informe de R');
+          return texto(
+            'No se pudo armar el informe por un fallo del servidor. No es nada del texto: vuelve a ' +
+              'intentarlo en un momento y, si se repite, díselo al tesista.',
+          );
+        }
+      }
+
       // Solo ejecutar gasta cupo en un conector de prueba: mirar la sesión no.
       if (typeof codigo === 'string' && codigo.trim() !== '') {
         const cupo = await cupoDePrueba('trabajar_en_r');

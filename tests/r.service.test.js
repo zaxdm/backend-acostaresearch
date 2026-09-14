@@ -141,6 +141,91 @@ test('descargar da un enlace si el archivo existe, y la lista si no', async () =
   assert.match(mal, /resultados\.csv/);
 });
 
+// ── El informe en Word ─────────────────────────────────────────────────────
+
+/** Un PNG mínimo que pasa la comprobación de cabecera. */
+const PNG_INFORME = (() => {
+  const b = Buffer.alloc(64);
+  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(b, 0);
+  b.writeUInt32BE(800, 16);
+  b.writeUInt32BE(600, 20);
+  return b;
+})();
+
+function motorDeInforme({ figuras = {}, consola = '' } = {}) {
+  const guardados = new Map();
+  return {
+    guardados,
+    async listo() {
+      return true;
+    },
+    async leerArchivo(_sesion, nombre) {
+      return figuras[nombre] ?? null;
+    },
+    async estado() {
+      return { hayDatos: true, objetos: [], columnas: [], archivos: Object.keys(figuras).map((nombre) => ({ nombre, bytes: 64 })) };
+    },
+    async guardarArchivo(_sesion, nombre, bytes) {
+      guardados.set(nombre, bytes);
+    },
+    async consola() {
+      return consola;
+    },
+  };
+}
+
+const INFORME = `# 4.1. Resultados descriptivos
+
+**Tabla 1**
+*Nivel de la variable*
+| Nivel | f | % |
+|---|---|---|
+| Alto | 43 | 86,0 % |
+*Nota.* n = 50.
+
+**Figura 1**
+*Distribución*
+![](figura1.png)
+*Nota.* Procesado en R 4.3.3.
+
+El coeficiente fue rho = 0,221 con p = 0,123.`;
+
+test('el informe se arma, se guarda en la sesión y se da el enlace', async () => {
+  const motor = motorDeInforme({
+    figuras: { 'figura1.png': PNG_INFORME },
+    consola: 'Alto 43 86.0\nrho 0.221 p-value = 0.123\n',
+  });
+  rService.usarMotor(motor);
+
+  const respuesta = await rService.informe({ ...USO, titulo: 'CAPÍTULO IV\nRESULTADOS', texto: INFORME, norma: 'apa' });
+  const texto = textoDe(respuesta);
+
+  assert.match(texto, /Informe listo: 1 tablas, 1 figuras/);
+  assert.match(texto, /APA 7/);
+  assert.match(texto, /\/r\/descarga\//);
+  assert.ok(motor.guardados.get('informe-de-resultados.docx')?.length > 1000, 'el Word se guarda en la sesión');
+  assert.doesNotMatch(texto, /REVISA ESTAS CIFRAS/, 'todas las cifras están en la consola');
+});
+
+test('si falta una figura no se arma nada, y se dice cuál y cómo guardarla', async () => {
+  const motor = motorDeInforme({ figuras: {} });
+  rService.usarMotor(motor);
+
+  const texto = textoDe(await rService.informe({ ...USO, texto: INFORME }));
+  assert.match(texto, /NO SE ARMÓ EL INFORME/);
+  assert.match(texto, /figura1\.png/);
+  assert.match(texto, /png\("figura1\.png"/);
+  assert.equal(motor.guardados.size, 0);
+});
+
+test('una cifra que no salió de R se marca', async () => {
+  rService.usarMotor(motorDeInforme({ figuras: { 'figura1.png': PNG_INFORME }, consola: 'Alto 43 86.0\n' }));
+
+  const texto = textoDe(await rService.informe({ ...USO, texto: INFORME }));
+  assert.match(texto, /REVISA ESTAS CIFRAS/);
+  assert.match(texto, /0,221/);
+});
+
 test('el estado describe la estructura, nunca valores', () => {
   const texto = rService.describirEstado({
     objetos: [

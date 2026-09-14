@@ -604,6 +604,26 @@ function crearMotor({
       return leido && !leido.truncado ? leido.bytes : null;
     },
 
+    /**
+     * Deja en la sesión un archivo que genera el backend —el informe en Word—
+     * para bajarlo con el mismo enlace que lo que produce R. Nunca con el nombre
+     * de uno interno.
+     */
+    guardarArchivo(sesion, nombre, bytes) {
+      if (!ARCHIVO_SEGURO.test(String(nombre)) || INTERNOS.has(nombre)) {
+        return Promise.reject(new Error('Nombre de archivo no válido'));
+      }
+      return enSuTurno(sesion, async () => {
+        const carpeta = await prepararCarpeta(sesion);
+        await escribirSeguro(carpeta, nombre, bytes, await grupo());
+      });
+    },
+
+    /** La consola acumulada de la sesión, para comprobar las cifras de un informe. */
+    async consola(sesion) {
+      return (await leerTexto(path.join(carpetaDe(sesion), 'consola.txt'), MAXIMO_ACUMULADO * 2)) ?? '';
+    },
+
     /** Todo lo de la sesión: cuando se borra el proyecto. */
     borrar(sesion) {
       return enSuTurno(sesion, () => fs.rm(carpetaDe(sesion), { ...BORRAR, recursive: true }));

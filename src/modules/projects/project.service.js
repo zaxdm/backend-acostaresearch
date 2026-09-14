@@ -1660,7 +1660,77 @@ async function deUsuario(userId, { esAdmin = false } = {}) {
   );
 }
 
+/** Caracteres por parte al leer un capítulo guardado: holgado para una respuesta del conector. */
+const POR_PARTE = 24000;
+
+/**
+ * Parte un texto largo en trozos de como mucho `maximo` caracteres.
+ *
+ * Por párrafos, para que ninguna parte empiece a mitad de frase ni parta una
+ * tabla. Solo un párrafo que por sí solo pase del máximo se corta a la fuerza.
+ */
+function enPartes(texto, maximo = POR_PARTE) {
+  const partes = [];
+  let actual = '';
+
+  for (const bloque of texto.split(/\n{2,}/)) {
+    const junto = actual === '' ? bloque : `${actual}\n\n${bloque}`;
+    if (junto.length > maximo && actual !== '') {
+      partes.push(actual);
+      actual = bloque;
+    } else {
+      actual = junto;
+    }
+  }
+  if (actual !== '') partes.push(actual);
+
+  return partes.flatMap((parte) => {
+    if (parte.length <= maximo) return [parte];
+    const trozos = [];
+    for (let i = 0; i < parte.length; i += maximo) trozos.push(parte.slice(i, i + maximo));
+    return trozos;
+  });
+}
+
+/**
+ * El texto guardado de un capítulo, por partes.
+ *
+ * POR QUÉ HACE FALTA
+ * ------------------
+ * La Discusión se escribe contra los Resultados y las Conclusiones contra todo
+ * lo anterior, pero `ver_capitulo` solo devolvía lo acordado, y ninguna
+ * herramienta el texto. Las skills acababan pidiéndole al tesista que pegara
+ * en la conversación lo que ya estaba guardado aquí.
+ *
+ * Null si el capítulo no es de esta licencia. `vacio` si todavía no tiene texto.
+ */
+async function textoDeCapitulo(userId, productCode, skillCode, { parte = 1 } = {}) {
+  const [proyecto, skill] = await Promise.all([
+    projectRepository.buscar(userId, productCode),
+    skillService.findByCode(skillCode),
+  ]);
+
+  if (!skill || !skillService.perteneceAlGrupo(skill, productCode)) return null;
+
+  const texto = proyecto ? await almacen.leer(proyecto.id, skillCode) : null;
+  if (!texto || texto.trim() === '') return { skill, vacio: true };
+
+  const partes = enPartes(texto);
+  const numero = Math.min(Math.max(1, Number(parte) || 1), partes.length);
+
+  return {
+    skill,
+    vacio: false,
+    parte: numero,
+    partes: partes.length,
+    palabras: almacen.palabrasDe(texto),
+    texto: partes[numero - 1],
+  };
+}
+
 module.exports = {
+  textoDeCapitulo,
+  enPartes,
   contexto,
   resumen,
   detalleDeCapitulo,

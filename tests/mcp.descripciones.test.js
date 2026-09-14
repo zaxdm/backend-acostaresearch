@@ -283,3 +283,27 @@ test('listar_capitulos sigue sin admitir argumentos', () => {
   assert.deepEqual(e.properties, {});
   assert.equal(e.additionalProperties, false);
 });
+
+// ── Leer lo ya escrito y escribir figuras ──────────────────────────────────
+//
+// Sin «texto», la Discusión y las Conclusiones le pedían al tesista que pegara
+// capítulos que ya estaban guardados. Y la marca de una figura va entre
+// corchetes, que era justo lo que la descripción de guardar_capitulo prohibía.
+
+test('ver_capitulo ofrece leer el texto guardado, por partes, y dice para qué', () => {
+  const e = esquema('ver_capitulo');
+  assert.deepEqual(Object.keys(e.properties).sort(), ['capitulo', 'parte', 'texto']);
+  assert.deepEqual(e.required, ['capitulo']);
+  const d = descripcion('ver_capitulo');
+  assert.match(d, /TEXTO GUARDADO/);
+  assert.match(d, /Discusión/);
+  assert.doesNotMatch(d, /No devuelve el texto/);
+});
+
+test('guardar_capitulo explica las figuras y ya no prohíbe su marca entre corchetes', () => {
+  const d = esquema('guardar_capitulo').properties.texto.description;
+  assert.match(d, /LAS FIGURAS/);
+  assert.match(d, /\[Insertar aquí la Figura 1: nombre-del-archivo\.png\]/);
+  assert.match(d, /solo valen las claves de cita, \[FALTA FUENTE\] y la marca de una figura/);
+  assert.match(d, /LAS TABLAS/, 'lo de las tablas se queda');
+});

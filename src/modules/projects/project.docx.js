@@ -301,6 +301,91 @@ function tablaApa({ antes, cabecera, filas, despues }, contexto) {
   return elementos;
 }
 
+// ── Figuras ────────────────────────────────────────────────────────────────
+
+/** «**Figura 2**», la primera línea del rótulo de una figura. */
+const FIGURA_RE = /^[*_]*\s*Figura\s+\d+[A-Za-z]?\s*[*_]*$/i;
+/**
+ * El hueco de la imagen: «[Insertar aquí la Figura 2: grafico.png]», o la
+ * imagen en Markdown, «![](figura2.png)», que es como la escribe el informe de
+ * R (`r.informe`). Aquí no está el archivo, así que las dos salen como la marca.
+ */
+const MARCA_FIGURA_RE = /^(\[Insertar aquí[^\]]*\]|!\[[^\]]*\]\([^)]+\))$/i;
+
+/** Lo que se ve en la marca: la imagen en Markdown se dice con palabras. */
+function textoDeMarca(linea, numero) {
+  const imagen = linea.match(/^!\[[^\]]*\]\(([^)]+)\)$/);
+  return imagen ? `[Insertar aquí la ${sinEnfasis(numero)}: ${imagen[1]}]` : linea;
+}
+
+/**
+ * Una figura en el formato de APA 7, con el hueco para la imagen.
+ *
+ * El servidor no tiene la imagen —sale de R o de RStudio, en el equipo del
+ * tesista—, así que se pone todo lo demás: el número en negrita, el título en
+ * cursiva, la marca resaltada en amarillo donde va la imagen y la nota. Sin
+ * esto el rótulo salía justificado y con sangría, como un párrafo cualquiera.
+ *
+ * Lo que Claude escribe, sin líneas en blanco entre medias:
+ *
+ *   **Figura 1**
+ *   *Distribución de la motivación*
+ *   [Insertar aquí la Figura 1: histograma-motivacion.png]
+ *   *Nota.* Elaboración propia.
+ */
+function figuraApa(lineas, contexto) {
+  const [numero, ...resto] = lineas.map((l) => l.trim()).filter(Boolean);
+  const elementos = [
+    new Paragraph({
+      children: [new TextRun({ text: sinEnfasis(numero), bold: true })],
+      keepNext: true,
+      spacing: { before: 240, after: 0 },
+    }),
+  ];
+
+  const titulo = [];
+  const despues = [];
+  for (const linea of resto) {
+    if (MARCA_FIGURA_RE.test(linea) || despues.length > 0) despues.push(linea);
+    else titulo.push(linea);
+  }
+
+  if (titulo.length > 0) {
+    elementos.push(
+      new Paragraph({
+        children: [new TextRun({ text: sinEnfasis(titulo.join(' ')), italics: true })],
+        keepNext: true,
+        spacing: { after: 120 },
+      }),
+    );
+  }
+
+  for (const linea of despues) {
+    if (MARCA_FIGURA_RE.test(linea)) {
+      elementos.push(
+        new Paragraph({
+          children: [new TextRun({ text: textoDeMarca(linea, numero), highlight: 'yellow' })],
+          alignment: AlignmentType.CENTER,
+          keepNext: true,
+          spacing: { before: 120, after: 120 },
+        }),
+      );
+      continue;
+    }
+    const nota = linea.match(/^[*_]*Nota\.?[*_]*\s*(.*)$/i);
+    elementos.push(
+      new Paragraph({
+        children: nota
+          ? [new TextRun({ text: 'Nota.', italics: true }), ...corridas(` ${nota[1]}`, contexto)]
+          : corridas(linea, contexto),
+        spacing: { before: 120, after: 240, line: 240 },
+      }),
+    );
+  }
+
+  return elementos;
+}
+
 /**
  * Convierte el texto del capítulo en párrafos.
  *
@@ -343,6 +428,11 @@ function comoParrafos(texto, contexto = {}) {
     const tabla = partirTabla(bloque.split('\n'));
     if (tabla) {
       parrafos.push(...tablaApa(tabla, contexto));
+      continue;
+    }
+
+    if (FIGURA_RE.test(bloque.split('\n')[0])) {
+      parrafos.push(...figuraApa(bloque.split('\n'), contexto));
       continue;
     }
 

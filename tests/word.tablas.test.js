@@ -98,6 +98,31 @@ test('la cursiva funciona también junto a una cita con clave', async () => {
   assert.ok(textos(xml).some((t) => t.includes('(Tinto, 1975)')));
 });
 
+test('una figura: número en negrita, título en cursiva, marca resaltada y nota, sin sangría', async () => {
+  const xml = await xmlDe(
+    '**Figura 2**\n*Distribución de la motivación*\n[Insertar aquí la Figura 2: histograma.png]\n*Nota.* Elaboración propia.',
+  );
+  assert.match(xml, /<w:b\/>(?:<w:bCs\/>)?<\/w:rPr><w:t(?: [^>]*)?>Figura 2<\/w:t>/);
+  assert.match(xml, /<w:i\/>(?:<w:iCs\/>)?<\/w:rPr><w:t(?: [^>]*)?>Distribución de la motivación<\/w:t>/);
+  assert.match(xml, /<w:highlight w:val="yellow"\/>(?:[^<]|<(?!\/w:r>))*Insertar aquí la Figura 2: histograma\.png/);
+  assert.ok(textos(xml).includes('Nota.'));
+  // Ningún párrafo del rótulo con la sangría de primera línea del texto normal.
+  const parrafoDelNumero = xml.match(/<w:p>(?:(?!<\/w:p>).)*Figura 2<\/w:t>/)[0];
+  assert.ok(!parrafoDelNumero.includes('w:firstLine'));
+});
+
+test('la imagen en Markdown del informe de R sale como la misma marca, con su archivo', async () => {
+  const xml = await xmlDe('**Figura 1**\n*Histograma*\n![](figura1.png)');
+  assert.ok(textos(xml).includes('[Insertar aquí la Figura 1: figura1.png]'), textos(xml).join(' | '));
+  assert.ok(!textos(xml).some((t) => t.includes('![](')));
+});
+
+test('una frase que empieza por «Figura» dentro de un párrafo sigue siendo texto', async () => {
+  const xml = await xmlDe('Figura 1 muestra la distribución de la muestra por edad.');
+  assert.ok(textos(xml).some((t) => t.includes('Figura 1 muestra la distribución')));
+  assert.ok(!xml.includes('w:highlight'));
+});
+
 test('unas líneas con barras pero sin fila de guiones siguen siendo texto', async () => {
   const xml = await xmlDe('| esto no es | una tabla |\n| sin separador |');
   assert.ok(!xml.includes('<w:tbl>'));

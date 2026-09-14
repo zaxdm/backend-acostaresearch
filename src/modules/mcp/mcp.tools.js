@@ -290,13 +290,18 @@ const ESQUEMA_GUARDAR_CAPITULO = fromJsonSchema({
       description:
         'El texto del capítulo tal y como va a la tesis, en Markdown: ## para los ' +
         'subtítulos y párrafos separados por una línea en blanco. NADA de comentarios ' +
-        'tuyos, ni «aquí tienes», ni notas entre corchetes: esto se convierte en el Word ' +
+        'tuyos, ni «aquí tienes», ni notas tuyas entre corchetes —solo valen las claves de ' +
+        'cita, [FALTA FUENTE] y la marca de una figura—: esto se convierte en el Word ' +
         'que el tesista entrega. Si pasa de 30.000 caracteres, mándalo por partes. ' +
         'LAS TABLAS van en Markdown y salen en el Word como tablas en formato APA, en un solo ' +
         'bloque sin líneas en blanco: «**Tabla 1**», en la línea siguiente «*Título de la tabla*», ' +
         'luego la cabecera «| Col A | Col B |», la fila «|---|---|», las filas, y si hace falta ' +
         '«*Nota.* …» justo debajo. Las celdas admiten citas con clave. NO armes tú un Word para ' +
-        'tener las tablas: el servidor ya las pone.',
+        'tener las tablas: el servidor ya las pone. ' +
+        'LAS FIGURAS, también en un solo bloque: «**Figura 1**», «*Título de la figura*», ' +
+        '«[Insertar aquí la Figura 1: nombre-del-archivo.png]» y, si hace falta, «*Nota.* …». El ' +
+        'Word pone el rótulo y deja la marca resaltada donde el tesista pega la imagen: dile ' +
+        'cuál va en cada marca.',
     },
     anadir: {
       type: 'boolean',
@@ -455,6 +460,20 @@ const ESQUEMA_VER_CAPITULO = fromJsonSchema({
     capitulo: {
       type: 'string',
       description: 'Clave del capítulo, tal como aparece en mi_proyecto.',
+    },
+    texto: {
+      type: 'boolean',
+      description:
+        'Verdadero para leer el TEXTO GUARDADO del capítulo en vez de lo acordado. Úsalo para ' +
+        'escribir contra lo que ya está escrito —la Discusión contra los Resultados, las ' +
+        'Conclusiones contra todo lo anterior— en vez de pedirle al tesista que lo pegue.',
+    },
+    parte: {
+      type: 'integer',
+      minimum: 1,
+      description:
+        'Con "texto": qué parte leer. Un capítulo largo sale por partes; la respuesta dice ' +
+        'cuántas hay y cuál pedir después. Por omisión, la primera.',
     },
   },
   required: ['capitulo'],
@@ -766,11 +785,13 @@ function construirServidor(licencia) {
       description:
         'Lo que quedó decidido en UN capítulo: los campos ya fijados, los que faltan y lo ' +
         'que necesita de capítulos anteriores. ÚSALA ANTES DE PREGUNTARLE NADA sobre un ' +
-        'capítulo: "mi_proyecto" da el panorama y esta da el detalle. No devuelve el texto ' +
-        'redactado, solo lo acordado.',
+        'capítulo: "mi_proyecto" da el panorama y esta da el detalle. ' +
+        'Con "texto": true devuelve en cambio el TEXTO GUARDADO del capítulo, por partes: ' +
+        'LÉELO cuando un capítulo se escribe sobre otro —la Discusión sobre los Resultados, las ' +
+        'Conclusiones sobre todo lo anterior— en vez de pedirle al tesista que lo pegue.',
       inputSchema: ESQUEMA_VER_CAPITULO,
     },
-    async ({ capitulo }) => {
+    async ({ capitulo, texto: conTexto, parte }) => {
       await licenseService.recordUsage({ licenseId: licencia.id, tool: 'ver_capitulo' });
 
       // Mismo filtro que en guardar_capitulo: leer el acuerdo de un capítulo
@@ -780,6 +801,42 @@ function construirServidor(licencia) {
         return texto(
           `No existe ningún capítulo con la clave "${capitulo}". ` +
             'Usa mi_proyecto para ver las claves válidas.',
+        );
+      }
+
+      // El texto guardado, cuando se pide. Es lo que Claude necesita para
+      // escribir un capítulo sobre otro sin que el tesista tenga que pegarlo.
+      if (conTexto) {
+        const leido = await projectService.textoDeCapitulo(
+          licencia.user.id,
+          licencia.productCode,
+          capitulo,
+          { parte },
+        );
+        if (!leido) {
+          return texto(
+            `Ya no se puede consultar «${skill.displayName}» con esta licencia. ` +
+              'Usa mi_proyecto para ver los capítulos disponibles.',
+          );
+        }
+        if (leido.vacio) {
+          return texto(
+            `«${skill.displayName}» todavía no tiene texto guardado. Si el tesista lo escribió ` +
+              'fuera de la plataforma, pídele que lo pegue; si se redactó en otra conversación y ' +
+              'no se guardó, guárdalo antes con "guardar_capitulo".',
+          );
+        }
+
+        const sigue =
+          leido.parte < leido.partes
+            ? `SIGUE: pide "parte": ${leido.parte + 1} para leer el resto.`
+            : 'Es el final del capítulo.';
+        return texto(
+          `Texto guardado de «${skill.displayName}» · parte ${leido.parte} de ${leido.partes} · ` +
+            `${leido.palabras} palabras en total.${N}${N}${leido.texto}${N}${N}${sigue}${N}${N}` +
+            'Está tal como se guardó: las citas van con su clave [AR…] y las tablas en su bloque. ' +
+            'Úsalo para leer lo ya escrito. NO lo vuelvas a guardar con cambios que el tesista ' +
+            'no haya pedido.',
         );
       }
 

@@ -311,6 +311,7 @@ async function resumen(userId, productCode) {
   // de la tesis, y sin tema ni carrera tiene que quedar vacía para que el
   // panorama empiece por los capítulos.
   loSuyo.push(lineaDeNorma(proyecto));
+  loSuyo.push(lineaDeFormato(proyecto));
 
   // Por bloques y filtrando los vacíos: un proyecto sin tema todavía, o un
   // catálogo que aún no se ha publicado, dejaban una sección en blanco y la
@@ -1500,6 +1501,32 @@ function lineaDeNorma(proyecto) {
     : `Norma de citas: sin elegir, el Word sale en ${norma.nombre}. Pregúntale cuál exige su universidad.`;
 }
 
+/**
+ * El formato de la universidad, dicho para el asistente.
+ *
+ * Sin subir se dice qué hacer, como con la norma: el recuadro del perfil ya no
+ * existe, así que si Claude no lo pregunta, nadie lo sube y la tesis sale en el
+ * formato por defecto sin que el tesista sepa que podía ser otro.
+ */
+function lineaDeFormato(proyecto) {
+  if (proyecto?.plantillaAt) {
+    const nombre = proyecto.plantillaNombre ? ` («${proyecto.plantillaNombre}»)` : '';
+    return `Formato de la universidad: puesto${nombre}. Su Word sale con él.`;
+  }
+  return (
+    'Formato de la universidad: sin subir; el Word sale en el formato por defecto. PREGÚNTALE ' +
+    'UNA VEZ si su universidad o facultad le dio un documento de formato o plantilla y, si lo ' +
+    'tiene, dale el enlace para subirlo con "formato_de_la_universidad".'
+  );
+}
+
+/** El formato puesto, como lo enseñan Claude y la página de subida. Null si no subió ninguno. */
+async function formatoDelProyecto(userId, productCode) {
+  const proyecto = await projectRepository.buscar(userId, productCode);
+  if (!proyecto?.plantillaAt) return null;
+  return plantillaDelPanel(proyecto);
+}
+
 /** Las normas y los idiomas que se pueden elegir, para el panel. */
 function normasDisponibles() {
   return {
@@ -1729,6 +1756,8 @@ async function textoDeCapitulo(userId, productCode, skillCode, { parte = 1 } = {
 }
 
 module.exports = {
+  formatoDelProyecto,
+  lineaDeFormato,
   textoDeCapitulo,
   enPartes,
   contexto,

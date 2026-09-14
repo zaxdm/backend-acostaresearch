@@ -92,6 +92,16 @@ test('pedir una parte que no existe da la última, no un error', async () => {
   assert.equal(r.parte, r.partes);
 });
 
+test('el panorama dice si hay formato de la universidad y, si no, que se pregunte', () => {
+  assert.match(
+    servicio.lineaDeFormato({ plantillaAt: new Date(), plantillaNombre: 'Formato UNMSM.docx' }),
+    /puesto \(«Formato UNMSM\.docx»\)/,
+  );
+  const sinFormato = servicio.lineaDeFormato({ plantillaAt: null });
+  assert.match(sinFormato, /PREGÚNTALE UNA VEZ/);
+  assert.match(sinFormato, /formato_de_la_universidad/);
+});
+
 test('un párrafo solo más largo que una parte se corta a la fuerza', () => {
   const partes = servicio.enPartes('z'.repeat(50000));
   assert.deepEqual(partes.map((p) => p.length), [24000, 24000, 2000]);

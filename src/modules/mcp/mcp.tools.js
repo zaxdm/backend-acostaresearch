@@ -13,6 +13,7 @@ const referenceService = require('../references/reference.service');
 const propiasService = require('../references/propias.service');
 const projectService = require('../projects/project.service');
 const documentoService = require('../projects/documento.service');
+const subidaFormato = require('../projects/project.subida-formato');
 const consejos = require('../projects/project.consejos');
 const normas = require('../projects/project.normas');
 const etapas = require('../projects/project.etapas');
@@ -2509,6 +2510,109 @@ function construirServidor(licencia) {
             'avísale de que no han quedado guardadas.',
         );
       }
+    },
+  );
+
+  // ── El formato de su universidad ─────────────────────────────────────────
+  //
+  // El recuadro «Subir formato» del perfil se quitó: lo pregunta Claude y, si lo
+  // hay, da un enlace para subirlo, como el de la matriz de R. El Word del
+  // servidor lo aplica solo (ver `project.plantilla` y `project.plantilla-partes`).
+  server.registerTool(
+    'formato_de_la_universidad',
+    {
+      title: 'El formato de su universidad para el Word',
+      description:
+        `El formato de tesis que exige su universidad —la plantilla o el documento de formato que ` +
+        'da su facultad—, que el Word del servidor aplica solo: títulos, fuentes, márgenes, ' +
+        'encabezado, pie de página y la portada llenada con sus datos. ' +
+        'PREGÚNTALE UNA VEZ, al empezar a trabajar sus capítulos o antes de darle su Word, si su ' +
+        'universidad o facultad le dio un formato o plantilla. ÚSALA también cuando diga «tengo ' +
+        'mi formato», «mi universidad tiene plantilla» o «quiero que salga con el formato de mi ' +
+        'facultad». ' +
+        'Sin argumentos dice si ya hay uno puesto y da un ENLACE para subirlo o cambiarlo: dáselo ' +
+        'tal cual y dile que vuelva cuando lo haya subido; entonces llámala otra vez para ' +
+        'confirmar qué se tomó. ' +
+        'NO le pidas que te pegue el formato, no lo copies tú a mano y no le armes un Word con ' +
+        'ese formato: lo aplica el servidor. Si no tiene formato, no insistas.',
+      inputSchema: fromJsonSchema({
+        type: 'object',
+        properties: {
+          usarNuestraPortada: {
+            type: 'boolean',
+            description:
+              'Verdadero para dejar de usar la portada del formato cuando se detectó mal: el ' +
+              'resto del formato se queda.',
+          },
+          quitar: {
+            type: 'boolean',
+            description:
+              'Verdadero para dejar de usar el formato: el Word vuelve al formato por defecto. ' +
+              'Solo si el tesista lo pide.',
+          },
+        },
+        additionalProperties: false,
+      }),
+    },
+    async ({ usarNuestraPortada, quitar }) => {
+      await licenseService.recordUsage({ licenseId: licencia.id, tool: 'formato_de_la_universidad' });
+
+      const userId = licencia.user.id;
+      const { productCode } = licencia;
+
+      if (quitar) {
+        const quitado = await projectService.quitarPlantilla(userId, productCode);
+        return texto(
+          quitado
+            ? 'Formato quitado: su Word vuelve a salir con el formato por defecto. Si fue un error, ' +
+                'llama otra vez sin argumentos y dale el enlace para volver a subirlo.'
+            : 'No tenía ningún formato puesto.',
+        );
+      }
+
+      if (usarNuestraPortada) {
+        const quitada = await projectService.quitarPortadaDePlantilla(userId, productCode);
+        return texto(
+          quitada
+            ? 'Listo: su Word sale con la portada de la plataforma. Los estilos, márgenes, ' +
+                'encabezado y pie de su formato se quedan.'
+            : 'Su formato no tenía ninguna portada en uso.',
+        );
+      }
+
+      const formato = await projectService.formatoDelProyecto(userId, productCode);
+      const { url, minutos } = subidaFormato.enlace({ userId, productCode });
+
+      if (!formato) {
+        return texto(
+          `Todavía no ha subido el formato de su universidad: su Word sale con el formato de ` +
+            `tesis por defecto.${N}${N}` +
+            `Si su facultad le dio un formato o plantilla, dale este enlace para subirlo (caduca ` +
+            `en ${minutos} minutos):${N}${url}${N}${N}` +
+            'Dáselo tal cual. Dile que suba el .docx que le dieron, sin cambiarle nada y con su ' +
+            'portada si la trae, y que vuelva aquí cuando lo haya subido. Solo se guarda el ' +
+            'formato: el texto que traiga el documento no se conserva.',
+        );
+      }
+
+      const NOMBRES = { titulo: 'título', autor: 'nombre', asesor: 'asesor', carrera: 'carrera', anio: 'año' };
+      const campos = formato.camposDePortada.map((c) => NOMBRES[c] ?? c);
+      const desde = new Date(formato.desde).toISOString().slice(0, 10);
+
+      return texto(
+        `Formato de su universidad puesto${formato.nombre ? `: «${formato.nombre}»` : ''}, ` +
+          `desde el ${desde}. Su Word sale con él` +
+          (formato.portada
+            ? `, con la portada del formato${campos.length > 0 ? ` llenada con su ${campos.join(', ')}` : ''}.`
+            : ', con la portada de la plataforma.') +
+          (formato.completa
+            ? ''
+            : ' OJO: se subió antes de que se tomaran los márgenes, el encabezado, el pie y la ' +
+              'portada; pídele que lo vuelva a subir con el enlace de abajo.') +
+          `${N}${N}Si quiere cambiarlo por otro, este enlace sirve (caduca en ${minutos} minutos):${N}${url}` +
+          `${N}${N}Si la portada salió mal, llama con "usarNuestraPortada". Para ver cómo quedó, ` +
+          'dale su Word con "enlace_del_word".',
+      );
     },
   );
 

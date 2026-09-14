@@ -5,7 +5,7 @@ const express = require('express');
 const authenticate = require('../../middlewares/authenticate');
 const asyncHandler = require('../../shared/http/asyncHandler');
 const { ok } = require('../../shared/http/apiResponse');
-const { ForbiddenError, ValidationError } = require('../../shared/errors/AppError');
+const { ForbiddenError, NotFoundError, ValidationError } = require('../../shared/errors/AppError');
 const { ROLES } = require('../../config/constants');
 const licenseService = require('../licensing/license.service');
 const projectService = require('./project.service');
@@ -23,6 +23,8 @@ const {
   NormaConNotas,
   MAXIMO_BYTES: MAXIMO_DOCUMENTO,
 } = require('./project.documento');
+
+const subidaFormato = require('./project.subida-formato');
 
 const TIPO_DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
@@ -117,6 +119,98 @@ router.get(
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('Referrer-Policy', 'no-referrer');
     return res.send(documento.buffer);
+  }),
+);
+
+/**
+ * El formato de la universidad, desde el enlace que da Claude.
+ *
+ * Sin sesión, como la subida de la matriz de R: la llave es el enlace firmado
+ * (ver `project.subida-formato`), y quien viene de la conversación no tiene por
+ * qué haber entrado en la web. Lo que se hace con el archivo es lo mismo que en
+ * la subida del perfil: se queda el formato y se tira el contenido.
+ */
+const ENLACE_FORMATO_CADUCADO =
+  'Este enlace ya no vale: dura media hora. Pídele a Claude uno nuevo y vuelve a intentarlo.';
+
+/** Un enlace que no vale responde igual que uno caducado, para no dar pistas. */
+function enlaceDeFormato(token) {
+  try {
+    return subidaFormato.verificar(token);
+  } catch {
+    throw new NotFoundError(ENLACE_FORMATO_CADUCADO);
+  }
+}
+
+/** Licencia vigente de ese método: el mismo criterio que el envío del análisis. */
+async function tieneLicenciaVigente(userId, productCode) {
+  const ahora = new Date();
+  const licencias = await licenseService.listForUser(userId);
+  return licencias.some(
+    (l) =>
+      l.productCode === productCode &&
+      l.status === 'ACTIVE' &&
+      (!l.expiresAt || new Date(l.expiresAt) > ahora),
+  );
+}
+
+const cuerpoDeFormato = express.raw({ type: () => true, limit: MAXIMO_BYTES });
+
+function recibirFormato(req, res, next) {
+  cuerpoDeFormato(req, res, (error) => {
+    if (error?.type === 'entity.too.large') {
+      return next(
+        new ValidationError(
+          `Ese archivo pasa de ${MAXIMO_BYTES / 1024 / 1024} MB. Sube el documento de formato que ` +
+            'te dio tu facultad, no tu tesis.',
+        ),
+      );
+    }
+    return next(error);
+  });
+}
+
+// La página pregunta primero si el enlace vale y si ya hay un formato puesto.
+router.get(
+  '/formato/:token',
+  asyncHandler(async (req, res) => {
+    const enlace = enlaceDeFormato(req.params.token);
+    const formato = await projectService.formatoDelProyecto(enlace.userId, enlace.productCode);
+    return ok(res, { caduca: enlace.caduca.toISOString(), formato });
+  }),
+);
+
+router.post(
+  '/formato/:token',
+  recibirFormato,
+  asyncHandler(async (req, res) => {
+    const { userId, productCode } = enlaceDeFormato(req.params.token);
+
+    if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+      throw new ValidationError('No llegó ningún archivo. Elige el .docx de tu formato y vuelve a subirlo.');
+    }
+    if (!(await tieneLicenciaVigente(userId, productCode))) {
+      throw new ForbiddenError('Tu licencia de este método no está vigente, así que no se puede guardar el formato.');
+    }
+
+    try {
+      const { estilos, mensaje } = await projectService.guardarPlantilla({
+        userId,
+        productCode,
+        buffer: req.body,
+        nombre: decodificar(req.get('X-Nombre-Archivo')),
+      });
+      const formato = await projectService.formatoDelProyecto(userId, productCode);
+      return ok(
+        res,
+        { cuantos: estilos.length, formato },
+        { message: `${mensaje} Vuelve a la conversación y dile a Claude que ya subiste tu formato.` },
+      );
+    } catch (error) {
+      // Los mensajes de la plantilla están escritos para el tesista: van tal cual.
+      if (error instanceof PlantillaNoValida) throw new ValidationError(error.message);
+      throw error;
+    }
   }),
 );
 

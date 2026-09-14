@@ -249,7 +249,8 @@ test('siguen registradas las mismas 21 herramientas', () => {
   // 18 desde «mis_fuentes»: ver su biblioteca y su Zotero sin tener un tema.
   // 19 desde «trabajar_en_r»: Claude corre el análisis en R en la conversación.
   // 21 desde «ver_mi_documento» y «citar_mi_documento»: citar el Word que subió.
-  assert.equal(registradas.size, 21);
+  // 22 desde «formato_de_la_universidad»: el formato se sube desde un enlace de Claude.
+  assert.equal(registradas.size, 22);
   for (const nombre of [
     'listar_capitulos',
     'mi_proyecto',
@@ -298,6 +299,17 @@ test('ver_capitulo ofrece leer el texto guardado, por partes, y dice para qué',
   assert.match(d, /TEXTO GUARDADO/);
   assert.match(d, /Discusión/);
   assert.doesNotMatch(d, /No devuelve el texto/);
+});
+
+test('formato_de_la_universidad: Claude lo pregunta una vez y da el enlace, no lo copia a mano', () => {
+  const d = descripcion('formato_de_la_universidad');
+  assert.match(d, /PREGÚNTALE UNA VEZ/);
+  assert.match(d, /tengo mi formato/);
+  assert.match(d, /ENLACE/);
+  assert.match(d, /no le armes un Word/);
+  const e = esquema('formato_de_la_universidad');
+  assert.equal(e.required, undefined, 'sin argumentos da el estado y el enlace');
+  assert.deepEqual(Object.keys(e.properties).sort(), ['quitar', 'usarNuestraPortada']);
 });
 
 test('guardar_capitulo explica las figuras y ya no prohíbe su marca entre corchetes', () => {

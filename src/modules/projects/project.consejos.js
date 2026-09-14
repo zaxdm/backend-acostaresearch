@@ -64,6 +64,7 @@ function elegir(estado) {
     todasListas = false,
     palabras = 0,
     estiloCitas = null,
+    plantillaAt = null,
     mostrados = {},
     ahora = new Date(),
   } = estado;
@@ -77,6 +78,8 @@ function elegir(estado) {
     analisisPendiente ? 'analisis' : null,
     todasListas && apoyos.length > 0 && !abriendoApoyo ? 'terminada' : null,
     palabras > 0 && !estiloCitas ? 'norma' : null,
+    // Ya no hay recuadro en el perfil: si Claude no lo pregunta, nadie lo sube.
+    palabras > 0 && !plantillaAt ? 'formato' : null,
   ].filter(Boolean);
 
   return (
@@ -123,6 +126,12 @@ function redactar(clave, { esArticulo = false, apoyos = [] } = {}) {
         // Ya no hay selector en el panel: la norma se pregunta en la conversación.
         'PREGÚNTALE qué norma le piden su universidad o su asesor y guárdala con "guardar_avance" ' +
         '(estiloCitas): no hay que reescribir nada.'
+      );
+    case 'formato':
+      return (
+        `Ya tiene texto escrito y no ha subido el formato de su universidad, así que ${obra} sale ` +
+        'con el formato por defecto. PREGÚNTALE si su facultad le dio un formato o plantilla y, si ' +
+        'lo tiene, dale el enlace para subirlo con "formato_de_la_universidad".'
       );
     default:
       return null;
@@ -197,6 +206,7 @@ async function consejoPara({ userId, productCode, capitulo = null, ahora = new D
     todasListas,
     palabras: (proyecto.stages ?? []).reduce((suma, e) => suma + (e.palabras ?? 0), 0),
     estiloCitas: proyecto.estiloCitas,
+    plantillaAt: proyecto.plantillaAt,
     mostrados,
     ahora,
   });

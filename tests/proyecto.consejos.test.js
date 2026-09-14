@@ -139,7 +139,10 @@ test('no se repite antes de siete días; si el primero ya se dio, pasa al siguie
   const hace8 = new Date(AHORA.getTime() - 8 * 86400000).toISOString();
 
   assert.equal(elegir({ ...base, mostrados: { fuentes: hace2 } }), 'norma');
-  assert.equal(elegir({ ...base, mostrados: { fuentes: hace2, norma: hace2 } }), null);
+  // Detrás de la norma va el formato de la universidad: el perfil ya no tiene
+  // recuadro, así que el consejo es lo que hace que alguien lo suba.
+  assert.equal(elegir({ ...base, mostrados: { fuentes: hace2, norma: hace2 } }), 'formato');
+  assert.equal(elegir({ ...base, mostrados: { fuentes: hace2, norma: hace2, formato: hace2 } }), null);
   assert.equal(elegir({ ...base, mostrados: { fuentes: hace8 } }), 'fuentes');
 });
 
@@ -186,6 +189,17 @@ test('desde mi_proyecto se toma la fase en curso', async () => {
   ];
   const t = await consejoPara({ userId: 'u1', productCode: 'METODO', ahora: AHORA });
   assert.match(t, /fuentes propias/);
+});
+
+test('con texto y norma pero sin formato: preguntar por el formato y dar el enlace', () => {
+  const base = { actual: fase('metodologia'), fases: FASES, palabras: 800, estiloCitas: 'apa' };
+  assert.equal(elegir(base), 'formato');
+  assert.notEqual(elegir({ ...base, plantillaAt: new Date() }), 'formato', 'con formato puesto, no');
+
+  const { redactar } = require('../src/modules/projects/project.consejos');
+  const texto = redactar('formato');
+  assert.match(texto, /formato_de_la_universidad/);
+  assert.doesNotMatch(texto, /perfil/);
 });
 
 test('la norma se pregunta en la conversación, no en el panel', () => {

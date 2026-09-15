@@ -941,7 +941,11 @@ async function guardarPlantilla({ userId, productCode, buffer, nombre }) {
   const xml = plantilla.conFormatoDelCuerpo(plantilla.extraerEstilos(buffer), buffer);
   const pagina = plantilla.extraerPagina(buffer);
   // Si la portada no trae marcas, se buscan solas dónde van sus datos.
-  const partes = await portadaAuto.prepararPortada(partesDePlantilla.extraer(buffer));
+  // El tipo decide qué etiquetas se buscan en la portada: un informe tiene curso,
+  // docente e integrantes donde una tesis tiene asesor.
+  const partes = await portadaAuto.prepararPortada(partesDePlantilla.extraer(buffer), {
+    tipo: perfilDe(productCode).tipo,
+  });
 
   const proyecto = await projectRepository.asegurar(userId, productCode);
   await almacen.guardarPlantilla(proyecto.id, xml);

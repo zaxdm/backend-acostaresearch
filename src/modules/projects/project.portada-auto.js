@@ -36,9 +36,16 @@ const { generarConRespaldo } = require('../../lib/gemini');
 const partesDePlantilla = require('./project.plantilla-partes');
 
 const CAMPOS = ['titulo', 'autor', 'asesor', 'carrera', 'grado', 'anio', 'instruccion'];
+/**
+ * Los del informe estudiantil, que se reconocen SOLO cuando la plantilla se sube
+ * desde ese producto. Una portada de tesis no los lleva, y buscarlos en ella
+ * podría marcar de más: por eso van aparte y no en la lista de siempre.
+ */
+const CAMPOS_DE_INFORME = ['curso', 'docente', 'integrantes', 'cicloSeccion'];
 /** Con alguno de estos, la portada ya sirve. */
 const CAMPOS_QUE_BASTAN = ['titulo', 'autor', 'asesor'];
 const ORDEN = ['titulo', 'autor', 'asesor', 'carrera', 'grado', 'anio'];
+const ORDEN_CON_INFORME = [...ORDEN, ...CAMPOS_DE_INFORME];
 
 const TEXTO_RE = /(<w:t(?:\s[^>]*)?>)([^<]*)(<\/w:t>)/g;
 
@@ -62,6 +69,11 @@ const MARCA_DE = {
   // conserva «Licenciada en» o si va la carrera entera (un posgrado).
   grado: (texto) => `{{GRADO|${texto.replace(/[{}|]/g, '')}}}`,
   instruccion: () => '',
+  // Del informe estudiantil (ver CAMPOS_DE_INFORME).
+  curso: () => '{{CURSO}}',
+  docente: () => '{{DOCENTE}}',
+  integrantes: () => '{{INTEGRANTES}}',
+  cicloSeccion: () => '{{CICLO}}',
 };
 
 /** Un texto o un salto de línea dentro de un párrafo. */
@@ -175,7 +187,7 @@ function marcar(xml, campos) {
     return parrafo.replace(TEXTO_RE, () => `<w:t xml:space="preserve">${escapar(textos[i++] ?? '')}</w:t>`);
   });
 
-  return { xml: nuevo, puestos: ORDEN.filter((c) => puestos.has(c)) };
+  return { xml: nuevo, puestos: ORDEN_CON_INFORME.filter((c) => puestos.has(c)) };
 }
 
 /**
@@ -184,12 +196,13 @@ function marcar(xml, campos) {
  * título partido en dos líneas, una portada para dos autores— se borran en vez
  * de repetir el dato: solo sabemos uno.
  */
-function validar(campos, lineas) {
+function validar(campos, lineas, { tipo = null } = {}) {
+  const admitidos = tipo === 'informe' ? [...CAMPOS, ...CAMPOS_DE_INFORME] : CAMPOS;
   const vistos = new Set();
   const validos = [];
 
   for (const campo of Array.isArray(campos) ? campos : []) {
-    if (!campo || !CAMPOS.includes(campo.campo)) continue;
+    if (!campo || !admitidos.includes(campo.campo)) continue;
     if (!Number.isInteger(campo.linea) || typeof campo.texto !== 'string' || !campo.texto.trim()) continue;
     const linea = lineas.find((l) => l.linea === campo.linea);
     if (!linea || !linea.texto.includes(campo.texto)) continue;
@@ -266,6 +279,31 @@ const INSTRUCCION_RE =
   /\(\s*(?:aqu[ií]|el nombre|nombre|escrib|coloqu|ingres|indiq|poner|consign)[^)]*\)/gi;
 const ETIQUETA_RE = /^\s*(autor(?:a|es|as)?|asesor(?:a)?)\s*:?\s*$/i;
 const EN_LINEA_RE = /^\s*(autor(?:a|es|as)?|asesor(?:a)?)\s*:\s*(\S.*?)\s*$/i;
+
+/**
+ * Las etiquetas de una carátula de trabajo de curso.
+ *
+ * Solo se buscan cuando la plantilla se sube desde el informe: «Docente» y
+ * «Curso» aparecen también en portadas de tesis («Docente asesor», «Curso de
+ * titulación») y marcarlas ahí cambiaría lo que ya funciona.
+ */
+const ETIQUETA_INFORME_RE =
+  /^\s*(autor(?:a|es|as)?|asesor(?:a)?|curso|asignatura|docente|profesor(?:a)?|integrantes|alumn[oa]s|estudiantes|ciclo|secci[oó]n)\s*:?\s*$/i;
+const EN_LINEA_INFORME_RE =
+  /^\s*(autor(?:a|es|as)?|asesor(?:a)?|curso|asignatura|docente|profesor(?:a)?|integrantes|alumn[oa]s|estudiantes|ciclo|secci[oó]n)\s*:\s*(\S.*?)\s*$/i;
+const ETIQUETA_DENTRO_INFORME_RE =
+  /(?=\b(?:autor(?:a|es|as)?|asesor(?:a)?|curso|asignatura|docente|profesor(?:a)?|integrantes|alumn[oa]s|estudiantes|ciclo|secci[oó]n)\s*:)/i;
+
+/** De la etiqueta al campo. Sin coincidencia, el dato que sigue es del autor. */
+function campoDeEtiqueta(etiqueta) {
+  const texto = String(etiqueta).toLowerCase();
+  if (/asesor/.test(texto)) return 'asesor';
+  if (/curso|asignatura/.test(texto)) return 'curso';
+  if (/docente|profesor/.test(texto)) return 'docente';
+  if (/integrante|alumn|estudiante/.test(texto)) return 'integrantes';
+  if (/ciclo|secci/.test(texto)) return 'cicloSeccion';
+  return 'autor';
+}
 const CARRERA_RE =
   /(?:optar|obtener)\b.*?\b(?:licenciad[oa]|ingenier[oa]|abogad[oa]|maestr[oa]|doctor(?:a)?|bachiller|contador(?:a)? p[uú]blic[oa]|m[eé]dic[oa] cirujan[oa]|arquitect[oa]|economista|obstetra|enfermer[oa]|cirujano dentista|profesor(?:a)?|segunda especialidad)\s+(?:en|de)\s+(.+?)\s*$/i;
 const ANIO_RE = /((?:19|20)\d{0,2})\s*$/;
@@ -288,7 +326,11 @@ const ETIQUETA_DENTRO_RE = /(?=\b(?:autor(?:a|es|as)?|asesor(?:a)?)\s*:)/i;
 const GRADO_RE =
   /^\s*(?:licenciad[oa]|ingenier[oa]|abogad[oa]|maestr[oa]|doctor(?:a)?|bachiller|contador(?:a)? p[uú]blic[oa]|m[eé]dic[oa] cirujan[oa]|arquitect[oa]|economista|obstetra|enfermer[oa]|cirujano dentista|profesor(?:a)?)\s+(?:en|de)\s+(.+?)\s*$/i;
 
-function clasificarConReglas(lineas) {
+function clasificarConReglas(lineas, { tipo = null } = {}) {
+  const esInforme = tipo === 'informe';
+  const ETIQUETA = esInforme ? ETIQUETA_INFORME_RE : ETIQUETA_RE;
+  const EN_LINEA = esInforme ? EN_LINEA_INFORME_RE : EN_LINEA_RE;
+  const ETIQUETA_DENTRO = esInforme ? ETIQUETA_DENTRO_INFORME_RE : ETIQUETA_DENTRO_RE;
   const campos = [];
   // Cada trozo entre saltos de línea, con el párrafo al que pertenece.
   const tramos = [];
@@ -307,15 +349,15 @@ function clasificarConReglas(lineas) {
 
   let primeraEtiqueta = null;
   tramos.forEach((t, i) => {
-    const etiqueta = ETIQUETA_RE.exec(t.texto);
+    const etiqueta = ETIQUETA.exec(t.texto);
     if (etiqueta) {
       primeraEtiqueta ??= t.linea;
-      const campo = /asesor/i.test(etiqueta[1]) ? 'asesor' : 'autor';
+      const campo = campoDeEtiqueta(etiqueta[1]);
       // Todos los nombres que siguen, hasta la próxima etiqueta o texto fijo:
       // el primero es el dato y los demás —un segundo autor— se borran al
       // validar. El ORCID de ejemplo se borra también.
       for (const siguiente of tramos.slice(i + 1)) {
-        if (ETIQUETA_RE.test(siguiente.texto) || EN_LINEA_RE.test(siguiente.texto)) break;
+        if (ETIQUETA.test(siguiente.texto) || EN_LINEA.test(siguiente.texto)) break;
         if (ENLACE_RE.test(siguiente.texto)) {
           campos.push({ linea: siguiente.linea, campo: 'instruccion', texto: siguiente.texto });
           continue;
@@ -331,10 +373,12 @@ function clasificarConReglas(lineas) {
       return;
     }
 
-    const enLinea = EN_LINEA_RE.exec(t.texto);
+    const enLinea = EN_LINEA.exec(t.texto);
     if (enLinea && !SOLO_PUNTOS_RE.test(enLinea[2])) {
       primeraEtiqueta ??= t.linea;
-      campos.push({ linea: t.linea, campo: /asesor/i.test(enLinea[1]) ? 'asesor' : 'autor', texto: enLinea[2] });
+      // Con las etiquetas de siempre esto da «autor» o «asesor», como antes; en un
+      // informe reconoce además curso, docente, integrantes y ciclo.
+      campos.push({ linea: t.linea, campo: campoDeEtiqueta(enLinea[1]), texto: enLinea[2] });
       return;
     }
 
@@ -465,7 +509,7 @@ function marcarCabeceras(partes, tituloDeEjemplo) {
  * `clasificar` existe para las pruebas. Nunca lanza: si todo falla, la portada
  * no se usa y la plantilla se guarda igual con lo demás.
  */
-async function prepararPortada(partes, { clasificar = clasificarConGemini } = {}) {
+async function prepararPortada(partes, { clasificar = clasificarConGemini, tipo = null } = {}) {
   const candidata = partes?.portadaCandidata;
   // Sin portada no hay título de ejemplo que buscar, pero los autores del pie sí.
   if (!candidata) return partes ? marcarCabeceras(partes, null) : partes;
@@ -475,13 +519,17 @@ async function prepararPortada(partes, { clasificar = clasificarConGemini } = {}
   let campos = [];
   let origen = 'gemini';
 
-  try {
-    campos = validar(await clasificar(lineas), lineas);
-  } catch (error) {
-    logger.warn({ err: error.message }, 'No se pudo leer la portada con Gemini; se usan las reglas');
+  // En el informe se va directo a las reglas: el prompt de Gemini describe una
+  // portada de tesis y no sabe de cursos ni de docentes.
+  if (tipo !== 'informe') {
+    try {
+      campos = validar(await clasificar(lineas), lineas);
+    } catch (error) {
+      logger.warn({ err: error.message }, 'No se pudo leer la portada con Gemini; se usan las reglas');
+    }
   }
 
-  const reglas = validar(clasificarConReglas(lineas), lineas);
+  const reglas = validar(clasificarConReglas(lineas, { tipo }), lineas, { tipo });
   if (!campos.some((c) => CAMPOS_QUE_BASTAN.includes(c.campo))) {
     campos = reglas;
     origen = 'reglas';
@@ -491,7 +539,7 @@ async function prepararPortada(partes, { clasificar = clasificarConGemini } = {}
     // y «Licenciada en psicología», y el tesista los vio en su Word.
     const vistas = new Set(campos.map((c) => c.linea));
     const extra = reglas.filter((c) => c.campo === 'instruccion' || !vistas.has(c.linea));
-    campos = validar([...campos, ...extra], lineas);
+    campos = validar([...campos, ...extra], lineas, { tipo });
   }
 
   // Cuánto ocupaban los datos de ejemplo: si los del tesista son más largos, al

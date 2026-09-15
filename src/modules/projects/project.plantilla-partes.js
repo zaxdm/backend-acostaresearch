@@ -553,6 +553,18 @@ const CAMPO_DE_MARCA = {
   CARRERA: 'carrera',
   ESCUELA: 'carrera',
   UNIVERSIDAD: 'universidad',
+  // Del informe estudiantil. Una plantilla de tesis no trae estas marcas, así
+  // que añadirlas no cambia nada de lo que ya funciona.
+  CURSO: 'curso',
+  ASIGNATURA: 'curso',
+  DOCENTE: 'docente',
+  PROFESOR: 'docente',
+  PROFESORA: 'docente',
+  INTEGRANTES: 'integrantes',
+  ALUMNOS: 'integrantes',
+  ESTUDIANTES: 'integrantes',
+  CICLO: 'cicloSeccion',
+  SECCION: 'cicloSeccion',
 };
 
 /**

@@ -190,7 +190,9 @@ router.get(
   asyncHandler(async (req, res) => {
     const enlace = enlaceDeFormato(req.params.token);
     const formato = await projectService.formatoDelProyecto(enlace.userId, enlace.productCode);
-    return ok(res, { caduca: enlace.caduca.toISOString(), formato });
+    // El tipo decide los textos de la página: un informe de curso no tiene «tesis».
+    const { tipo } = perfilDe(enlace.productCode);
+    return ok(res, { caduca: enlace.caduca.toISOString(), formato, tipo });
   }),
 );
 

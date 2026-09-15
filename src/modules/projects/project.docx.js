@@ -799,6 +799,13 @@ async function armar({
       universidad,
       nombre,
       asesor,
+      // Del informe: solo se usan si la portada de la plantilla los pide.
+      curso: portadaInforme?.curso ?? null,
+      docente: portadaInforme?.docente ?? null,
+      cicloSeccion: portadaInforme?.cicloSeccion ?? null,
+      integrantes: (portadaInforme?.integrantes ?? [])
+        .map((i) => (i.codigo ? `${i.nombre} (${i.codigo})` : i.nombre))
+        .join(', '),
       // La lista de referencias es un Título 1, pero no se numera.
       sinNumero: lista.parrafos.length > 0 ? [lista.titulo] : [],
     });

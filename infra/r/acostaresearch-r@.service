@@ -44,7 +44,12 @@ ProtectHome=yes
 # /tmp y /var/tmp en memoria y con techo, no en disco. Con PrivateTmp iban al
 # disco raíz, y un bucle de R lo llenaba entero: la API, el registro y el
 # respaldo viven ahí. En memoria, además, cuentan dentro de MemoryMax.
-TemporaryFileSystem=/tmp:size=256M,mode=1777 /var/tmp:size=64M,mode=1777
+#
+# El noexec va AQUÍ, como opción del tmpfs, y no en NoExecPaths: con la misma
+# ruta en las dos directivas systemd se queda con una sola, descarta el tmpfs,
+# y la jaula veía el /tmp DEL SERVIDOR. Pasó el 15-sep-2026 y lo cazó
+# probar-jaula.sh. Por lo mismo, ninguna ruta de aquí puede repetirse abajo.
+TemporaryFileSystem=/tmp:size=256M,mode=1777,noexec,nosuid,nodev /var/tmp:size=64M,mode=1777,noexec,nosuid,nodev
 PrivateDevices=yes
 # Se tapan enteros con un tmpfs vacío y se vuelve a montar encima SOLO lo que
 # hace falta. Es el patrón del manual de systemd.exec para TemporaryFileSystem.
@@ -56,9 +61,12 @@ BindReadOnlyPaths=/opt/acostaresearch/app/r
 ReadWritePaths=/var/lib/acostaresearch-r/sesiones/%i
 InaccessiblePaths=-/var/log -/var/backups -/var/cache -/var/mail -/var/spool -/var/www -/var/opt
 InaccessiblePaths=-/etc/caddy -/etc/ssh -/etc/sudoers -/etc/sudoers.d -/etc/polkit-1 -/root -/boot
-# Nada de lo que R puede escribir se puede ejecutar. Sin esto, un binario metido
-# en base64 en la sesión corría con system(); los del sistema siguen corriendo.
-NoExecPaths=/var/lib/acostaresearch-r/sesiones/%i /tmp /var/tmp -/dev/shm
+# Nada de lo que R puede escribir se puede ejecutar: un binario metido en base64
+# corría con system(). La sesión ya está montada con noexec (su disco propio,
+# infra/r/disco-de-sesiones.sh) y /tmp y /var/tmp lo llevan en su tmpfs, arriba.
+# Queda /dev/shm. No repetir aquí rutas de BindPaths ni de TemporaryFileSystem:
+# systemd descartaría una de las dos.
+NoExecPaths=-/dev/shm
 
 # ── Red ─────────────────────────────────────────────────────────────────────
 PrivateNetwork=yes

@@ -94,8 +94,14 @@ ejecutar 'while (TRUE) {}'
 comprobar "un bucle infinito se corta a los 45 s" '[ ! -f "$CARPETA/fin" ] && [ "$SEGUNDOS" -le 60 ]'
 ejecutar 'for (i in 1:60) system("sleep 20 &"); cat("LANZADOS\n")'
 comprobar "no puede multiplicar procesos" '[ "$(systemctl show -p TasksMax --value "acostaresearch-r@$ID.service")" = "16" ]'
-ejecutar 'r <- tryCatch({ for (i in 1:8) writeBin(raw(40 * 1024^2), paste0("/tmp/lleno-", i)); "ESCRITO" }, error = function(e) "SIN ESPACIO"); cat(r, "\n")'
-comprobar "/tmp va en memoria y con techo, no en el disco" '! grep -q "ESCRITO" <<<"$SALIDA"'
+# writeBin no avisa al llenarse el disco: se mira el tipo de /tmp y lo que
+# realmente quedó escrito, no si dio error. Y que /tmp NO sea el del servidor,
+# que es lo que pasó el 15-sep-2026 con NoExecPaths=/tmp.
+touch "/tmp/marca-del-servidor-$$"
+ejecutar 'cat("TIPO:", system("stat -f -c %T /tmp /var/tmp", intern = TRUE), "\n"); cat("VE LA MARCA:", length(list.files("/tmp", pattern = "^marca-del-servidor")) > 0, "\n"); try(for (i in 1:8) writeBin(raw(40 * 1024^2), paste0("/tmp/lleno-", i)), silent = TRUE); cat("ESCRITOS:", sum(file.size(list.files("/tmp", pattern = "^lleno-", full.names = TRUE))), "\n")'
+rm -f "/tmp/marca-del-servidor-$$"
+comprobar "/tmp y /var/tmp son tmpfs propios, no los del servidor" 'grep -Eq "TIPO: tmpfs tmpfs" <<<"$SALIDA" && grep -q "VE LA MARCA: FALSE" <<<"$SALIDA"'
+comprobar "/tmp tiene techo: no caben 320 MB" '[ "$(grep -oE "ESCRITOS: [0-9.e+]+" <<<"$SALIDA" | awk "{printf \"%d\", \$2}")" -lt 300000000 ]'
 comprobar "las sesiones tienen su propio disco" 'mountpoint -q "$SESIONES"'
 
 echo "── Ejecutar lo que escribe ──"

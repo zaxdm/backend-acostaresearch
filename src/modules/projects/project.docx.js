@@ -218,7 +218,7 @@ function tablaApa({ antes, cabecera, filas, despues }, contexto) {
       new Paragraph({
         children: [new TextRun({ text: sinEnfasis(numero), bold: true })],
         keepNext: true,
-        spacing: { before: 240, after: 0 },
+        indent: { firstLine: 0 }, spacing: { before: 240, after: 0 },
       }),
     );
   }
@@ -227,7 +227,7 @@ function tablaApa({ antes, cabecera, filas, despues }, contexto) {
       new Paragraph({
         children: [new TextRun({ text: sinEnfasis(titulo.join(' ')), italics: true })],
         keepNext: true,
-        spacing: { after: 120 },
+        indent: { firstLine: 0 }, spacing: { after: 120 },
       }),
     );
   }
@@ -241,6 +241,8 @@ function tablaApa({ antes, cabecera, filas, despues }, contexto) {
         new Paragraph({
           children: hijos,
           alignment: esCabecera ? AlignmentType.CENTER : AlignmentType.LEFT,
+          // Sin la sangría de primera línea del texto, que con plantilla viene de «Normal».
+          indent: { firstLine: 0 },
           spacing: { line: 240, before: 40, after: 40 },
         }),
       ],
@@ -294,7 +296,7 @@ function tablaApa({ antes, cabecera, filas, despues }, contexto) {
           : [new TextRun('')],
       // Siempre hay un párrafo detrás: Word no deja escribir entre una tabla y
       // lo que venga pegado a ella.
-      spacing: { before: 120, after: 240, line: 240 },
+      indent: { firstLine: 0 }, spacing: { before: 120, after: 240, line: 240 },
     }),
   );
 
@@ -339,7 +341,7 @@ function figuraApa(lineas, contexto) {
     new Paragraph({
       children: [new TextRun({ text: sinEnfasis(numero), bold: true })],
       keepNext: true,
-      spacing: { before: 240, after: 0 },
+      indent: { firstLine: 0 }, spacing: { before: 240, after: 0 },
     }),
   ];
 
@@ -355,7 +357,7 @@ function figuraApa(lineas, contexto) {
       new Paragraph({
         children: [new TextRun({ text: sinEnfasis(titulo.join(' ')), italics: true })],
         keepNext: true,
-        spacing: { after: 120 },
+        indent: { firstLine: 0 }, spacing: { after: 120 },
       }),
     );
   }
@@ -367,7 +369,7 @@ function figuraApa(lineas, contexto) {
           children: [new TextRun({ text: textoDeMarca(linea, numero), highlight: 'yellow' })],
           alignment: AlignmentType.CENTER,
           keepNext: true,
-          spacing: { before: 120, after: 120 },
+          indent: { firstLine: 0 }, spacing: { before: 120, after: 120 },
         }),
       );
       continue;
@@ -378,7 +380,7 @@ function figuraApa(lineas, contexto) {
         children: nota
           ? [new TextRun({ text: 'Nota.', italics: true }), ...corridas(` ${nota[1]}`, contexto)]
           : corridas(linea, contexto),
-        spacing: { before: 120, after: 240, line: 240 },
+        indent: { firstLine: 0 }, spacing: { before: 120, after: 240, line: 240 },
       }),
     );
   }
@@ -451,8 +453,10 @@ function comoParrafos(texto, contexto = {}) {
       parrafos.push(
         new Paragraph({
           children: corridas(contenido.replace(/^\s*[-*•]\s+/, '• '), contexto),
+          // El estilo del cuerpo de la plantilla, si lo trae (ver `project.plantilla`).
+          ...(contexto.estiloCuerpo ? { style: contexto.estiloCuerpo } : {}),
           ...(esLista
-            ? { alignment: AlignmentType.LEFT, indent: { left: SANGRIA } }
+            ? { alignment: AlignmentType.LEFT, indent: { left: SANGRIA, firstLine: 0 } }
             : contexto.plantilla
               ? {}
               : { alignment: AlignmentType.JUSTIFIED, indent: { firstLine: SANGRIA } }),
@@ -471,6 +475,7 @@ function portada({ tema, carrera, universidad, nombre, asesor }) {
     new Paragraph({
       children: [new TextRun({ text: texto, ...opciones })],
       alignment: AlignmentType.CENTER,
+      indent: { firstLine: 0 },
       spacing: { after: 240 },
     });
 
@@ -499,13 +504,14 @@ function portada({ tema, carrera, universidad, nombre, asesor }) {
  * valor negativo; con etiqueta, una tabulación en esa misma sangría hace que el
  * texto de todas las líneas empiece a la misma altura.
  */
-function referenciasDelDocumento(referencias, zotero, plantilla = false) {
+function referenciasDelDocumento(referencias, zotero, plantilla = false, estiloCuerpo = null) {
   // Siempre a la izquierda: justificadas, las entradas con URL o DOI largos
   // abrían huecos enormes entre palabras. Heredaban el justificado del
   // «Normal» de la plantilla. El interlineado, con plantilla, es el suyo.
   const formato = {
     alignment: AlignmentType.LEFT,
     ...(plantilla ? {} : { spacing: { line: DOBLE } }),
+    ...(estiloCuerpo ? { style: estiloCuerpo } : {}),
   };
 
   if (Array.isArray(referencias)) {
@@ -588,7 +594,11 @@ async function armar({
   // Si la numeración de la plantilla ya escribe «Capítulo I», el título no lo
   // repite: saldría «CAPÍTULO I CAPÍTULO I · PROBLEMA Y OBJETIVOS».
   const numeraCapitulos = /<w:lvlText w:val="[^"]*cap[ií]tulo/i.test(partes?.numeracion ?? '');
-  const contexto = { citas, notas, zotero: Boolean(zotero), plantilla };
+  // El texto va en «Cuerpo de tesis» si la plantilla lo trae: así toma su
+  // interlineado y su sangría sin tocar «Normal», del que heredan la portada,
+  // el encabezado y el pie.
+  const estiloCuerpo = estilos && /w:styleId="CuerpoTesis"/.test(estilos) ? 'CuerpoTesis' : null;
+  const contexto = { citas, notas, zotero: Boolean(zotero), plantilla, estiloCuerpo };
   // El espaciado de los títulos de capítulo: con plantilla, el de su estilo.
   const espacioDeTitulo = plantilla ? {} : { spacing: { after: 240 } };
 
@@ -625,7 +635,7 @@ async function armar({
     );
   }
 
-  const lista = referenciasDelDocumento(referencias, zotero, plantilla);
+  const lista = referenciasDelDocumento(referencias, zotero, plantilla, estiloCuerpo);
   if (lista.parrafos.length > 0) {
     cuerpo.push(
       new Paragraph({

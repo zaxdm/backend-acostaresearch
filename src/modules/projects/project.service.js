@@ -822,7 +822,9 @@ async function revisarEvidencia(userId, productCode, { capitulo = null } = {}) {
  * con la tesis de otro dentro.
  */
 async function guardarPlantilla({ userId, productCode, buffer, nombre }) {
-  const xml = plantilla.extraerEstilos(buffer);
+  // Con el formato del cuerpo en «Normal»: muchas plantillas lo ponen párrafo a
+  // párrafo, y nuestro Word escribe el texto en «Normal».
+  const xml = plantilla.conFormatoDelCuerpo(plantilla.extraerEstilos(buffer), buffer);
   const pagina = plantilla.extraerPagina(buffer);
   // Si la portada no trae marcas, se buscan solas dónde van sus datos.
   const partes = await portadaAuto.prepararPortada(partesDePlantilla.extraer(buffer));

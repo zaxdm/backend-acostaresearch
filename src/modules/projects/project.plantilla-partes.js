@@ -39,6 +39,18 @@ const crypto = require('crypto');
 const path = require('path');
 const AdmZip = require('adm-zip');
 
+const { seccionPrincipal, seccionesDe } = require('./project.plantilla');
+
+/**
+ * Los espacios de un fragmento copiado, que no se pierdan.
+ *
+ * Una plantilla convertida desde PDF escribe cada espacio en su propia corrida,
+ * «<w:t> </w:t>», sin `xml:space="preserve"`. Llevada a nuestro Word, Word se
+ * comía esos espacios y la portada salía «FACULTADDECIENCIASDELASALUD».
+ */
+const conEspaciosVisibles = (xml) =>
+  String(xml).replace(/<w:t(?=[\s>])(?![^>]*xml:space)([^>]*)>/g, '<w:t xml:space="preserve"$1>');
+
 /** Dónde va la portada de la plantilla dentro del Word que arma el servidor. */
 const MARCA_PORTADA = '⟦PORTADA⟧';
 
@@ -177,8 +189,13 @@ function hijosDelCuerpo(cuerpo) {
 
 const SALTO_DE_PAGINA_RE = /<w:br\b[^>]*w:type="page"[^>]*\/>/;
 const SALTO_ANTES_RE = /<w:pageBreakBefore(?![^>]*w:val="(?:0|false|off)")[^>]*\/>/;
-/** Un título: donde empieza el cuerpo aunque la plantilla no ponga salto. */
-const TITULO_RE = /<w:pStyle w:val="(?:Heading\d|Title|TOCHeading|TOC\d)"\/>/;
+/**
+ * Un título: donde empieza el cuerpo aunque la plantilla no ponga salto.
+ *
+ * «Title» no cuenta: es el estilo del título DE LA TESIS en muchas portadas, y
+ * con él la portada de la UPN se cortaba antes del título, sin autor ni asesor.
+ */
+const TITULO_RE = /<w:pStyle w:val="(?:Heading\d|TOCHeading|TOC\d)"\/>/;
 
 /**
  * Hasta cuántos elementos se acepta un documento sin salto como portada.
@@ -247,6 +264,8 @@ const vacias = () => ({
   /** Qué datos se detectaron en la portada: titulo, autor, asesor, carrera, anio. */
   camposDePortada: [],
   portadaSinMarcas: false,
+  /** La portada va en su propia sección, sin encabezado ni pie. */
+  portadaSinCabecera: false,
   medios: {},
 });
 
@@ -269,17 +288,17 @@ function extraer(buffer) {
   const numeracion = texto('word/numbering.xml');
   if (numeracion?.includes('<w:abstractNum')) partes.numeracion = numeracion;
 
-  // La sección del documento: la última, que es la que manda al final.
+  // La sección que gobierna el cuerpo, con los encabezados y pies que hereda:
+  // en una plantilla convertida desde PDF, la última no suele tener ninguno.
   const finDelCuerpo = documento.lastIndexOf('</w:body>');
-  const inicioSeccion = documento.lastIndexOf('<w:sectPr', finDelCuerpo);
-  const seccion =
-    inicioSeccion === -1
-      ? ''
-      : documento.slice(inicioSeccion, documento.indexOf('</w:sectPr>', inicioSeccion) + 11);
+  const principal = seccionPrincipal(documento);
+  const seccion = principal?.xml ?? '';
 
   partes.primeraPaginaDistinta = /<w:titlePg(?![^>]*w:val="(?:0|false|off)")[^>]*\/>/.test(seccion);
 
-  for (const m of seccion.matchAll(/<w:(header|footer)Reference\b([^>]*?)\/>/g)) {
+  for (const referencia of principal?.referencias ?? []) {
+    const m = referencia.match(/<w:(header|footer)Reference\b([^>]*?)\/>/);
+    if (!m) continue;
     const a = atributos(m[2]);
     const tipo = a['w:type'] ?? 'default';
     if (!TIPOS_DE_CABECERA.includes(tipo)) continue;
@@ -297,6 +316,12 @@ function extraer(buffer) {
     const recogido = recoger(xml, relsDeLaParte, zip, partes.medios);
     if (recogido) (m[1] === 'header' ? partes.encabezados : partes.pies)[tipo] = recogido;
   }
+
+  // Con varias secciones, la primera es la de la portada; si no define
+  // encabezado ni pie, la portada va sin ellos, como en la de la UPN.
+  const secciones = seccionesDe(documento);
+  partes.portadaSinCabecera =
+    secciones.length > 1 && !/<w:(header|footer)Reference\b/.test(secciones[0].xml);
 
   const apertura = documento.match(/<w:body\b[^>]*>/);
   if (apertura && finDelCuerpo !== -1) {
@@ -377,9 +402,28 @@ const CAMPO_DE_MARCA = {
  * completarla en Word. Nunca la marca a la vista: el tesista no tiene por qué
  * saber que existe.
  */
+/**
+ * «BENICIO GONZALO ACOSTA ENRIQUEZ» → «Acosta, B.», como en los pies de página.
+ *
+ * Con tres palabras o más se toma la penúltima como primer apellido, que es lo
+ * que pasa con dos nombres y dos apellidos o con uno y dos. Con dos, la segunda.
+ */
+function autorCorto(nombre) {
+  const palabras = String(nombre ?? '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((p) => p.charAt(0).toLocaleUpperCase('es') + p.slice(1).toLocaleLowerCase('es'));
+  if (palabras.length === 0) return '';
+  if (palabras.length === 1) return palabras[0];
+  const apellido = palabras.length >= 3 ? palabras[palabras.length - 2] : palabras[1];
+  return `${apellido}, ${palabras[0].charAt(0)}.`;
+}
+
 function valorDeMarca(nombre, porDefecto, datos) {
   const clave = nombre.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
   if (clave === 'ANO' || clave === 'ANIO') return String(new Date().getFullYear());
+  if (clave === 'AUTORCORTO' && datos?.nombre) return escaparXml(autorCorto(datos.nombre));
 
   const campo = CAMPO_DE_MARCA[clave];
   const valor = campo ? datos?.[campo] : null;
@@ -567,7 +611,9 @@ function aplicar(buffer, partes, datos = {}) {
 
       numero += 1;
       const nombre = `${clase}Pl${numero}.xml`;
-      escribir(`word/${nombre}`, parte.xml);
+      // Con sus marcas rellenas: el título y los autores de la tesis de
+      // ejemplo se cambiaron por {{TITULO}} y {{AUTORCORTO}} al subirla.
+      escribir(`word/${nombre}`, rellenarMarcas(conEspaciosVisibles(parte.xml), datos));
       if (parte.rels.length > 0) {
         for (const rel of parte.rels) if (!rel.externo) copiarMedio(rel.target);
         escribir(
@@ -597,7 +643,9 @@ function aplicar(buffer, partes, datos = {}) {
     seccion = seccion.replace(/^<w:sectPr\b[^>]*>/, (apertura) => apertura + referencias.join(''));
 
     const hayDePrimera = partes.encabezados?.first || partes.pies?.first;
-    if (partes.primeraPaginaDistinta && hayDePrimera && !/<w:titlePg\b/.test(seccion)) {
+    // Sin referencia de primera página, la de la portada sale en blanco.
+    const portadaLimpia = r.portada && partes.portadaSinCabecera;
+    if (((partes.primeraPaginaDistinta && hayDePrimera) || portadaLimpia) && !/<w:titlePg\b/.test(seccion)) {
       // En su sitio: el esquema fija el orden, y Word no perdona un titlePg
       // detrás de docGrid.
       seccion = /<w:(textDirection|bidi|rtlGutter|docGrid)\b/.test(seccion)
@@ -624,8 +672,10 @@ function aplicar(buffer, partes, datos = {}) {
       }
 
       const xml = rellenarMarcas(
-        partes.portada.xml.replace(ATRIBUTO_REL_RE, (atributo, clase, id) =>
-          nuevos.has(id) ? `r:${clase}="${nuevos.get(id)}"` : atributo,
+        conEspaciosVisibles(
+          partes.portada.xml.replace(ATRIBUTO_REL_RE, (atributo, clase, id) =>
+            nuevos.has(id) ? `r:${clase}="${nuevos.get(id)}"` : atributo,
+          ),
         ),
         datos,
       );
@@ -648,6 +698,7 @@ module.exports = {
   aplicar,
   resumen,
   rellenarMarcas,
+  autorCorto,
   podarMedios,
   MARCA_PORTADA,
   PARRAFO_INTERIOR_RE,

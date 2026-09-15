@@ -108,7 +108,7 @@ test('una figura: número en negrita, título en cursiva, marca resaltada y nota
   assert.ok(textos(xml).includes('Nota.'));
   // Ningún párrafo del rótulo con la sangría de primera línea del texto normal.
   const parrafoDelNumero = xml.match(/<w:p>(?:(?!<\/w:p>).)*Figura 2<\/w:t>/)[0];
-  assert.ok(!parrafoDelNumero.includes('w:firstLine'));
+  assert.doesNotMatch(parrafoDelNumero, /w:firstLine="[1-9]/, 'la única sangría de primera línea permitida es cero');
 });
 
 test('la imagen en Markdown del informe de R sale como la misma marca, con su archivo', async () => {

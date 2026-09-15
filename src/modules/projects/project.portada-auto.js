@@ -61,13 +61,27 @@ const MARCA_DE = {
   instruccion: () => '',
 };
 
-/** Las líneas con texto de la portada, numeradas por su párrafo. */
+/** Un texto o un salto de línea dentro de un párrafo. */
+const PIEZA_RE = /<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>|<w:(?:br|cr)\b[^>]*\/>/g;
+
+/**
+ * Las líneas con texto de la portada, numeradas por su párrafo.
+ *
+ * `partes` son los trozos que separa un salto de línea dentro del mismo
+ * párrafo. La portada de la UPN escribe «Angie…», «Sindy…» y «Asesor:» en UN
+ * párrafo con saltos, y leído de corrido no se distinguía ni un nombre.
+ */
 function lineasDe(xml) {
   const lineas = [];
   let numero = 0;
   for (const m of xml.matchAll(partesDePlantilla.PARRAFO_INTERIOR_RE)) {
-    const texto = [...m[0].matchAll(TEXTO_RE)].map((t) => decodificar(t[2])).join('');
-    if (texto.trim()) lineas.push({ linea: numero, texto });
+    const trozos = [''];
+    for (const pieza of m[0].matchAll(PIEZA_RE)) {
+      if (pieza[1] === undefined) trozos.push('');
+      else trozos[trozos.length - 1] += decodificar(pieza[1]);
+    }
+    const texto = trozos.join('');
+    if (texto.trim()) lineas.push({ linea: numero, texto, partes: trozos.filter((t) => t.trim()) });
     numero += 1;
   }
   return lineas;
@@ -177,7 +191,9 @@ function validar(campos, lineas) {
     const linea = lineas.find((l) => l.linea === campo.linea);
     if (!linea || !linea.texto.includes(campo.texto)) continue;
 
-    if (campo.campo !== 'instruccion' && vistos.has(campo.campo)) {
+    // La carrera puede salir dos veces —«Carrera de Psicología» y «Licenciada en
+    // Psicología»— y las dos son del tesista; un segundo autor, no.
+    if (campo.campo !== 'instruccion' && campo.campo !== 'carrera' && vistos.has(campo.campo)) {
       validos.push({ ...campo, campo: 'instruccion' });
       continue;
     }
@@ -208,6 +224,8 @@ const SISTEMA = [
   '- instruccion: indicaciones para quien rellena, como «(Aquí debe ir su nombre)».',
   '',
   '«texto» tiene que ser un trozo EXACTO de esa línea, copiado carácter por carácter.',
+  'Un « | » dentro de una línea es un salto de línea: «texto» no puede incluirlo.',
+  'Si hay varios autores, una entrada «autor» por cada uno.',
   'NO marques: la universidad, la facultad, la escuela, la ciudad, el país, «Tesis para optar…», ' +
     'las etiquetas («AUTOR», «ASESOR», «JURADO»), las líneas de investigación ni las líneas de ' +
     'puntos. Si algo no está, no lo incluyas ni lo inventes.',
@@ -219,7 +237,12 @@ async function clasificarConGemini(lineas) {
   const { texto } = await generarConRespaldo({
     modelos: [env.GEMINI_MODEL, env.GEMINI_MODEL_RESPALDO].filter(Boolean),
     sistema: SISTEMA,
-    mensajes: [{ rol: 'usuario', texto: lineas.map((l) => `${l.linea}: ${l.texto}`).join('\n') }],
+    mensajes: [
+      {
+        rol: 'usuario',
+        texto: lineas.map((l) => `${l.linea}: ${(l.partes ?? [l.texto]).join(' | ')}`).join('\n'),
+      },
+    ],
     maxTokens: 1500,
     timeoutMs: 15_000,
   });
@@ -243,68 +266,183 @@ const ANIO_RE = /((?:19|20)\d{0,2})\s*$/;
 const FIJO_RE =
   /universidad|facultad|escuela|tesis|optar|obtener|autor|asesor|jurado|l[ií]nea|lima|per[uú]|programa|grado|t[ií]tulo profesional|investigaci[oó]n/i;
 const SOLO_PUNTOS_RE = /^[.…·_\-–—\s]+$/;
+/** Lo que empieza por texto fijo no es el título, aunque diga «universidad» más adelante. */
+const FIJO_INICIO_RE =
+  /^\W*(?:universidad|facultad|escuela|tesis|l[ií]neas?\b|programa|carrera|t[ií]tulo|grado|lima|autor|asesor|jurado)/i;
+/** El ORCID o la web del asesor de ejemplo, debajo de su nombre. */
+const ENLACE_RE = /orcid|https?:?\/\/|www\./i;
+/** «Carrera de PSICOLOGÍA». */
+const CARRERA_DE_RE = /^\s*carrera\s+(?:profesional\s+)?de\s+(.+?)\s*$/i;
+/**
+ * Dónde empieza una etiqueta a mitad de línea. La portada de la UPN deja
+ * «…Sanchez Sobrado Asesor:» en el mismo texto, sin salto: hay que partirlo.
+ */
+const ETIQUETA_DENTRO_RE = /(?=\b(?:autor(?:a|es|as)?|asesor(?:a)?)\s*:)/i;
+/** El grado en la línea siguiente a «Tesis para optar al título profesional de:». */
+const GRADO_RE =
+  /^\s*(?:licenciad[oa]|ingenier[oa]|abogad[oa]|maestr[oa]|doctor(?:a)?|bachiller|contador(?:a)? p[uú]blic[oa]|m[eé]dic[oa] cirujan[oa]|arquitect[oa]|economista|obstetra|enfermer[oa]|cirujano dentista|profesor(?:a)?)\s+(?:en|de)\s+(.+?)\s*$/i;
 
 function clasificarConReglas(lineas) {
   const campos = [];
-  const util = new Map();
+  // Cada trozo entre saltos de línea, con el párrafo al que pertenece.
+  const tramos = [];
 
   for (const l of lineas) {
-    for (const m of l.texto.matchAll(INSTRUCCION_RE)) {
-      campos.push({ linea: l.linea, campo: 'instruccion', texto: m[0] });
+    for (const parte of l.partes ?? [l.texto]) {
+      for (const m of parte.matchAll(INSTRUCCION_RE)) {
+        campos.push({ linea: l.linea, campo: 'instruccion', texto: m[0] });
+      }
+      const limpio = parte.replace(INSTRUCCION_RE, ' ').trim();
+      for (const trozo of limpio.split(ETIQUETA_DENTRO_RE).map((t) => t.trim())) {
+        if (trozo && !SOLO_PUNTOS_RE.test(trozo)) tramos.push({ linea: l.linea, texto: trozo });
+      }
     }
-    const limpio = l.texto.replace(INSTRUCCION_RE, ' ').trim();
-    util.set(l.linea, limpio && !SOLO_PUNTOS_RE.test(limpio) ? limpio : null);
   }
 
   let primeraEtiqueta = null;
-  lineas.forEach((l, i) => {
-    const texto = util.get(l.linea);
-    if (!texto) return;
-
-    const etiqueta = ETIQUETA_RE.exec(texto);
+  tramos.forEach((t, i) => {
+    const etiqueta = ETIQUETA_RE.exec(t.texto);
     if (etiqueta) {
-      primeraEtiqueta ??= l.linea;
+      primeraEtiqueta ??= t.linea;
       const campo = /asesor/i.test(etiqueta[1]) ? 'asesor' : 'autor';
-      const siguiente = lineas.slice(i + 1).find((x) => util.get(x.linea));
-      const suyo = siguiente && util.get(siguiente.linea);
-      if (suyo && !ETIQUETA_RE.test(suyo) && !FIJO_RE.test(suyo)) {
-        campos.push({ linea: siguiente.linea, campo, texto: suyo });
+      // Todos los nombres que siguen, hasta la próxima etiqueta o texto fijo:
+      // el primero es el dato y los demás —un segundo autor— se borran al
+      // validar. El ORCID de ejemplo se borra también.
+      for (const siguiente of tramos.slice(i + 1)) {
+        if (ETIQUETA_RE.test(siguiente.texto) || EN_LINEA_RE.test(siguiente.texto)) break;
+        if (ENLACE_RE.test(siguiente.texto)) {
+          campos.push({ linea: siguiente.linea, campo: 'instruccion', texto: siguiente.texto });
+          continue;
+        }
+        const fijo =
+          FIJO_RE.test(siguiente.texto) ||
+          ANIO_RE.test(siguiente.texto) ||
+          CARRERA_DE_RE.test(siguiente.texto) ||
+          GRADO_RE.test(siguiente.texto);
+        if (fijo) break;
+        campos.push({ linea: siguiente.linea, campo, texto: siguiente.texto });
       }
       return;
     }
 
-    const enLinea = EN_LINEA_RE.exec(texto);
+    const enLinea = EN_LINEA_RE.exec(t.texto);
     if (enLinea && !SOLO_PUNTOS_RE.test(enLinea[2])) {
-      primeraEtiqueta ??= l.linea;
-      campos.push({ linea: l.linea, campo: /asesor/i.test(enLinea[1]) ? 'asesor' : 'autor', texto: enLinea[2] });
+      primeraEtiqueta ??= t.linea;
+      campos.push({ linea: t.linea, campo: /asesor/i.test(enLinea[1]) ? 'asesor' : 'autor', texto: enLinea[2] });
       return;
     }
 
-    const carrera = CARRERA_RE.exec(texto);
+    const carreraDe = CARRERA_DE_RE.exec(t.texto);
+    if (carreraDe) {
+      campos.push({ linea: t.linea, campo: 'carrera', texto: carreraDe[1] });
+      return;
+    }
+
+    const carrera = CARRERA_RE.exec(t.texto);
     if (carrera) {
-      campos.push({ linea: l.linea, campo: 'carrera', texto: carrera[1] });
+      campos.push({ linea: t.linea, campo: 'carrera', texto: carrera[1] });
       return;
     }
 
-    const anio = ANIO_RE.exec(texto);
-    if (anio && (/lima|per[uú]/i.test(texto) || texto === anio[1])) {
-      campos.push({ linea: l.linea, campo: 'anio', texto: anio[1] });
+    const grado = GRADO_RE.exec(t.texto);
+    if (grado && i > 0 && /optar|obtener/i.test(tramos[i - 1].texto)) {
+      campos.push({ linea: t.linea, campo: 'carrera', texto: grado[1] });
+      return;
+    }
+
+    const anio = ANIO_RE.exec(t.texto);
+    if (anio && (/lima|per[uú]/i.test(t.texto) || t.texto === anio[1])) {
+      campos.push({ linea: t.linea, campo: 'anio', texto: anio[1] });
     }
   });
 
-  // El título: la línea más larga antes de «AUTOR» que no sea texto fijo. Solo
-  // si hay esa etiqueta: sin ella, cualquier documento con una línea larga
-  // pasaría por portada.
+  // El título: la línea más larga antes de «AUTOR» que no empiece por texto
+  // fijo. Solo si hay esa etiqueta: sin ella, cualquier documento con una línea
+  // larga pasaría por portada.
   const ocupadas = new Set(campos.filter((c) => c.campo !== 'instruccion').map((c) => c.linea));
-  const titulo = lineas
-    .filter((l) => primeraEtiqueta !== null && l.linea < primeraEtiqueta)
-    .filter((l) => !ocupadas.has(l.linea))
-    .map((l) => ({ linea: l.linea, texto: util.get(l.linea) }))
-    .filter((l) => l.texto && l.texto.length >= 20 && !FIJO_RE.test(l.texto))
+  const titulo = tramos
+    .filter((t) => primeraEtiqueta !== null && t.linea < primeraEtiqueta)
+    .filter((t) => !ocupadas.has(t.linea))
+    .filter((t) => t.texto.length >= 20 && !FIJO_INICIO_RE.test(t.texto) && !CARRERA_RE.test(t.texto))
     .sort((a, b) => b.texto.length - a.texto.length)[0];
   if (titulo) campos.push({ linea: titulo.linea, campo: 'titulo', texto: titulo.texto });
 
   return campos;
+}
+
+// ── El encabezado y el pie ─────────────────────────────────────────────────
+
+/** «Paico, A.; Sánchez, S.»: los autores de ejemplo en un pie de página. */
+const AUTORES_CORTOS_RE =
+  /^\s*\p{Lu}[\p{L}'’-]+(?:\s+\p{Lu}[\p{L}'’-]+)?,\s*\p{Lu}\.(?:\s*\p{Lu}\.)?(?:\s*(?:[;,&]|\by\b)\s*\p{Lu}[\p{L}'’-]+(?:\s+\p{Lu}[\p{L}'’-]+)?,\s*\p{Lu}\.(?:\s*\p{Lu}\.)?)*\s*$/u;
+
+const normalizar = (texto) =>
+  String(texto)
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9ñ]+/g, ' ');
+
+/**
+ * ¿Es este párrafo un trozo del título de la portada, escrito de otra manera?
+ *
+ * El encabezado de la UPN lo pone en minúsculas, sin comillas, con el año y
+ * partido en dos párrafos, así que se mira cada párrafo por su cuenta: siete de
+ * cada diez de sus palabras largas tienen que ser del título.
+ */
+function parteDelTitulo(texto, titulo) {
+  const delTitulo = new Set(normalizar(titulo).split(' ').filter((p) => p.length >= 4));
+  const suyas = normalizar(texto).split(' ').filter((p) => p.length >= 4);
+  if (delTitulo.size < 3 || suyas.length < 2) return false;
+  return suyas.filter((p) => delTitulo.has(p)).length / suyas.length >= 0.7;
+}
+
+function ponerEnParrafo(parrafo, texto) {
+  let i = 0;
+  return parrafo.replace(TEXTO_RE, () => (i++ === 0 ? `<w:t xml:space="preserve">${texto}</w:t>` : '<w:t></w:t>'));
+}
+
+/**
+ * El título y los autores de la tesis de ejemplo, fuera del encabezado y el pie.
+ *
+ * Se cambian por marcas que se rellenan al descargar, como la portada. Sin esto,
+ * el encabezado de la plantilla ponía en cada página el título de otra tesis y
+ * el pie los apellidos de otras personas. Un encabezado fijo —el nombre de la
+ * universidad— no se toca.
+ */
+function marcarCabeceras(partes, tituloDeEjemplo) {
+  const cambiar = (xml, esEncabezado) => {
+    // El título partido en varios párrafos seguidos va entero en el primero y
+    // los demás se vacían. Cada cuadro de texto es un título aparte: la copia
+    // antigua que guarda Word también tiene que llevarlo.
+    let seguido = false;
+    let finAnterior = 0;
+    return xml.replace(partesDePlantilla.PARRAFO_INTERIOR_RE, (parrafo, posicion) => {
+      if (/<\/?w:txbxContent\b/.test(xml.slice(finAnterior, posicion))) seguido = false;
+      finAnterior = posicion + parrafo.length;
+
+      const texto = [...parrafo.matchAll(TEXTO_RE)].map((t) => decodificar(t[2])).join('');
+      if (!texto.trim()) return parrafo;
+      if (AUTORES_CORTOS_RE.test(texto)) {
+        seguido = false;
+        return ponerEnParrafo(parrafo, '{{AUTORCORTO}}');
+      }
+      if (esEncabezado && tituloDeEjemplo && parteDelTitulo(texto, tituloDeEjemplo)) {
+        const primero = !seguido;
+        seguido = true;
+        return ponerEnParrafo(parrafo, primero ? '{{TITULO}}' : '');
+      }
+      seguido = false;
+      return parrafo;
+    });
+  };
+
+  for (const [grupo, esEncabezado] of [[partes?.encabezados, true], [partes?.pies, false]]) {
+    for (const tipo of Object.keys(grupo ?? {})) {
+      grupo[tipo] = { ...grupo[tipo], xml: cambiar(grupo[tipo].xml, esEncabezado) };
+    }
+  }
+  return partes;
 }
 
 /**
@@ -315,7 +453,8 @@ function clasificarConReglas(lineas) {
  */
 async function prepararPortada(partes, { clasificar = clasificarConGemini } = {}) {
   const candidata = partes?.portadaCandidata;
-  if (!candidata) return partes;
+  // Sin portada no hay título de ejemplo que buscar, pero los autores del pie sí.
+  if (!candidata) return partes ? marcarCabeceras(partes, null) : partes;
   delete partes.portadaCandidata;
 
   const lineas = lineasDe(candidata.xml);
@@ -341,9 +480,21 @@ async function prepararPortada(partes, { clasificar = clasificarConGemini } = {}
     partes.portadaSinMarcas = true;
   }
 
+  // El título de ejemplo, para encontrarlo también en el encabezado.
+  const tituloDeEjemplo = campos.filter((c) => c.campo === 'titulo').map((c) => c.texto).join(' ');
+  marcarCabeceras(partes, tituloDeEjemplo || null);
+
   // Sin el texto: solo qué se encontró y cómo.
   logger.info({ origen, campos: partes.camposDePortada ?? [] }, 'Portada de plantilla leída');
   return partesDePlantilla.podarMedios(partes);
 }
 
-module.exports = { prepararPortada, clasificarConReglas, lineasDe, marcar, validar };
+module.exports = {
+  prepararPortada,
+  clasificarConReglas,
+  lineasDe,
+  marcar,
+  validar,
+  marcarCabeceras,
+  parteDelTitulo,
+};

@@ -1757,6 +1757,10 @@ async function deUsuario(userId, { esAdmin = false } = {}) {
         carrera: proyecto.carrera,
         universidad: proyecto.universidad,
         asesor: proyecto.asesor ?? null,
+        /** Tesis, artículo o informe: el panel cambia sus textos con esto. */
+        tipo: perfilDe(proyecto.productCode).tipo,
+        /** Solo del informe: curso, docente, integrantes, entrega. Null en los demás. */
+        fichaInforme: proyecto.fichaInforme ?? null,
         norma: normaDelProyecto(proyecto),
         plantilla: proyecto.plantillaAt ? await plantillaDelPanel(proyecto) : null,
         /** El Word que subió para que Claude lo cite, o null. */

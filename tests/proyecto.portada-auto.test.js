@@ -119,7 +119,9 @@ test('con Gemini se usa lo que dice, y lo que no está tal cual en la línea se 
     ],
   });
 
-  assert.deepEqual(partes.camposDePortada, ['autor', 'asesor']);
+  // El autor y el asesor, de Gemini. El título inventado se descarta y las reglas
+  // completan las líneas que Gemini no tocó: el título de verdad, la carrera y el año.
+  assert.deepEqual(partes.camposDePortada, ['titulo', 'autor', 'asesor', 'carrera', 'anio']);
   assert.ok(JSON.stringify(partes).includes('Facultad de Psicología'));
 });
 

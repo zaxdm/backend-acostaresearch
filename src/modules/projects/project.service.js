@@ -869,6 +869,7 @@ const NOMBRE_DE_CAMPO = {
   autor: 'nombre',
   asesor: 'asesor',
   carrera: 'carrera',
+  grado: 'grado',
   anio: 'año',
 };
 

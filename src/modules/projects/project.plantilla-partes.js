@@ -51,6 +51,166 @@ const { seccionPrincipal, seccionesDe } = require('./project.plantilla');
 const conEspaciosVisibles = (xml) =>
   String(xml).replace(/<w:t(?=[\s>])(?![^>]*xml:space)([^>]*)>/g, '<w:t xml:space="preserve"$1>');
 
+/** Lo más pequeño a lo que se achica el título del encabezado: 5,5 puntos. */
+const TAMANO_MINIMO_CABECERA = 11;
+
+/**
+ * El título del encabezado, más pequeño si el del tesista es más largo.
+ *
+ * El encabezado de la UPN lo pone en un cuadro de texto de altura fija. Un título
+ * más largo que el de ejemplo necesitaba otra línea, se cortaba y tocaba el texto
+ * de la página. Se achica la letra en la misma proporción para que quepa en las
+ * mismas líneas.
+ */
+function ajustarTituloDeCabecera(xml, largoDeEjemplo, tema) {
+  const largo = String(tema ?? '').trim().length;
+  if (!largoDeEjemplo || !largo || largo <= largoDeEjemplo) return xml;
+  const factor = largoDeEjemplo / largo;
+  return xml.replace(PARRAFO_INTERIOR_RE, (parrafo) =>
+    parrafo.includes('{{TITULO}}')
+      ? parrafo.replace(/<w:(sz|szCs) w:val="(\d+)"\/>/g, (entero, etiqueta, valor) =>
+          `<w:${etiqueta} w:val="${Math.max(TAMANO_MINIMO_CABECERA, Math.round(Number(valor) * factor))}"/>`,
+        )
+      : parrafo,
+  );
+}
+
+/** El aire entre el logo del encabezado y la primera línea del texto: 0,6 cm. */
+const AIRE_BAJO_LA_CABECERA = 340;
+
+/**
+ * Hasta dónde baja lo que flota en el encabezado, en twips desde el borde de la hoja.
+ *
+ * Un logo o un cuadro de texto flotante no empuja el texto como un párrafo: si
+ * baja más que el margen superior, se monta encima. Solo se miden los que se
+ * colocan respecto de la hoja o del párrafo del encabezado; los demás no se
+ * pueden medir sin maquetar.
+ */
+function fondoDeLaCabecera(xml, distancia) {
+  let fondo = 0;
+  for (const m of String(xml).matchAll(/<wp:anchor\b[\s\S]*?<\/wp:anchor>/g)) {
+    const vertical = m[0].match(/<wp:positionV relativeFrom="(\w+)">\s*<wp:posOffset>(-?\d+)<\/wp:posOffset>/);
+    const alto = m[0].match(/<wp:extent\b[^>]*\bcy="(\d+)"/);
+    if (!vertical || !alto) continue;
+    const desde = vertical[1] === 'page' ? 0 : ['paragraph', 'line'].includes(vertical[1]) ? distancia : null;
+    if (desde === null) continue;
+    fondo = Math.max(fondo, desde + (Number(vertical[2]) + Number(alto[1])) / 635);
+  }
+  return Math.round(fondo);
+}
+
+/** El margen superior de la sección, lo bastante alto para que el texto no toque el encabezado. */
+function conAireBajoLaCabecera(seccion, encabezados) {
+  return seccion.replace(/<w:pgMar\b[^>]*\/>/, (margen) => {
+    const valor = (nombre, porDefecto) => Number((margen.match(new RegExp(`w:${nombre}="(-?\\d+)"`)) || [0, porDefecto])[1]);
+    const fondo = Math.max(0, ...Object.values(encabezados ?? {}).map((p) => fondoDeLaCabecera(p.xml, valor('header', 720))));
+    const necesario = fondo + AIRE_BAJO_LA_CABECERA;
+    return fondo > 0 && Math.abs(valor('top', 1440)) < necesario
+      ? margen.replace(/w:top="-?\d+"/, `w:top="${necesario}"`)
+      : margen;
+  });
+}
+
+/** «Autores:» en singular si el proyecto tiene un solo autor. */
+const conEtiquetaDeAutor = (xml, nombre) =>
+  /;|\s(?:y|&)\s/.test(String(nombre ?? ''))
+    ? xml
+    : xml.replace(/(<w:t\b[^>]*>\s*)(Autor|AUTOR)(?:es|ES)(\s*:)/g, '$1$2$3');
+
+/** Lo que ocupa, más o menos, una línea de portada: 22 puntos. */
+const TWIPS_POR_LINEA = 440;
+
+/**
+ * Cuánto más alta sale la portada con los datos del tesista, en twips.
+ *
+ * Una estimación por caracteres: cada tanto de texto de más es una línea de
+ * más, y se suma otra de margen. Mejor compactar un poco de más que dejar el año
+ * solo en una segunda hoja.
+ */
+function alturaDeMas(partes, datos) {
+  const ejemplo = partes?.largosDeEjemplo;
+  if (!ejemplo) return 0;
+  const lineas = (dato, antes, porLinea) => {
+    const mas = antes ? String(dato ?? '').trim().length - antes : 0;
+    return mas > 0 ? Math.ceil(mas / porLinea) : 0;
+  };
+  const deMas =
+    lineas(datos?.tema, ejemplo.titulo, 45) +
+    lineas(datos?.nombre, ejemplo.autor, 40) +
+    lineas(datos?.asesor, ejemplo.asesor, 40) +
+    lineas(datos?.carrera, ejemplo.carrera, 45);
+  return deMas > 0 ? (deMas + 1) * TWIPS_POR_LINEA : 0;
+}
+
+const esHueco = (parrafo) =>
+  !/<w:t\b[^>]*>[^<]*\S/.test(parrafo) && !/<w:(?:drawing|pict|object|sectPr)\b/.test(parrafo);
+
+/** La altura de un párrafo vacío: su línea, con la letra que tenga, y sus espacios antes y después. */
+function alturaDeHueco(parrafo) {
+  const espaciado = (parrafo.match(/<w:spacing\b[^>]*\/>/) || [''])[0];
+  const atributo = (nombre) => Number((espaciado.match(new RegExp(`w:${nombre}="(\\d+)"`)) || [0, 0])[1]);
+  const regla = (espaciado.match(/w:lineRule="(\w+)"/) || [0, 'auto'])[1];
+  const tamano = Number((parrafo.match(/<w:sz w:val="(\d+)"/) || [0, 24])[1]);
+
+  const sencilla = tamano * 12; // medio punto × 1,2 de interlineado × 20 twips
+  const linea = !atributo('line') ? sencilla : regla === 'auto' ? (sencilla * atributo('line')) / 240 : atributo('line');
+  return linea + atributo('before') + atributo('after');
+}
+
+/** El espaciado de un párrafo, cambiado o puesto en su sitio dentro de pPr. */
+function conEspaciado(parrafo, espaciado) {
+  const sinEspaciado = parrafo.replace(/<w:spacing\b[^>]*\/>/, '').replace('<w:pPr/>', '<w:pPr></w:pPr>');
+  if (sinEspaciado.includes('<w:pPr>')) {
+    return sinEspaciado.replace(
+      /<w:pPr>([\s\S]*?)(<w:ind\b|<w:contextualSpacing\b|<w:mirrorIndents\b|<w:suppressOverlap\b|<w:jc\b|<w:textDirection\b|<w:textAlignment\b|<w:textboxTightWrap\b|<w:outlineLvl\b|<w:divId\b|<w:cnfStyle\b|<w:rPr\b|<w:sectPr\b|<w:pPrChange\b|<\/w:pPr>)/,
+      (entero, antes, siguiente) => `<w:pPr>${antes}${espaciado}${siguiente}`,
+    );
+  }
+  return sinEspaciado.replace(/^<w:p\b[^>]*>/, (apertura) => `${apertura}<w:pPr>${espaciado}</w:pPr>`);
+}
+
+/**
+ * Los párrafos vacíos que separan los bloques de la portada, más bajos.
+ *
+ * Solo cuando los datos del tesista son más largos que los de ejemplo: sin
+ * esto, el año de la portada de la UPN pasaba solo a una segunda hoja. Todos
+ * los huecos se achican en la misma proporción, lo justo para ganar `necesario`
+ * twips, y la portada conserva su reparto.
+ */
+function compactarHuecos(xml, necesario) {
+  const alturas = [];
+  for (const m of xml.matchAll(PARRAFO_INTERIOR_RE)) if (esHueco(m[0])) alturas.push(alturaDeHueco(m[0]));
+  const total = alturas.reduce((suma, altura) => suma + altura, 0);
+  if (!total || necesario <= 0) return xml;
+
+  const queda = Math.max(0, 1 - necesario / total);
+  let i = 0;
+  return xml.replace(PARRAFO_INTERIOR_RE, (parrafo) => {
+    if (!esHueco(parrafo)) return parrafo;
+    const altura = Math.max(20, Math.round(alturas[i++] * queda));
+    return conEspaciado(parrafo, `<w:spacing w:before="0" w:after="0" w:line="${altura}" w:lineRule="exact"/>`);
+  });
+}
+
+/**
+ * El salto de página tras la portada, hecho salto de sección.
+ *
+ * Así la portada es una sección sin encabezado ni pie, como en la plantilla, y
+ * lo sigue siendo aunque ocupe dos hojas. Con «primera página distinta» solo la
+ * primera salía limpia. La sección nueva copia el tamaño y los márgenes de la
+ * del documento.
+ */
+function conSeccionPropia(despues, documento) {
+  const siguiente = despues.match(/^<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*<\/w:p>/);
+  if (!siguiente || !siguiente[0].includes('<w:pageBreakBefore')) return despues;
+
+  const principal = documento.slice(documento.lastIndexOf('<w:sectPr'));
+  const pagina = ['pgSz', 'pgMar', 'cols', 'docGrid']
+    .map((etiqueta) => (principal.match(new RegExp(`<w:${etiqueta}\\b[^>]*/>`)) || [''])[0])
+    .join('');
+  return `<w:p><w:pPr><w:sectPr>${pagina}</w:sectPr></w:pPr></w:p>${despues.slice(siguiente[0].length)}`;
+}
+
 /** Dónde va la portada de la plantilla dentro del Word que arma el servidor. */
 const MARCA_PORTADA = '⟦PORTADA⟧';
 
@@ -424,6 +584,15 @@ function valorDeMarca(nombre, porDefecto, datos) {
   const clave = nombre.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
   if (clave === 'ANO' || clave === 'ANIO') return String(new Date().getFullYear());
   if (clave === 'AUTORCORTO' && datos?.nombre) return escaparXml(autorCorto(datos.nombre));
+  if (clave === 'GRADO') {
+    const carrera = String(datos?.carrera ?? '').trim();
+    if (!carrera) return porDefecto?.trim() ? porDefecto : PUNTOS;
+    // Un posgrado se dice entero: «Licenciada en Maestría en Docencia» no lo
+    // escribe nadie. Un pregrado conserva el grado de la plantilla.
+    if (/^(?:maestr|m[aá]ster|doctor|segunda especialidad|especialidad)/i.test(carrera)) return escaparXml(carrera);
+    const grado = String(porDefecto ?? '').replace(/\s+(?:en|de)\s+.+$/i, '').trim();
+    return grado ? `${grado} en ${escaparXml(carrera)}` : escaparXml(carrera);
+  }
 
   const campo = CAMPO_DE_MARCA[clave];
   const valor = campo ? datos?.[campo] : null;
@@ -613,7 +782,10 @@ function aplicar(buffer, partes, datos = {}) {
       const nombre = `${clase}Pl${numero}.xml`;
       // Con sus marcas rellenas: el título y los autores de la tesis de
       // ejemplo se cambiaron por {{TITULO}} y {{AUTORCORTO}} al subirla.
-      escribir(`word/${nombre}`, rellenarMarcas(conEspaciosVisibles(parte.xml), datos));
+      escribir(
+        `word/${nombre}`,
+        rellenarMarcas(ajustarTituloDeCabecera(conEspaciosVisibles(parte.xml), parte.largoDelTitulo, datos.tema), datos),
+      );
       if (parte.rels.length > 0) {
         for (const rel of parte.rels) if (!rel.externo) copiarMedio(rel.target);
         escribir(
@@ -643,9 +815,7 @@ function aplicar(buffer, partes, datos = {}) {
     seccion = seccion.replace(/^<w:sectPr\b[^>]*>/, (apertura) => apertura + referencias.join(''));
 
     const hayDePrimera = partes.encabezados?.first || partes.pies?.first;
-    // Sin referencia de primera página, la de la portada sale en blanco.
-    const portadaLimpia = r.portada && partes.portadaSinCabecera;
-    if (((partes.primeraPaginaDistinta && hayDePrimera) || portadaLimpia) && !/<w:titlePg\b/.test(seccion)) {
+    if (partes.primeraPaginaDistinta && hayDePrimera && !/<w:titlePg\b/.test(seccion)) {
       // En su sitio: el esquema fija el orden, y Word no perdona un titlePg
       // detrás de docGrid.
       seccion = /<w:(textDirection|bidi|rtlGutter|docGrid)\b/.test(seccion)
@@ -680,11 +850,21 @@ function aplicar(buffer, partes, datos = {}) {
         datos,
       );
 
-      documento = conEspacios(
-        documento.slice(0, inicio) + xml + documento.slice(final),
-        partes.portada.espacios,
-      );
+      const despues = partes.portadaSinCabecera
+        ? conSeccionPropia(documento.slice(final), documento)
+        : documento.slice(final);
+      const portada = conEtiquetaDeAutor(compactarHuecos(xml, alturaDeMas(partes, datos)), datos.nombre);
+
+      documento = conEspacios(documento.slice(0, inicio) + portada + despues, partes.portada.espacios);
     }
+  }
+
+  // ── El texto, debajo del logo ────────────────────────────────────────────
+  // Después de la portada: su sección copió ya los márgenes de la plantilla y
+  // no tiene encabezado que esquivar.
+  if (r.encabezado) {
+    const inicio = documento.lastIndexOf('<w:sectPr');
+    documento = documento.slice(0, inicio) + conAireBajoLaCabecera(documento.slice(inicio), partes.encabezados);
   }
 
   escribir('[Content_Types].xml', tipos);

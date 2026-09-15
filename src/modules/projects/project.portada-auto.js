@@ -35,10 +35,10 @@ const logger = require('../../config/logger');
 const { generarConRespaldo } = require('../../lib/gemini');
 const partesDePlantilla = require('./project.plantilla-partes');
 
-const CAMPOS = ['titulo', 'autor', 'asesor', 'carrera', 'anio', 'instruccion'];
+const CAMPOS = ['titulo', 'autor', 'asesor', 'carrera', 'grado', 'anio', 'instruccion'];
 /** Con alguno de estos, la portada ya sirve. */
 const CAMPOS_QUE_BASTAN = ['titulo', 'autor', 'asesor'];
-const ORDEN = ['titulo', 'autor', 'asesor', 'carrera', 'anio'];
+const ORDEN = ['titulo', 'autor', 'asesor', 'carrera', 'grado', 'anio'];
 
 const TEXTO_RE = /(<w:t(?:\s[^>]*)?>)([^<]*)(<\/w:t>)/g;
 
@@ -58,6 +58,9 @@ const MARCA_DE = {
   asesor: () => '{{ASESOR}}',
   anio: () => '{{AÑO}}',
   carrera: (texto) => `{{CARRERA|${texto.replace(/[{}|]/g, '')}}}`,
+  // La línea entera, «Licenciada en psicología»: al rellenarla se decide si se
+  // conserva «Licenciada en» o si va la carrera entera (un posgrado).
+  grado: (texto) => `{{GRADO|${texto.replace(/[{}|]/g, '')}}}`,
   instruccion: () => '',
 };
 
@@ -220,8 +223,11 @@ const SISTEMA = [
     'etiqueta «ASESOR:».',
   '- carrera: solo el nombre de la carrera en frases como «título profesional de Licenciado en ' +
     'Psicología» → «Psicología».',
+  '- grado: la línea ENTERA con el grado cuando va sola, debajo de «Tesis para optar…»: ' +
+    '«Licenciada en psicología», «Maestro en Educación».',
   '- anio: el año o el trozo de año que haya («2024», «20»).',
-  '- instruccion: indicaciones para quien rellena, como «(Aquí debe ir su nombre)».',
+  '- instruccion: indicaciones para quien rellena, como «(Aquí debe ir su nombre)», y el ORCID, ' +
+    'el correo o la web del autor o del asesor de ejemplo.',
   '',
   '«texto» tiene que ser un trozo EXACTO de esa línea, copiado carácter por carácter.',
   'Un « | » dentro de una línea es un salto de línea: «texto» no puede incluirlo.',
@@ -346,7 +352,7 @@ function clasificarConReglas(lineas) {
 
     const grado = GRADO_RE.exec(t.texto);
     if (grado && i > 0 && /optar|obtener/i.test(tramos[i - 1].texto)) {
-      campos.push({ linea: t.linea, campo: 'carrera', texto: grado[1] });
+      campos.push({ linea: t.linea, campo: 'grado', texto: t.texto });
       return;
     }
 
@@ -417,7 +423,11 @@ function marcarCabeceras(partes, tituloDeEjemplo) {
     // antigua que guarda Word también tiene que llevarlo.
     let seguido = false;
     let finAnterior = 0;
-    return xml.replace(partesDePlantilla.PARRAFO_INTERIOR_RE, (parrafo, posicion) => {
+    // Lo que ocupaba el título de ejemplo en el primer cuadro: si el del
+    // tesista es más largo, al descargar se achica la letra (ver `aplicar`).
+    let grupos = 0;
+    let largo = 0;
+    const resultado = xml.replace(partesDePlantilla.PARRAFO_INTERIOR_RE, (parrafo, posicion) => {
       if (/<\/?w:txbxContent\b/.test(xml.slice(finAnterior, posicion))) seguido = false;
       finAnterior = posicion + parrafo.length;
 
@@ -430,16 +440,20 @@ function marcarCabeceras(partes, tituloDeEjemplo) {
       if (esEncabezado && tituloDeEjemplo && parteDelTitulo(texto, tituloDeEjemplo)) {
         const primero = !seguido;
         seguido = true;
+        if (primero) grupos += 1;
+        if (grupos === 1) largo += texto.trim().length;
         return ponerEnParrafo(parrafo, primero ? '{{TITULO}}' : '');
       }
       seguido = false;
       return parrafo;
     });
+    return { xml: resultado, largo };
   };
 
   for (const [grupo, esEncabezado] of [[partes?.encabezados, true], [partes?.pies, false]]) {
     for (const tipo of Object.keys(grupo ?? {})) {
-      grupo[tipo] = { ...grupo[tipo], xml: cambiar(grupo[tipo].xml, esEncabezado) };
+      const { xml, largo } = cambiar(grupo[tipo].xml, esEncabezado);
+      grupo[tipo] = { ...grupo[tipo], xml, ...(largo > 0 ? { largoDelTitulo: largo } : {}) };
     }
   }
   return partes;
@@ -467,10 +481,30 @@ async function prepararPortada(partes, { clasificar = clasificarConGemini } = {}
     logger.warn({ err: error.message }, 'No se pudo leer la portada con Gemini; se usan las reglas');
   }
 
+  const reglas = validar(clasificarConReglas(lineas), lineas);
   if (!campos.some((c) => CAMPOS_QUE_BASTAN.includes(c.campo))) {
-    campos = validar(clasificarConReglas(lineas), lineas);
+    campos = reglas;
     origen = 'reglas';
+  } else {
+    // Lo que Gemini no vio y las reglas sí. Con la portada de la UPN, Gemini
+    // encontró título, autor y asesor, pero dejó el ORCID del asesor de ejemplo
+    // y «Licenciada en psicología», y el tesista los vio en su Word.
+    const vistas = new Set(campos.map((c) => c.linea));
+    const extra = reglas.filter((c) => c.campo === 'instruccion' || !vistas.has(c.linea));
+    campos = validar([...campos, ...extra], lineas);
   }
+
+  // Cuánto ocupaban los datos de ejemplo: si los del tesista son más largos, al
+  // descargar se compacta la portada para que no pase a una segunda hoja.
+  const largoDe = (campo) =>
+    campos.filter((c) => c.campo === campo).reduce((suma, c) => suma + c.texto.length, 0);
+  partes.largosDeEjemplo = {
+    titulo: largoDe('titulo'),
+    autor: largoDe('autor'),
+    asesor: largoDe('asesor'),
+    // La carrera sale dos veces («Carrera de X», «Licenciada en X»): basta la primera.
+    carrera: campos.find((c) => c.campo === 'carrera')?.texto.length ?? 0,
+  };
 
   const { xml, puestos } = marcar(candidata.xml, campos);
   if (puestos.some((c) => CAMPOS_QUE_BASTAN.includes(c))) {

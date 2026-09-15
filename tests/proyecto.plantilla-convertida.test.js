@@ -45,6 +45,8 @@ const seccion = (referencias = '') => `<w:p><w:pPr><w:sectPr>${referencias}${PAG
 const PORTADA = [
   p('FACULTAD DE CIENCIAS DE LA SALUD'),
   p('Carrera de PSICOLOGÍA'),
+  // Un hueco entre líneas, como los que separan los bloques de la portada.
+  '<w:p><w:pPr><w:spacing w:after="400"/><w:jc w:val="center"/></w:pPr></w:p>',
   p(
     '“RESILIENCIA Y PROCRASTINACIÓN ACADÉMICA EN ESTUDIANTES DE PSICOLOGÍA DE UNA UNIVERSIDAD PRIVADA DE LIMA METROPOLITANA”',
     '<w:pStyle w:val="Title"/>',
@@ -75,9 +77,9 @@ const ESTILOS =
 const ENCABEZADO =
   `<w:hdr xmlns:w="${W}">` +
   // El texto de ejemplo, dos veces: como en el cuadro de texto y su copia antigua.
-  '<w:p><w:r><w:t xml:space="preserve">Resiliencia y procrastinación académica en estudiantes de</w:t></w:r>' +
+  '<w:p><w:r><w:rPr><w:sz w:val="16"/><w:szCs w:val="16"/></w:rPr><w:t xml:space="preserve">Resiliencia y procrastinación académica en estudiantes de</w:t></w:r>' +
   '<w:r><w:t>psicología de una universidad privada de Lima Metropolitana 2025</w:t></w:r></w:p>' +
-  '<w:p><w:r><w:t xml:space="preserve">Resiliencia y procrastinación académica en estudiantes de</w:t></w:r>' +
+  '<w:p><w:r><w:rPr><w:sz w:val="16"/><w:szCs w:val="16"/></w:rPr><w:t xml:space="preserve">Resiliencia y procrastinación académica en estudiantes de</w:t></w:r>' +
   '<w:r><w:t>psicología de una universidad privada de Lima Metropolitana 2025</w:t></w:r></w:p>' +
   '</w:hdr>';
 
@@ -186,7 +188,7 @@ test('el encabezado y el pie se toman de la sección que gobierna el cuerpo, aun
 test('la portada llega hasta su salto de sección aunque el título tenga el estilo «Title»', async () => {
   const partes = await partesListas();
   assert.ok(partes.portada, 'la portada se usa');
-  assert.deepEqual([...partes.camposDePortada].sort(), ['anio', 'asesor', 'autor', 'carrera', 'titulo']);
+  assert.deepEqual([...partes.camposDePortada].sort(), ['anio', 'asesor', 'autor', 'carrera', 'grado', 'titulo']);
 
   const xml = partes.portada.xml;
   for (const ajeno of ['RESILIENCIA', 'Angie', 'Sindy', 'Claudia', 'orcid', '2025']) {
@@ -215,6 +217,7 @@ test('el Word lleva el encabezado con su tema, el pie con su apellido y la porta
   const salida = await armar({
     tema: 'Motivación y rendimiento en estudiantes de enfermería',
     nombre: 'BENICIO GONZALO ACOSTA ENRIQUEZ',
+    carrera: 'Enfermería',
     asesor: 'Dr. Juan Pérez',
     estilos: plantilla.conFormatoDelCuerpo(plantilla.extraerEstilos(buffer), buffer),
     pagina: plantilla.extraerPagina(buffer),
@@ -238,7 +241,16 @@ test('el Word lleva el encabezado con su tema, el pie con su apellido y la porta
   assert.ok(documento.includes('Dr. Juan Pérez'));
   assert.ok(!documento.includes('Sindy'));
   assert.match(documento, /w:left="1702"/, 'el margen izquierdo de la tesis, no el del PDF');
-  assert.match(documento, /<w:titlePg\/>/, 'la portada sin encabezado ni pie, como en la plantilla');
+  assert.ok(documento.includes('Carrera de Enfermería'));
+  assert.ok(documento.includes('Licenciada en Enfermería'), 'el grado de la plantilla con la carrera del tesista');
+
+  // La portada en su propia sección, sin encabezado ni pie aunque ocupe dos hojas.
+  const secciones = documento.match(/<w:sectPr\b[\s\S]*?<\/w:sectPr>/g);
+  assert.equal(secciones.length, 2);
+  assert.doesNotMatch(secciones[0], /<w:headerReference/);
+  assert.match(secciones[0], /<w:pgMar\b[^>]*w:left="1702"/, 'con los márgenes del documento');
+  assert.match(secciones[1], /<w:headerReference/);
+  assert.doesNotMatch(documento, /<w:titlePg\/>/);
   assert.match(documento, /<w:pStyle w:val="CuerpoTesis"\/>/, 'el texto en el estilo del cuerpo');
   assert.doesNotMatch(documento, /<w:t>/, 'todos los textos copiados conservan sus espacios');
 });
@@ -269,6 +281,92 @@ test('un título partido en dos párrafos del encabezado se reconoce trozo a tro
   assert.ok(portadaAuto.parteDelTitulo('Resiliencia y procrastinación académica en estudiantes de', titulo));
   assert.ok(portadaAuto.parteDelTitulo('psicología de una universidad privada de Lima Metropolitana 2025', titulo));
   assert.ok(!portadaAuto.parteDelTitulo('Universidad Privada del Norte · Facultad de Ciencias de la Salud', titulo));
+});
+
+test('con Gemini, lo que no vio lo completan las reglas: sin ORCID ni autores de ejemplo', async () => {
+  // Como pasó en producción: Gemini da título y asesor, y se deja lo demás.
+  const soloAlgunos = async (lineas) =>
+    lineas
+      .filter((l) => /RESILIENCIA|Claudia/.test(l.texto))
+      .map((l) => ({ linea: l.linea, campo: /Claudia/.test(l.texto) ? 'asesor' : 'titulo', texto: l.texto }));
+
+  const partes = await portadaAuto.prepararPortada(partesDePlantilla.extraer(plantillaConvertida()), {
+    clasificar: soloAlgunos,
+  });
+  const xml = partes.portada.xml;
+  for (const ajeno of ['orcid', 'Angie', 'Sindy']) assert.ok(!xml.includes(ajeno), `no queda «${ajeno}»`);
+  assert.ok(xml.includes('{{GRADO|Licenciada en psicología}}'));
+});
+
+test('el grado: un pregrado conserva «Licenciada en»; un posgrado va entero', () => {
+  const marca = '<w:p><w:r><w:t>{{GRADO|Licenciada en psicología}}</w:t></w:r></w:p>';
+  assert.ok(partesDePlantilla.rellenarMarcas(marca, { carrera: 'Enfermería' }).includes('Licenciada en Enfermería'));
+
+  const posgrado = partesDePlantilla.rellenarMarcas(marca, { carrera: 'Maestría profesional en Docencia Universitaria' });
+  assert.ok(posgrado.includes('Maestría profesional en Docencia Universitaria'));
+  assert.ok(!posgrado.includes('Licenciada'));
+
+  assert.ok(partesDePlantilla.rellenarMarcas(marca, {}).includes('Licenciada en psicología'), 'sin carrera, la de la plantilla');
+});
+
+test('con un título y un nombre más largos: letra del encabezado más pequeña y portada compactada', async () => {
+  const buffer = plantillaConvertida();
+  const partes = await partesListas();
+  const tema =
+    'Alfabetización en IA generativa y ética académica percibida en estudiantes de pregrado, mediada ' +
+    'por la autoeficacia en el uso de IA, en una universidad pública de Lima, 2027, con un estudio ' +
+    'comparado entre facultades y modalidades de enseñanza presencial y virtual';
+
+  const salida = await armar({
+    tema,
+    nombre: 'BENICIO GONZALO ACOSTA ENRIQUEZ DE LA TORRE MONTALVO',
+    asesor: 'Dra. María Fernanda Quispe Huamán de Rodríguez',
+    estilos: plantilla.conFormatoDelCuerpo(plantilla.extraerEstilos(buffer), buffer),
+    pagina: plantilla.extraerPagina(buffer),
+    partes,
+    capitulos: [{ titulo: 'Capítulo I', texto: 'Texto.' }],
+  });
+  const zip = new AdmZip(salida);
+  const encabezado = zip
+    .getEntries()
+    .filter((e) => /word\/headerPl\d+\.xml$/.test(e.entryName))
+    .map((e) => e.getData().toString('utf8'))
+    .join('');
+  // Solo el párrafo con el título; el segundo, vaciado, conserva su letra.
+  const conTitulo = encabezado.match(/<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*Alfabetización(?:(?!<\/w:p>)[\s\S])*<\/w:p>/)[0];
+  const tamanos = [...conTitulo.matchAll(/<w:sz w:val="(\d+)"\/>/g)].map((m) => Number(m[1]));
+  assert.ok(tamanos.length > 0 && tamanos.every((t) => t < 16 && t >= 11), `tamaños: ${tamanos}`);
+
+  const documento = zip.getEntry('word/document.xml').getData().toString('utf8');
+  // El hueco de la portada, más bajo (tenía 400 de espacio después y una línea).
+  const hueco = documento.match(/<w:spacing w:before="0" w:after="0" w:line="(\d+)" w:lineRule="exact"\/><w:jc w:val="center"\/>/);
+  assert.ok(hueco, 'el hueco se compacta');
+  assert.ok(Number(hueco[1]) < 400 + 24 * 12);
+});
+
+test('el texto empieza debajo del logo flotante del encabezado; la portada conserva su margen', async () => {
+  const buffer = plantillaConvertida();
+  const partes = await partesListas();
+  // Un logo anclado a la hoja que baja hasta 1 900 twips (1 206 500 EMU), por
+  // debajo del margen superior de 1 560.
+  const logo =
+    '<w:p><w:r><w:drawing><wp:anchor><wp:positionV relativeFrom="page"><wp:posOffset>571500</wp:posOffset>' +
+    '</wp:positionV><wp:extent cx="1000000" cy="635000"/></wp:anchor></w:drawing></w:r></w:p>';
+  partes.encabezados.default.xml = partes.encabezados.default.xml.replace('</w:hdr>', `${logo}</w:hdr>`);
+
+  const salida = await armar({
+    tema: 'Motivación y rendimiento en estudiantes de enfermería',
+    nombre: 'BENICIO GONZALO ACOSTA ENRIQUEZ',
+    estilos: plantilla.conFormatoDelCuerpo(plantilla.extraerEstilos(buffer), buffer),
+    pagina: plantilla.extraerPagina(buffer),
+    partes,
+    capitulos: [{ titulo: 'Capítulo I', texto: 'Texto.' }],
+  });
+  const documento = new AdmZip(salida).getEntry('word/document.xml').getData().toString('utf8');
+  const [portada, cuerpo] = documento.match(/<w:sectPr\b[\s\S]*?<\/w:sectPr>/g);
+  assert.match(cuerpo, /<w:pgMar\b[^>]*w:top="2240"/, '1 900 del logo más 340 de aire');
+  assert.match(portada, /<w:pgMar\b[^>]*w:top="1560"/);
+  assert.ok(documento.includes('>Autor:</w:t>'), 'un solo autor: «Autor:»');
 });
 
 test('el apellido para el pie sale del nombre completo', () => {

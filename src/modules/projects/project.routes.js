@@ -8,6 +8,7 @@ const { ok } = require('../../shared/http/apiResponse');
 const { ForbiddenError, NotFoundError, ValidationError } = require('../../shared/errors/AppError');
 const { ROLES } = require('../../config/constants');
 const licenseService = require('../licensing/license.service');
+const { perfilDe } = require('../productos/producto.perfil');
 const projectService = require('./project.service');
 const {
   normaSchema,

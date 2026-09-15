@@ -388,7 +388,26 @@ async function borrarDocumento(projectId) {
   return habia;
 }
 
+// ── El material del curso (informe estudiantil) ────────────────────────────
+
+/** La consigna, la rúbrica o el índice, ya en texto. Ver `material.service`. */
+function rutaDeMaterial(projectId) {
+  if (!SEGURO.test(projectId)) throw new Error('Identificador de proyecto no válido');
+  return path.join(env.capitulosDir, projectId, 'material-del-curso.json');
+}
+
+/** Null o lista vacía lo borra. */
+async function guardarMaterial(projectId, lista) {
+  await escribirJson(rutaDeMaterial(projectId), lista && lista.length > 0 ? lista : null);
+}
+
+async function leerMaterial(projectId) {
+  return leerJson(rutaDeMaterial(projectId));
+}
+
 module.exports = {
+  guardarMaterial,
+  leerMaterial,
   guardarDocumento,
   leerDocumento,
   leerFichaDeDocumento,

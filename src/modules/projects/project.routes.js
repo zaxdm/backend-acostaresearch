@@ -214,6 +214,91 @@ router.post(
   }),
 );
 
+// ── El material del curso (informe estudiantil) ────────────────────────────
+//
+// Mismo esquema que el formato: un enlace firmado que da Claude, sin sesión. El
+// estudiante sube la consigna, la rúbrica o el índice y Claude lo lee con
+// «material_del_curso». No toca el formato del Word.
+
+const subidaMaterial = require('./project.subida-material');
+const materialService = require('./material.service');
+const { MaterialNoValido, MAXIMO_BYTES: MAXIMO_MATERIAL } = require('./project.material');
+
+function enlaceDeMaterial(token) {
+  try {
+    return subidaMaterial.verificar(token);
+  } catch {
+    throw new NotFoundError(
+      'Este enlace para subir material ya no vale: caduca a la media hora. Vuelve a la conversación y ' +
+        'pídele a Claude uno nuevo.',
+    );
+  }
+}
+
+const cuerpoDeMaterial = express.raw({ type: () => true, limit: MAXIMO_MATERIAL });
+
+function recibirMaterial(req, res, next) {
+  cuerpoDeMaterial(req, res, (error) => {
+    if (error?.type === 'entity.too.large') {
+      return next(
+        new ValidationError(
+          `Ese archivo pasa de ${MAXIMO_MATERIAL / 1024 / 1024} MB. Sube solo la consigna, la rúbrica o el índice.`,
+        ),
+      );
+    }
+    return next(error);
+  });
+}
+
+router.get(
+  '/material/:token',
+  asyncHandler(async (req, res) => {
+    const enlace = enlaceDeMaterial(req.params.token);
+    const material = await materialService.lista(enlace.userId, enlace.productCode);
+    return ok(res, { caduca: enlace.caduca.toISOString(), material });
+  }),
+);
+
+router.post(
+  '/material/:token',
+  recibirMaterial,
+  asyncHandler(async (req, res) => {
+    const { userId, productCode } = enlaceDeMaterial(req.params.token);
+
+    if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+      throw new ValidationError('No llegó ningún archivo. Elígelo y vuelve a intentarlo.');
+    }
+    if (!(await tieneLicenciaVigente(userId, productCode))) {
+      throw new ForbiddenError('Tu licencia no está vigente, así que no se puede guardar el material.');
+    }
+
+    try {
+      const guardado = await materialService.guardar({
+        userId,
+        productCode,
+        buffer: req.body,
+        nombre: decodificar(req.get('X-Nombre-Archivo')),
+      });
+      if (!guardado) {
+        throw new ForbiddenError('Tu licencia no está vigente, así que no se puede guardar el material.');
+      }
+      return ok(
+        res,
+        { material: guardado.lista },
+        {
+          message:
+            `«${guardado.nombre}» guardado. Vuelve a la conversación y dile a Claude que ya subiste tu ` +
+            'material.',
+        },
+      );
+    } catch (error) {
+      // Los mensajes del material están escritos para el estudiante: van tal cual.
+      if (error instanceof MaterialNoValido) throw new ValidationError(error.message);
+      throw error;
+    }
+  }),
+);
+
 router.use(authenticate);
 
 router.get(

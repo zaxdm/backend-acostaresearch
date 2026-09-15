@@ -14,6 +14,8 @@ const propiasService = require('../references/propias.service');
 const projectService = require('../projects/project.service');
 const documentoService = require('../projects/documento.service');
 const subidaFormato = require('../projects/project.subida-formato');
+const subidaMaterial = require('../projects/project.subida-material');
+const materialService = require('../projects/material.service');
 const consejos = require('../projects/project.consejos');
 const normas = require('../projects/project.normas');
 const etapas = require('../projects/project.etapas');
@@ -2727,6 +2729,92 @@ function construirServidor(licencia) {
       );
     },
   );
+
+  // ── El material del curso (solo informe) ─────────────────────────────────
+  //
+  // La consigna, la rúbrica o el índice que dio el docente, subidos por un
+  // enlace para que Claude los lea en esta conversación y en las siguientes.
+  // Solo en el informe: tesis y artículo conservan sus herramientas de siempre.
+  if (perfil.tipo === 'informe') {
+    server.registerTool(
+      'material_del_curso',
+      {
+        title: 'El material que dio el docente',
+        description:
+          'La consigna, la rúbrica o el índice (la estructura numerada) que dio el docente para el ' +
+          'informe, subidos por el estudiante para que los leas. ' +
+          'Sin argumentos lista lo que ya subió y da un ENLACE para subir más: dáselo tal cual y dile ' +
+          'que vuelva cuando lo haya subido. Acepta Word (.docx) o texto, hasta cinco archivos. ' +
+          'Con "ver" (el número de la lista) devuelve su texto, por partes con "parte"; las líneas ' +
+          '[Título N] e [Índice] son los títulos y el índice del documento: el esquema COPIA esa ' +
+          'numeración, no la inventa. ' +
+          'ÚSALA cuando diga que tiene la consigna, la rúbrica, un índice o una plantilla con puntos ' +
+          'numerados, y antes de revisar el informe con la rúbrica. ' +
+          'Si lo tiene en PDF o en foto, el enlace no lo lee: que lo adjunte en este chat con el ' +
+          'clip y lo lees tú. NO inventes nada que no esté en el material.',
+        inputSchema: fromJsonSchema({
+          type: 'object',
+          properties: {
+            ver: { type: 'integer', minimum: 1, description: 'Número del archivo en la lista, para leer su texto.' },
+            parte: {
+              type: 'integer',
+              minimum: 1,
+              description: 'Qué parte leer, si el archivo viene partido. La respuesta dice cuántas hay.',
+            },
+            quitar: {
+              type: 'integer',
+              minimum: 1,
+              description: 'Número del archivo que se quita. Solo si el estudiante lo pide.',
+            },
+          },
+          additionalProperties: false,
+        }),
+      },
+      async ({ ver, parte, quitar }) => {
+        await licenseService.recordUsage({ licenseId: licencia.id, tool: 'material_del_curso' });
+        const userId = licencia.user.id;
+        const { productCode } = licencia;
+
+        if (quitar) {
+          const quitado = await materialService.quitar(userId, productCode, quitar);
+          return texto(
+            quitado
+              ? `Quitado «${quitado.nombre}». Los demás archivos siguen.`
+              : 'No hay ningún archivo con ese número. Llama sin argumentos para ver la lista.',
+          );
+        }
+
+        if (ver) {
+          const leido = await materialService.leer(userId, productCode, ver, { parte });
+          if (!leido) {
+            return texto('No hay ningún archivo con ese número. Llama sin argumentos para ver la lista.');
+          }
+          const sigue =
+            leido.parte < leido.partes
+              ? `SIGUE: pide "parte": ${leido.parte + 1} para leer el resto.`
+              : 'Es el final del archivo.';
+          return texto(
+            `«${leido.nombre}» · parte ${leido.parte} de ${leido.partes}${N}${N}${leido.texto}${N}${N}${sigue}`,
+          );
+        }
+
+        const lista = await materialService.lista(userId, productCode);
+        const { url, minutos } = subidaMaterial.enlace({ userId, productCode });
+        const subido =
+          lista.length > 0
+            ? `Material subido:${N}${lista.map((m) => `${m.numero}. ${m.nombre}`).join(N)}${N}${N}` +
+              'Léelo con "ver" y su número.'
+            : 'Todavía no ha subido material.';
+
+        return texto(
+          `${subido}${N}${N}Enlace para subir la consigna, la rúbrica o el índice (caduca en ${minutos} ` +
+            `minutos):${N}${url}${N}${N}` +
+            'Dáselo tal cual. Word (.docx) o texto, hasta cinco archivos; uno con el mismo nombre ' +
+            'reemplaza al anterior. Si lo tiene en PDF o en foto, que lo adjunte en este chat.',
+        );
+      },
+    );
+  }
 
   // ── El Word, desde la conversación ───────────────────────────────────────
   //

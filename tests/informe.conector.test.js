@@ -85,11 +85,12 @@ const esquema = (config) => config.inputSchema['~standard'].jsonSchema.input();
 
 // ── Las herramientas ───────────────────────────────────────────────────────
 
-test('el informe tiene las mismas herramientas que la tesis, con su revisión', () => {
+test('el informe tiene las herramientas de la tesis más el material del curso, con su revisión', () => {
   const informe = herramientas(INFORME);
   const tesis = herramientas(TESIS);
 
-  assert.equal(informe.size, tesis.size);
+  assert.equal(informe.size, tesis.size + 1);
+  assert.ok(informe.has('material_del_curso'));
   assert.ok(informe.has('revisar_el_informe'));
   assert.ok(!informe.has('revisar_la_tesis'));
 });

@@ -42,6 +42,7 @@ sustituir('../src/modules/projects/project.storage', {
   leerPlantilla: async () => null,
   leerFichaDeDocumento: async () => null,
   fechaDeAnalisis: async () => null,
+  leerMaterial: async () => [{ nombre: 'consigna.docx', texto: 'Consigna' }],
 });
 sustituir('../src/modules/skills/skill.service', {
   listCatalog: async (productCode) =>

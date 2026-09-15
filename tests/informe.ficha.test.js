@@ -47,6 +47,7 @@ sustituir('../src/modules/skills/skill.service', {
 sustituir('../src/modules/projects/project.storage', {
   fechaDeAnalisis: async () => null,
   leer: async () => null,
+  leerMaterial: async () => null,
 });
 
 const rutaMcp = require.resolve('@modelcontextprotocol/server');

@@ -46,6 +46,7 @@ const referenceService = require('../references/reference.service');
 const { guardarAvanceSchema, guardarCapituloSchema } = require('./project.schema');
 const { fusionarFicha, lineasDeFicha, NOMBRE_DE_TIPO } = require('./project.ficha-informe');
 const { perfilDe } = require('../productos/producto.perfil');
+const { lineaDeMaterial } = require('./project.material');
 
 /** Cómo se ve cada estado en el texto que recibe el asistente. */
 const MARCAS = {
@@ -357,6 +358,10 @@ async function resumen(userId, productCode) {
   // panorama empiece por los capítulos.
   loSuyo.push(lineaDeNorma(proyecto));
   loSuyo.push(lineaDeFormato(proyecto));
+  // En el informe, lo que subió del docente: sin esta línea Claude no sabe que existe.
+  if (perfilDe(productCode).tipo === 'informe') {
+    loSuyo.push(lineaDeMaterial(await almacen.leerMaterial(proyecto.id).catch(() => null)));
+  }
 
   // Por bloques y filtrando los vacíos: un proyecto sin tema todavía, o un
   // catálogo que aún no se ha publicado, dejaban una sección en blanco y la

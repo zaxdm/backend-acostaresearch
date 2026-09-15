@@ -217,9 +217,8 @@ const schema = z.object({
   // Zotero a su nombre cuando él autoriza.
   //
   // Se registra una vez en zotero.org/oauth/apps y de ahí salen estas dos.
-  // Vacías = la conexión no se ofrece y sus rutas no se montan, igual que la
-  // página de análisis sin RSTUDIO_URL: una función a medio conectar enseña a
-  // desconfiar del resto.
+  // Vacías = la conexión no se ofrece y sus rutas no se montan: una función a
+  // medio conectar enseña a desconfiar del resto.
   ZOTERO_OAUTH_CLIENT_KEY: vacioComoAusente(z.string()),
   ZOTERO_OAUTH_CLIENT_SECRET: vacioComoAusente(z.string()),
 

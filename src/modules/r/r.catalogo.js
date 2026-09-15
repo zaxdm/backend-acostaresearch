@@ -3,9 +3,9 @@
 /**
  * Cómo se lee cada prueba, pegado a la respuesta en el momento en que se corre.
  *
- * Empezó como la columna «comoLee» del catálogo de la página de análisis (ver
- * `features/analisis/comandos.ts` en la web). Allí lo leía el tesista al lado
- * del botón; aquí lo recibe Claude justo detrás del resultado, que es cuando
+ * Empezó como la columna «comoLee» del catálogo de la página de R en el
+ * navegador, retirada el 15-sep-2026. Allí lo leía el tesista al lado del
+ * botón; aquí lo recibe Claude justo detrás del resultado, que es cuando
  * tiene que explicárselo. Dárselo entero al principio sería gastar tokens en
  * pruebas que a lo mejor no se corren nunca.
  *

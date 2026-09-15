@@ -3,8 +3,8 @@
 /**
  * Qué archivo subió el tesista y con qué orden lo lee R.
  *
- * Es lo que hacía la página de análisis al subir un archivo (ver `formatoDe` en
- * `features/analisis/analisis.ts` de la web), traído al servidor y con lo que
+ * Es lo que hacía la página de R en el navegador al subir un archivo (retirada
+ * el 15-sep-2026), traído al servidor y con lo que
  * allí faltaba: el Excel de verdad (.xlsx y .xls), el archivo de SPSS (.sav) y
  * los CSV que Excel guarda en la codificación antigua de Windows.
  *

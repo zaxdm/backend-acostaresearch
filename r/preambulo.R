@@ -1,7 +1,7 @@
 # Las funciones de la casa: las que una tesis necesita y R no trae con ese nombre.
 #
-# Son las mismas que tenia la pagina de analisis en el navegador (ver
-# `webr.service.ts` en la web), para que un guion escrito alli corra igual aqui.
+# Son las mismas que tenia la pagina de analisis en el navegador, retirada el
+# 15-sep-2026, para que un guion escrito alli corra igual aqui.
 # Se cargan en cada ejecucion y NO se guardan con la sesion: asi, si se corrige
 # una, la correccion llega a todas las sesiones sin tocar nada.
 #

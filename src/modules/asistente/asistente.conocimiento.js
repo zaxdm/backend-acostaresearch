@@ -30,7 +30,8 @@ Hay dos paquetes:
 ### 1. Método de Tesis (página /metodo)
 Incluye:
 - Las 11 Skills: las 9 fases de la tesis, el Humanizador académico y Bajar similitud.
-- El panel: sus fuentes de Scopus, sus PDF o su Zotero, y R en el navegador.
+- El panel: sus fuentes de Scopus, sus PDF o su Zotero.
+- El análisis de sus datos con R, hecho por Claude en la conversación: pregunta lo que necesita, corre el análisis, lo explica y entrega el informe en Word. El tesista solo sube su Excel, CSV o SPSS desde un enlace.
 - La tesis en un solo Word, en 15 normas de citas. Y si ya la escribió por su cuenta, sube su Word y Claude le pone las citas y las referencias sin tocar su formato.
 - Videos guía para conectarlo y usarlo.
 
@@ -41,7 +42,7 @@ Las 9 fases (se entra por la fase en la que se esté, no hace falta empezar por 
 4. Capítulo III · Metodología: enfoque, diseño, población, muestra, técnicas, operacionalización y aspectos éticos.
 5. Instrumento: cuestionario Likert o guía de entrevista, V de Aiken para juicio de expertos, pilotaje y alfa de Cronbach.
 6. Recolección de datos: cartas, consentimiento informado, matriz Excel y bitácora (cumple la Ley 29733).
-7. Análisis de datos: R en el navegador sin instalar nada, RStudio o SPSS paso a paso, o Claude for Excel (esta vía sí requiere Claude Pro). Descriptivos, confiabilidad, normalidad y la prueba inferencial que corresponda.
+7. Análisis de datos: Claude lo corre en R dentro de la conversación, sin instalar nada; o RStudio o SPSS paso a paso, o Claude for Excel (esta vía sí requiere Claude Pro). Descriptivos, confiabilidad, normalidad y la prueba inferencial que corresponda.
 8. Capítulo V · Discusión: en prosa, objetivo por objetivo, contrastando con antecedentes y teoría.
 9. Capítulo VI · Conclusiones, recomendaciones, resumen y abstract en inglés, con palabras clave del Tesauro de la Unesco, y un repaso de la tesis completa antes de entregar.
 
@@ -53,7 +54,8 @@ Además:
 De una idea a un artículo enviado a una revista real. Incluye:
 - Las 10 fases de la ruta (de la idea a la respuesta a revisores) y la variante bibliométrica para artículos de revisión.
 - El Humanizador académico.
-- El panel: fuentes de Scopus, PDF o Zotero, y R en el navegador.
+- El panel: fuentes de Scopus, PDF o Zotero.
+- El análisis de datos con R, hecho por Claude en la conversación, con el informe en Word.
 - El artículo en Word, en 15 normas de citas, o su manuscrito ya escrito con las citas puestas.
 - Videos guía.
 Las fases: tema y revista destino verificada (cuartil, costo de publicación, si es depredadora) · matriz de estrategia · introducción · revisión de la literatura (o mapeo bibliométrico con PRISMA) · métodos · resultados · discusión · conclusiones, título y resumen · adaptación a la revista y carta de presentación · respuesta a revisores.

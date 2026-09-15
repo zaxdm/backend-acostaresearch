@@ -194,9 +194,19 @@ function guardarPeticion({ token, secretCipher, userId }) {
  * vez, y dejarlo vivo tras un intento fallido solo alarga la ventana en la que
  * alguien podría reutilizarlo.
  */
-async function tomarPeticion(token) {
+async function tomarPeticion(token, horas = 2) {
   const fila = await prisma.zoteroOauthRequest.findUnique({ where: { token } });
-  if (fila) await prisma.zoteroOauthRequest.deleteMany({ where: { token } });
+  if (!fila) return null;
+
+  // El borrado DECIDE quién se la queda: si dos vueltas llegan con el mismo
+  // token, solo una borra la fila y solo esa sigue. Antes se borraba sin mirar
+  // y las dos continuaban. La caducidad se aplica aquí y no solo en el barrido
+  // nocturno: una petición de ayer ya no vale.
+  const { count } = await prisma.zoteroOauthRequest.deleteMany({
+    where: { token, createdAt: { gt: new Date(Date.now() - horas * 60 * 60 * 1000) } },
+  });
+  if (count !== 1) return null;
+
   return fila;
 }
 

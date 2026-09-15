@@ -91,11 +91,28 @@ router.get(
   }),
 );
 
+/**
+ * El enlace se comprueba ANTES de leer el archivo.
+ *
+ * Al revés, cualquiera con un token inventado hacía que la API se tragara 5 MB
+ * en memoria antes de rechazarlo, y con unas cuantas conexiones a la vez eso se
+ * nota en un servidor de 3,8 GB.
+ */
+function exigirEnlace(req, _res, next) {
+  try {
+    req.enlaceDeR = enlaceDeSubida(req.params.token);
+    return next();
+  } catch (error) {
+    return next(error);
+  }
+}
+
 router.post(
   '/subir/:token',
+  exigirEnlace,
   recibirArchivo,
   asyncHandler(async (req, res) => {
-    const { userId, productCode } = enlaceDeSubida(req.params.token);
+    const { userId, productCode } = req.enlaceDeR;
 
     if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
       throw new ValidationError('No llegó ningún archivo. Elige tu matriz y vuelve a subirla.');

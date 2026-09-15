@@ -154,6 +154,46 @@ const billingService = {
     return wordsAvailable;
   },
 
+  /**
+   * Aparta las palabras ANTES de gastar dinero en la llamada al modelo.
+   *
+   * Comprobar el saldo y descontar después dejaba pasar cinco peticiones a la
+   * vez con saldo para una: las cinco leían el mismo saldo y las cinco pasaban.
+   * Reservar es la única forma de que el que llega segundo vea el saldo del
+   * primero, porque el descuento va condicionado dentro del propio UPDATE.
+   *
+   * Si el reescritor falla se devuelven con `devolverPalabras`, así que para el
+   * usuario sigue valiendo lo de siempre: lo que no salió, no se cobra.
+   */
+  async reservarPalabras(userId, palabras) {
+    const reservadas = await billingRepository.consumeWords(userId, palabras);
+
+    if (reservadas < palabras) {
+      // No cabía: se devuelve lo poco que se hubiera llegado a apartar y se
+      // responde con el saldo de verdad, ya sin la reserva.
+      if (reservadas > 0) await billingRepository.devolverPalabras(userId, reservadas);
+      const { wordsAvailable, expiresAt } = await this.getBalance(userId);
+
+      throw new AppError(
+        wordsAvailable <= 0
+          ? 'No te quedan palabras disponibles. Recarga tu plan para seguir reescribiendo.'
+          : `Te quedan ${wordsAvailable} palabras y este texto tiene ${palabras}.`,
+        {
+          statusCode: 402,
+          code: ERROR_CODES.NO_BALANCE,
+          details: { wordsAvailable, wordsRequested: palabras, expiresAt },
+        },
+      );
+    }
+
+    return reservadas;
+  },
+
+  /** Devuelve a sus bolsas las palabras reservadas para algo que no salió. */
+  devolverPalabras(userId, palabras) {
+    return billingRepository.devolverPalabras(userId, palabras);
+  },
+
   consumeWords(userId, palabras) {
     return billingRepository.consumeWords(userId, palabras);
   },

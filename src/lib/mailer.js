@@ -39,7 +39,9 @@ async function sendMail({ to, subject, html, text }) {
   });
 
   if (!env.smtpEnabled) {
-    logger.info({ to, subject, text }, 'Correo simulado (SMTP sin configurar)');
+    // Sin el cuerpo: ahí van los códigos de verificación, las contraseñas
+    // provisionales y la URL del conector, y esto acaba en el journal.
+    logger.info({ to, subject }, 'Correo simulado (SMTP sin configurar)');
   } else {
     logger.info({ to, subject, messageId: info.messageId }, 'Correo enviado');
   }

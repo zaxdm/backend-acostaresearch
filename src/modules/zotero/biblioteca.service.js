@@ -80,7 +80,9 @@ async function empezar(userId) {
     userId,
   });
 
-  return { url: oauth.urlDeAutorizacion(token) };
+  // El token sale también en crudo: el controlador lo guarda en una cookie para
+  // reconocer al navegador cuando vuelva de zotero.org.
+  return { url: oauth.urlDeAutorizacion(token), token };
 }
 
 /**
@@ -90,8 +92,23 @@ async function empezar(userId) {
  * tesista llega desde otro dominio y su cookie podría no viajar. Además, así el
  * token de uno no puede canjearlo otro aunque se lo copie del historial.
  */
-async function terminar({ token, verificador }) {
+async function terminar({ token, verificador, tokenDelNavegador }) {
   exigirQueEsteEncendido();
+
+  /**
+   * Tiene que volver EL MISMO navegador que empezó.
+   *
+   * Sin esto, quien pulsara «conectar» con su cuenta podía mandarle a un
+   * tesista la dirección de autorización de Zotero: si el tesista autorizaba,
+   * su clave quedaba guardada en la cuenta del otro, que se llevaba su
+   * biblioteca. El navegador que empieza recibe este token en una cookie
+   * httpOnly (ver el controlador) y aquí se exige que coincida.
+   */
+  if (!tokenDelNavegador || tokenDelNavegador !== token) {
+    throw new ValidationError(
+      'Esta autorización se empezó en otro navegador. Vuelve a tu perfil y pulsa «Conectar Zotero» otra vez.',
+    );
+  }
 
   const peticion = await repositorio.tomarPeticion(token);
   if (!peticion) {

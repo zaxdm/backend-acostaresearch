@@ -276,10 +276,13 @@ const authService = {
     }
 
     if (!safeCompareHex(pending.codeHash, hashToken(code))) {
-      const actualizado = await pendingRepository.registerFailedAttempt(pending.id);
+      const actualizado = await pendingRepository.registerFailedAttempt(
+        pending.id,
+        MAX_VERIFICATION_ATTEMPTS,
+      );
       const restantes = MAX_VERIFICATION_ATTEMPTS - actualizado.attempts;
 
-      if (restantes <= 0) {
+      if (actualizado.agotado || restantes <= 0) {
         logger.warn({ email }, 'Código de verificación agotado por intentos fallidos');
         throw new AppError('Demasiados intentos fallidos. Pide un código nuevo.', {
           statusCode: 429,

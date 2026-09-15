@@ -29,11 +29,30 @@ const pendingRegistrationRepository = {
     });
   },
 
-  registerFailedAttempt(id) {
-    return prisma.pendingRegistration.update({
-      where: { id },
+  /**
+   * Suma un intento fallido, y dice si todavía quedaba alguno.
+   *
+   * La cuenta se leía, se comparaba y se incrementaba en tres pasos: con
+   * peticiones en paralelo cabían más de los cinco intentos por código. La
+   * condición va dentro del propio UPDATE, así que solo uno de los que llegan a
+   * la vez se lleva el último intento.
+   */
+  async registerFailedAttempt(id, maximo) {
+    const { count } = await prisma.pendingRegistration.updateMany({
+      where: { id, attempts: { lt: maximo } },
       data: { attempts: { increment: 1 } },
     });
+
+    // `sumado` dice si ESTA llamada se llevó un intento, y no cuántos hay: con
+    // varias a la vez, releer la cuenta devuelve la de todas juntas.
+    if (count === 0) return { sumado: false, agotado: true, attempts: maximo };
+
+    const actual = await prisma.pendingRegistration.findUnique({
+      where: { id },
+      select: { attempts: true },
+    });
+    const attempts = actual?.attempts ?? maximo;
+    return { sumado: true, agotado: attempts >= maximo, attempts };
   },
 
   /**

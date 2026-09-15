@@ -80,6 +80,20 @@ router.get(
         );
     }
 
+    /**
+     * La licencia se vuelve a mirar AQUÍ, no solo al dar el enlace.
+     *
+     * El enlace dura media hora, y en esa media hora se puede revocar una
+     * licencia por uso compartido. Sin esto, el Word seguía bajándose treinta
+     * minutos después de cortarle el acceso.
+     */
+    if (!(await tieneLicenciaVigente(destino.userId, destino.productCode))) {
+      return res
+        .status(403)
+        .type('text/plain; charset=utf-8')
+        .send('Tu licencia de este método ya no está vigente, así que este enlace dejó de servir.');
+    }
+
     // El Word que subió el tesista, con las citas que puso Claude.
     if (destino.que === 'documento') {
       let citado;
@@ -180,11 +194,25 @@ router.get(
   }),
 );
 
+/**
+ * El enlace se comprueba ANTES de leer el archivo: si no, un token inventado
+ * hacía que la API se tragara 5 MB en memoria antes de rechazarlo.
+ */
+function exigirEnlaceDeFormato(req, _res, next) {
+  try {
+    req.enlaceDeFormato = enlaceDeFormato(req.params.token);
+    return next();
+  } catch (error) {
+    return next(error);
+  }
+}
+
 router.post(
   '/formato/:token',
+  exigirEnlaceDeFormato,
   recibirFormato,
   asyncHandler(async (req, res) => {
-    const { userId, productCode } = enlaceDeFormato(req.params.token);
+    const { userId, productCode } = req.enlaceDeFormato;
 
     if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
       throw new ValidationError('No llegó ningún archivo. Elige el .docx de tu formato y vuelve a subirlo.');

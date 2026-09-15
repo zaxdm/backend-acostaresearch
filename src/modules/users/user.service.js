@@ -1,5 +1,6 @@
 'use strict';
 
+const crypto = require('node:crypto');
 const env = require('../../config/env');
 const logger = require('../../config/logger');
 const {
@@ -58,8 +59,10 @@ function claveProvisional() {
   const mayusculas = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
   const digitos = '23456789';
 
+  // `crypto.randomInt` y no `Math.random`: esto es una credencial, y el azar de
+  // Math.random es predecible a partir de unas cuantas salidas.
   const de = (alfabeto, n) =>
-    Array.from({ length: n }, () => alfabeto[Math.floor(Math.random() * alfabeto.length)]).join('');
+    Array.from({ length: n }, () => alfabeto[crypto.randomInt(alfabeto.length)]).join('');
 
   return `${de(mayusculas, 1)}${de(minusculas, 5)}-${de(minusculas, 4)}${de(digitos, 3)}`;
 }

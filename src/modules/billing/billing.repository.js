@@ -113,8 +113,16 @@ const billingRepository = {
         const aDescontar = Math.min(disponible, pendiente);
         const usadasTotal = bolsa.wordsUsed + aDescontar;
 
-        await tx.wordPack.update({
-          where: { id: bolsa.id },
+        /**
+         * El descuento va CONDICIONADO a que la bolsa siga como se leyó.
+         *
+         * Con `update` a secas, dos reescrituras a la vez leían las mismas
+         * `wordsUsed` y la segunda escribía encima de la primera: la bolsa
+         * gastaba el doble de lo que descontaba. Si otro se adelantó, `count`
+         * es 0 y esta bolsa se reintenta con lo que tenga ahora.
+         */
+        const { count } = await tx.wordPack.updateMany({
+          where: { id: bolsa.id, wordsUsed: bolsa.wordsUsed },
           data: {
             wordsUsed: usadasTotal,
             // Marcarla agotada evita seguir consultándola en cada petición.
@@ -122,7 +130,50 @@ const billingRepository = {
           },
         });
 
+        if (count === 0) {
+          const ahora = await tx.wordPack.findUnique({ where: { id: bolsa.id } });
+          if (!ahora) continue;
+          bolsas.push(ahora);
+          continue;
+        }
+
         pendiente -= aDescontar;
+      }
+
+      return palabras - pendiente;
+    });
+  },
+
+  /**
+   * Devuelve palabras a las bolsas de las que salieron.
+   *
+   * Se reponen en la que caduca más tarde primero: al revés que al gastar. Lo
+   * que se reservó para algo que falló vuelve así a la bolsa con más vida, que
+   * es lo que le conviene a quien pagó.
+   */
+  devolverPalabras(userId, palabras) {
+    return prisma.$transaction(async (tx) => {
+      const bolsas = await tx.wordPack.findMany({
+        where: { userId, wordsUsed: { gt: 0 } },
+        orderBy: { expiresAt: 'desc' },
+      });
+
+      let pendiente = palabras;
+
+      for (const bolsa of bolsas) {
+        if (pendiente <= 0) break;
+
+        const aDevolver = Math.min(bolsa.wordsUsed, pendiente);
+        const { count } = await tx.wordPack.updateMany({
+          where: { id: bolsa.id, wordsUsed: bolsa.wordsUsed },
+          data: {
+            wordsUsed: bolsa.wordsUsed - aDevolver,
+            // Deja de estar agotada si vuelve a tener hueco.
+            status: bolsa.expiresAt > new Date() ? 'ACTIVE' : bolsa.status,
+          },
+        });
+
+        if (count > 0) pendiente -= aDevolver;
       }
 
       return palabras - pendiente;

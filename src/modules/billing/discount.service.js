@@ -284,8 +284,29 @@ const discountService = {
    * Suma un canje. Va dentro de la transacción del cobro: si el pago no se
    * confirma, el código no se gasta.
    */
-  registrarUso(id, tx = prisma) {
-    return tx.discountCode.update({ where: { id }, data: { usedCount: { increment: 1 } } });
+  /**
+   * Gasta un uso del código, sin pasarse del tope.
+   *
+   * El tope se miraba al crear la orden y se sumaba aquí sin condición: un
+   * código de un solo uso con diez Yapes abiertos a la vez acababa con
+   * `usedCount` en diez. La condición va DENTRO del propio UPDATE, que es lo
+   * único que no se puede colar entre la lectura y la escritura.
+   *
+   * Si ya no quedaban usos no se aborta la entrega: esto corre dentro de la
+   * transacción de un pago YA cobrado, y negarse aquí dejaría el dinero cobrado
+   * sin licencia. Queda en el registro para poder mirarlo.
+   */
+  async registrarUso(id, tx = prisma) {
+    const { count } = await tx.discountCode.updateMany({
+      where: { id, OR: [{ maxUses: 0 }, { usedCount: { lt: prisma.discountCode.fields.maxUses } }] },
+      data: { usedCount: { increment: 1 } },
+    });
+
+    if (count === 0) {
+      logger.warn({ discountCodeId: id }, 'Un código de descuento se cobró estando ya agotado');
+    }
+
+    return count > 0;
   },
 };
 

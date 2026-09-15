@@ -58,7 +58,10 @@ const rewriteService = {
       );
     }
 
-    await billingService.assertBalance(userId, palabras);
+    // El saldo se RESERVA antes de llamar al modelo, y se devuelve si algo
+    // falla. Comprobar antes y descontar después dejaba pasar cinco peticiones
+    // a la vez con saldo para una: las cinco veían el mismo saldo.
+    await billingService.reservarPalabras(userId, palabras);
 
     // La disponibilidad se comprueba al final: es lo único que puede cambiar
     // sin que el usuario toque nada.
@@ -130,9 +133,8 @@ const rewriteService = {
         durationMs: Date.now() - inicio,
       });
 
-      // El saldo se descuenta DESPUÉS de que el modelo respondiera bien: si falla,
-      // el usuario no pierde palabras.
-      await billingService.consumeWords(userId, palabras);
+      // El saldo ya se apartó antes de llamar al modelo (ver `reservarPalabras`):
+      // aquí no hay nada que descontar, la reserva pasa a ser el consumo.
 
       logger.info(
         {
@@ -152,8 +154,13 @@ const rewriteService = {
     } catch (error) {
       const codigo = this.traducirError(error);
 
-      // Queda constancia del intento fallido. No se descuenta saldo: el consumo
-      // solo ocurre en la rama de éxito.
+      // Lo reservado vuelve a sus bolsas: lo que no salió no se cobra. Si esto
+      // fallara, el usuario perdería palabras sin texto, así que se registra.
+      await billingService.devolverPalabras(userId, palabras).catch((fallo) => {
+        logger.error({ err: fallo, userId, palabras }, 'No se pudieron devolver las palabras reservadas');
+      });
+
+      // Queda constancia del intento fallido.
       await rewriteRepository
         .create({
           userId,

@@ -341,7 +341,7 @@ function clasificarConReglas(lineas, { tipo = null } = {}) {
         campos.push({ linea: l.linea, campo: 'instruccion', texto: m[0] });
       }
       const limpio = parte.replace(INSTRUCCION_RE, ' ').trim();
-      for (const trozo of limpio.split(ETIQUETA_DENTRO_RE).map((t) => t.trim())) {
+      for (const trozo of limpio.split(ETIQUETA_DENTRO).map((t) => t.trim())) {
         if (trozo && !SOLO_PUNTOS_RE.test(trozo)) tramos.push({ linea: l.linea, texto: trozo });
       }
     }

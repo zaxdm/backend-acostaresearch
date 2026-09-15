@@ -101,7 +101,10 @@ touch "/tmp/marca-del-servidor-$$"
 ejecutar 'cat("TIPO:", system("stat -f -c %T /tmp /var/tmp", intern = TRUE), "\n"); cat("VE LA MARCA:", length(list.files("/tmp", pattern = "^marca-del-servidor")) > 0, "\n"); try(for (i in 1:8) writeBin(raw(40 * 1024^2), paste0("/tmp/lleno-", i)), silent = TRUE); cat("ESCRITOS:", sum(file.size(list.files("/tmp", pattern = "^lleno-", full.names = TRUE))), "\n")'
 rm -f "/tmp/marca-del-servidor-$$"
 comprobar "/tmp y /var/tmp son tmpfs propios, no los del servidor" 'grep -Eq "TIPO: tmpfs tmpfs" <<<"$SALIDA" && grep -q "VE LA MARCA: FALSE" <<<"$SALIDA"'
-comprobar "/tmp tiene techo: no caben 320 MB" '[ "$(grep -oE "ESCRITOS: [0-9.e+]+" <<<"$SALIDA" | awk "{printf \"%d\", \$2}")" -lt 300000000 ]'
+# Vale igual que no quepan o que systemd corte a R: el tmpfs cuenta dentro de
+# los 400 MB de la jaula, y a menudo lo que salta antes es la memoria.
+ESCRITOS="$(grep -oE "ESCRITOS: [0-9.e+]+" <<<"$SALIDA" | awk '{printf "%d", $2}')"
+comprobar "/tmp tiene techo: no caben 320 MB" '[ -z "$ESCRITOS" ] || [ "$ESCRITOS" -lt 300000000 ]'
 comprobar "las sesiones tienen su propio disco" 'mountpoint -q "$SESIONES"'
 
 echo "── Ejecutar lo que escribe ──"

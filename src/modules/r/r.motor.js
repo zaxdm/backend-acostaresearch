@@ -172,12 +172,56 @@ async function asegurarCarpeta(ruta, gid = null) {
   await ponerGrupo(ruta, gid);
 }
 
-/** Vacía una carpeta. `fs.rm` no sigue enlaces: borra el enlace, no su destino. */
+/**
+ * Borra una carpeta entera; quien la necesite la vuelve a crear. `fs.rm` no
+ * sigue enlaces: borra el enlace, no su destino.
+ *
+ * Antes se leía la lista y se lanzaba un borrado por entrada, todos a la vez:
+ * con los miles de archivos que puede dejar un bucle de R, eran miles de
+ * promesas en memoria de golpe.
+ */
 async function vaciar(carpeta) {
-  const entradas = await fs.readdir(carpeta).catch(() => []);
-  await Promise.all(
-    entradas.map((n) => fs.rm(path.join(carpeta, n), { ...BORRAR, recursive: true })),
-  );
+  await fs.rm(carpeta, { ...BORRAR, recursive: true });
+}
+
+/** Cuántas entradas se miran como mucho al listar o medir una sesión. */
+const MAXIMO_ENTRADAS_LEIDAS = 20_000;
+const MAXIMO_ARCHIVOS_LISTADOS = 200;
+
+/**
+ * Lo que ocupa la sesión, sin seguir enlaces y con tope de entradas.
+ *
+ * Es para avisar, no para impedir: el techo de verdad es el disco propio de las
+ * sesiones (infra/r/disco-de-sesiones.sh). Sirve para que Claude le diga al
+ * tesista que libere espacio antes de que ese techo le pare en seco.
+ */
+async function ocupacion(carpeta) {
+  let bytes = 0;
+  let vistas = 0;
+  const pendientes = [carpeta];
+
+  while (pendientes.length > 0 && vistas < MAXIMO_ENTRADAS_LEIDAS) {
+    const actual = pendientes.pop();
+    let dir;
+    try {
+      dir = await fs.opendir(actual);
+    } catch {
+      continue;
+    }
+    for await (const entrada of dir) {
+      vistas += 1;
+      if (vistas > MAXIMO_ENTRADAS_LEIDAS) break;
+      const ruta = path.join(actual, entrada.name);
+      if (entrada.isDirectory()) {
+        pendientes.push(ruta);
+      } else if (entrada.isFile()) {
+        const info = await fs.lstat(ruta).catch(() => null);
+        if (info) bytes += info.size;
+      }
+    }
+  }
+
+  return bytes;
 }
 
 // ── Lo que dejó R ───────────────────────────────────────────────────────────
@@ -229,10 +273,20 @@ async function leerGraficos(carpeta) {
 
 /** Los archivos que ha creado el tesista, con su tamaño. Sin enlaces ni internos. */
 async function listarArchivos(carpeta) {
-  const entradas = await fs.readdir(carpeta, { withFileTypes: true }).catch(() => []);
+  let dir;
+  try {
+    dir = await fs.opendir(carpeta);
+  } catch {
+    return [];
+  }
   const archivos = [];
+  let vistas = 0;
 
-  for (const entrada of entradas) {
+  // Leyendo de a poco y con tope: una sesión con cien mil archivos no puede
+  // cargar la lista entera en la memoria de la API.
+  for await (const entrada of dir) {
+    vistas += 1;
+    if (vistas > MAXIMO_ENTRADAS_LEIDAS || archivos.length >= MAXIMO_ARCHIVOS_LISTADOS) break;
     const nombre = entrada.name;
     if (!entrada.isFile() || INTERNOS.has(nombre) || !ARCHIVO_SEGURO.test(nombre)) continue;
     if (/^datos\.(?:csv|xlsx|xls|sav)$/.test(nombre)) continue;
@@ -435,8 +489,8 @@ function crearMotor({
     const carpeta = await prepararCarpeta(sesion);
     const g = await grupo();
     const graficos = path.join(carpeta, 'graficos');
-    await asegurarCarpeta(graficos, g);
     await vaciar(graficos);
+    await asegurarCarpeta(graficos, g);
     await Promise.all(['fin', 'salida.txt', 'estado.tsv'].map((n) => fs.rm(path.join(carpeta, n), BORRAR)));
     await escribirSeguro(carpeta, 'orden.R', codigo, g);
 
@@ -473,6 +527,7 @@ function crearMotor({
       graficos: imagenes,
       totalGraficos: total,
       archivos: await listarArchivos(carpeta),
+      ocupados: await ocupacion(carpeta),
       segundos,
     };
   }

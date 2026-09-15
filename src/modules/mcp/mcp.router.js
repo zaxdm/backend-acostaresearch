@@ -3,8 +3,10 @@
 const { Router } = require('express');
 const { NodeStreamableHTTPServerTransport } = require('@modelcontextprotocol/node');
 const logger = require('../../config/logger');
-const { mcpLimiter } = require('../../middlewares/rateLimit');
+const { mcpLimiter, mcpFallosLimiter } = require('../../middlewares/rateLimit');
+const { ERROR_CODES } = require('../../config/constants');
 const licenseService = require('../licensing/license.service');
+const { filtro } = require('./mcp.acceso');
 const { construirServidor } = require('./mcp.tools');
 
 /**
@@ -32,12 +34,25 @@ function errorJsonRpc(res, status, code, message) {
   });
 }
 
-router.post('/:token', mcpLimiter, async (req, res) => {
+/**
+ * Lo que seguro no es una licencia se rechaza aquí, sin consulta. Va delante del
+ * límite por licencia para que cada URL inventada no estrene su propio contador.
+ */
+function descartarSinBase(req, res, next) {
+  const { token } = req.params;
+  if (!filtro.pareceLicencia(token) || filtro.esDesconocida(token)) {
+    return errorJsonRpc(res, 401, -32001, 'Esta licencia no existe.');
+  }
+  return next();
+}
+
+router.post('/:token', mcpFallosLimiter, descartarSinBase, mcpLimiter, async (req, res) => {
   let licencia;
 
   try {
     licencia = await licenseService.authenticate(req.params.token);
   } catch (error) {
+    if (error.code === ERROR_CODES.LICENSE_INVALID) filtro.recordarDesconocida(req.params.token);
     // 401/403 es lo que espera un cliente MCP cuando la credencial no sirve.
     return errorJsonRpc(res, error.statusCode ?? 401, -32001, error.message);
   }

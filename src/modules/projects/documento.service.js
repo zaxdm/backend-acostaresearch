@@ -22,9 +22,17 @@ const normas = require('./project.normas');
 const citas = require('./project.citas');
 const descarga = require('./project.descarga');
 const referenceService = require('../references/reference.service');
+const { enSerie } = require('../../shared/utils/enSerie');
 
 /** Caracteres de texto por cada respuesta de `ver`: lo que cabe holgado en una llamada del conector. */
 const POR_TANDA = 24000;
+
+/**
+ * Subir, citar y quitar el documento van de uno en uno por proyecto. Las citas
+ * se leen, se fusionan y se escriben: dos tandas a la vez leían las dos lo de
+ * antes, y la segunda borraba las marcas de la primera.
+ */
+const claveDelDocumento = (userId, productCode) => `documento:${userId}:${productCode}`;
 
 const contarMarcas = (texto) => [...String(texto).matchAll(citas.MARCA)].length;
 const contarFaltas = (texto) => String(texto).match(documento.FALTA)?.length ?? 0;
@@ -67,7 +75,11 @@ async function cargar(userId, productCode) {
  * párrafo: corregir una coma y volver a subirlo no puede costarle las demás.
  * Devuelve null si no tiene licencia de ese método.
  */
-async function subir({ userId, productCode, buffer, nombre }) {
+function subir(argumentos) {
+  return enSerie(claveDelDocumento(argumentos.userId, argumentos.productCode), () => subirEnSuTurno(argumentos));
+}
+
+async function subirEnSuTurno({ userId, productCode, buffer, nombre }) {
   const parrafos = documento.leer(buffer);
   if (parrafos.length === 0) {
     throw new documento.DocumentoNoValido('Ese documento no tiene texto que citar.');
@@ -91,7 +103,11 @@ async function subir({ userId, productCode, buffer, nombre }) {
   return { ...ficha, citados: Object.keys(citados).length, perdidos };
 }
 
-async function quitar(userId, productCode) {
+function quitar(userId, productCode) {
+  return enSerie(claveDelDocumento(userId, productCode), () => quitarEnSuTurno(userId, productCode));
+}
+
+async function quitarEnSuTurno(userId, productCode) {
   const proyecto = await projectRepository.buscar(userId, productCode);
   return proyecto ? almacen.borrarDocumento(proyecto.id) : false;
 }
@@ -168,7 +184,11 @@ async function ver(userId, productCode, { desde = 1 } = {}) {
  *
  * Un párrafo mandado sin marcas quita las que tenía.
  */
-async function citar(userId, productCode, marcados) {
+function citar(userId, productCode, marcados) {
+  return enSerie(claveDelDocumento(userId, productCode), () => citarEnSuTurno(userId, productCode, marcados));
+}
+
+async function citarEnSuTurno(userId, productCode, marcados) {
   const cargado = await cargar(userId, productCode);
   if (!cargado) return null;
 

@@ -287,6 +287,15 @@ async function trabajar({ userId, productCode, codigo, reiniciar = false, descar
     const estado = describirEstado({ ...hecho.estado, archivos: hecho.archivos });
     if (estado) partes.push(estado);
 
+    const limite = env.R_AVISO_SESION_MB * 1024 * 1024;
+    if (hecho.ocupados > limite) {
+      partes.push(
+        `ESPACIO: la sesión ocupa ${peso(hecho.ocupados)} y el máximo recomendado es ${peso(limite)}. ` +
+          'Dile al tesista que conviene borrar los archivos que ya no necesite (con file.remove()) ' +
+          'antes de seguir: si se llena el disco de las sesiones, R deja de poder guardar.',
+      );
+    }
+
     if (hecho.resultado === 'ok') {
       const lecturas = catalogo.comoSeLee(orden);
       if (lecturas.length > 0) {

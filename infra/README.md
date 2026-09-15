@@ -23,7 +23,8 @@ si algún día divergen, manda el servidor.
 | `r/acostaresearch-r.slice` | `/etc/systemd/system/` | El tope de todas las sesiones de R juntas: 1,5 GB y núcleo y medio |
 | `r/60-acostaresearch-r.rules` | `/etc/polkit-1/rules.d/` | Deja al usuario de la API arrancar y parar esa plantilla, y nada más |
 | `r/instalar.sh` | se ejecuta desde `/opt/acostaresearch/app/infra/r/` | Instala R, el usuario `acosta-r`, la carpeta de sesiones, lo de arriba y 2 GB de swap |
-| `r/probar-jaula.sh` | se ejecuta desde `/opt/acostaresearch/app/infra/r/` | Intenta escapar de la jaula (secretos, red, memoria, tiempo, procesos) y dice si lo consigue |
+| `r/probar-jaula.sh` | se ejecuta desde `/opt/acostaresearch/app/infra/r/` | Intenta escapar de la jaula (secretos, red, memoria, tiempo, procesos, disco, ejecutar lo que escribe) y dice si lo consigue |
+| `r/disco-de-sesiones.sh` | se ejecuta desde `/opt/acostaresearch/app/infra/r/` | Pone las sesiones de R en una imagen propia de 4 GB montada con `noexec`: llenarla ya no llena el disco de la API, el registro y el respaldo. Se puede repetir |
 
 ## R en la conversación
 

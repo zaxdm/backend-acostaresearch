@@ -28,6 +28,9 @@ const schema = z.object({
   DATABASE_URL: z.string().min(1, 'DATABASE_URL es obligatorio'),
 
   CORS_ORIGIN: z.string().default('http://localhost:4200'),
+  // Lo manda el Worker de la web junto a la IP real del visitante (ver
+  // `shared/utils/ipCliente`). Sin él, la web entera cuenta con la IP de Cloudflare.
+  PROXY_SECRET: vacioComoAusente(z.string().min(32, 'PROXY_SECRET debe tener al menos 32 caracteres')),
 
   JWT_ACCESS_SECRET: z.string().min(32, 'JWT_ACCESS_SECRET debe tener al menos 32 caracteres'),
   JWT_REFRESH_SECRET: z.string().min(32, 'JWT_REFRESH_SECRET debe tener al menos 32 caracteres'),
@@ -266,6 +269,9 @@ const schema = z.object({
   R_LIMITE_SEGUNDOS: z.coerce.number().int().positive().default(45),
   // Una matriz de tesis con cientos de encuestados no llega a un mega.
   R_SUBIDA_MAX_BYTES: z.coerce.number().int().positive().default(5 * 1024 * 1024),
+  // A partir de cuánto ocupa una sesión se le dice a Claude que libere espacio.
+  // El techo de verdad es el disco de las sesiones (infra/r/disco-de-sesiones.sh).
+  R_AVISO_SESION_MB: z.coerce.number().int().positive().default(300),
 
   // ── Libro de Reclamaciones ──────────────────────────────────────────────
   // Los datos del proveedor que encabezan cada hoja. Los pide el reglamento:

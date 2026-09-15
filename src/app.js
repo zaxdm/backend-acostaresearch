@@ -20,21 +20,18 @@ const errorHandler = require('./middlewares/errorHandler');
 function createApp() {
   const app = express();
 
-  // DOS saltos, no uno: navegador → Netlify → Caddy → aquí.
+  // Solo Caddy, que está en esta misma máquina.
   //
-  // Con 1, Express se quedaba con la IP del borde de Netlify y esa pasaba a ser
-  // la clave del limitador de peticiones. Resultado: TODOS los visitantes de la
-  // web compartían un mismo cubo, y como el límite de autenticación son diez
-  // intentos por cuarto de hora, el undécimo que intentara registrarse recibía
-  // un 429 aunque fuese el primero en probarlo.
+  // Caddy no se fía del X-Forwarded-For que le llega y lo reemplaza por la IP
+  // que ve: comprobado contra producción el 15-sep-2026, dos cabeceras falsas
+  // cayeron en el mismo cubo. Confiar en él basta para que nadie elija su IP, y
+  // confiar en más saltos no añadía nada. (Antes eran dos, de cuando delante
+  // estaba Netlify.)
   //
-  // CONTRAPARTIDA, y conviene tenerla presente: confiar en dos saltos significa
-  // que una petición dirigida al backend SIN pasar por Netlify puede fabricar
-  // su propia cabecera X-Forwarded-For y elegir con qué clave se la cuenta, o
-  // sea, esquivar el límite. Se acepta porque la alternativa era dejar la web
-  // sin registro ni acceso en cuanto hubiera dos personas a la vez, y porque
-  // quien quiera saltarse un límite por IP puede rotar IPs igualmente.
-  app.set('trust proxy', 2);
+  // Para la web, la IP que ve Caddy es la de Cloudflare, compartida por muchos
+  // visitantes. La del visitante la manda el Worker aparte, firmada con un
+  // secreto: ver `shared/utils/ipCliente`, que es lo que usan los límites.
+  app.set('trust proxy', 'loopback');
   app.disable('x-powered-by');
 
   app.use(helmet());

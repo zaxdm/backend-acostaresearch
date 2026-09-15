@@ -44,12 +44,15 @@ function declararCero(buffer, nombre) {
 
 const DOS_MEGAS = 2 * 1024 * 1024;
 
-test('adm-zip, a pelo, descomprime entera una entrada que dice pesar 0 bytes', () => {
+test('adm-zip (desde 0.6.1) ya no descomprime una entrada que dice pesar 0 bytes', () => {
+  // Hasta la 0.6.0 la descomprimía entera: por eso existe `abrirZip`. Si esta
+  // prueba falla tras bajar de versión, el filtro de `abrirZip` es lo único que
+  // queda en pie.
   const bomba = declararCero(docx({ relleno: DOS_MEGAS }), 'word/document.xml');
   const entrada = new AdmZip(bomba).getEntry('word/document.xml');
 
   assert.equal(entrada.header.size, 0);
-  assert.ok(entrada.getData().length > DOS_MEGAS, 'si esto falla, adm-zip ya pone techo solo');
+  assert.throws(() => entrada.getData());
 });
 
 test('abrirZip la rechaza sin descomprimir nada', () => {

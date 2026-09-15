@@ -26,6 +26,14 @@ const zoteroRepository = require('../zotero/biblioteca.repository');
 const citas = require('./project.citas');
 const bibtex = require('./project.bibtex');
 const etapas = require('./project.etapas');
+const { enSerie } = require('../../shared/utils/enSerie');
+
+/**
+ * Lo que lee el proyecto, lo fusiona y lo vuelve a escribir va de uno en uno por
+ * proyecto. Claude llama a varias herramientas a la vez, y dos que fusionaran lo
+ * mismo leían las dos lo de antes: la segunda borraba lo de la primera.
+ */
+const claveDeProyecto = ({ userId, productCode }) => `proyecto:${userId}:${productCode}`;
 const bloques = require('./project.bloques');
 const evidencia = require('./project.evidencia');
 const plantilla = require('./project.plantilla');
@@ -480,7 +488,11 @@ function avisoDeRequisitos(faltan) {
  * comprar. Una fila vacía por comprador solo serviría para no poder distinguir
  * «no ha empezado» de «no ha comprado».
  */
-async function guardarAvance({ userId, productCode, ...entrada }) {
+function guardarAvance(argumentos) {
+  return enSerie(claveDeProyecto(argumentos), () => guardarAvanceEnSuTurno(argumentos));
+}
+
+async function guardarAvanceEnSuTurno({ userId, productCode, ...entrada }) {
   const datos = guardarAvanceSchema.parse(entrada);
 
   // La ficha solo la tiene el informe estudiantil, y llega por partes: se funde
@@ -576,7 +588,11 @@ async function siguientePaso(userId, productCode) {
  * El texto va a disco y en la base solo queda cuánto ocupa y de cuándo es. Ver
  * `project.storage` para el porqué.
  */
-async function guardarCapitulo({ userId, productCode, ...entrada }) {
+function guardarCapitulo(argumentos) {
+  return enSerie(claveDeProyecto(argumentos), () => guardarCapituloEnSuTurno(argumentos));
+}
+
+async function guardarCapituloEnSuTurno({ userId, productCode, ...entrada }) {
   const datos = guardarCapituloSchema.parse(entrada);
 
   const proyecto = await projectRepository.asegurar(userId, productCode);
@@ -1167,7 +1183,11 @@ function agruparPorMetodo(guardados) {
  * año, «¿de dónde salió este 0,42?», y las cifras quedan para que el repaso
  * pueda comprobar que ningún número del capítulo se escribió solo.
  */
-async function guardarAnalisis({
+function guardarAnalisis(argumentos) {
+  return enSerie(claveDeProyecto(argumentos), () => guardarAnalisisEnSuTurno(argumentos));
+}
+
+async function guardarAnalisisEnSuTurno({
   userId,
   productCode,
   capitulo,

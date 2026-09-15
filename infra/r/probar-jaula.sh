@@ -94,6 +94,17 @@ ejecutar 'while (TRUE) {}'
 comprobar "un bucle infinito se corta a los 45 s" '[ ! -f "$CARPETA/fin" ] && [ "$SEGUNDOS" -le 60 ]'
 ejecutar 'for (i in 1:60) system("sleep 20 &"); cat("LANZADOS\n")'
 comprobar "no puede multiplicar procesos" '[ "$(systemctl show -p TasksMax --value "acostaresearch-r@$ID.service")" = "16" ]'
+ejecutar 'r <- tryCatch({ for (i in 1:8) writeBin(raw(40 * 1024^2), paste0("/tmp/lleno-", i)); "ESCRITO" }, error = function(e) "SIN ESPACIO"); cat(r, "\n")'
+comprobar "/tmp va en memoria y con techo, no en el disco" '! grep -q "ESCRITO" <<<"$SALIDA"'
+comprobar "las sesiones tienen su propio disco" 'mountpoint -q "$SESIONES"'
+
+echo "── Ejecutar lo que escribe ──"
+ejecutar 'file.copy("/usr/bin/true", "ejecutable"); Sys.chmod("ejecutable", "755"); cat("CODIGO:", system("./ejecutable"), "\n")'
+comprobar "no ejecuta un binario copiado a su sesión" '! grep -q "CODIGO: 0" <<<"$SALIDA"'
+ejecutar 'file.copy("/usr/bin/true", "/tmp/ejecutable"); Sys.chmod("/tmp/ejecutable", "755"); cat("CODIGO:", system("/tmp/ejecutable"), "\n")'
+comprobar "ni uno copiado a /tmp" '! grep -q "CODIGO: 0" <<<"$SALIDA"'
+ejecutar 'cat("CODIGO:", system("true"), "\n")'
+comprobar "los programas del sistema sí corren" 'grep -q "CODIGO: 0" <<<"$SALIDA"'
 
 echo "── Desde las restricciones de la API ──"
 # Lo de arriba lanza la jaula con sudo, que no lleva las restricciones de

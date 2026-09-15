@@ -3,6 +3,7 @@
 const rateLimit = require('express-rate-limit');
 const env = require('../config/env');
 const { ERROR_CODES } = require('../config/constants');
+const { ipCliente } = require('../shared/utils/ipCliente');
 
 function build({ windowMs, max, message }) {
   return rateLimit({
@@ -10,6 +11,8 @@ function build({ windowMs, max, message }) {
     max,
     standardHeaders: 'draft-7',
     legacyHeaders: false,
+    // La del visitante y no la de Cloudflare: ver `ipCliente`.
+    keyGenerator: ipCliente,
     // En desarrollo estorba más de lo que protege.
     skip: () => env.isDevelopment,
     handler: (_req, res) =>
@@ -142,7 +145,32 @@ const mcpLimiter = rateLimit({
     }),
 });
 
+/**
+ * Llamadas al conector que FALLAN, por IP.
+ *
+ * Una licencia inventada no se puede contar por licencia —cada intento estrena
+ * la suya—, y cada una costaba una consulta a una base de cinco conexiones. Se
+ * cuentan solo los fallos, y con mucho margen: todos los compradores llegan
+ * desde las IP de Anthropic, y los de licencia caducada siguen llamando.
+ */
+const mcpFallosLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 300,
+  skipSuccessfulRequests: true,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: ipCliente,
+  skip: () => env.isDevelopment,
+  handler: (_req, res) =>
+    res.status(429).json({
+      jsonrpc: '2.0',
+      error: { code: -32000, message: 'Demasiadas consultas con licencias que no valen. Espera unos minutos.' },
+      id: null,
+    }),
+});
+
 module.exports = {
+  mcpFallosLimiter,
   globalLimiter,
   authLimiter,
   emailLimiter,

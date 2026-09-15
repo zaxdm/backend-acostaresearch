@@ -16,6 +16,10 @@
  * entrada declarando un tamaño acotado, el techo de adm-zip ya vale: lo que
  * salga de ella no puede pasar de lo declarado.
  *
+ * adm-zip 0.6.1 corrigió lo del 0 por su cuenta (GHSA-rcw4-f5rp-g42v). Esto se
+ * queda igual: sigue siendo lo que pone techo a un tamaño declarado enorme, y lo
+ * que protege si alguien baja de versión.
+ *
  * Solo para lo que llega de fuera (el documento, la plantilla). Los Word que
  * arma este servidor se abren con adm-zip directamente.
  */

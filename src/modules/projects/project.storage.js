@@ -18,6 +18,8 @@
 
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const crypto = require('node:crypto');
+const { enSerie } = require('../../shared/utils/enSerie');
 const env = require('../../config/env');
 
 /**
@@ -69,16 +71,44 @@ function palabrasDe(texto) {
  */
 async function guardar(projectId, skillCode, texto, { anadir = false } = {}) {
   const ruta = rutaDe(projectId, skillCode);
-  await fs.mkdir(path.dirname(ruta), { recursive: true });
 
-  const anterior = anadir ? ((await leer(projectId, skillCode)) ?? '') : '';
-  const completo = anterior === '' ? texto : `${anterior}\n\n${texto}`;
+  // Leer lo que había, juntarlo y escribir, de uno en uno por capítulo. Claude
+  // manda a veces dos partes a la vez: las dos leían el texto de antes y la
+  // segunda en escribir borraba la primera, que ya había contestado «Guardado».
+  return enSerie(`capitulo:${ruta}`, async () => {
+    const anterior = anadir ? ((await leer(projectId, skillCode)) ?? '') : '';
+    const completo = anterior === '' ? texto : `${anterior}\n\n${texto}`;
 
-  const temporal = `${ruta}.parcial`;
-  await fs.writeFile(temporal, completo, 'utf8');
-  await fs.rename(temporal, ruta);
+    await escribirAtomico(ruta, completo, 'utf8');
 
-  return { palabras: palabrasDe(completo), bytes: Buffer.byteLength(completo, 'utf8') };
+    return { palabras: palabrasDe(completo), bytes: Buffer.byteLength(completo, 'utf8') };
+  });
+}
+
+/**
+ * Escribe en un temporal y lo renombra encima: un corte a mitad no deja el
+ * archivo truncado.
+ *
+ * El temporal lleva un nombre propio en cada escritura. Con uno fijo
+ * (`.parcial`), dos a la vez se truncaban el temporal la una a la otra, y la
+ * segunda fallaba al renombrar un archivo que la primera ya se había llevado.
+ *
+ * Y las escrituras al mismo archivo van en turno: en Windows, dos renombrados a
+ * la vez sobre el mismo destino dan EPERM. En Linux no pasa, pero así el
+ * almacén se comporta igual en el servidor y en el equipo donde se prueba.
+ */
+function escribirAtomico(ruta, contenido, codificacion) {
+  return enSerie(`archivo:${ruta}`, async () => {
+    await fs.mkdir(path.dirname(ruta), { recursive: true });
+    const temporal = `${ruta}.${crypto.randomUUID()}.parcial`;
+    try {
+      await fs.writeFile(temporal, contenido, codificacion);
+      await fs.rename(temporal, ruta);
+    } catch (error) {
+      await fs.rm(temporal, { force: true }).catch(() => {});
+      throw error;
+    }
+  });
 }
 
 /** Devuelve null si ese capítulo todavía no se ha escrito. */
@@ -137,11 +167,7 @@ async function guardarAnalisis(projectId, skillCode, { script, salida } = {}) {
 
   for (const [tipo, contenido] of Object.entries({ script, salida })) {
     if (!contenido) continue;
-    const ruta = rutaDeAnalisis(projectId, skillCode, tipo);
-    await fs.mkdir(path.dirname(ruta), { recursive: true });
-    const temporal = `${ruta}.parcial`;
-    await fs.writeFile(temporal, contenido, 'utf8');
-    await fs.rename(temporal, ruta);
+    await escribirAtomico(rutaDeAnalisis(projectId, skillCode, tipo), contenido, 'utf8');
     escritos.push(tipo);
   }
 
@@ -187,11 +213,7 @@ function rutaDePlantilla(projectId) {
 }
 
 async function guardarPlantilla(projectId, xml) {
-  const ruta = rutaDePlantilla(projectId);
-  await fs.mkdir(path.dirname(ruta), { recursive: true });
-  const temporal = `${ruta}.parcial`;
-  await fs.writeFile(temporal, xml, 'utf8');
-  await fs.rename(temporal, ruta);
+  await escribirAtomico(rutaDePlantilla(projectId), xml, 'utf8');
 }
 
 async function leerPlantilla(projectId) {
@@ -218,10 +240,7 @@ async function guardarPagina(projectId, pagina) {
     });
     return;
   }
-  await fs.mkdir(path.dirname(ruta), { recursive: true });
-  const temporal = `${ruta}.parcial`;
-  await fs.writeFile(temporal, JSON.stringify(pagina), 'utf8');
-  await fs.rename(temporal, ruta);
+  await escribirAtomico(ruta, JSON.stringify(pagina), 'utf8');
 }
 
 async function leerPagina(projectId) {
@@ -259,10 +278,7 @@ async function escribirJson(ruta, valor) {
     });
     return;
   }
-  await fs.mkdir(path.dirname(ruta), { recursive: true });
-  const temporal = `${ruta}.parcial`;
-  await fs.writeFile(temporal, JSON.stringify(valor), 'utf8');
-  await fs.rename(temporal, ruta);
+  await escribirAtomico(ruta, JSON.stringify(valor), 'utf8');
 }
 
 /** Con null se borran las partes y su resumen. */
@@ -326,11 +342,7 @@ function rutaDeDocumento(projectId, que) {
 }
 
 async function guardarDocumento(projectId, buffer, ficha) {
-  const ruta = rutaDeDocumento(projectId, 'original');
-  await fs.mkdir(path.dirname(ruta), { recursive: true });
-  const temporal = `${ruta}.parcial`;
-  await fs.writeFile(temporal, buffer);
-  await fs.rename(temporal, ruta);
+  await escribirAtomico(rutaDeDocumento(projectId, 'original'), buffer);
   await escribirJson(rutaDeDocumento(projectId, 'ficha'), ficha);
 }
 

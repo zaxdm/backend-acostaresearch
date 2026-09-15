@@ -273,3 +273,33 @@ test('si R cambia la carpeta de gráficos por un enlace, no se leen sus archivos
   assert.equal(r.graficos.length, 0);
   assert.equal(await motor.leerArchivo('p1', 'graficos/grafico-01.png'), null);
 });
+
+// ── Disco ───────────────────────────────────────────────────────────────────
+
+test('se mide lo que ocupa la sesión, para poder avisar antes de llenar el disco', async () => {
+  const base = await carpetaTemporal();
+  const conductor = conductorFalso({
+    antes: async ({ carpeta, orden }) => {
+      if (orden.includes('pesado')) await fs.writeFile(path.join(carpeta, 'pesado.bin'), Buffer.alloc(300 * 1024));
+    },
+  });
+  const motor = crearMotor({ carpetaBase: base, conductor });
+
+  const r = await motor.ejecutar('p1', 'pesado <- 1');
+  assert.ok(r.ocupados >= 300 * 1024, `midió ${r.ocupados}`);
+});
+
+test('una sesión con cientos de archivos no se lista entera', async () => {
+  const base = await carpetaTemporal();
+  const conductor = conductorFalso({
+    antes: async ({ carpeta, orden }) => {
+      if (!orden.includes('muchos')) return;
+      for (let i = 0; i < 260; i += 1) await fs.writeFile(path.join(carpeta, `f${String(i).padStart(3, '0')}.txt`), 'x');
+    },
+  });
+  const motor = crearMotor({ carpetaBase: base, conductor });
+
+  const r = await motor.ejecutar('p1', 'muchos <- 1');
+  assert.ok(r.archivos.length <= 200, `listó ${r.archivos.length}`);
+  assert.ok(r.archivos.length > 0);
+});

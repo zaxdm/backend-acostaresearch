@@ -41,11 +41,14 @@ Environment=LANG=C.UTF-8 HOME=/tmp TMPDIR=/tmp R_LIBS_USER=/nonexistent
 # ── Sistema de archivos ─────────────────────────────────────────────────────
 ProtectSystem=strict
 ProtectHome=yes
-PrivateTmp=yes
+# /tmp y /var/tmp en memoria y con techo, no en disco. Con PrivateTmp iban al
+# disco raíz, y un bucle de R lo llenaba entero: la API, el registro y el
+# respaldo viven ahí. En memoria, además, cuentan dentro de MemoryMax.
+TemporaryFileSystem=/tmp:size=256M,mode=1777 /var/tmp:size=64M,mode=1777
 PrivateDevices=yes
 # Se tapan enteros con un tmpfs vacío y se vuelve a montar encima SOLO lo que
 # hace falta. Es el patrón del manual de systemd.exec para TemporaryFileSystem.
-# /var/lib y no /var entero: /var/tmp lo monta PrivateTmp, y el resto de /var
+# /var/lib y no /var entero: /var/tmp va en memoria (arriba), y el resto de /var
 # que podría decir algo se cierra aparte en InaccessiblePaths.
 TemporaryFileSystem=/var/lib:ro /opt:ro /srv:ro /mnt:ro /media:ro
 BindPaths=/var/lib/acostaresearch-r/sesiones/%i
@@ -53,6 +56,9 @@ BindReadOnlyPaths=/opt/acostaresearch/app/r
 ReadWritePaths=/var/lib/acostaresearch-r/sesiones/%i
 InaccessiblePaths=-/var/log -/var/backups -/var/cache -/var/mail -/var/spool -/var/www -/var/opt
 InaccessiblePaths=-/etc/caddy -/etc/ssh -/etc/sudoers -/etc/sudoers.d -/etc/polkit-1 -/root -/boot
+# Nada de lo que R puede escribir se puede ejecutar. Sin esto, un binario metido
+# en base64 en la sesión corría con system(); los del sistema siguen corriendo.
+NoExecPaths=/var/lib/acostaresearch-r/sesiones/%i /tmp /var/tmp -/dev/shm
 
 # ── Red ─────────────────────────────────────────────────────────────────────
 PrivateNetwork=yes

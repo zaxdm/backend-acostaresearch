@@ -1,0 +1,626 @@
+[
+  {
+    "nombre": "listar_capitulos",
+    "titulo": "Capítulos disponibles",
+    "descripcion": "El catálogo de ESTA licencia: los capítulos que trabaja el método y las herramientas de apoyo que trae, con lo que hace cada uno y lo que necesita. ÚSALA cuando haga falta saber qué tiene disponible el tesista, o qué hace algo en concreto. No en cada conversación: por dónde va su proyecto lo dice \"mi_proyecto\" — aquí están las capacidades, allí el estado.",
+    "esquema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  },
+  {
+    "nombre": "estado_licencia",
+    "titulo": "Estado de la licencia",
+    "descripcion": "Muestra a nombre de quién está esta licencia y cuánto se ha usado.",
+    "esquema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  },
+  {
+    "nombre": "mi_proyecto",
+    "titulo": "Por dónde va su tesis",
+    "descripcion": "El panorama del proyecto del tesista: su tema, su universidad, en qué punto está cada capítulo y cuál le toca. LLÁMALA AL EMPEZAR CUALQUIER CONVERSACIÓN NUEVA, antes de preguntarle nada. Si ya lo sabemos, preguntárselo otra vez es hacerle repetir lo que ya contó. Lo ACORDADO en un capítulo no viene aquí: eso se pide con \"ver_capitulo\".",
+    "esquema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  },
+  {
+    "nombre": "ver_capitulo",
+    "titulo": "Lo acordado en un capítulo",
+    "descripcion": "Lo que quedó decidido en UN capítulo: los campos ya fijados, los que faltan y lo que necesita de capítulos anteriores. ÚSALA ANTES DE PREGUNTARLE NADA sobre un capítulo: \"mi_proyecto\" da el panorama y esta da el detalle. Con \"texto\": true devuelve en cambio el TEXTO GUARDADO del capítulo, por partes: LÉELO cuando un capítulo se escribe sobre otro —la Discusión sobre los Resultados, las Conclusiones sobre todo lo anterior— en vez de pedirle al tesista que lo pegue.",
+    "esquema": {
+      "type": "object",
+      "properties": {
+        "capitulo": {
+          "type": "string",
+          "description": "Clave del capítulo, tal como aparece en mi_proyecto."
+        },
+        "texto": {
+          "type": "boolean",
+          "description": "Verdadero para leer el TEXTO GUARDADO del capítulo en vez de lo acordado. Úsalo para escribir contra lo que ya está escrito —la Discusión contra los Resultados, las Conclusiones contra todo lo anterior— en vez de pedirle al tesista que lo pegue."
+        },
+        "parte": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Con \"texto\": qué parte leer. Un capítulo largo sale por partes; la respuesta dice cuántas hay y cuál pedir después. Por omisión, la primera."
+        }
+      },
+      "required": [
+        "capitulo"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "nombre": "guardar_avance",
+    "titulo": "Recordar lo que quedó decidido",
+    "descripcion": "Guarda en el servidor lo que se ha acordado, para que siga estando la próxima vez aunque sea en otra conversación. Úsala EN CUANTO se fije algo —el tema, los objetivos, la población, el diseño—, no al terminar. Guarda lo acordado en dos o tres frases, nunca el texto del capítulo.",
+    "esquema": {
+      "type": "object",
+      "properties": {
+        "capitulo": {
+          "type": "string",
+          "description": "Clave del capítulo sobre el que quedó algo decidido, tal como aparece en listar_capitulos. Omítelo si solo estás guardando el tema o la universidad."
+        },
+        "estado": {
+          "type": "string",
+          "enum": [
+            "PENDIENTE",
+            "EN_CURSO",
+            "LISTO"
+          ],
+          "description": "Cómo queda ese capítulo. Marca LISTO SOLO si el tesista ha dicho que lo da por bueno. No lo decidas tú porque hayáis escrito mucho: un capítulo que se da por cerrado sin que él lo cierre es el que luego no se sostiene ante el jurado."
+        },
+        "resumen": {
+          "type": "string",
+          "maxLength": 1500,
+          "description": "Qué quedó decidido, en dos o tres frases y en concreto: los objetivos que se fijaron, la población que se eligió, el diseño acordado. NO el texto del capítulo — esto es la memoria de lo acordado, no el documento. Lo leerá el asistente que atienda al tesista la próxima vez, que no habrá visto esta conversación."
+        },
+        "tema": {
+          "type": "string",
+          "description": "El tema de la tesis ya delimitado, si se ha fijado o ha cambiado."
+        },
+        "carrera": {
+          "type": "string",
+          "description": "La carrera del tesista."
+        },
+        "universidad": {
+          "type": "string",
+          "description": "Su universidad."
+        },
+        "asesor": {
+          "type": "string",
+          "description": "El nombre de su asesor o asesora, tal como debe salir en la portada del Word, con su grado si lo dice («Dr. Juan Pérez Gómez»). Si todavía no tiene, manda \"\" (vacío): así queda anotado que ya se preguntó y no se le vuelve a preguntar."
+        },
+        "estiloCitas": {
+          "type": "string",
+          "enum": [
+            "apa",
+            "ieee",
+            "nlm-citation-sequence",
+            "american-medical-association",
+            "american-chemical-society",
+            "nature",
+            "modern-language-association",
+            "chicago-author-date",
+            "chicago-notes-bibliography",
+            "chicago-shortened-notes-bibliography",
+            "harvard-cite-them-right",
+            "elsevier-harvard",
+            "american-political-science-association",
+            "american-sociological-association",
+            "mhra-notes"
+          ],
+          "description": "La norma de citas que exige su universidad o su asesor. El Word sale con las citas y las referencias ya escritas en ella, con notas al pie si la norma las pide. PREGÚNTASELA antes de que descargue su Word si el proyecto no la tiene elegida, y no la supongas por la universidad. Las que hay: apa (APA 7.ª edición); ieee (IEEE); nlm-citation-sequence (Vancouver (NLM, por orden de cita)); american-medical-association (AMA 11.ª edición); american-chemical-society (ACS (revisión 2026)); nature (Nature); modern-language-association (MLA 9.ª edición); chicago-author-date (Chicago 18.ª (autor-fecha)); chicago-notes-bibliography (Chicago 18.ª (notas y bibliografía)); chicago-shortened-notes-bibliography (Chicago 18.ª (notas abreviadas y bibliografía)); harvard-cite-them-right (Harvard (Cite Them Right 12.ª)); elsevier-harvard (Elsevier Harvard (con títulos)); american-political-science-association (APSA (revisión 2018)); american-sociological-association (ASA 6.ª/7.ª edición); mhra-notes (MHRA 4.ª edición (notas))."
+        },
+        "idiomaCitas": {
+          "type": "string",
+          "enum": [
+            "es-ES",
+            "es-MX",
+            "es-CL",
+            "en-US"
+          ],
+          "description": "Idioma de las citas: decide «y» o «and», «s. f.» o «n.d.». Si no se dice, español (es-ES). Solo cámbialo si escribe la tesis en inglés o si se lo piden."
+        },
+        "datos": {
+          "type": "object",
+          "description": "Lo mismo que el resumen pero por campos, para los capítulos que los tienen. Mándalo SIEMPRE que se fije uno de estos, además del resumen: el resumen se lee, los campos se usan.\n\ntema-y-delimitacion: tema, poblacion, ambito, periodo.\nproblema-y-objetivos: problemaGeneral, objetivoGeneral, objetivosEspecificos (lista), hipotesis (lista), variables (lista).\nmetodologia: enfoque, diseno, nivel, muestra, muestreo, tecnica, instrumento, analisis (lista).\ninstrumento-investigacion: nombre, dimensiones (lista), items, escala, validez, confiabilidad.\nanalisis-datos-rstudio: pruebas (lista), software, hallazgos (lista).\n\nLos capítulos que no salen aquí no llevan campos: para esos basta el resumen. Manda solo lo que se haya fijado; lo que no mandes se queda como estaba.",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "nombre": "guardar_capitulo",
+    "titulo": "Guardar el capítulo escrito",
+    "descripcion": "Guarda el texto de un capítulo en el servidor, para que el tesista se lo pueda descargar en Word con todos los demás, en orden y con su portada. GUÁRDALO EN CUANTO el tesista dé por bueno lo redactado, sin que te lo pida: no sabe que esto existe, y lo que no se guarde aquí lo tendrá que copiar y pegar él. Manda el texto limpio, sin comentarios tuyos.",
+    "esquema": {
+      "type": "object",
+      "properties": {
+        "capitulo": {
+          "type": "string",
+          "description": "Clave del capítulo, tal como aparece en listar_capitulos."
+        },
+        "texto": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 30000,
+          "description": "El texto del capítulo tal y como va a la tesis, en Markdown: ## para los subtítulos y párrafos separados por una línea en blanco. NADA de comentarios tuyos, ni «aquí tienes», ni notas tuyas entre corchetes —solo valen las claves de cita, [FALTA FUENTE] y la marca de una figura—: esto se convierte en el Word que el tesista entrega. Si pasa de 30.000 caracteres, mándalo por partes. LAS TABLAS van en Markdown y salen en el Word como tablas en formato APA, en un solo bloque sin líneas en blanco: «**Tabla 1**», en la línea siguiente «*Título de la tabla*», luego la cabecera «| Col A | Col B |», la fila «|---|---|», las filas, y si hace falta «*Nota.* …» justo debajo. Las celdas admiten citas con clave. NO armes tú un Word para tener las tablas: el servidor ya las pone. LAS FIGURAS, también en un solo bloque: «**Figura 1**», «*Título de la figura*», «[Insertar aquí la Figura 1: nombre-del-archivo.png]» y, si hace falta, «*Nota.* …». El Word pone el rótulo y deja la marca resaltada donde el tesista pega la imagen: dile cuál va en cada marca."
+        },
+        "anadir": {
+          "type": "boolean",
+          "description": "Verdadero para pegarlo detrás de lo que ya había, en vez de reemplazarlo. Úsalo para las partes segunda y siguientes de un capítulo largo. Si el tesista corrigió el capítulo entero, mándalo completo SIN esta marca."
+        }
+      },
+      "required": [
+        "capitulo",
+        "texto"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "nombre": "continuar",
+    "titulo": "Seguir por donde toca",
+    "descripcion": "Abre el capítulo que le toca al tesista, sin tener que saber su clave. ÚSALA cuando diga «sigamos», «¿qué sigue?», «continuemos con la tesis» o cualquier cosa parecida. Es el camino normal: \"redactar\" con una clave concreta es para cuando quiere saltar a un capítulo determinado.",
+    "esquema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  },
+  {
+    "nombre": "guardar_analisis",
+    "titulo": "Guardar el análisis y sus cifras",
+    "descripcion": "Guarda el script de R, lo que devolvió la consola y las cifras obtenidas. Si el análisis lo corriste tú con \"trabajar_en_r\", el script y la salida YA ESTÁN guardados: usa esta herramienta solo para las cifras. Si el tesista lo corrió en su propio RStudio y te pega el resultado, guárdalo EN CUANTO te lo pegue.\n\nPor qué importa: a partir de ese momento, cualquier cifra que aparezca en el capítulo de resultados y no esté entre las guardadas sale marcada en el repaso. Es lo que impide que un número se escriba solo porque ahí pegaba un número.",
+    "esquema": {
+      "type": "object",
+      "properties": {
+        "capitulo": {
+          "type": "string",
+          "description": "Clave del capítulo de resultados. Normalmente «analisis-datos-rstudio» en tesis o «articulo-fase5-resultados» en artículo."
+        },
+        "script": {
+          "type": "string",
+          "maxLength": 30000,
+          "description": "El script de R que le pasaste al tesista, tal cual. Se guarda sin ejecutarlo: sirve para poder responder dentro de un año de dónde salió cada número."
+        },
+        "salida": {
+          "type": "string",
+          "maxLength": 30000,
+          "description": "Lo que le devolvió la consola de R, pegado tal cual, sin resumir."
+        },
+        "resultados": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Las cifras que van a aparecer en el texto, una por línea y con su etiqueta: «alfa de Cronbach = 0.87», «R2 = 0.4231», «p = 0.003», «beta = -0.31». SÁCALAS DE LA SALIDA que pegó el tesista, no de memoria. A partir de aquí, cualquier número que escribas en el capítulo y no esté en esta lista sale marcado en el repaso. SE SUMAN a las que ya había: manda solo las que falten, no la lista entera. Caben 120 por capítulo, y si pasas se te dice cuáles quedaron fuera."
+        },
+        "reemplazar": {
+          "type": "boolean",
+          "description": "Solo para empezar de cero: borra las cifras guardadas y deja únicamente las de esta llamada. Úsalo si se guardaron cifras equivocadas. Si no lo pones, se suman."
+        }
+      },
+      "required": [
+        "capitulo"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "nombre": "ver_analisis",
+    "titulo": "Leer el análisis del tesista",
+    "descripcion": "El análisis de R guardado en el proyecto: lo que corriste con \"trabajar_en_r\" o lo que el tesista trajo de su RStudio. LLÁMALA ANTES DE REDACTAR LOS RESULTADOS y cada vez que diga que ya corrió su análisis: cada cifra del capítulo tiene que salir de aquí.\n\nSIN ARGUMENTOS devuelve el índice: qué pruebas hay en la consola y en qué líneas. EL ÍNDICE NO CONTIENE LAS CIFRAS, solo dice dónde están. No redactes ningún número a partir del índice: pide su bloque —ver_analisis(bloque: \"alfa\")— y léelo. \"script\" da el guion de R y \"todo\" la consola entera.\n\nDespués guarda con \"guardar_analisis\" (campo resultados) las cifras que vayas a usar en el texto. Sin eso, el repaso no puede comprobar que ningún número se escribió solo.",
+    "esquema": {
+      "type": "object",
+      "properties": {
+        "capitulo": {
+          "type": "string",
+          "description": "Clave del capítulo. Déjala vacía para el de resultados del método, que es donde cae lo que se corre con trabajar_en_r."
+        },
+        "bloque": {
+          "type": "string",
+          "enum": [
+            "alfa",
+            "anova",
+            "chi-cuadrado",
+            "datos",
+            "descriptivos",
+            "frecuencias",
+            "kruskal",
+            "mann-whitney",
+            "normalidad",
+            "pearson",
+            "post-hoc",
+            "regresion",
+            "spearman",
+            "t-student",
+            "script",
+            "todo"
+          ],
+          "description": "Qué parte quieres. Sin esto se devuelve el índice de lo que hay. \"script\" da el guion de R; \"todo\", la consola entera."
+        },
+        "desde": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Primera línea de consola de un tramo pedido a mano, para lo que no cae en ningún bloque. Los números de línea salen del índice."
+        },
+        "hasta": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Última línea del tramo. Se sirven 40 como máximo por petición."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "nombre": "revisar_evidencia",
+    "titulo": "Qué sostiene cada afirmación",
+    "descripcion": "Repasa lo que el tesista lleva escrito y dice qué afirmaciones tienen fuente y cuáles no. ÚSALA ANTES DE REDACTAR LA DISCUSIÓN: ahí es donde se contrasta lo encontrado con la literatura, y contrastarlo de memoria es como se cuelan los autores que no dijeron eso. También sirve como repaso antes de entregar. Sin argumentos revisa todo; con \"capitulo\", solo ese.",
+    "esquema": {
+      "type": "object",
+      "properties": {
+        "capitulo": {
+          "type": "string",
+          "description": "Clave del capítulo a revisar. Si lo omites se revisa todo lo escrito, que es lo que conviene antes de entregar."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "nombre": "revisar_la_tesis",
+    "titulo": "Repaso antes de entregar",
+    "descripcion": "Coteja la tesis consigo mismo y devuelve lo que no cuadra: capítulos dados por buenos sin texto, variables que no aparecen en ningún objetivo, objetivos sin conclusión, citas rotas y afirmaciones sin fuente. ÚSALA CUANDO EL TESISTA VAYA A ENTREGAR, y ofrécesela tú si ves que está cerrando capítulos: nadie sabe que esto existe y es lo último que se revisa a mano.",
+    "esquema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  },
+  {
+    "nombre": "redactar",
+    "titulo": "Trabajar un capítulo",
+    "descripcion": "Trabaja un capítulo de la tesis con el método de Acosta | IA & Research, y abre también las herramientas de apoyo de esta licencia: van por el mismo \"capitulo\", con su clave del catálogo. Envía lo que el tesista quiere hacer o responder, y devuelve el siguiente paso. Es una conversación: manda el mismo \"sesion\" en cada llamada del mismo hilo.\n\nLas herramientas de apoyo NO esperan a que la tesis esté terminada: se abren en cuanto él tiene lo que piden —un informe de similitud y su documento, un texto que suena a IA, un capítulo que quiere pulir—, aunque esté a mitad de otra cosa. Qué hace cada una y qué le pide, en \"listar_capitulos\".",
+    "esquema": {
+      "type": "object",
+      "properties": {
+        "capitulo": {
+          "type": "string",
+          "description": "Clave del capítulo o de la herramienta de apoyo, tal como aparece en listar_capitulos."
+        },
+        "mensaje": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Lo que el tesista quiere hacer, o su respuesta al paso anterior."
+        },
+        "paso": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Solo en los capítulos que se entregan como método: número del tramo que quieres. Si lo omites, se sirve el siguiente al último que recibiste."
+        },
+        "referencia": {
+          "type": "string",
+          "description": "Solo en los capítulos que se entregan como método: nombre del material de apoyo que quieres, tal como aparece en el listado del capítulo."
+        },
+        "sesion": {
+          "type": "string",
+          "description": "Identificador de esta conversación, elegido por ti: invéntalo la primera vez y repite el mismo en todas las llamadas del mismo hilo, para no empezar de cero. Usa uno distinto para cada conversación nueva."
+        }
+      },
+      "required": [
+        "capitulo",
+        "mensaje"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "nombre": "buscar_fuentes",
+    "titulo": "Buscar fuentes en la biblioteca, su Zotero incluido",
+    "descripcion": "Busca referencias reales y verificadas en DOS bibliotecas a la vez: la de Acosta | IA & Research y LA DEL PROPIO TESISTA, que incluye la colección de SU ZOTERO que conectó desde su perfil en la web, sus exports de Scopus, Web of Science o SciELO y lo que guardó por DOI. SI TE PIDE CITAR DE SU ZOTERO, ES AQUÍ: sus fuentes de Zotero ya están dentro y salen marcadas «de tu Zotero». No busques otro conector de Zotero ni le digas que no tienes acceso. Para ver su lista entera, sin tema, usa \"mis_fuentes\". ÚSALA SIEMPRE que haga falta citar: antecedentes, marco teórico, metodología o discusión. NO cites de memoria: los datos bibliográficos que no salen de aquí suelen tener el año o el DOI equivocados, y eso lo comprueba un jurado en segundos. EN \"tema\", EN INGLÉS: la biblioteca de Acosta son artículos indexados en Scopus y Web of Science, con títulos y resúmenes en inglés. El tesista te escribe en español, así que traduce tú el tema antes de buscar («validez de constructo» → «construct validity»). MANDA SIEMPRE \"temaOriginal\" con el tema en español y \"pais\" con el del tesista: con \"temaOriginal\" se busca también en su biblioteca, que suele estar en español, y si no hay nada en ninguna, esta misma herramienta sale al catálogo abierto y no te deja sin fuentes. Las de la biblioteca de Acosta llevan su criterio; las del tesista y las del catálogo abierto no, y la respuesta te lo dirá para que lo adviertas.",
+    "esquema": {
+      "type": "object",
+      "properties": {
+        "tema": {
+          "type": "string",
+          "minLength": 3,
+          "description": "Sobre qué buscar, EN INGLÉS y en palabras del contenido, no una pregunta entera: «construct validity», «convenience sampling», «Cronbach alpha». Tradúcelo tú: el tesista escribe en español y la biblioteca de Acosta está en inglés."
+        },
+        "temaOriginal": {
+          "type": "string",
+          "description": "El mismo tema EN ESPAÑOL, tal como lo dijo el tesista. Mándalo siempre. Con estas palabras se busca también en SU biblioteca —su Zotero, sus exports—, que suele estar en español y no la encuentra el tema en inglés. Y si no hay nada en ninguna, esta herramienta sale sola al catálogo abierto usando estas palabras, y ahí el español encuentra lo que el inglés no: Scielo, Redalyc y los repositorios latinoamericanos."
+        },
+        "pais": {
+          "type": "string",
+          "description": "Código de dos letras del país del tesista: «pe» Perú, «co» Colombia, «mx» México. Solo se usa si hay que salir al catálogo abierto, y sirve para traerle ANTECEDENTES NACIONALES, que es lo que le va a pedir su jurado."
+        },
+        "cuantas": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 15,
+          "description": "Cuántas fuentes quieres. Por omisión, seis."
+        }
+      },
+      "required": [
+        "tema"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "nombre": "buscar_en_la_literatura",
+    "titulo": "Buscar en la literatura publicada",
+    "descripcion": "Busca en OpenAlex, el catálogo abierto de 327 millones de trabajos publicados. EN VIVO, no en una biblioteca guardada. ÚSALA cuando \"buscar_fuentes\" no encuentre nada, cuando el tesista pida ANTECEDENTES DE SU PAÍS, o cuando quiera fuentes en español: aquí sí valen, porque esta base indexa Scielo, Redalyc y repositorios latinoamericanos. Devuelve autor, año, revista, DOI real, cuántas veces se ha citado y si hay PDF gratis. NO cites de memoria ni completes datos que no vengan de aquí. ESTAS FUENTES NO ESTÁN REVISADAS POR ACOSTA: el catálogo es abierto y entra de todo, incluidos repositorios y preprints. Dilo al presentarlas, y recuerda que las de \"buscar_fuentes\" sí llevan ese criterio.",
+    "esquema": {
+      "type": "object",
+      "properties": {
+        "tema": {
+          "type": "string",
+          "minLength": 3,
+          "description": "Sobre qué buscar. AQUÍ SÍ VALE EL ESPAÑOL: esta base indexa Scielo, Redalyc y repositorios latinoamericanos. Escribe el tema como lo diría el tesista."
+        },
+        "idioma": {
+          "type": "string",
+          "enum": [
+            "es",
+            "en",
+            "pt"
+          ],
+          "description": "Acota el idioma de los trabajos. Úsalo con «es» cuando el tesista quiera fuentes que pueda leer sin traducir. Si lo omites, entran todos los idiomas."
+        },
+        "pais": {
+          "type": "string",
+          "description": "Código de dos letras del país de los autores: «pe» Perú, «co» Colombia, «mx» México, «cl» Chile. ES LO QUE PIDE UN JURADO cuando pregunta qué se ha estudiado sobre esto en el país. Sin él, entra la producción de todo el mundo."
+        },
+        "desdeAnio": {
+          "type": "integer",
+          "minimum": 1900,
+          "description": "Solo trabajos publicados desde ese año. Útil para «los últimos cinco años»."
+        },
+        "cuantas": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 15,
+          "description": "Cuántas fuentes quieres. Por omisión, seis."
+        }
+      },
+      "required": [
+        "tema"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "nombre": "ampliar_desde_mis_fuentes",
+    "titulo": "Qué más leer, a partir de lo que ya tiene",
+    "descripcion": "BOLA DE NIEVE sobre la biblioteca del tesista —su Zotero conectado, sus exports y lo que guardó por DOI—: devuelve (a) los trabajos que MÁS DE UNA de sus fuentes citan y él no tiene, y (b) los trabajos recientes que citan a las suyas. ÚSALA en antecedentes y marco teórico, y sobre todo cuando diga que NO SABE QUÉ MÁS BUSCAR o cuando sus búsquedas por palabras ya no den nada nuevo. No lleva tema: parte de su biblioteca, así que no hay nada que teclear. EL NÚMERO QUE IMPORTA es «lo citan N de tus fuentes»: cuanto más alto, más central es ese trabajo EN SU TEMA. Díselo así, no como «muy citado». Es un método declarable —se llama snowballing y tiene guías publicadas—, así que puede escribirlo en su capítulo de metodología. ESTAS FUENTES NO ESTÁN REVISADAS POR ACOSTA y no todas le van a servir: vienen de la conversación de su campo, no de su problema concreto. Preséntalas para que él elija, no como si ya fueran suyas.",
+    "esquema": {
+      "type": "object",
+      "properties": {
+        "desdeAnio": {
+          "type": "integer",
+          "minimum": 1900,
+          "description": "Solo para lo que viene DESPUÉS: acota desde qué año quieres los trabajos que citan a los suyos. Útil cuando su marco teórico se ha quedado viejo y busca lo último."
+        },
+        "cuantas": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 15,
+          "description": "Cuántas devolver de cada lado. Por defecto 8."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "nombre": "anadir_a_mis_fuentes",
+    "titulo": "Guardar fuentes en la biblioteca del tesista",
+    "descripcion": "Guarda en la biblioteca del tesista las fuentes cuyos DOI le pases, para que pueda citarlas en sus capítulos. ÚSALA justo después de \"ampliar_desde_mis_fuentes\" o de \"buscar_en_la_literatura\", cuando el tesista diga cuáles quiere: «añade la 1 y la 3», «guárdalas todas». PREGÚNTASELO ANTES: no guardes lo que no te ha pedido. PASA SOLO DOI QUE VENGAN DE UNA BÚSQUEDA, nunca uno recordado ni reconstruido: si no tienes el DOI exacto delante, dilo en vez de inventarlo. Lo repetido no se duplica y lo que el catálogo no conozca se te dirá por su nombre.",
+    "esquema": {
+      "type": "object",
+      "properties": {
+        "dois": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 60,
+          "items": {
+            "type": "string",
+            "minLength": 7
+          },
+          "description": "Los DOI de las fuentes que el tesista quiere guardar, tal como aparecen en la lista que le enseñaste. NO los inventes ni los completes de memoria: si no tienes el DOI exacto, no la añadas."
+        }
+      },
+      "required": [
+        "dois"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "nombre": "mis_fuentes",
+    "titulo": "Su biblioteca, su Zotero incluido",
+    "descripcion": "Enseña la biblioteca PROPIA del tesista: la colección de SU ZOTERO que conectó desde su perfil en la web, lo que subió de Scopus, Web of Science o SciELO, y lo que guardó por DOI. Dice cuántas tiene, de qué colección de Zotero vienen y cuándo se actualizaron, y las lista por páginas con la clave de cada una para citarla. ÚSALA cuando pregunte por SU ZOTERO, su colección o su carpeta, o por «mis fuentes», «mi biblioteca», «qué tengo». SÍ TIENES ACCESO a lo que trajo de Zotero: es por aquí, no por otro conector. Para las de un tema concreto no pases páginas: usa \"buscar_fuentes\", que busca dentro de estas. Si tiene muchas, enséñale el resumen y la primera página, y pregúntale qué necesita antes de pedir las demás.",
+    "esquema": {
+      "type": "object",
+      "properties": {
+        "pagina": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Qué página de la lista. Por omisión, la primera; la respuesta dice cuántas hay."
+        },
+        "origen": {
+          "type": "string",
+          "enum": [
+            "todas",
+            "zotero",
+            "subidas"
+          ],
+          "description": "«zotero» para ver solo lo que trajo de su Zotero; «subidas», lo que subió de un export o guardó por DOI. Por omisión, todas."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "nombre": "trabajar_en_r",
+    "titulo": "Correr el análisis en R",
+    "descripcion": "Una sesión de R de verdad para el análisis del tesista, que manejas TÚ: él no escribe código ni instala nada. Es la sesión de su proyecto y conserva los objetos entre llamadas.\n\nCÓMO SE USA\n· Sin argumentos: qué hay en la sesión —las columnas de sus datos, los objetos, los archivos—. Si todavía no subió sus datos, devuelve un enlace para que los suba desde su navegador: dáselo tal cual.\n· codigo: ejecuta R y devuelve la consola, los gráficos como imagen y cómo se lee cada prueba. Ya existen `datos` (su matriz) y estas funciones: alfa_de_cronbach(items), puntaje(datos, columnas), normalidad(x), descriptivos(datos), frecuencias(x) y escribir_csv(tabla, \"archivo.csv\").\n· descargar: un enlace para que baje un archivo que creó el análisis.\n· reiniciar: borra los objetos y vuelve a leer sus datos.\n· informe: arma el informe en Word del análisis y da el enlace (ver INFORME EN WORD).\n\nANTES DE CORRER PRUEBAS, PREGÚNTALE lo que no sepas —sus variables y dimensiones, qué ítems forman cada una, si su hipótesis es de relación o de diferencia—, y mira antes \"mi_proyecto\" o \"ver_capitulo\": la metodología puede estar ya acordada. Ve por pasos (confiabilidad, puntajes, normalidad y la prueba que toque) y explícale cada resultado en una o dos frases, sin jerga.\n\nSUS DATOS SON PERSONALES: no imprimas la matriz ni filas enteras. Si necesitas ver valores para encontrar un error, head() de pocas filas y solo de las columnas necesarias.\n\nPAQUETES, además de R base (factanal, prcomp, glm…) y los recomendados (MASS, nlme, survival…). Sirven a cualquier carrera:\n· Datos y gráficos: tidyverse, rio, skimr, Hmisc, mice, ggplot2, ggpubr, patchwork, GGally, ggthemes, viridis, ggalluvial, corrplot, sjPlot, ggeffects.\n· Tablas para el tesista: flextable y officer (Word), kableExtra, writexl, openxlsx; leer: readxl, haven.\n· Psicometría: psych, GPArotation, psy, lavaan, semTools, semPlot (diagramas de ruta), eRm, polycor, qgraph, MVN (normalidad multivariante), nFactors y paran (factores a retener), mirt y ltm (teoría de respuesta al ítem), difR (DIF), irr (acuerdo entre jueces).\n· PLS-SEM: seminr, cSEM, plspm. El bootstrap, con cores = 1 y unos 1000 remuestreos: la sesión no deja paralelizar y 5000 no caben en el tiempo.\n· Inferencia: car, rstatix, nortest, coin, multcomp, effectsize, performance, broom, emmeans, pwr (tamaño de muestra), vcd, ordinal, pscl, lme4, lmerTest, moments, DescTools, BayesFactor (factores de Bayes).\n· Salud: epitools, epiR, pROC, survival, survminer, metafor y meta (metaanálisis).\n· Encuestas con muestreo complejo: survey.\n· Economía y finanzas: plm, fixest, panelr, pdynmc (panel dinámico GMM), AER, lmtest, sandwich, forecast, tseries, urca, zoo, xts.\n· Diseño experimental y agronomía: agricolae (DCA, DBCA, parcelas divididas; HSD, LSD, Duncan).\n· Biología y ambiente: vegan, ade4.\n· Datos espaciales: sf y terra, con coordenadas o archivos que suba el tesista; sin mapas base de fondo, que se descargan de internet.\n· Multivariante y machine learning: FactoMineR, factoextra, dendextend, caret, randomForest, glmnet, e1071.\n· Texto (respuestas abiertas, entrevistas): tidytext, tm, SnowballC, wordcloud, quanteda (con quanteda.textstats y quanteda.textplots), topicmodels.\n· Tablas listas: gtsummary («Tabla 1» y regresiones; al Word con as_flex_table), apaTables, janitor.\nLos library() se recuerdan entre llamadas. Carga solo lo que uses: cada paquete suma segundos a cada llamada. NO hay brms, rstanarm ni blavaan (Stan compila cada modelo y aquí no hay compilador; para lo bayesiano, BayesFactor), ni leaflet, tmap o FielDHub (mapas y aplicaciones interactivas que no se ven en el chat ni en un Word).\n\nINFORME EN WORD: cuando pida su informe o su capítulo de resultados en Word, manda solo «informe». El servidor pone las tablas en APA, mete las figuras de la sesión, pone las citas y las referencias en la norma que elija y te da el enlace.\nEl texto va en Markdown, como un capítulo: «# 4.1. Resultados descriptivos», «## 4.1.1. …» y párrafos separados por una línea en blanco.\nUna TABLA es un bloque sin líneas en blanco: «**Tabla 1**», «*Título*», la tabla con «|» y su fila «|---|», y «*Nota.* …».\nUna FIGURA, igual: «**Figura 1**», «*Título*», «![](figura1.png)» y «*Nota.* Procesado en R 4.3.3.». El PNG tiene que estar en la sesión: guárdalo antes con png(\"figura1.png\", width = 1600, height = 1100, res = 200); …; dev.off().\nESTRUCTURA DE REFERENCIA —es un ejemplo: adáptala a su diseño y a sus objetivos, y no pongas apartados que no apliquen—: un párrafo de apertura (qué se analizó, con cuántos participantes y qué instrumento); resultados descriptivos, con una tabla por variable u objetivo (niveles, frecuencia, porcentaje), su figura si aporta y un párrafo que la interprete; resultados inferenciales, con los supuestos (normalidad) y la decisión que justifican, y una sección por hipótesis con la tabla de la prueba (estadístico, p, decisión, magnitud o tamaño del efecto), su figura si aporta y la interpretación contra la hipótesis; y los resultados complementarios, si los hubo. Tablas y figuras numeradas en orden, cada una con título y nota, y nombradas en el texto («la Tabla 3 muestra…»). Un estudio cualitativo, experimental o comparativo lleva sus propios apartados.\nCADA CIFRA SALE DE LA CONSOLA DE ESTA SESIÓN: la respuesta te marca las que no encuentre.\n\nLÍMITES: sin internet, sin install.packages y sin salir de su carpeta. Cada llamada tiene 45 segundos y 400 MB.\n\nTodo lo que ejecutas queda guardado en su análisis: \"ver_analisis\" lo lee, y las cifras que vayan al texto se guardan con \"guardar_analisis\" (resultados), como siempre.",
+    "esquema": {
+      "type": "object",
+      "properties": {
+        "codigo": {
+          "type": "string",
+          "maxLength": 20000,
+          "description": "El código de R que ejecutar, tal cual. Varias líneas valen: se ejecutan en orden, como en la consola, y se para en el primer error. Déjalo vacío para ver qué hay en la sesión."
+        },
+        "reiniciar": {
+          "type": "boolean",
+          "description": "Borra todos los objetos y el guion y vuelve a leer sus datos desde el archivo. Solo si la sesión quedó enredada, no antes de cada prueba."
+        },
+        "descargar": {
+          "type": "string",
+          "description": "Nombre de un archivo de la sesión para darle al tesista un enlace de descarga: «resultados.csv», «figura1.png» o «graficos/grafico-01.png». Los que hay salen en la respuesta."
+        },
+        "informe": {
+          "type": "object",
+          "description": "SOLO cuando el tesista pida el informe o el capítulo de resultados en Word. Mándalo solo, sin código en la misma llamada. Ver INFORME EN WORD en la descripción de la herramienta.",
+          "properties": {
+            "titulo": {
+              "type": "string",
+              "maxLength": 200,
+              "description": "El título, un renglón por línea: «CAPÍTULO IV\nRESULTADOS» o «Informe de resultados»."
+            },
+            "texto": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 60000,
+              "description": "El informe en Markdown, con las tablas y las figuras en la sintaxis de la descripción y las citas con las claves de sus fuentes."
+            },
+            "norma": {
+              "type": "string",
+              "enum": [
+                "apa",
+                "ieee",
+                "nlm-citation-sequence",
+                "american-medical-association",
+                "american-chemical-society",
+                "nature",
+                "modern-language-association",
+                "chicago-author-date",
+                "chicago-notes-bibliography",
+                "chicago-shortened-notes-bibliography",
+                "harvard-cite-them-right",
+                "elsevier-harvard",
+                "american-political-science-association",
+                "american-sociological-association",
+                "mhra-notes"
+              ],
+              "description": "La norma de citas que eligió el tesista para este informe. PREGÚNTASELA si su proyecto no tiene una. Sin ella sale la de su proyecto, o APA 7."
+            }
+          },
+          "required": [
+            "texto"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "nombre": "ver_mi_documento",
+    "titulo": "Leer el documento que subió para citar",
+    "descripcion": "Lee el Word que el tesista SUBIÓ desde su perfil para que le pongas las citas: su tesis ya escrita por su cuenta, sin referencias. Devuelve los párrafos numerados (¶12) por tandas. ÚSALA cuando diga «cita mi documento», «ponle las referencias», «ya subí mi tesis», o cuando \"mi_proyecto\" diga que hay un documento subido. CÓMO SE CITA, EN ORDEN: 1) Si la norma no está elegida, PREGÚNTASELA y guárdala con \"guardar_avance\" (estiloCitas); las de notas al pie no sirven para un documento subido. 2) Lee el documento entero, tanda a tanda. 3) Para cada afirmación que necesite respaldo busca fuente: \"mis_fuentes\" y \"buscar_fuentes\" (su Zotero y la biblioteca de Acosta, de artículos indexados en Scopus) y \"buscar_en_la_literatura\" (OpenAlex). 4) ANTES DE GUARDAR NADA, enséñale un resumen: cuántas citas pondrás y con qué fuentes, qué fuentes nuevas añadirías a su biblioteca —añade con \"anadir_a_mis_fuentes\" SOLO las que apruebe— y qué afirmaciones quedarían [FALTA FUENTE]. 5) Con su visto bueno, guarda con \"citar_mi_documento\". 6) Dale el enlace con \"enlace_del_word\". NUNCA inventes una fuente: lo que no tenga respaldo va [FALTA FUENTE].",
+    "esquema": {
+      "type": "object",
+      "properties": {
+        "desde": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Número de párrafo desde el que seguir leyendo. La primera vez, nada: la respuesta dice desde dónde pedir la tanda siguiente."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "nombre": "citar_mi_documento",
+    "titulo": "Guardar las citas del documento subido",
+    "descripcion": "Guarda dónde va cada cita en el documento que subió el tesista. Manda cada párrafo con su número y su texto COPIADO TAL CUAL de \"ver_mi_documento\", con las marcas añadidas donde va cada cita: «…afecta al rendimiento [AR97D22F86].»; «[AR97D22F86:n]» detrás del autor si su nombre ya está en la frase («Braun y Clarke [AR97D22F86:n] proponen»); «[AR97D22F86:p. 45]» con página; y «[FALTA FUENTE]» donde no hay fuente. NO CAMBIES NI UNA PALABRA ni corrijas nada: solo se añaden marcas, y un párrafo con el texto cambiado se rechaza. Usa SOLO claves que te haya dado una búsqueda. Manda solo los párrafos que llevan marcas, hasta 40 por llamada; uno mandado sin marcas pierde las que tuviera. NO LA USES sin haberle enseñado antes el resumen y tener su visto bueno. El Word no se toca ahora: las citas y la lista de referencias se escriben al descargarlo, en la norma del proyecto, así que cambiar de norma no obliga a volver a citar.",
+    "esquema": {
+      "type": "object",
+      "properties": {
+        "parrafos": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 40,
+          "description": "Los párrafos con sus marcas.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "p": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "El número del párrafo: 12 para ¶12."
+              },
+              "texto": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 8000,
+                "description": "El texto del párrafo tal cual, con las marcas añadidas."
+              }
+            },
+            "required": [
+              "p",
+              "texto"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "parrafos"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "nombre": "formato_de_la_universidad",
+    "titulo": "El formato de su universidad para el Word",
+    "descripcion": "El formato de tesis que exige su universidad —la plantilla o el documento de formato que da su facultad—, que el Word del servidor aplica solo: títulos, fuentes, márgenes, encabezado, pie de página y la portada llenada con sus datos. PREGÚNTALE UNA VEZ, al empezar a trabajar sus capítulos o antes de darle su Word, si su universidad o facultad le dio un formato o plantilla. ÚSALA también cuando diga «tengo mi formato», «mi universidad tiene plantilla» o «quiero que salga con el formato de mi facultad». Sin argumentos dice si ya hay uno puesto y da un ENLACE para subirlo o cambiarlo: dáselo tal cual y dile que vuelva cuando lo haya subido; entonces llámala otra vez para confirmar qué se tomó. NO le pidas que te pegue el formato, no lo copies tú a mano y no le armes un Word con ese formato: lo aplica el servidor. Si no tiene formato, no insistas.",
+    "esquema": {
+      "type": "object",
+      "properties": {
+        "usarNuestraPortada": {
+          "type": "boolean",
+          "description": "Verdadero para dejar de usar la portada del formato cuando se detectó mal: el resto del formato se queda."
+        },
+        "quitar": {
+          "type": "boolean",
+          "description": "Verdadero para dejar de usar el formato: el Word vuelve al formato por defecto. Solo si el tesista lo pide."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "nombre": "enlace_del_word",
+    "titulo": "Enlace para descargar la tesis en Word",
+    "descripcion": "Da un enlace para descargar la tesis en Word, armada por el servidor con todo lo guardado: portada, índice, capítulos en orden, y las citas y las referencias ya escritas en la norma del proyecto —en notas al pie si la norma lo pide, y enlazadas a Zotero si el tesista lo conectó—. ÚSALA cuando pida su Word, su documento o descargar, y después de guardar un capítulo. NUNCA ARMES TÚ EL WORD NI ESCRIBAS TÚ LA BIBLIOGRAFÍA: el tuyo no llevaría la norma ni los campos de Zotero, y podría no coincidir con las fichas. Si el tesista SUBIÓ su propio documento para citar, el enlace es el de ese documento con las citas puestas. El enlace caduca a la media hora; si ya pasó, pide otro.",
+    "esquema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  }
+]

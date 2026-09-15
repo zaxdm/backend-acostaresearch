@@ -36,6 +36,8 @@ const documentoService = require('./documento.service');
 const skillService = require('../skills/skill.service');
 const referenceService = require('../references/reference.service');
 const { guardarAvanceSchema, guardarCapituloSchema } = require('./project.schema');
+const { fusionarFicha, lineasDeFicha } = require('./project.ficha-informe');
+const { perfilDe } = require('../productos/producto.perfil');
 
 /** Cómo se ve cada estado en el texto que recibe el asistente. */
 const MARCAS = {
@@ -130,7 +132,9 @@ async function contexto(userId, productCode) {
   // tiene un proyecto sin tema ni capítulos, y sin esto el bloque saldría vacío
   // y el aviso con él.
   const aviso = await avisoDeAnalisis(proyecto, porCapitulo);
-  const hayAvance = proyecto.tema || proyecto.stages.some((e) => e.estado !== 'PENDIENTE');
+  // La ficha cuenta como avance: un informe con curso y entrega ya dichos no está vacío.
+  const hayAvance =
+    proyecto.tema || proyecto.fichaInforme || proyecto.stages.some((e) => e.estado !== 'PENDIENTE');
   if (!hayAvance && !aviso) return null;
 
   const cabecera = [];
@@ -140,8 +144,13 @@ async function contexto(userId, productCode) {
   if (proyecto.tema) cabecera.push(`Tema: ${proyecto.tema}`);
   const donde = [proyecto.carrera, proyecto.universidad].filter(Boolean).join(' · ');
   if (donde) cabecera.push(donde);
-  const asesor = lineaDeAsesor(proyecto);
-  if (asesor) cabecera.push(asesor);
+  if (perfilDe(productCode).tipo === 'informe') {
+    // El informe no tiene asesor: tiene curso, docente, integrantes y entrega.
+    cabecera.push(...lineasDeFicha(proyecto.fichaInforme ?? {}, { conRubrica: true }));
+  } else {
+    const asesor = lineaDeAsesor(proyecto);
+    if (asesor) cabecera.push(asesor);
+  }
   cabecera.push(lineaDeNorma(proyecto));
 
   // Se recorre el catálogo y no las etapas guardadas, para que los capítulos
@@ -246,15 +255,21 @@ async function resumen(userId, productCode) {
   // tiene un proyecto sin tema ni capítulos, y sin esto el bloque saldría vacío
   // y el aviso con él.
   const aviso = await avisoDeAnalisis(proyecto, porCapitulo);
-  const hayAvance = proyecto.tema || proyecto.stages.some((e) => e.estado !== 'PENDIENTE');
+  // La ficha cuenta como avance: un informe con curso y entrega ya dichos no está vacío.
+  const hayAvance =
+    proyecto.tema || proyecto.fichaInforme || proyecto.stages.some((e) => e.estado !== 'PENDIENTE');
   if (!hayAvance && !aviso) return null;
 
   const cabecera = [];
   if (proyecto.tema) cabecera.push(proyecto.tema);
   const donde = [proyecto.carrera, proyecto.universidad].filter(Boolean).join(' · ');
   if (donde) cabecera.push(donde);
-  const asesor = lineaDeAsesor(proyecto);
-  if (asesor) cabecera.push(asesor);
+  if (perfilDe(productCode).tipo === 'informe') {
+    cabecera.push(...lineasDeFicha(proyecto.fichaInforme ?? {}));
+  } else {
+    const asesor = lineaDeAsesor(proyecto);
+    if (asesor) cabecera.push(asesor);
+  }
 
   // Se recorre el catálogo y no las etapas guardadas, para que los capítulos
   // que aún no ha tocado también salgan. Saber lo que falta es la mitad de
@@ -445,7 +460,15 @@ function avisoDeRequisitos(faltan) {
 async function guardarAvance({ userId, productCode, ...entrada }) {
   const datos = guardarAvanceSchema.parse(entrada);
 
-  const proyecto = await projectRepository.asegurar(userId, productCode, datos);
+  // La ficha solo la tiene el informe estudiantil, y llega por partes: se funde
+  // con la que había para que decir el docente no borre el curso.
+  const cambios = { ...datos };
+  if (datos.informe && perfilDe(productCode).tipo === 'informe') {
+    const actual = await projectRepository.buscar(userId, productCode);
+    cambios.fichaInforme = fusionarFicha(actual?.fichaInforme, datos.informe);
+  }
+
+  const proyecto = await projectRepository.asegurar(userId, productCode, cambios);
 
   let etapa = null;
   let camposGuardados = [];

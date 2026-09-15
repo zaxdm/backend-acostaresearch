@@ -3,6 +3,7 @@
 const { z } = require('zod');
 
 const normas = require('./project.normas');
+const { fichaInformeSchema } = require('./project.ficha-informe');
 
 const ESTADOS = ['PENDIENTE', 'EN_CURSO', 'LISTO'];
 
@@ -62,6 +63,11 @@ const guardarAvanceSchema = z.object({
    * que importa es que se guarde bien lo demás.
    */
   datos: z.record(z.string(), z.unknown()).optional(),
+  /**
+   * La ficha del informe estudiantil. Solo la guarda ese producto: en tesis y
+   * artículo el conector ni la ofrece, y si llegara se ignora en el servicio.
+   */
+  informe: fichaInformeSchema.optional(),
 });
 
 /**

@@ -227,6 +227,51 @@ const ETAPAS = {
     campos: { resultados: CIFRAS_OBTENIDAS },
     necesita: [],
   },
+
+  // ── Informe estudiantil ──────────────────────────────────────────────────
+  //
+  // Curso, docente, integrantes y entrega van en la ficha del proyecto, no
+  // aquí: son del informe entero, no de una fase. Aquí queda lo que decide cada
+  // fase y lo que la siguiente necesita saber.
+
+  'informe-fase0-encargo': {
+    campos: {
+      preguntaGuia: {
+        titulo: 'Pregunta guía u objetivo',
+        pista: 'Lo que responde el informe, en una frase.',
+      },
+      esquema: {
+        titulo: 'Esquema acordado',
+        lista: true,
+        maximo: 20,
+        pista: 'Un subtítulo por línea, en el orden en que irán en el informe.',
+      },
+      calendario: {
+        titulo: 'Calendario hasta la entrega',
+        lista: true,
+        maximo: 12,
+        pista: 'Tarea y fecha, una por línea: «Fuentes elegidas — 2026-09-20».',
+      },
+    },
+    necesita: [],
+  },
+
+  'informe-fase1-fuentes': {
+    campos: {
+      cobertura: {
+        titulo: 'Fuentes por subtítulo',
+        lista: true,
+        maximo: 20,
+        pista: 'Subtítulo y cuántas fuentes lo sostienen: «2.1 Causas — 3 fuentes».',
+      },
+    },
+    necesita: [{ etapa: 'informe-fase0-encargo', campos: ['esquema'] }],
+  },
+
+  'informe-fase2-desarrollo': {
+    campos: {},
+    necesita: [{ etapa: 'informe-fase0-encargo', campos: ['esquema'] }],
+  },
 };
 
 /** Los campos que admite una etapa, o null si esa etapa no está registrada. */

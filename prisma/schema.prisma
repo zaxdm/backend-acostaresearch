@@ -1198,6 +1198,11 @@ model Project {
   estiloCitas String? @db.VarChar(64)
   idiomaCitas String? @db.VarChar(8)
 
+  /// Solo del informe estudiantil: curso, docente, integrantes, ciclo y sección,
+  /// fecha de entrega y rúbrica. Nulo en tesis y artículo, que no la usan.
+  /// Ver `projects/project.ficha-informe.js`.
+  fichaInforme Json?
+
   /// Cuándo subió la plantilla de su facultad, y cómo se llamaba el archivo.
   /// La hoja de estilos vive en disco; aquí solo la marca de que existe.
   plantillaAt     DateTime?

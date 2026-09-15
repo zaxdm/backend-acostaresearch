@@ -198,7 +198,7 @@ const ESQUEMA_LITERATURA = fromJsonSchema({
   additionalProperties: false,
 });
 
-const ESQUEMA_GUARDAR_AVANCE = fromJsonSchema({
+const GUARDAR_AVANCE = {
   type: 'object',
   properties: {
     capitulo: {
@@ -276,6 +276,74 @@ const ESQUEMA_GUARDAR_AVANCE = fromJsonSchema({
     },
   },
   additionalProperties: false,
+};
+
+const ESQUEMA_GUARDAR_AVANCE = fromJsonSchema(GUARDAR_AVANCE);
+
+/**
+ * El mismo esquema con la ficha del informe estudiantil.
+ *
+ * Aparte y no dentro del de siempre: tesis y artículo no tienen curso ni
+ * docente, y una propiedad que Claude ve la acaba rellenando. Solo se registra
+ * para el perfil de informe (ver `productos/producto.perfil`).
+ */
+const ESQUEMA_GUARDAR_AVANCE_INFORME = fromJsonSchema({
+  ...GUARDAR_AVANCE,
+  properties: {
+    ...GUARDAR_AVANCE.properties,
+    informe: {
+      type: 'object',
+      description:
+        'La ficha del informe: sale en la portada del Word y marca el calendario hasta la ' +
+        'entrega. Mándala EN CUANTO el estudiante diga uno de estos datos, sin esperar a ' +
+        'tenerlos todos. Lo que no mandes se queda como estaba; los integrantes se mandan ' +
+        'TODOS cada vez, porque la lista sustituye a la anterior.',
+      properties: {
+        tipo: {
+          type: 'string',
+          enum: ['curso', 'proyecto', 'caso'],
+          description:
+            'curso = informe académico sobre un tema del curso; proyecto = informe de un ' +
+            'proyecto que hizo; caso = análisis de un caso que le dieron.',
+        },
+        curso: { type: 'string', description: 'El nombre del curso, como sale en su sílabo.' },
+        docente: {
+          type: 'string',
+          description:
+            'El docente, como debe salir en la portada, con su grado si lo dice. "" (vacío) si ' +
+            'no hay docente que poner: así no se le vuelve a preguntar.',
+        },
+        integrantes: {
+          type: 'array',
+          maxItems: 10,
+          description: 'Quienes firman el informe, en el orden de la portada.',
+          items: {
+            type: 'object',
+            properties: {
+              nombre: { type: 'string', description: 'Nombres y apellidos.' },
+              codigo: { type: 'string', description: 'Su código de estudiante, si la portada lo pide.' },
+            },
+            required: ['nombre'],
+            additionalProperties: false,
+          },
+        },
+        cicloSeccion: { type: 'string', description: 'Ciclo y sección: «IV ciclo, sección B».' },
+        ciudad: { type: 'string', description: 'La ciudad que va en la portada.' },
+        fechaEntrega: {
+          type: 'string',
+          description: 'La fecha de entrega que puso el docente, como AAAA-MM-DD.',
+        },
+        rubrica: {
+          type: 'string',
+          maxLength: 1500,
+          description:
+            'Los criterios de la rúbrica o de la consigna, resumidos. Con esto se revisa el ' +
+            'informe antes de entregarlo: NO los inventes si no te los ha dado.',
+        },
+      },
+      additionalProperties: false,
+    },
+  },
 });
 
 const ESQUEMA_GUARDAR_CAPITULO = fromJsonSchema({
@@ -872,7 +940,7 @@ function construirServidor(licencia) {
         'aunque sea en otra conversación. Úsala EN CUANTO se fije algo —el tema, los ' +
         'objetivos, la población, el diseño—, no al terminar. Guarda lo acordado en dos o ' +
         'tres frases, nunca el texto del capítulo.',
-      inputSchema: ESQUEMA_GUARDAR_AVANCE,
+      inputSchema: perfil.tipo === 'informe' ? ESQUEMA_GUARDAR_AVANCE_INFORME : ESQUEMA_GUARDAR_AVANCE,
     },
     async (entrada) => {
       await licenseService.recordUsage({ licenseId: licencia.id, tool: 'guardar_avance' });
@@ -900,6 +968,7 @@ function construirServidor(licencia) {
         if (entrada.tema) guardado.push('el tema');
         if (entrada.carrera) guardado.push('la carrera');
         if (entrada.universidad) guardado.push('la universidad');
+        if (entrada.informe) guardado.push('la ficha del informe');
         if (entrada.estiloCitas) {
           guardado.push(`la norma de citas (${normas.normaDe(entrada.estiloCitas).nombre})`);
         }

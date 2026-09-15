@@ -13,6 +13,7 @@ const proyectoSelect = {
   asesor: true,
   estiloCitas: true,
   idiomaCitas: true,
+  fichaInforme: true,
   ranura: true,
   nombre: true,
   activadaAt: true,
@@ -69,7 +70,8 @@ async function asegurar(userId, productCode, cambios = {}) {
   const limpio = {};
   // El asesor puede llegar vacío a propósito: «todavía no tiene». Se guarda así
   // para no volver a preguntárselo.
-  for (const campo of ['tema', 'carrera', 'universidad', 'asesor', 'estiloCitas', 'idiomaCitas']) {
+  // `fichaInforme` llega ya fusionada con la anterior: ver `guardarAvance`.
+  for (const campo of ['tema', 'carrera', 'universidad', 'asesor', 'estiloCitas', 'idiomaCitas', 'fichaInforme']) {
     if (cambios[campo] !== undefined && cambios[campo] !== null) limpio[campo] = cambios[campo];
   }
 

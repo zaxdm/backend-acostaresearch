@@ -114,3 +114,17 @@ test('sin licencia de ese método, elegir la norma no crea nada', async () => {
   assert.equal(norma, null);
   assert.deepEqual(estado.asegurados, []);
 });
+
+test('sin licencia de ese método, subir una plantilla no crea el proyecto', async () => {
+  // Era la puerta de atrás: la plantilla creaba el proyecto, y con el proyecto
+  // ya creado se podían subir documentos de 40 MB sin haber comprado nada.
+  empezar({ conLicencia: [] });
+  const r = await projectService.guardarPlantilla({
+    userId: 'u1',
+    productCode: 'ARTICULO_SCIENTIFICOS',
+    buffer: Buffer.from('PK'),
+    nombre: 'formato.docx',
+  });
+  assert.equal(r, null);
+  assert.deepEqual(estado.asegurados, []);
+});

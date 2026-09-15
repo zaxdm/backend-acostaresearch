@@ -137,3 +137,13 @@ test('Claude sabe que hay un documento aunque no haya nada más guardado', async
   await servicio.subir({ userId: 'u1', productCode: 'METODO', buffer: docx(['Uno.']), nombre: 'a.docx' });
   assert.match(await servicio.aviso('u1', 'METODO'), /ver_mi_documento/);
 });
+
+test('con el proyecto ya creado pero sin licencia vigente tampoco se sube', async () => {
+  // Que el proyecto exista no prueba nada: puede ser de una licencia caducada,
+  // o creado por una plantilla antes de que esta la exigiera.
+  proyecto = { ...PROYECTO };
+  conLicencia = [];
+  const r = await servicio.subir({ userId: 'u1', productCode: 'METODO', buffer: docx(['Uno.']), nombre: 'tesis.docx' });
+  assert.equal(r, null);
+  assert.equal(disco.size, 0);
+});

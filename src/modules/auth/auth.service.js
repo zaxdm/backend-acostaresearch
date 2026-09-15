@@ -96,6 +96,8 @@ const authService = {
 
     // Repetir el registro con un correo aún sin verificar sobrescribe el intento
     // anterior: mientras no se confirme, ese correo no está reservado por nadie.
+    // Es seguro porque verifyEmail pide, además del código, la contraseña de
+    // este intento: quien sobrescriba el de otro no consigue que su cuenta nazca.
     const pending = await pendingRepository.upsert({
       email,
       firstName,
@@ -246,13 +248,16 @@ const authService = {
    * espacio de 6 dígitos contra cualquier alta: hay que acertar el código de un
    * correo concreto, y cada código muere a los 5 fallos.
    */
-  async verifyEmail({ email, code }) {
+  async verifyEmail({ email, code, password }) {
     const pending = await pendingRepository.findByEmail(email);
 
     if (!pending) {
       // Puede que ya se verificara: repetir el formulario no debe dar error.
+      // Pero sin devolver la cuenta: aquí no se ha comprobado ningún código, y
+      // devolverla le daba el nombre y el rol de cualquiera a quien supiera su
+      // correo. La web solo necesita saber que salió bien.
       const user = await userRepository.findByEmail(email);
-      if (user) return user;
+      if (user) return null;
       throw codigoInvalido(0);
     }
 
@@ -283,6 +288,22 @@ const authService = {
       }
 
       throw codigoInvalido(restantes);
+    }
+
+    /**
+     * El código solo prueba que quien escribe lee ese buzón. Como registrarse
+     * otra vez con un correo sin confirmar sobrescribe la contraseña, alguien
+     * podía registrar el correo de otro justo detrás de él: la víctima tecleaba
+     * el código que le llegaba y la cuenta nacía con la contraseña del otro.
+     * Pidiendo aquí la contraseña del alta, esa cuenta no llega a nacer.
+     */
+    if (!(await verifyPassword(pending.passwordHash, password ?? ''))) {
+      await pendingRepository.registerFailedAttempt(pending.id);
+      throw new AppError(
+        'Esa no es la contraseña con la que se registró este correo. Si estás seguro de ' +
+          'haberla escrito bien, vuelve a registrarte y usa el código nuevo que te llegue.',
+        { statusCode: 400, code: ERROR_CODES.REGISTRATION_PASSWORD_MISMATCH },
+      );
     }
 
     const user = await pendingRepository.promoteToUser(

@@ -41,13 +41,16 @@ function normaDe(proyecto) {
  * Es el mismo criterio que la norma y el análisis: el proyecto nace del
  * conector, y crearlo desde la web sin licencia sería tener el de un método que
  * no se compró.
+ *
+ * La licencia se mira SIEMPRE, también si el proyecto ya existe: que exista no
+ * prueba nada —puede ser de una licencia caducada, o de antes de que la
+ * plantilla la exigiera— y aquí se suben hasta 40 MB por vez.
  */
 async function proyectoConLicencia(userId, productCode) {
-  const actual = await projectRepository.buscar(userId, productCode);
-  if (actual) return actual;
   const conLicencia = await projectRepository.productosConLicencia(userId);
   if (!conLicencia.includes(productCode)) return null;
-  return projectRepository.asegurar(userId, productCode);
+  const actual = await projectRepository.buscar(userId, productCode);
+  return actual ?? projectRepository.asegurar(userId, productCode);
 }
 
 async function cargar(userId, productCode) {

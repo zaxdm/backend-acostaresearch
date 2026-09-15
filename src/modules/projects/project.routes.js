@@ -506,12 +506,16 @@ router.post(
     const nombre = decodificar(req.get('X-Nombre-Archivo'));
 
     try {
-      const { estilos, mensaje } = await projectService.guardarPlantilla({
+      const guardada = await projectService.guardarPlantilla({
         userId: req.user.id,
         productCode: req.params.productCode,
         buffer: req.body,
         nombre,
       });
+      if (!guardada) {
+        throw new ForbiddenError('Necesitas una licencia vigente de este método para subir tu plantilla.');
+      }
+      const { estilos, mensaje } = guardada;
 
       return ok(
         res,

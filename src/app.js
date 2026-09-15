@@ -12,7 +12,7 @@ const logger = require('./config/logger');
 const routes = require('./routes');
 const mcpRouter = require('./modules/mcp/mcp.router');
 const { globalLimiter } = require('./middlewares/rateLimit');
-const { ocultarSecretosEnUrl, ocultarConsulta } = require('./shared/utils/ocultar');
+const { ocultarSecretosEnUrl, ocultarConsulta, ocultarParams } = require('./shared/utils/ocultar');
 const { ForbiddenError } = require('./shared/errors/AppError');
 const notFound = require('./middlewares/notFound');
 const errorHandler = require('./middlewares/errorHandler');
@@ -66,6 +66,7 @@ function createApp() {
           ...req,
           url: ocultarSecretosEnUrl(req.url),
           query: ocultarConsulta(req.query),
+          params: ocultarParams(req.params),
         }),
       },
     }),

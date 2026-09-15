@@ -36,7 +36,7 @@
  * ajeno es otra obra, y una nota mal enlazada deja el Word sin abrir.
  */
 
-const AdmZip = require('adm-zip');
+const { abrirZip } = require('./project.zip');
 
 const csl = require('./project.csl');
 const normas = require('./project.normas');
@@ -79,7 +79,7 @@ function abrir(buffer) {
 
   let zip;
   try {
-    zip = new AdmZip(buffer);
+    zip = abrirZip(buffer);
   } catch {
     throw new DocumentoNoValido('No se pudo abrir el archivo. ¿Está completo?');
   }

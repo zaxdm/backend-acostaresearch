@@ -24,6 +24,10 @@ const RUTAS_CON_SECRETO = [
   // El enlace firmado para descargar el Word. Caduca en media hora, pero en
   // esa media hora descarga la tesis de otro.
   /(\/proyectos\/descarga\/)([A-Za-z0-9._-]+)/g,
+  // El de subir el formato de la facultad, y los de subir y bajar archivos de R:
+  // firmados igual, y con ellos se escribe en el proyecto de otro.
+  /(\/proyectos\/formato\/)([A-Za-z0-9._-]+)/g,
+  /(\/r\/(?:subir|descarga)\/)([A-Za-z0-9._-]+)/g,
 ];
 
 /** Parámetros de consulta que llevan una credencial: la vuelta del OAuth de Zotero. */
@@ -57,4 +61,22 @@ function ocultarConsulta(consulta) {
   );
 }
 
-module.exports = { ocultarSecretosEnUrl, ocultarConsulta };
+/**
+ * Y lo mismo para los parámetros de ruta.
+ *
+ * El registro guarda `req.params` además de la URL, y en `/mcp/:token` ese
+ * `token` es la licencia entera. Ocultarla solo en la URL la dejaba escrita
+ * en la línea de al lado. El `redact` de pino tampoco llega: `*.token` mira un
+ * nivel, y esto va en `req.params.token`.
+ */
+function ocultarParams(params) {
+  if (!params || typeof params !== 'object') return params;
+  return Object.fromEntries(
+    Object.entries(params).map(([clave, valor]) => [
+      clave,
+      clave === 'token' && typeof valor === 'string' ? pista(valor) : valor,
+    ]),
+  );
+}
+
+module.exports = { ocultarSecretosEnUrl, ocultarConsulta, ocultarParams };

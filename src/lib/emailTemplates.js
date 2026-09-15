@@ -104,7 +104,7 @@ function emailVerificationCode({ firstName, code, expiresInMinutes }) {
 ` +
       'Si no creaste esta cuenta, ignora este mensaje.',
     html: layout(
-      `Hola ${firstName}, este es tu código`,
+      `Hola ${escapar(firstName)}, este es tu código`,
       `<p style="margin:0 0 22px;font-size:15px;line-height:1.6;color:#52606d">
          Escríbelo en la pantalla de verificación y tu cuenta queda activa.
        </p>
@@ -154,7 +154,7 @@ function passwordChangeCode({ firstName, code, expiresInMinutes }) {
     html: layout(
       'Tu código para cambiar la contraseña',
       `<p style="margin:0 0 22px;font-size:15px;line-height:1.6;color:#52606d">
-         Hola ${firstName}: escríbelo en la pantalla donde lo pediste y elige tu contraseña nueva.
+         Hola ${escapar(firstName)}: escríbelo en la pantalla donde lo pediste y elige tu contraseña nueva.
        </p>
 
        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
@@ -202,14 +202,14 @@ function adminAccountCreated({ firstName, email, password }) {
     html: layout(
       'Ya tienes acceso al panel',
       `<p style="margin:0 0 22px;font-size:15px;line-height:1.6;color:#52606d">
-         Hola ${firstName}: te hemos creado una cuenta de administrador.
+         Hola ${escapar(firstName)}: te hemos creado una cuenta de administrador.
        </p>
 
        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
          <tr>
            <td style="background:#f7f9fc;border:1px solid #e2e8f2;border-radius:12px;padding:18px 20px;font-size:14.5px;line-height:1.8;color:#334155">
-             <div><b>Correo:</b> ${email}</div>
-             <div><b>Contraseña provisional:</b> <span style="font-family:ui-monospace,Menlo,Consolas,monospace">${password}</span></div>
+             <div><b>Correo:</b> ${escapar(email)}</div>
+             <div><b>Contraseña provisional:</b> <span style="font-family:ui-monospace,Menlo,Consolas,monospace">${escapar(password)}</span></div>
            </td>
          </tr>
        </table>
@@ -258,15 +258,16 @@ function guiaUrl() {
  * Se le avisa y se le da salida, no se le acusa.
  */
 function licenseAlert({ firstName, motivos, revocada }) {
-  const lista = motivos.map((m) => `<li style="margin:0 0 6px">${m}</li>`).join('');
+  const lista = motivos.map((m) => `<li style="margin:0 0 6px">${escapar(m)}</li>`).join('');
+  const nombre = escapar(firstName);
 
   const cuerpo = revocada
-    ? `<p style="margin:0 0 14px;font-size:15px;line-height:1.6">Hola ${firstName}: hemos
+    ? `<p style="margin:0 0 14px;font-size:15px;line-height:1.6">Hola ${nombre}: hemos
          desactivado temporalmente el acceso de tu licencia al conector, porque el patrón de uso
          sugiere que la URL se está usando desde varias personas a la vez.</p>
        <p style="margin:0 0 14px;font-size:15px;line-height:1.6">Si es un error, respóndenos y
          te la reactivamos el mismo día. No pierdes nada de lo que ya trabajaste.</p>`
-    : `<p style="margin:0 0 14px;font-size:15px;line-height:1.6">Hola ${firstName}: hemos
+    : `<p style="margin:0 0 14px;font-size:15px;line-height:1.6">Hola ${nombre}: hemos
          detectado un uso poco habitual en tu licencia. Todavía no hemos tocado nada, es solo
          un aviso.</p>
        <p style="margin:0 0 14px;font-size:15px;line-height:1.6">Si has compartido tu URL con
@@ -382,14 +383,14 @@ function manualPaymentReceived({ buyer, planName, amountCents, operationCode, pa
     html: layout(
       'Un Yape esperando revisión',
       `<p style="margin:0 0 18px;font-size:15px;line-height:1.6">
-         <strong>${buyer.firstName} ${buyer.lastName}</strong> dice haber pagado
-         <strong>${soles(amountCents)}</strong> por «${planName}».
+         <strong>${escapar(buyer.firstName)} ${escapar(buyer.lastName)}</strong> dice haber pagado
+         <strong>${soles(amountCents)}</strong> por «${escapar(planName)}».
        </p>
        <table role="presentation" cellpadding="0" cellspacing="0"
               style="margin:0 0 22px;font-size:14px;color:#52606d">
-         <tr><td style="padding:3px 14px 3px 0">Correo</td><td>${buyer.email}</td></tr>
-         <tr><td style="padding:3px 14px 3px 0">Nº de operación</td><td>${operacion}</td></tr>
-         <tr><td style="padding:3px 14px 3px 0">Pago</td><td>${paymentId}</td></tr>
+         <tr><td style="padding:3px 14px 3px 0">Correo</td><td>${escapar(buyer.email)}</td></tr>
+         <tr><td style="padding:3px 14px 3px 0">Nº de operación</td><td>${escapar(operacion)}</td></tr>
+         <tr><td style="padding:3px 14px 3px 0">Pago</td><td>${escapar(paymentId)}</td></tr>
        </table>
        <p style="margin:0 0 18px;font-size:14px;line-height:1.6">
          Compruébalo contra tu Yape antes de aprobarlo: la captura demuestra que existe una
@@ -524,15 +525,15 @@ function licenseReady({ firstName, planName, connectorUrl, expiresAt, via }) {
     ].join('\n'),
     html: layout(
       'Tu acceso al método está activo',
-      `<p style="margin:0 0 20px;font-size:15px;line-height:1.6">Hola ${firstName}:
-         ${confirmacion} y tu acceso ya está activo. ${vigencia}</p>
+      `<p style="margin:0 0 20px;font-size:15px;line-height:1.6">Hola ${escapar(firstName)}:
+         ${confirmacionDePago(via, escapar(planName))} y tu acceso ya está activo. ${vigencia}</p>
 
        <p style="margin:0 0 8px;font-size:13px;font-weight:650;color:#52606d">
          TU URL PERSONAL DEL CONECTOR
        </p>
        <p style="margin:0 0 14px;padding:14px 16px;background:#101a2e;border-radius:10px;
                  font-family:Consolas,'Courier New',monospace;font-size:13px;line-height:1.5;
-                 color:#dbe6ff;word-break:break-all">${connectorUrl}</p>
+                 color:#dbe6ff;word-break:break-all">${escapar(connectorUrl)}</p>
 
        <p style="margin:0 0 24px;padding:12px 16px;background:#fdf3e3;border-radius:10px;
                  font-size:13.5px;line-height:1.6;color:#96590d">
@@ -635,8 +636,8 @@ function licenseExpiring({ firstName, planName, expiresAt, dias }) {
     ].join('\n'),
     html: layout(
       `Tu acceso caduca ${cuando}`,
-      `<p style="margin:0 0 18px;font-size:15px;line-height:1.6">Hola ${firstName}:
-         tu acceso a <strong>${planName}</strong> caduca ${cuando}${vence ? `, el <strong>${vence}</strong>` : ''}.</p>
+      `<p style="margin:0 0 18px;font-size:15px;line-height:1.6">Hola ${escapar(firstName)}:
+         tu acceso a <strong>${escapar(planName)}</strong> caduca ${cuando}${vence ? `, el <strong>${vence}</strong>` : ''}.</p>
 
        <p style="margin:0 0 18px;font-size:15px;line-height:1.6">
          A partir de esa fecha, la URL que tienes puesta en Claude deja de responder.
@@ -682,8 +683,8 @@ function licenseRenewed({ firstName, planName, expiresAt, via }) {
     ].join('\n'),
     html: layout(
       'Tu acceso se renovó',
-      `<p style="margin:0 0 18px;font-size:15px;line-height:1.6">Hola ${firstName}:
-         ${confirmacion}. Tu acceso queda
+      `<p style="margin:0 0 18px;font-size:15px;line-height:1.6">Hola ${escapar(firstName)}:
+         ${confirmacionDePago(via, escapar(planName))}. Tu acceso queda
          ampliado <strong>${hasta}</strong>.</p>
 
        <p style="margin:0 0 22px;padding:14px 16px;background:#e7f6ef;border-radius:10px;
@@ -734,8 +735,8 @@ function licenseProductChanged({ firstName, planName, capitulos }) {
     ].join('\n'),
     html: layout(
       'Tu acceso se amplió',
-      `<p style="margin:0 0 18px;font-size:15px;line-height:1.6">Hola ${firstName}:
-         hemos ampliado tu acceso. Tu licencia pasa a <strong>${planName}</strong>, y desde
+      `<p style="margin:0 0 18px;font-size:15px;line-height:1.6">Hola ${escapar(firstName)}:
+         hemos ampliado tu acceso. Tu licencia pasa a <strong>${escapar(planName)}</strong>, y desde
          ahora tienes ${cuantos} disponibles en Claude.</p>
 
        <p style="margin:0 0 22px;padding:14px 16px;background:#e7f6ef;border-radius:10px;
@@ -783,8 +784,8 @@ function wordsReady({ firstName, planName, words, expiresAt, via }) {
     ].join('\n'),
     html: layout(
       'Tu bolsa de palabras está activa',
-      `<p style="margin:0 0 20px;font-size:15px;line-height:1.6">Hola ${firstName}:
-         ${confirmacion} y ya tienes
+      `<p style="margin:0 0 20px;font-size:15px;line-height:1.6">Hola ${escapar(firstName)}:
+         ${confirmacionDePago(via, escapar(planName))} y ya tienes
          <strong>${cantidad} palabras</strong> cargadas en tu cuenta.${caduca}</p>
 
        <p style="margin:0;font-size:14px">
@@ -818,11 +819,11 @@ function manualPaymentRejected({ firstName, planName, motivo }) {
     ].join('\n'),
     html: layout(
       'No pudimos confirmar tu pago',
-      `<p style="margin:0 0 14px;font-size:15px;line-height:1.6">Hola ${firstName}: revisamos el
-         comprobante que enviaste para <strong>${planName}</strong> y no hemos podido darlo
+      `<p style="margin:0 0 14px;font-size:15px;line-height:1.6">Hola ${escapar(firstName)}: revisamos el
+         comprobante que enviaste para <strong>${escapar(planName)}</strong> y no hemos podido darlo
          por bueno.</p>
        <p style="margin:0 0 18px;padding:14px 16px;background:#fdf1f1;border-radius:10px;
-                 font-size:14px;line-height:1.6;color:#8b2c2c">${motivo}</p>
+                 font-size:14px;line-height:1.6;color:#8b2c2c">${parrafo(motivo)}</p>
        <p style="margin:0 0 22px;font-size:14px;line-height:1.6;color:#52606d">
          Por nuestra parte no se te ha cobrado nada. Si crees que es un error, respóndenos a este
          mensaje y lo miramos contigo.
@@ -868,7 +869,7 @@ function activationCode({ codes, planName, expiresAt }) {
            <td align="center" style="background:#f2f6fe;border:1px solid #d7e3fb;border-radius:12px;
                      padding:22px 16px">
              <div style="font-family:Consolas,'Courier New',monospace;font-size:23px;font-weight:700;
-                         letter-spacing:.06em;color:#1a3fa8;word-break:break-all">${codigo}</div>
+                         letter-spacing:.06em;color:#1a3fa8;word-break:break-all">${escapar(codigo)}</div>
            </td>
          </tr>
          <tr><td style="height:10px;line-height:10px">&nbsp;</td></tr>`,
@@ -901,7 +902,7 @@ function activationCode({ codes, planName, expiresAt }) {
     html: layout(
       titulo,
       `<p style="margin:0 0 20px;font-size:15px;line-height:1.6">Hola: recibimos tu pago de
-         <strong>${planName}</strong>. ${varios ? 'Estos son tus códigos' : 'Este es tu código'}
+         <strong>${escapar(planName)}</strong>. ${varios ? 'Estos son tus códigos' : 'Este es tu código'}
          de activación.</p>
 
        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
@@ -936,8 +937,8 @@ function activationCode({ codes, planName, expiresAt }) {
        </p>`,
       {
         preheader: varios
-          ? `${codes.length} códigos de activación de ${planName}.`
-          : `Tu código es ${codes[0]}. Se canjea desde tu perfil.`,
+          ? `${codes.length} códigos de activación de ${escapar(planName)}.`
+          : `Tu código es ${escapar(codes[0])}. Se canjea desde tu perfil.`,
       },
     ),
   };
@@ -946,12 +947,14 @@ function activationCode({ codes, planName, expiresAt }) {
 // ── Libro de Reclamaciones ─────────────────────────────────────────────────
 
 /**
- * Lo que escribió un visitante, listo para ir dentro del HTML.
+ * Lo que escribió otro, listo para ir dentro del HTML.
  *
- * Hasta el Libro de Reclamaciones, todo lo que entraba en un correo lo había
- * escrito alguien de la casa: un plan, un motivo de rechazo. Una hoja la rellena
- * cualquiera desde la web, y un «<a href>» en el detalle llegaría como enlace de
- * verdad al buzón del consumidor, con nuestra firma debajo.
+ * Se pensó para el Libro de Reclamaciones, pero no era el primer texto de fuera
+ * en un correo: el nombre lo escribe quien se registra, y el correo del código
+ * se manda a la dirección que ÉL pone. Un «<a href>» por nombre llegaba como
+ * enlace de verdad al buzón de otra persona, con nuestra firma debajo. Por eso
+ * pasa por aquí todo lo que no es una constante: nombres, planes, motivos, el
+ * número de operación de un Yape.
  */
 function escapar(texto) {
   return String(texto ?? '').replace(

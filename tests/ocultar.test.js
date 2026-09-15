@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { ocultarSecretosEnUrl, ocultarConsulta } = require('../src/shared/utils/ocultar');
+const { ocultarSecretosEnUrl, ocultarConsulta, ocultarParams } = require('../src/shared/utils/ocultar');
 
 /**
  * El registro de peticiones guardaba la URL del conector entera, y esa URL es
@@ -50,4 +50,20 @@ test('la consulta ya troceada también se limpia', () => {
     origen: 'panel',
   });
   assert.equal(ocultarConsulta(null), null);
+});
+
+test('el token de los parámetros de ruta tampoco llega entero al registro', () => {
+  // El registro guarda `req.params` al lado de la URL: ocultarla solo en la URL
+  // dejaba la licencia escrita en la línea de al lado.
+  const limpios = ocultarParams({ token: TOKEN, productCode: 'METODO' });
+  assert.deepEqual(limpios, { token: 'lbfn…', productCode: 'METODO' });
+  assert.equal(ocultarParams(undefined), undefined);
+});
+
+test('los enlaces firmados del formato y de R también se ocultan', () => {
+  const jwt = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1MSJ9.QZxqiaLefpRJ3Vukm-duSaig';
+  for (const ruta of ['/api/v1/proyectos/formato/', '/api/v1/r/subir/', '/api/v1/r/descarga/']) {
+    const limpia = ocultarSecretosEnUrl(`${ruta}${jwt}`);
+    assert.equal(limpia, `${ruta}eyJh…`);
+  }
 });

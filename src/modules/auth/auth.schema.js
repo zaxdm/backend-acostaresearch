@@ -54,6 +54,12 @@ const verifyEmailSchema = z.object({
     .string({ required_error: 'Escribe el código que te enviamos.' })
     .trim()
     .regex(/^[0-9]{6}$/, 'El código son 6 dígitos.'),
+  // La del registro. El código prueba que el correo es suyo; esto, que la cuenta
+  // que nace es la que él pidió y no la de quien registró su correo detrás.
+  password: z
+    .string({ required_error: 'Escribe la contraseña con la que te registraste.' })
+    .min(1, 'Escribe la contraseña con la que te registraste.')
+    .max(128),
 });
 
 const resendVerificationSchema = z.object({ email });

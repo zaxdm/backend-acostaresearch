@@ -27,7 +27,7 @@
  * descarta en memoria. Lo que no se guarda no se puede filtrar.
  */
 
-const AdmZip = require('adm-zip');
+const { abrirZip } = require('./project.zip');
 
 /** Un .docx de plantilla no llega ni a un mega; cinco es de sobra. */
 const MAXIMO_BYTES = 5 * 1024 * 1024;
@@ -66,7 +66,7 @@ function extraerEstilos(buffer) {
 
   let zip;
   try {
-    zip = new AdmZip(buffer);
+    zip = abrirZip(buffer);
   } catch {
     throw new PlantillaNoValida('No se pudo abrir el archivo. ¿Está completo?');
   }
@@ -365,7 +365,7 @@ function conFormatoDeCuerpo(estilo, cuerpo, conversion) {
 function conFormatoDelCuerpo(estilos, buffer) {
   let documento;
   try {
-    documento = new AdmZip(buffer).getEntry('word/document.xml')?.getData().toString('utf8');
+    documento = abrirZip(buffer).getEntry('word/document.xml')?.getData().toString('utf8');
   } catch {
     return estilos;
   }
@@ -409,7 +409,7 @@ function extraerPagina(buffer) {
   let zip;
   let xml;
   try {
-    zip = new AdmZip(buffer);
+    zip = abrirZip(buffer);
     xml = zip.getEntry('word/document.xml')?.getData().toString('utf8');
   } catch {
     return null;

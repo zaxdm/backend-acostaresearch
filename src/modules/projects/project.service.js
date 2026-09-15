@@ -909,6 +909,12 @@ async function revisarEvidencia(userId, productCode, { capitulo = null } = {}) {
  * con la tesis de otro dentro.
  */
 async function guardarPlantilla({ userId, productCode, buffer, nombre }) {
+  // Solo con licencia vigente de ese método, y antes de abrir el archivo. Sin
+  // esto una cuenta sin comprar nada creaba el proyecto de cualquier método, y
+  // con él ya podía subir documentos de 40 MB: el proyecto existía.
+  const conLicencia = await projectRepository.productosConLicencia(userId);
+  if (!conLicencia.includes(productCode)) return null;
+
   // Con el formato del cuerpo en «Normal»: muchas plantillas lo ponen párrafo a
   // párrafo, y nuestro Word escribe el texto en «Normal».
   const xml = plantilla.conFormatoDelCuerpo(plantilla.extraerEstilos(buffer), buffer);

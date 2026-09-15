@@ -38,6 +38,7 @@
 const crypto = require('crypto');
 const path = require('path');
 const AdmZip = require('adm-zip');
+const { abrirZip } = require('./project.zip');
 
 const { seccionPrincipal, seccionesDe } = require('./project.plantilla');
 
@@ -435,7 +436,7 @@ function extraer(buffer) {
 
   let zip;
   try {
-    zip = new AdmZip(buffer);
+    zip = abrirZip(buffer);
   } catch {
     return partes;
   }

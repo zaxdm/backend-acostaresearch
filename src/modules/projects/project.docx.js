@@ -53,6 +53,7 @@ const AdmZip = require('adm-zip');
 const { HUECO_RE } = require('./project.citas');
 const zoteroCampos = require('./project.zotero-campos');
 const partesDePlantilla = require('./project.plantilla-partes');
+const indice = require('./project.indice');
 
 /** Interlineado doble, en las unidades de OOXML (240 = sencillo). */
 const DOBLE = 480;
@@ -725,7 +726,10 @@ async function armar({
       sinNumero: lista.parrafos.length > 0 ? [lista.titulo] : [],
     });
   }
-  return zotero ? zoteroCampos.coser(buffer, zotero.codigos) : buffer;
+  if (zotero) buffer = zoteroCampos.coser(buffer, zotero.codigos);
+  // El índice, relleno: sin esto salía vacío en la vista protegida de Word y
+  // en cualquier visor (ver `project.indice`).
+  return indice.conIndice(buffer);
 }
 
 /** Un estilo entero de `styles.xml`, con su identificador. */

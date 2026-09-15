@@ -113,3 +113,16 @@ test('la bolsa de palabras se anuncia con la cantidad y su caducidad', () => {
   assert.match(mail.text, /30[.,]000 palabras/);
   assert.match(mail.text, /4 de diciembre de 2026/);
 });
+
+test('todos los correos llevan en el pie los Términos y la Política de Privacidad', () => {
+  const correos = [
+    plantillas.emailVerificationCode({ firstName: 'Ana', code: '123456', expiresInMinutes: 10 }),
+    plantillas.licenseReady({ firstName: 'Ana', planName: PLAN, connectorUrl: URL_CONECTOR, expiresAt: VENCE }),
+    plantillas.activationCode({ codes: ['ABCD-EFGH-IJKL'], planName: PLAN, expiresAt: VENCE }),
+  ];
+
+  for (const mail of correos) {
+    assert.match(mail.html, /href="[^"]*\/terminos"[^>]*>Términos y Condiciones</);
+    assert.match(mail.html, /href="[^"]*\/privacidad"[^>]*>Política de Privacidad</);
+  }
+});

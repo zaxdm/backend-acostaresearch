@@ -275,13 +275,14 @@ test('con títulos numerados, ni el Índice ni las Referencias llevan número', 
   // Las Referencias: el párrafo la anula, y en su sitio, antes del espaciado.
   const referencias = [...doc.matchAll(/<w:p\b[^>]*>(?:(?!<w:p[\s>])[\s\S])*?<\/w:p>/g)]
     .map((m) => m[0])
-    .find((p) => p.includes('>Referencias</w:t>'));
+    // El título, no su entrada en el índice.
+    .find((p) => p.includes('>Referencias</w:t>') && p.includes('w:val="Heading1"'));
   assert.match(referencias, /<w:pPr><w:pStyle w:val="Heading1"\/><w:pageBreakBefore\/><w:numPr><w:ilvl w:val="0"\/><w:numId w:val="0"\/><\/w:numPr>/);
 
   // Y el capítulo sí sigue con la numeración de su estilo: no se toca.
   const capitulo = [...doc.matchAll(/<w:p\b[^>]*>(?:(?!<w:p[\s>])[\s\S])*?<\/w:p>/g)]
     .map((m) => m[0])
-    .find((p) => p.includes('>Capítulo I</w:t>'));
+    .find((p) => p.includes('>Capítulo I</w:t>') && p.includes('w:val="Heading1"'));
   assert.doesNotMatch(capitulo, /<w:numPr>/);
 });
 

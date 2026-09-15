@@ -60,6 +60,11 @@ function layout(title, body, { preheader = '' } = {}) {
                 ${contacto}
                 <a href="${appUrl()}" style="color:#1a56db;text-decoration:none">acostaresearch.com</a>
                 <br />
+                <!-- Van en el pie común, y no correo a correo, para que ninguno se
+                     quede sin ellos: también los que se añadan mañana. -->
+                <a href="${appUrl()}/terminos" style="color:#8b95a6;text-decoration:underline">Términos y Condiciones</a> ·
+                <a href="${appUrl()}/privacidad" style="color:#8b95a6;text-decoration:underline">Política de Privacidad</a>
+                <br />
                 Benicio Gonzalo Acosta Enríquez · Trujillo, Perú
               </td>
             </tr>

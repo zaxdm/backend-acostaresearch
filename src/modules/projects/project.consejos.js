@@ -32,6 +32,7 @@ const skillService = require('../skills/skill.service');
 const propiasRepository = require('../references/propias.repository');
 const bibliotecaRepository = require('../zotero/biblioteca.repository');
 const { esApoyo, CAPITULOS_DE_RESULTADOS } = require('./project.service');
+const { perfilDe } = require('../productos/producto.perfil');
 
 const DIAS_SIN_REPETIR = 7;
 const DIA_MS = 24 * 60 * 60 * 1000;
@@ -91,8 +92,9 @@ function elegir(estado) {
 }
 
 /** Lo que tiene que decirle Claude, según el consejo. */
-function redactar(clave, { esArticulo = false, apoyos = [] } = {}) {
-  const obra = esArticulo ? 'su artículo' : 'su tesis';
+function redactar(clave, { esArticulo = false, apoyos = [], obra: suObra = null } = {}) {
+  // La obra sale del perfil del producto; `esArticulo` se queda para quien aún lo pase.
+  const obra = suObra ?? (esArticulo ? 'su artículo' : 'su tesis');
 
   switch (clave) {
     case 'zotero-coleccion':
@@ -212,7 +214,7 @@ async function consejoPara({ userId, productCode, capitulo = null, ahora = new D
   });
   if (!clave) return null;
 
-  const texto = redactar(clave, { esArticulo: productCode.startsWith('ARTICULO'), apoyos });
+  const texto = redactar(clave, { obra: perfilDe(productCode).obra, apoyos });
   if (!texto) return null;
 
   // Si no se puede anotar, se da igual: repetirlo la próxima vez es menos malo

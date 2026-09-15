@@ -19,6 +19,7 @@ const normas = require('../projects/project.normas');
 const etapas = require('../projects/project.etapas');
 const bloquesDeAnalisis = require('../projects/project.bloques');
 const rService = require('../r/r.service');
+const { perfilDe } = require('../productos/producto.perfil');
 
 /**
  * Los esquemas de las herramientas van en JSON Schema, no en Zod.
@@ -591,8 +592,8 @@ function construirServidor(licencia) {
    * es el asistente demostrando que no sabe qué está haciendo, en la primera
    * frase.
    */
-  const esArticulo = licencia.productCode?.startsWith('ARTICULO') === true;
-  const SU_OBRA = esArticulo ? 'su artículo' : 'su tesis';
+  const perfil = perfilDe(licencia.productCode);
+  const SU_OBRA = perfil.obra;
 
   /**
    * En un conector de prueba, las herramientas que trabajan también gastan cupo.
@@ -1012,7 +1013,7 @@ function construirServidor(licencia) {
       if (!siguiente) {
         return texto(
           `Tiene todos los capítulos dados por buenos. Si quiere revisar ${SU_OBRA} antes de ` +
-            `entregarla, usa "${esArticulo ? 'revisar_el_articulo' : 'revisar_la_tesis'}".`,
+            `${perfil.entregarla}, usa "${perfil.revision}".`,
         );
       }
 
@@ -1258,11 +1259,11 @@ function construirServidor(licencia) {
   );
 
   server.registerTool(
-    esArticulo ? 'revisar_el_articulo' : 'revisar_la_tesis',
+    perfil.revision,
     {
       title: 'Repaso antes de entregar',
       description:
-        `Coteja ${esArticulo ? 'el artículo' : 'la tesis'} consigo mismo y devuelve lo que no cuadra: capítulos dados por ` +
+        `Coteja ${perfil.laObra} consigo mismo y devuelve lo que no cuadra: capítulos dados por ` +
         'buenos sin texto, variables que no aparecen en ningún objetivo, objetivos sin ' +
         'conclusión, citas rotas y afirmaciones sin fuente. ' +
         'ÚSALA CUANDO EL TESISTA VAYA A ENTREGAR, y ofrécesela tú si ves que está cerrando ' +
@@ -1308,7 +1309,7 @@ function construirServidor(licencia) {
       }
 
       return texto(
-        `Repaso de ${esArticulo ? 'tu artículo' : 'tu tesis'}:\n\n${partes.join('\n')}\n\n` +
+        `Repaso de ${perfil.tuObra}:\n\n${partes.join('\n')}\n\n` +
           'LO QUE ESTE REPASO NO MIRA, y hay que mirar aparte: si los números del texto ' +
           'cuadran con los de las tablas, y si cada fuente dice de verdad lo que la frase le ' +
           'atribuye. Ninguna de las dos cosas se puede comprobar sin leer. ' +

@@ -492,6 +492,79 @@ function portada({ tema, carrera, universidad, nombre, asesor }) {
   return hojas;
 }
 
+const MESES = [
+  'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+  'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
+];
+
+/** «octubre de 2026»: el mes de la entrega, o el de hoy si no se sabe. */
+function fechaDePortada(fechaEntrega, ahora = new Date()) {
+  const partes = /^(\d{4})-(\d{2})-\d{2}$/.exec(fechaEntrega ?? '');
+  if (partes) return `${MESES[Number(partes[2]) - 1]} de ${partes[1]}`;
+  return `${MESES[ahora.getMonth()]} de ${ahora.getFullYear()}`;
+}
+
+/**
+ * La portada de un informe estudiantil.
+ *
+ * Aparte de la de tesis y no con parámetros dentro de ella: la de tesis la
+ * vigila una instantánea y tiene que salir idéntica. La de un informe de curso
+ * lleva lo que pide cualquier docente: institución, programa, curso, tema,
+ * integrantes con su código, docente, ciclo y sección, y lugar y fecha. Lo que
+ * no se sepa no sale; no se inventa.
+ */
+function portadaDeInforme({
+  institucion,
+  programa,
+  curso,
+  tema,
+  tipo,
+  docente,
+  integrantes = [],
+  nombre,
+  cicloSeccion,
+  ciudad,
+  fechaEntrega,
+}) {
+  const centrado = (texto, opciones = {}, despues = 240) =>
+    new Paragraph({
+      children: [new TextRun({ text: texto, ...opciones })],
+      alignment: AlignmentType.CENTER,
+      indent: { firstLine: 0 },
+      spacing: { after: despues },
+    });
+  const hueco = (despues) => new Paragraph({ text: '', spacing: { after: despues } });
+
+  const hojas = [];
+  if (institucion) hojas.push(centrado(institucion.toUpperCase(), { bold: true, size: 28 }));
+  if (programa) hojas.push(centrado(programa, { size: 24 }));
+  if (curso) hojas.push(centrado(`Curso: ${curso}`, { size: 24 }));
+  hojas.push(hueco(720));
+  hojas.push(centrado(tema ?? 'Informe', { bold: true, size: 32 }));
+  if (tipo) hojas.push(centrado(tipo, { italics: true, size: 24 }));
+  hojas.push(hueco(720));
+
+  // Sin integrantes guardados, firma quien tiene la cuenta: es lo único seguro.
+  const firmantes =
+    Array.isArray(integrantes) && integrantes.length > 0
+      ? integrantes.map((i) => (i.codigo ? `${i.nombre} (${i.codigo})` : i.nombre))
+      : [nombre].filter(Boolean);
+  if (firmantes.length > 0) {
+    hojas.push(centrado(firmantes.length > 1 ? 'Integrantes' : 'Autor', { bold: true, size: 24 }, 120));
+    firmantes.forEach((firmante, i) =>
+      hojas.push(centrado(firmante, { size: 24 }, i === firmantes.length - 1 ? 240 : 60)),
+    );
+  }
+  if (docente) hojas.push(centrado(`Docente: ${docente}`, { size: 24 }));
+  if (cicloSeccion) hojas.push(centrado(cicloSeccion, { size: 24 }));
+
+  hojas.push(hueco(480));
+  const lugar = [ciudad, fechaDePortada(fechaEntrega)].filter(Boolean).join(', ');
+  hojas.push(centrado(lugar.charAt(0).toUpperCase() + lugar.slice(1), { size: 24 }));
+
+  return hojas;
+}
+
 /**
  * Los párrafos de la lista de referencias.
  *
@@ -589,6 +662,8 @@ async function armar({
   partes = null,
   citas = null,
   zotero = null,
+  // Solo el informe estudiantil: los datos de su portada. Nulo = la de siempre.
+  portadaInforme = null,
 }) {
   const notas = {};
   const plantilla = Boolean(estilos);
@@ -608,7 +683,9 @@ async function armar({
     // hueco y se pone al final, ya empaquetado (ver `project.plantilla-partes`).
     ...(partes?.portada
       ? [new Paragraph({ text: partesDePlantilla.MARCA_PORTADA })]
-      : portada({ tema, carrera, universidad, nombre, asesor })),
+      : portadaInforme
+        ? portadaDeInforme(portadaInforme)
+        : portada({ tema, carrera, universidad, nombre, asesor })),
     new Paragraph({ text: '', pageBreakBefore: true }),
     // «TOC Heading» y no Título 1: se ve como un Título 1 pero no entra en el
     // índice. Con Título 1, el índice se listaba a sí mismo como primera
@@ -822,8 +899,8 @@ function tituloDelCapitulo(titulo, { sinCapitulo = false } = {}) {
  * archivos llamados «tesis.docx» en la carpeta de descargas nadie sabe cuál es
  * el bueno.
  */
-function nombreDeArchivo(tema) {
-  const base = (tema ?? 'tesis')
+function nombreDeArchivo(tema, respaldo = 'tesis') {
+  const base = (tema ?? respaldo)
     .normalize('NFD')
     // El rango de las tildes, escrito con códigos y no con los signos: escritos
     // tal cual son invisibles en el editor y cualquiera los borra sin verlos.
@@ -834,7 +911,7 @@ function nombreDeArchivo(tema) {
     .toLowerCase();
 
   const fecha = new Date().toISOString().slice(0, 10);
-  return `${base || 'tesis'}-${fecha}.docx`;
+  return `${base || respaldo}-${fecha}.docx`;
 }
 
 module.exports = {
@@ -843,6 +920,7 @@ module.exports = {
   comoParrafos,
   ajustarEstilos,
   tituloDelCapitulo,
+  portadaDeInforme,
   partirTabla,
   tablaApa,
   // Lo usa también el informe de R (`r.informe`): misma lista, misma maqueta.

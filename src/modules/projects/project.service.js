@@ -36,7 +36,7 @@ const documentoService = require('./documento.service');
 const skillService = require('../skills/skill.service');
 const referenceService = require('../references/reference.service');
 const { guardarAvanceSchema, guardarCapituloSchema } = require('./project.schema');
-const { fusionarFicha, lineasDeFicha } = require('./project.ficha-informe');
+const { fusionarFicha, lineasDeFicha, NOMBRE_DE_TIPO } = require('./project.ficha-informe');
 const { perfilDe } = require('../productos/producto.perfil');
 
 /** Cómo se ve cada estado en el texto que recibe el asistente. */
@@ -241,6 +241,28 @@ function datosPorEtapa(proyecto) {
  * Devuelve null con el mismo criterio que `contexto`: existir no es tener algo
  * que contar.
  */
+/**
+ * Las secciones aparte del producto, en una línea del panorama, o null.
+ *
+ * Son las que se escriben al final y van delante en el Word —el resumen y la
+ * introducción de un informe—. No están en el catálogo, así que sin esta línea
+ * el asistente no sabría su clave. En tesis y artículo no hay, y no sale nada.
+ */
+function lineaDeSeccionesAparte(productCode, porCapitulo) {
+  const apartes = perfilDe(productCode).seccionesAparte;
+  if (apartes.length === 0) return null;
+
+  const cada = apartes.map((s) => {
+    const palabras = porCapitulo.get(s.clave)?.palabras ?? 0;
+    const escrito = palabras > 0 ? ` · ${conMiles(palabras)} palabras` : ' · sin texto';
+    return `${s.titulo} (${s.clave})${escrito}`;
+  });
+  return (
+    `Secciones aparte, que el Word pone delante de todo: ${cada.join('; ')}. ` +
+    'Se escriben al final y se guardan con "guardar_capitulo" y esa clave.'
+  );
+}
+
 async function resumen(userId, productCode) {
   const [proyecto, catalogo] = await Promise.all([
     projectRepository.buscar(userId, productCode),
@@ -334,6 +356,7 @@ async function resumen(userId, productCode) {
   return [
     cabecera.join('\n'),
     lineas.join('\n'),
+    lineaDeSeccionesAparte(productCode, porCapitulo),
     recuento,
     aviso,
     loSuyo.join('\n'),
@@ -583,6 +606,25 @@ async function guardarCapitulo({ userId, productCode, ...entrada }) {
  * null si no hay ni uno: un documento con la portada y nada más parece un fallo
  * del servidor y no lo es.
  */
+/** Lo que va en la portada de un informe, sacado del proyecto y de su ficha. */
+function datosDePortadaInforme(proyecto, nombre) {
+  const ficha = proyecto.fichaInforme ?? {};
+  const tipo = NOMBRE_DE_TIPO[ficha.tipo];
+  return {
+    institucion: proyecto.universidad,
+    programa: proyecto.carrera,
+    tema: proyecto.tema,
+    curso: ficha.curso,
+    tipo: tipo ? tipo.charAt(0).toUpperCase() + tipo.slice(1) : null,
+    docente: ficha.docente,
+    integrantes: ficha.integrantes ?? [],
+    nombre,
+    cicloSeccion: ficha.cicloSeccion,
+    ciudad: ficha.ciudad,
+    fechaEntrega: ficha.fechaEntrega,
+  };
+}
+
 async function armarWord(userId, productCode) {
   const [proyecto, catalogo, nombre] = await Promise.all([
     projectRepository.buscar(userId, productCode),
@@ -596,8 +638,16 @@ async function armarWord(userId, productCode) {
     proyecto.stages.filter((e) => (e.palabras ?? 0) > 0).map((e) => e.skillCode),
   );
 
+  // Delante, las secciones aparte del producto: el resumen y la introducción de un
+  // informe se escriben al final pero van primero. En tesis y artículo no hay.
+  const perfil = perfilDe(productCode);
+  const enOrden = [
+    ...perfil.seccionesAparte.map((s) => ({ code: s.clave, displayName: s.titulo })),
+    ...catalogo,
+  ];
+
   const capitulos = [];
-  for (const skill of catalogo) {
+  for (const skill of enOrden) {
     if (!conTexto.has(skill.code)) continue;
     const texto = await almacen.leer(proyecto.id, skill.code);
     if (texto && texto.trim() !== '') {
@@ -664,12 +714,13 @@ async function armarWord(userId, productCode) {
     estilos,
     pagina,
     partes,
+    ...(perfil.tipo === 'informe' ? { portadaInforme: datosDePortadaInforme(proyecto, nombre) } : {}),
     ...armado.documento,
   });
 
   return {
     buffer,
-    nombreArchivo: documento.nombreDeArchivo(proyecto.tema),
+    nombreArchivo: documento.nombreDeArchivo(proyecto.tema, perfil.tipo === 'informe' ? 'informe' : 'tesis'),
     capitulos: capitulos.length,
     referencias: armado.usadas,
     citasPerdidas: armado.perdidas,
@@ -1757,13 +1808,25 @@ function enPartes(texto, maximo = POR_PARTE) {
  *
  * Null si el capítulo no es de esta licencia. `vacio` si todavía no tiene texto.
  */
+/**
+ * La sección aparte de este producto con esa clave, con forma de capítulo, o null.
+ *
+ * El resumen y la introducción de un informe no son skills del catálogo, pero se
+ * guardan y se leen como un capítulo más. En tesis y artículo siempre es null.
+ */
+function seccionAparte(productCode, clave) {
+  const seccion = perfilDe(productCode).seccionesAparte.find((s) => s.clave === clave);
+  return seccion ? { code: seccion.clave, displayName: seccion.titulo, productCodes: [] } : null;
+}
+
 async function textoDeCapitulo(userId, productCode, skillCode, { parte = 1 } = {}) {
+  const aparte = seccionAparte(productCode, skillCode);
   const [proyecto, skill] = await Promise.all([
     projectRepository.buscar(userId, productCode),
-    skillService.findByCode(skillCode),
+    aparte ?? skillService.findByCode(skillCode),
   ]);
 
-  if (!skill || !skillService.perteneceAlGrupo(skill, productCode)) return null;
+  if (!skill || (!aparte && !skillService.perteneceAlGrupo(skill, productCode))) return null;
 
   const texto = proyecto ? await almacen.leer(proyecto.id, skillCode) : null;
   if (!texto || texto.trim() === '') return { skill, vacio: true };
@@ -1782,6 +1845,7 @@ async function textoDeCapitulo(userId, productCode, skillCode, { parte = 1 } = {
 }
 
 module.exports = {
+  seccionAparte,
   formatoDelProyecto,
   lineaDeFormato,
   textoDeCapitulo,

@@ -866,8 +866,11 @@ function construirServidor(licencia) {
 
       // Mismo filtro que en guardar_capitulo: leer el acuerdo de un capítulo
       // que no es de esta licencia es leer el proyecto de otro método.
-      const skill = await skillService.findByCode(capitulo);
-      if (!skill || !skillService.perteneceAlGrupo(skill, licencia.productCode)) {
+      // Las secciones aparte del informe (resumen, introducción) no están en el
+      // catálogo, pero se leen como un capítulo. En tesis y artículo no hay.
+      const aparte = projectService.seccionAparte(licencia.productCode, capitulo);
+      const skill = aparte ?? (await skillService.findByCode(capitulo));
+      if (!skill || (!aparte && !skillService.perteneceAlGrupo(skill, licencia.productCode))) {
         return texto(
           `No existe ningún capítulo con la clave "${capitulo}". ` +
             'Usa mi_proyecto para ver las claves válidas.',
@@ -907,6 +910,13 @@ function construirServidor(licencia) {
             'Está tal como se guardó: las citas van con su clave [AR…] y las tablas en su bloque. ' +
             'Úsalo para leer lo ya escrito. NO lo vuelvas a guardar con cambios que el tesista ' +
             'no haya pedido.',
+        );
+      }
+
+      if (aparte) {
+        return texto(
+          `«${skill.displayName}» es una sección aparte: no tiene campos que fijar. ` +
+            'Pide "texto": true para leer lo que tiene guardado.',
         );
       }
 
@@ -1022,8 +1032,9 @@ function construirServidor(licencia) {
     async (entrada) => {
       await licenseService.recordUsage({ licenseId: licencia.id, tool: 'guardar_capitulo' });
 
-      const skill = await skillService.findByCode(entrada.capitulo);
-      if (!skill || !skillService.perteneceAlGrupo(skill, licencia.productCode)) {
+      const aparte = projectService.seccionAparte(licencia.productCode, entrada.capitulo);
+      const skill = aparte ?? (await skillService.findByCode(entrada.capitulo));
+      if (!skill || (!aparte && !skillService.perteneceAlGrupo(skill, licencia.productCode))) {
         return texto(
           `No existe ningún capítulo con la clave "${entrada.capitulo}". ` +
             'Usa listar_capitulos para ver las claves válidas. No se ha guardado nada.',

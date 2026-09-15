@@ -4,6 +4,7 @@ const env = require('../../config/env');
 const logger = require('../../config/logger');
 const { ERROR_CODES } = require('../../config/constants');
 const billingRepository = require('./billing.repository');
+const { enPrueba } = require('./plan.visibilidad');
 const userRepository = require('../users/user.repository');
 const { AppError, NotFoundError } = require('../../shared/errors/AppError');
 
@@ -16,10 +17,14 @@ const billingService = {
     return billingRepository.listPlans();
   },
 
-  /** Plan activo por su código. Lanza si no existe: lo usan las compras. */
+  /**
+   * Plan activo por su código. Lanza si no existe: lo usan las compras.
+   *
+   * Uno en prueba cuenta como inexistente: no está a la venta aunque esté activo.
+   */
   async findPlan(code) {
     const plan = await billingRepository.findPlanByCode(code);
-    if (!plan || !plan.active) {
+    if (!plan || !plan.active || enPrueba(plan)) {
       throw new NotFoundError(`No existe un plan activo con el código ${code}.`);
     }
     return plan;
@@ -79,7 +84,7 @@ const billingService = {
     }
 
     const plan = await billingRepository.findPlanByCode(planCode);
-    if (!plan || !plan.active) {
+    if (!plan || !plan.active || enPrueba(plan)) {
       throw new NotFoundError(`No existe un plan activo con el código ${planCode}.`);
     }
 

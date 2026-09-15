@@ -9,6 +9,7 @@ const { sendMail } = require('../../lib/mailer');
 const plantillas = require('../../lib/emailTemplates');
 const { avisarAlAdmin } = require('../../lib/notify');
 const billingRepository = require('../billing/billing.repository');
+const { enPrueba } = require('../billing/plan.visibilidad');
 const discountService = require('../billing/discount.service');
 const paymentRepository = require('./payment.repository');
 const proofStorage = require('./proof.storage');
@@ -116,7 +117,8 @@ const manualService = {
    */
   async registrar({ userId, planCode, discountCode, operationCode, buffer }) {
     const plan = await billingRepository.findPlanByCode(planCode);
-    if (!plan || !plan.active) {
+    // Igual que en la pasarela: uno en prueba no se vende aunque esté activo.
+    if (!plan || !plan.active || enPrueba(plan)) {
       throw new NotFoundError(`No existe un plan activo con el código ${planCode}.`);
     }
 

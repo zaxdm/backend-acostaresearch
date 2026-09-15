@@ -109,7 +109,8 @@ const licenseController = {
     // y no en un botón porque así también lo alcanza el día que se añada una
     // ruta nueva al catálogo, sin que él tenga que acordarse de nada.
     if (req.user.role === ROLES.ADMIN) {
-      await licenseService.ensureForAdmin(req.user.id);
+      // Con el correo: un producto en prueba solo se emite a quien está en su lista.
+      await licenseService.ensureForAdmin(req.user.id, req.user.email);
     }
 
     // El progreso viaja con las licencias y no en su propia ruta: el panel las

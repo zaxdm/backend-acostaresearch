@@ -100,6 +100,39 @@ const skillService = {
   },
 
   /**
+   * El catálogo que ve cualquiera, sin sesión: la portada y las páginas de venta.
+   *
+   * Es `listCatalog` sin lo que está en prueba. Un producto en prueba
+   * (`Plan.soloPara`) no puede asomar por aquí: `?grupo=` enseñaría el nombre y
+   * el resumen de cada capítulo a quien lo adivine, y sin grupo saldrían
+   * mezclados con los del método. El conector sigue usando `listCatalog`, que es
+   * lo que deja trabajar a quien sí está en la lista.
+   *
+   * Un producto está en prueba si todos sus planes lo están: uno normal del
+   * mismo producto basta para que se venda.
+   */
+  async listCatalogPublico(productCode = null) {
+    const planes = await prisma.plan.findMany({
+      where: { kind: 'LICENSE', productCode: { not: null } },
+      select: { productCode: true, soloPara: true },
+    });
+    const normales = new Set(planes.filter((p) => !p.soloPara).map((p) => p.productCode));
+    const ocultos = new Set(
+      planes.filter((p) => p.soloPara && !normales.has(p.productCode)).map((p) => p.productCode),
+    );
+
+    if (productCode && ocultos.has(productCode)) return [];
+
+    const skills = await skillService.listCatalog(productCode);
+    if (ocultos.size === 0) return skills;
+    // Fuera solo lo que es EXCLUSIVAMENTE de productos en prueba: un capítulo
+    // compartido con el método, como el humanizador, se sigue viendo.
+    return skills.filter(
+      (s) => s.productCodes.length === 0 || s.productCodes.some((codigo) => !ocultos.has(codigo)),
+    );
+  },
+
+  /**
    * ¿Puede esta licencia pedir este capítulo?
    *
    * Se comprueba en la entrega y no solo en el listado: que algo no salga en

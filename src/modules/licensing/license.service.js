@@ -12,6 +12,7 @@ const { analizar, NIVELES } = require('./license.detector');
 const limites = require('./license.limits');
 const watch = require('./license.watch');
 const prisma = require('../../lib/prisma');
+const { visiblePara } = require('../billing/plan.visibilidad');
 const proofStorage = require('../payments/proof.storage');
 const { enlaceTerminado } = require('../trials/trial.plazo');
 const {
@@ -321,14 +322,19 @@ const emisionesDeAdmin = new Map();
  */
 const RETIRADO_DEL_CATALOGO = 'Producto retirado del catálogo.';
 
-async function emitirParaAdmin(userId) {
+async function emitirParaAdmin(userId, email) {
   const planes = await prisma.plan.findMany({
     where: { kind: 'LICENSE', active: true, productCode: { not: null } },
-    select: { productCode: true },
-    distinct: ['productCode'],
+    select: { productCode: true, soloPara: true },
   });
 
-  const productos = planes.map((plan) => plan.productCode);
+  // Un producto en prueba solo existe para los administradores de su lista. Para
+  // los demás ni se emite ni se revoca nada: nunca lo tuvieron. Si alguien sale
+  // de la lista, su licencia se apaga como la de un producto retirado, y vuelve
+  // si lo vuelven a poner. Ver `billing/plan.visibilidad`.
+  const productos = [
+    ...new Set(planes.filter((plan) => visiblePara(plan, email)).map((plan) => plan.productCode)),
+  ];
 
   // Sin catálogo NO se sale antes: si se retiró el último producto, lo que hay
   // que hacer es precisamente apagar las licencias que quedaron sueltas.
@@ -913,7 +919,7 @@ const licenseService = {
    * activa: si se revocó una a mano, volver a emitirla en la siguiente visita
    * desharía esa decisión en silencio.
    */
-  async ensureForAdmin(userId) {
+  async ensureForAdmin(userId, email = null) {
     // Dos pestañas abiertas a la vez piden el panel a la vez, y no hay índice
     // único que impida dos licencias del mismo producto. El cerrojo es de este
     // proceso, que es donde ocurre la carrera: son dos peticiones del mismo
@@ -921,7 +927,9 @@ const licenseService = {
     const enCurso = emisionesDeAdmin.get(userId);
     if (enCurso) return enCurso;
 
-    const tarea = emitirParaAdmin(userId).finally(() => emisionesDeAdmin.delete(userId));
+    // El correo decide los productos en prueba (`Plan.soloPara`). Sin él, solo
+    // los normales: nunca se le emite a nadie algo que no se sabe si puede ver.
+    const tarea = emitirParaAdmin(userId, email).finally(() => emisionesDeAdmin.delete(userId));
     emisionesDeAdmin.set(userId, tarea);
     return tarea;
   },

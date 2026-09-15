@@ -3,6 +3,7 @@
 const logger = require('../../config/logger');
 const { ERROR_CODES } = require('../../config/constants');
 const billingRepository = require('../billing/billing.repository');
+const { enPrueba } = require('../billing/plan.visibilidad');
 const billingService = require('../billing/billing.service');
 const discountService = require('../billing/discount.service');
 const licenseRepository = require('../licensing/license.repository');
@@ -66,7 +67,9 @@ const paymentService = {
     const provider = obtenerPasarela(providerCode);
 
     const plan = await billingRepository.findPlanByCode(planCode);
-    if (!plan || !plan.active) {
+    // Uno en prueba no está a la venta aunque esté activo: no sale en la web,
+    // y escribir su código a mano no lo convierte en comprable.
+    if (!plan || !plan.active || enPrueba(plan)) {
       throw new NotFoundError(`No existe un plan activo con el código ${planCode}.`);
     }
 

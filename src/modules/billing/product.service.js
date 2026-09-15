@@ -3,6 +3,7 @@
 const prisma = require('../../lib/prisma');
 const logger = require('../../config/logger');
 const { NotFoundError, ConflictError } = require('../../shared/errors/AppError');
+const { normalizar: correosEnPrueba } = require('./plan.visibilidad');
 
 /**
  * Grupos de skills.
@@ -40,6 +41,7 @@ const grupoSelect = {
   mcpCallsTotal: true,
   mcpCostCentsTotal: true,
   mcpDelivery: true,
+  soloPara: true,
 };
 
 /**
@@ -120,6 +122,8 @@ const productService = {
         currency: 'PEN',
         durationDays: datos.durationDays,
         active: datos.active ?? true,
+        // Con correos, el grupo está en prueba: activo solo para ellos.
+        soloPara: correosEnPrueba(datos.soloPara),
         sortOrder: (ultimo?.sortOrder ?? 0) + 1,
         // Un plan de licencia no reparte palabras: eso es de las bolsas del
         // humanizador. La columna es obligatoria, así que va a cero.
@@ -177,6 +181,8 @@ const productService = {
         ...(cambios.durationDays === undefined ? {} : { durationDays: cambios.durationDays }),
         ...(cambios.active === undefined ? {} : { active: cambios.active }),
         ...(cambios.mcpCallsPerDay === undefined ? {} : { mcpCallsPerDay: cambios.mcpCallsPerDay }),
+        // Vaciar la lista es sacarlo de la prueba y ponerlo a la venta.
+        ...(cambios.soloPara === undefined ? {} : { soloPara: correosEnPrueba(cambios.soloPara) }),
       },
       select: grupoSelect,
     });

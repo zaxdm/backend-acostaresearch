@@ -9,7 +9,8 @@ const skillController = {
   catalog: asyncHandler(async (req, res) => {
     // Sin grupo, el catálogo entero: es lo que quiere el panel. Con grupo, solo
     // los capítulos de ese producto, que es lo que quiere cada página de venta.
-    const skills = await skillService.listCatalog(req.query.grupo ?? null);
+    // Sin lo que está en prueba: esto lo ve cualquiera sin sesión.
+    const skills = await skillService.listCatalogPublico(req.query.grupo ?? null);
     return ok(res, { skills });
   }),
 

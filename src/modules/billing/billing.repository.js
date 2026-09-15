@@ -40,9 +40,15 @@ const billingRepository = {
   planSelect,
   packSelect,
 
+  /**
+   * La lista pública: la página de precios y el asistente.
+   *
+   * Sin los planes en prueba (`soloPara`), que están activos pero no se venden:
+   * ver `plan.visibilidad`.
+   */
   listPlans({ incluirInactivos = false } = {}) {
     return prisma.plan.findMany({
-      where: incluirInactivos ? {} : { active: true },
+      where: incluirInactivos ? {} : { active: true, soloPara: null },
       select: planSelect,
       orderBy: { sortOrder: 'asc' },
     });

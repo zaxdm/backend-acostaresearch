@@ -337,6 +337,12 @@ model Plan {
   /// supere al vigente no es una rebaja y no se guarda.
   listPriceCents Int?
 
+  /// Plan «en prueba»: correos separados por coma que son los ÚNICOS que lo
+  /// ven. Nulo = plan normal. Con correos no sale en la venta ni en el
+  /// asistente, no se puede comprar y solo se emite a los administradores de
+  /// la lista. Ver `billing/plan.visibilidad.js`.
+  soloPara String? @db.VarChar(1000)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

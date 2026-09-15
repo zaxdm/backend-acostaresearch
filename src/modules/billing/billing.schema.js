@@ -1,6 +1,7 @@
 'use strict';
 
 const { z } = require('zod');
+const { correosDe } = require('./plan.visibilidad');
 
 const grantPackSchema = z.object({
   email: z
@@ -52,6 +53,23 @@ const validateDiscountSchema = z.object({
 const CODIGO_GRUPO = /^[A-Z0-9]+(?:_[A-Z0-9]+)*$/;
 
 /**
+ * Los correos de un grupo en prueba. Vacío o nulo = a la venta como siempre.
+ *
+ * Se valida cada correo: uno mal escrito dejaría el producto escondido también
+ * para la persona que lo tenía que probar, sin ningún aviso.
+ */
+const soloParaSchema = z
+  .string()
+  .trim()
+  .max(1000)
+  .nullable()
+  .optional()
+  .refine(
+    (texto) => !texto || correosDe(texto).every((correo) => z.string().email().safeParse(correo).success),
+    'Pon correos válidos, separados por coma.',
+  );
+
+/**
  * Alta de un grupo.
  *
  * El código se normaliza a MAYÚSCULAS_CON_GUION_BAJO porque va a viajar en
@@ -80,10 +98,12 @@ const createProductSchema = z.object({
   mcpCallsPerDay: z.coerce.number().int().min(0).max(100000).optional(),
   mcpDelivery: z.enum(['INSTRUCTIONS', 'EXECUTED']).optional(),
   active: z.coerce.boolean().optional(),
+  soloPara: soloParaSchema,
 });
 
 const updateProductSchema = z
   .object({
+    soloPara: soloParaSchema,
     name: z.string().trim().min(3).max(80).optional(),
     description: z.string().trim().max(255).nullable().optional(),
     priceCents: z.coerce.number().int().min(0).max(1000000).optional(),

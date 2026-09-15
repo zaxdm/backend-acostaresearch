@@ -346,7 +346,7 @@ const ESQUEMA_GUARDAR_AVANCE_INFORME = fromJsonSchema({
   },
 });
 
-const ESQUEMA_GUARDAR_CAPITULO = fromJsonSchema({
+const GUARDAR_CAPITULO = {
   type: 'object',
   properties: {
     capitulo: {
@@ -383,6 +383,32 @@ const ESQUEMA_GUARDAR_CAPITULO = fromJsonSchema({
   },
   required: ['capitulo', 'texto'],
   additionalProperties: false,
+};
+
+const ESQUEMA_GUARDAR_CAPITULO = fromJsonSchema(GUARDAR_CAPITULO);
+
+/**
+ * El mismo esquema para el informe estudiantil: admite las claves de sus
+ * secciones aparte y habla del informe y del estudiante, no de la tesis.
+ */
+const ESQUEMA_GUARDAR_CAPITULO_INFORME = fromJsonSchema({
+  ...GUARDAR_CAPITULO,
+  properties: {
+    ...GUARDAR_CAPITULO.properties,
+    capitulo: {
+      type: 'string',
+      description:
+        'Clave del capítulo, tal como aparece en listar_capitulos, o la de una sección aparte ' +
+        'del informe: «informe-resumen» o «informe-introduccion». Esas dos se escriben al final ' +
+        'y el Word las pone delante.',
+    },
+    texto: {
+      ...GUARDAR_CAPITULO.properties.texto,
+      description: GUARDAR_CAPITULO.properties.texto.description
+        .replaceAll('a la tesis', 'al informe')
+        .replaceAll('el tesista', 'el estudiante'),
+    },
+  },
 });
 
 const ESQUEMA_GUARDAR_ANALISIS = fromJsonSchema({
@@ -748,7 +774,7 @@ function construirServidor(licencia) {
           : '';
 
       return texto(
-        `Método de tesis — Acosta | IA & Research\n\n${lineas.join('\n\n')}${aviso}\n\n` +
+        `${perfil.tipo === 'informe' ? 'Ruta del informe estudiantil' : 'Método de tesis'} — Acosta | IA & Research\n\n${lineas.join('\n\n')}${aviso}\n\n` +
           'Para trabajar un capítulo usa la herramienta "redactar" con la clave correspondiente.',
       );
     },
@@ -1027,7 +1053,7 @@ function construirServidor(licencia) {
         'GUÁRDALO EN CUANTO el tesista dé por bueno lo redactado, sin que te lo pida: no ' +
         'sabe que esto existe, y lo que no se guarde aquí lo tendrá que copiar y pegar él. ' +
         'Manda el texto limpio, sin comentarios tuyos.',
-      inputSchema: ESQUEMA_GUARDAR_CAPITULO,
+      inputSchema: perfil.tipo === 'informe' ? ESQUEMA_GUARDAR_CAPITULO_INFORME : ESQUEMA_GUARDAR_CAPITULO,
     },
     async (entrada) => {
       await licenseService.recordUsage({ licenseId: licencia.id, tool: 'guardar_capitulo' });
@@ -1343,11 +1369,16 @@ function construirServidor(licencia) {
     {
       title: 'Repaso antes de entregar',
       description:
-        `Coteja ${perfil.laObra} consigo mismo y devuelve lo que no cuadra: capítulos dados por ` +
-        'buenos sin texto, variables que no aparecen en ningún objetivo, objetivos sin ' +
-        'conclusión, citas rotas y afirmaciones sin fuente. ' +
-        'ÚSALA CUANDO EL TESISTA VAYA A ENTREGAR, y ofrécesela tú si ves que está cerrando ' +
-        'capítulos: nadie sabe que esto existe y es lo último que se revisa a mano.',
+        perfil.tipo === 'informe'
+          ? 'Coteja el informe consigo mismo y devuelve lo que no cuadra: secciones dadas por ' +
+            'buenas sin texto, citas rotas y afirmaciones sin fuente. ÚSALA CUANDO EL ESTUDIANTE ' +
+            'VAYA A ENTREGAR, y ofrécesela tú al cerrar. Después repasa TÚ, criterio por criterio, ' +
+            'la rúbrica que sale en su ficha de "mi_proyecto": esta herramienta no la conoce.'
+          : `Coteja ${perfil.laObra} consigo mismo y devuelve lo que no cuadra: capítulos dados por ` +
+            'buenos sin texto, variables que no aparecen en ningún objetivo, objetivos sin ' +
+            'conclusión, citas rotas y afirmaciones sin fuente. ' +
+            'ÚSALA CUANDO EL TESISTA VAYA A ENTREGAR, y ofrécesela tú si ves que está cerrando ' +
+            'capítulos: nadie sabe que esto existe y es lo último que se revisa a mano.',
       inputSchema: SIN_ARGUMENTOS,
     },
     async () => {

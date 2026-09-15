@@ -804,6 +804,19 @@ function armarEnApa(capitulos, porClave) {
  * imprime nada, así que el tesista descubriría el problema al final, mirando una
  * bibliografía en blanco sin saber por qué.
  */
+/**
+ * El catálogo con las secciones aparte del producto delante.
+ *
+ * Lo que recorre lo escrito —el .bib, la evidencia, el repaso— tiene que ver
+ * también el resumen y la introducción de un informe: ahí también hay citas.
+ * En tesis y artículo devuelve el catálogo tal cual.
+ */
+function conSeccionesAparte(productCode, catalogo) {
+  const apartes = perfilDe(productCode).seccionesAparte;
+  if (apartes.length === 0) return catalogo;
+  return [...apartes.map((s) => ({ code: s.clave, displayName: s.titulo })), ...catalogo];
+}
+
 async function armarBibtex(userId, productCode) {
   const [proyecto, catalogo] = await Promise.all([
     projectRepository.buscar(userId, productCode),
@@ -817,7 +830,7 @@ async function armarBibtex(userId, productCode) {
   );
 
   const textos = [];
-  for (const skill of catalogo) {
+  for (const skill of conSeccionesAparte(productCode, catalogo)) {
     if (!conTexto.has(skill.code)) continue;
     const texto = await almacen.leer(proyecto.id, skill.code);
     if (texto && texto.trim() !== '') textos.push(texto);
@@ -868,7 +881,7 @@ async function revisarEvidencia(userId, productCode, { capitulo = null } = {}) {
   );
 
   const capitulos = [];
-  for (const skill of catalogo) {
+  for (const skill of conSeccionesAparte(productCode, catalogo)) {
     if (!conTexto.has(skill.code)) continue;
     if (capitulo && skill.code !== capitulo) continue;
 
@@ -1494,7 +1507,7 @@ async function auditar(userId, productCode) {
   );
 
   const capitulos = [];
-  for (const skill of catalogo) {
+  for (const skill of conSeccionesAparte(productCode, catalogo)) {
     if (!conTexto.has(skill.code)) continue;
     const texto = await almacen.leer(proyecto.id, skill.code);
     if (texto && texto.trim() !== '') {

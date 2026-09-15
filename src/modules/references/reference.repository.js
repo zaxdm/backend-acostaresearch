@@ -9,6 +9,10 @@ const ETIQUETAS_DE_PRODUCTO = {
   tesis: 'METODO_9_SKILLS',
   articulo: 'ARTICULO_SCIENTIFICOS',
   articulos: 'ARTICULO_SCIENTIFICOS',
+  // Una fuente solo con esta etiqueta desaparece de tesis y artículo; si sirve a
+  // todos, que lleve también las suyas o ninguna.
+  informe: 'INFORME_ESTUDIANTIL',
+  informes: 'INFORME_ESTUDIANTIL',
 };
 
 /**

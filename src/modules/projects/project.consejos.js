@@ -92,7 +92,7 @@ function elegir(estado) {
 }
 
 /** Lo que tiene que decirle Claude, según el consejo. */
-function redactar(clave, { esArticulo = false, apoyos = [], obra: suObra = null } = {}) {
+function redactar(clave, { esArticulo = false, apoyos = [], obra: suObra = null, tipo = null } = {}) {
   // La obra sale del perfil del producto; `esArticulo` se queda para quien aún lo pase.
   const obra = suObra ?? (esArticulo ? 'su artículo' : 'su tesis');
 
@@ -126,14 +126,20 @@ function redactar(clave, { esArticulo = false, apoyos = [], obra: suObra = null 
       return (
         'Ya tiene texto escrito y no ha elegido norma de citas, así que el Word sale en APA 7. ' +
         // Ya no hay selector en el panel: la norma se pregunta en la conversación.
-        'PREGÚNTALE qué norma le piden su universidad o su asesor y guárdala con "guardar_avance" ' +
+        (tipo === 'informe'
+          ? 'PREGÚNTALE qué norma le pide su docente y guárdala con "guardar_avance" '
+          : 'PREGÚNTALE qué norma le piden su universidad o su asesor y guárdala con "guardar_avance" ') +
         '(estiloCitas): no hay que reescribir nada.'
       );
     case 'formato':
       return (
-        `Ya tiene texto escrito y no ha subido el formato de su universidad, así que ${obra} sale ` +
-        'con el formato por defecto. PREGÚNTALE si su facultad le dio un formato o plantilla y, si ' +
-        'lo tiene, dale el enlace para subirlo con "formato_de_la_universidad".'
+        tipo === 'informe'
+          ? `Ya tiene texto escrito y no ha subido un formato, así que ${obra} sale con el formato ` +
+            'por defecto. PREGÚNTALE si su docente o su instituto le dio una plantilla y, si la tiene, ' +
+            'dale el enlace para subirla con "formato_de_la_universidad".'
+          : `Ya tiene texto escrito y no ha subido el formato de su universidad, así que ${obra} sale ` +
+            'con el formato por defecto. PREGÚNTALE si su facultad le dio un formato o plantilla y, si ' +
+            'lo tiene, dale el enlace para subirlo con "formato_de_la_universidad".'
       );
     default:
       return null;
@@ -214,7 +220,8 @@ async function consejoPara({ userId, productCode, capitulo = null, ahora = new D
   });
   if (!clave) return null;
 
-  const texto = redactar(clave, { obra: perfilDe(productCode).obra, apoyos });
+  const perfil = perfilDe(productCode);
+  const texto = redactar(clave, { obra: perfil.obra, tipo: perfil.tipo, apoyos });
   if (!texto) return null;
 
   // Si no se puede anotar, se da igual: repetirlo la próxima vez es menos malo

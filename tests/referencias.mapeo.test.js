@@ -128,6 +128,7 @@ test('la etiqueta de producto decide quién ve la fuente, y sin etiqueta la ve t
     'METODO_9_SKILLS',
   ]);
   // Es el caso normal, no el raro: la metodología sirve a las dos rutas.
+  assert.deepEqual(gruposDeEtiquetas(['Informe']), ['INFORME_ESTUDIANTIL']);
   assert.deepEqual(gruposDeEtiquetas(['metodologia', 'apa']), []);
   assert.deepEqual(gruposDeEtiquetas([]), []);
 });

@@ -3,7 +3,7 @@
 const { Router } = require('express');
 const authenticate = require('../../middlewares/authenticate');
 const validate = require('../../middlewares/validate');
-const { zoteroSyncLimiter } = require('../../middlewares/rateLimit');
+const { zoteroSyncLimiter, zoteroConectarLimiter } = require('../../middlewares/rateLimit');
 const { elegirColeccionSchema, vueltaSchema } = require('./biblioteca.schema');
 const bibliotecaController = require('./biblioteca.controller');
 
@@ -26,8 +26,8 @@ router.get('/vuelta', validate({ query: vueltaSchema }), bibliotecaController.vu
 router.use(authenticate);
 
 router.get('/estado', bibliotecaController.estado);
-router.post('/conectar', zoteroSyncLimiter, bibliotecaController.conectar);
-router.get('/colecciones', zoteroSyncLimiter, bibliotecaController.colecciones);
+router.post('/conectar', zoteroConectarLimiter, bibliotecaController.conectar);
+router.get('/colecciones', zoteroConectarLimiter, bibliotecaController.colecciones);
 router.put(
   '/coleccion',
   zoteroSyncLimiter,

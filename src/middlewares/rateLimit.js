@@ -5,14 +5,23 @@ const env = require('../config/env');
 const { ERROR_CODES } = require('../config/constants');
 const { ipCliente } = require('../shared/utils/ipCliente');
 
-function build({ windowMs, max, message }) {
+/**
+ * Por persona cuando hay sesión, y por IP si no.
+ *
+ * Para las rutas que ya pasaron por `authenticate`: detrás de la misma IP de un
+ * operador o de la wifi de una universidad hay muchos tesistas, y no tiene
+ * sentido que el botón de uno se gaste con los clics de otro.
+ */
+const porUsuario = (req) => (req.user?.id ? `usuario:${req.user.id}` : ipCliente(req));
+
+function build({ windowMs, max, message, keyGenerator = ipCliente }) {
   return rateLimit({
     windowMs,
     max,
     standardHeaders: 'draft-7',
     legacyHeaders: false,
     // La del visitante y no la de Cloudflare: ver `ipCliente`.
-    keyGenerator: ipCliente,
+    keyGenerator,
     // En desarrollo estorba más de lo que protege.
     skip: () => env.isDevelopment,
     handler: (_req, res) =>
@@ -79,6 +88,23 @@ const zoteroSyncLimiter = build({
   windowMs: 10 * 60 * 1000,
   max: 6,
   message: 'Has pedido tu biblioteca varias veces seguidas. Espera unos minutos.',
+  keyGenerator: porUsuario,
+});
+
+/**
+ * Conectar Zotero y ver la lista de colecciones.
+ *
+ * Aparte del de sincronizar, y más holgado. Antes compartían los seis del de
+ * arriba, y la lista de colecciones se pide sola al volver de zotero.org y al
+ * entrar en el buscador: quien reintentaba un par de veces se encontraba
+ * «Conectar Zotero» respondiendo 429 sin haber traído nada. Ninguna de las dos
+ * descarga la biblioteca: una pide un token y la otra, la lista de carpetas.
+ */
+const zoteroConectarLimiter = build({
+  windowMs: 10 * 60 * 1000,
+  max: 30,
+  message: 'Has intentado conectar Zotero muchas veces seguidas. Espera unos minutos.',
+  keyGenerator: porUsuario,
 });
 
 /**
@@ -178,6 +204,7 @@ module.exports = {
   paymentLimiter,
   trialClaimLimiter,
   zoteroSyncLimiter,
+  zoteroConectarLimiter,
   asistenteLimiter,
   reclamoLimiter,
   mcpLimiter,

@@ -5,6 +5,7 @@ const logger = require('../../config/logger');
 const { ValidationError, ConflictError } = require('../../shared/errors/AppError');
 const zotero = require('./zotero.client');
 const openalex = require('./openalex.client');
+const crossref = require('./crossref.client');
 const mapper = require('./zotero.mapper');
 const referenceRepository = require('./reference.repository');
 // Formatear en APA vive en un solo sitio, y ese sitio es el del Word.
@@ -431,16 +432,37 @@ async function buscarEnLaLiteratura({ tema, idioma, pais, desdeAnio, cuantas }) 
 
   const limite = Math.min(Math.max(Number(cuantas) || 6, 1), 15);
 
-  const { fuentes, total, caida } = await openalex.buscar({
+  const consulta = {
     tema: String(tema).trim(),
     idioma: idioma || null,
     pais: pais || null,
     desdeAnio: desdeAnio || null,
     cuantas: limite,
-  });
+  };
+
+  let origen = 'openalex';
+  let { fuentes, total, caida } = await openalex.buscar(consulta);
+
+  // Si OpenAlex no contesta, Crossref. No filtra por país ni por idioma, así
+  // que se dice cuáles de esos filtros se quedaron sin aplicar: el asistente
+  // no puede presentar como «antecedentes peruanos» algo que no se acotó.
+  if (caida) {
+    origen = 'crossref';
+    ({ fuentes, total, caida } = await crossref.buscar(consulta));
+    if (!caida) logger.info({ tema: consulta.tema }, 'OpenAlex no respondió: se buscó en Crossref');
+  }
+
+  const filtrosSinAplicar =
+    origen === 'crossref'
+      ? [consulta.pais ? `país ${consulta.pais}` : null, consulta.idioma ? `idioma ${consulta.idioma}` : null].filter(
+          Boolean,
+        )
+      : [];
 
   return {
     caida,
+    origen,
+    filtrosSinAplicar,
     total,
     fuentes: fuentes.map((f) => ({
       ...f,

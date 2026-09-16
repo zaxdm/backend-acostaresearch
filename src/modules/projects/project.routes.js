@@ -194,7 +194,9 @@ router.get(
     const formato = await projectService.formatoDelProyecto(enlace.userId, enlace.productCode);
     // El tipo decide los textos de la página: un informe de curso no tiene «tesis».
     const { tipo } = perfilDe(enlace.productCode);
-    return ok(res, { caduca: enlace.caduca.toISOString(), formato, tipo });
+    // Y el ámbito: la plantilla de un informe de empresa no la da un docente.
+    const ambito = (await projectService.esInformeDeEmpresa(enlace.userId, enlace.productCode)) ? 'empresa' : null;
+    return ok(res, { caduca: enlace.caduca.toISOString(), formato, tipo, ambito });
   }),
 );
 
@@ -287,7 +289,9 @@ router.get(
   asyncHandler(async (req, res) => {
     const enlace = enlaceDeMaterial(req.params.token);
     const material = await materialService.lista(enlace.userId, enlace.productCode);
-    return ok(res, { caduca: enlace.caduca.toISOString(), material });
+    // En un informe de empresa se suben los términos de referencia, no la consigna del docente.
+    const ambito = (await projectService.esInformeDeEmpresa(enlace.userId, enlace.productCode)) ? 'empresa' : null;
+    return ok(res, { caduca: enlace.caduca.toISOString(), material, ambito });
   }),
 );
 
@@ -328,6 +332,97 @@ router.post(
       if (error instanceof MaterialNoValido) throw new ValidationError(error.message);
       throw error;
     }
+  }),
+);
+
+// ── El documento del tesista, desde el enlace de Claude ────────────────────
+//
+// Mismo esquema que el formato: sin sesión, la llave es el enlace firmado. Lo que
+// se hace con el archivo es lo mismo que en la subida del perfil.
+
+const subidaDocumento = require('./project.subida-documento');
+const projectRepository = require('./project.repository');
+
+function enlaceDeDocumento(token) {
+  try {
+    return subidaDocumento.verificar(token);
+  } catch {
+    throw new NotFoundError(
+      'Este enlace para subir tu documento ya no vale: caduca a la media hora. Vuelve a la conversación y ' +
+        'pídele a Claude uno nuevo.',
+    );
+  }
+}
+
+const cuerpoDeDocumento = express.raw({ type: () => true, limit: MAXIMO_DOCUMENTO });
+
+function recibirDocumento(req, res, next) {
+  cuerpoDeDocumento(req, res, (error) => {
+    if (error?.type === 'entity.too.large') {
+      return next(
+        new ValidationError(
+          `Ese archivo pasa de ${MAXIMO_DOCUMENTO / 1024 / 1024} MB. Si lleva muchas imágenes, comprímelas en ` +
+            'Word («Archivo» → «Comprimir imágenes») y vuelve a subirlo.',
+        ),
+      );
+    }
+    return next(error);
+  });
+}
+
+router.get(
+  '/documento-enlace/:token',
+  asyncHandler(async (req, res) => {
+    const enlace = enlaceDeDocumento(req.params.token);
+    const proyecto = await projectRepository.buscar(enlace.userId, enlace.productCode);
+    const documento = await documentoService.fichaDelPanel(proyecto);
+    return ok(res, { caduca: enlace.caduca.toISOString(), documento });
+  }),
+);
+
+router.post(
+  '/documento-enlace/:token',
+  // El enlace se comprueba ANTES de leer el archivo, que puede pesar 40 MB.
+  (req, _res, next) => {
+    try {
+      req.enlaceDeDocumento = enlaceDeDocumento(req.params.token);
+      return next();
+    } catch (error) {
+      return next(error);
+    }
+  },
+  recibirDocumento,
+  asyncHandler(async (req, res) => {
+    const { userId, productCode } = req.enlaceDeDocumento;
+
+    if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+      throw new ValidationError('No llegó ningún archivo. Elige el .docx de tu documento y vuelve a subirlo.');
+    }
+    if (!(await tieneLicenciaVigente(userId, productCode))) {
+      throw new ForbiddenError('Tu licencia no está vigente, así que no se puede guardar el documento.');
+    }
+
+    let subido;
+    try {
+      subido = await documentoService.subir({
+        userId,
+        productCode,
+        buffer: req.body,
+        nombre: decodificar(req.get('X-Nombre-Archivo')),
+      });
+    } catch (error) {
+      if (error instanceof DocumentoNoValido) throw new ValidationError(error.message);
+      throw error;
+    }
+    if (!subido) {
+      throw new ForbiddenError('Tu licencia no está vigente, así que no se puede guardar el documento.');
+    }
+
+    return ok(
+      res,
+      { documento: subido },
+      { message: mensajeDeSubida(subido, 'Vuelve a la conversación con Claude y dile «ya lo subí».') },
+    );
   }),
 );
 
@@ -727,20 +822,31 @@ router.post(
       throw new ForbiddenError('Necesitas una licencia vigente de este método para subir tu documento.');
     }
 
-    const conservadas =
-      subido.citados > 0 ? ` Se conservaron las citas de ${subido.citados} párrafos que ya tenías.` : '';
-    const perdidas =
-      subido.perdidos > 0
-        ? ` ${subido.perdidos} párrafos citados ya no están igual en esta versión: pídele a Claude que los revise.`
-        : '';
-
     return ok(res, subido, {
-      message:
-        `Listo: «${subido.nombre}», ${subido.parrafos} párrafos.${conservadas}${perdidas} ` +
-        'Ahora abre Claude y dile: «cita mi documento».',
+      message: mensajeDeSubida(subido, 'Ahora abre Claude y dile: «cita mi documento» o «humaniza mi documento».'),
     });
   }),
 );
+
+/** Lo que se le dice al subir el documento, desde el perfil o desde el enlace de Claude. */
+function mensajeDeSubida(subido, cierre) {
+  const conservadas =
+    subido.citados > 0 ? ` Se conservaron las citas de ${subido.citados} párrafos que ya tenías.` : '';
+  const perdidas =
+    subido.perdidos > 0
+      ? ` ${subido.perdidos} párrafos citados ya no están igual en esta versión: pídele a Claude que los revise.`
+      : '';
+  const humanizados =
+    subido.humanizados > 0 ? ` Se conservó lo humanizado en ${subido.humanizados} párrafos.` : '';
+  const humanizadosPerdidos =
+    subido.humanizadosPerdidos > 0
+      ? ` ${subido.humanizadosPerdidos} párrafos humanizados cambiaron en esta versión y habrá que revisarlos de nuevo.`
+      : '';
+  return (
+    `Listo: «${subido.nombre}», ${subido.parrafos} párrafos.${conservadas}${perdidas}${humanizados}` +
+    `${humanizadosPerdidos} ${cierre}`
+  );
+}
 
 router.delete(
   '/:productCode/documento',

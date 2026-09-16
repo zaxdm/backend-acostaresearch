@@ -26,6 +26,7 @@ const formato = require('./r.formato');
 const filtro = require('./r.filtro');
 const catalogo = require('./r.catalogo');
 const enlaces = require('./r.enlaces');
+const { enlaceClic } = require('../../shared/utils/enlaceClic');
 const informeWord = require('./r.informe');
 const {
   crearMotor,
@@ -213,9 +214,9 @@ async function guardarEnElProyecto({ userId, productCode, guion, consola }) {
 function avisoDeSubida({ userId, productCode }) {
   const { url, minutos } = enlaces.enlaceDeSubida({ userId, productCode });
   return (
-    `TODAVÍA NO HAY DATOS. Dale al tesista este enlace para que suba su matriz, en Excel o ` +
-    `CSV (caduca en ${minutos} minutos):${N}${url}${N}${N}` +
-    'Dáselo tal cual y dile que vuelva aquí cuando lo haya subido. Entonces llama otra vez a ' +
+    `TODAVÍA NO HAY DATOS. Dale al tesista este enlace para que suba su matriz, en Excel o CSV:${N}` +
+    `${enlaceClic({ texto: 'Haz clic aquí para subir tu matriz de datos', url, minutos })}${N}${N}` +
+    'Dile que vuelva aquí cuando la haya subido. Entonces llama otra vez a ' +
     'trabajar_en_r sin código y verás sus columnas.'
   );
 }
@@ -348,8 +349,8 @@ async function trabajar({ userId, productCode, codigo, reiniciar = false, descar
     if (bytes) {
       const { url, minutos } = enlaces.enlaceDeDescarga({ userId, productCode, archivo: nombre });
       partes.push(
-        `Enlace para bajar «${nombre}» (caduca en ${minutos} minutos):${N}${url}${N}` +
-          'DÁSELO AL TESISTA TAL CUAL.',
+        `Enlace para bajar «${nombre}»:${N}` +
+          enlaceClic({ texto: `Haz clic aquí para descargar ${nombre}`, url, minutos }),
       );
     } else {
       const hay = actual.archivos.map((a) => a.nombre);
@@ -511,7 +512,7 @@ async function informe({ userId, productCode, titulo, texto: contenido, norma })
   const partes = [
     `Informe listo: ${informeWord.cuantasTablas(cuerpo)} tablas, ${figuras.size} figuras y ` +
       `${referencias} referencias, con las citas en ${resuelto.norma.nombre}.`,
-    `Enlace para bajarlo (caduca en ${minutos} minutos):${N}${url}${N}DÁSELO AL TESISTA TAL CUAL.`,
+    `Enlace para bajarlo:${N}${enlaceClic({ texto: 'Haz clic aquí para descargar tu informe en Word', url, minutos })}`,
   ];
 
   if (resuelto.perdidas.length > 0) {

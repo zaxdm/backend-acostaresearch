@@ -54,6 +54,35 @@ test('el Word de una tesis no cambia', async () => {
   );
 });
 
+test('el Word de un informe de curso no cambia', async () => {
+  comparar(
+    'word.informe-curso',
+    await documentoDe({
+      tema: 'La informalidad laboral en los mercados de Lima',
+      carrera: 'Administración de Empresas',
+      universidad: 'Tecsup',
+      nombre: 'Ana Ruiz',
+      portadaInforme: {
+        institucion: 'Tecsup',
+        programa: 'Administración de Empresas',
+        curso: 'Economía General',
+        tema: 'La informalidad laboral en los mercados de Lima',
+        tipo: 'Informe académico de curso',
+        docente: 'Mg. Rosa Díaz',
+        integrantes: [{ nombre: 'Ana Ruiz', codigo: 'U2023001' }, { nombre: 'Luis Soto' }],
+        nombre: 'Ana Ruiz',
+        cicloSeccion: 'IV ciclo, sección B',
+        ciudad: 'Lima',
+        fechaEntrega: '2026-09-30',
+      },
+      capitulos: [
+        { titulo: 'Resumen', texto: 'El informe revisa la informalidad laboral.' },
+        { titulo: 'Fase 2 — Desarrollo', texto: CAPITULO_CON_TABLA },
+      ],
+    }),
+  );
+});
+
 test('el Word de un artículo no cambia', async () => {
   comparar(
     'word.articulo',

@@ -243,14 +243,35 @@ test('citar_mi_documento exige copiar el texto tal cual y el visto bueno', () =>
   assert.deepEqual(Object.keys(esquema('citar_mi_documento').properties), ['parrafos']);
 });
 
-test('siguen registradas las mismas 21 herramientas', () => {
+test('humanizar_mi_documento exige el visto bueno y dice lo que se rechaza', () => {
+  const d = descripcion('humanizar_mi_documento');
+  assert.match(d, /visto bueno/);
+  assert.match(d, /\[APARTE\]/);
+  assert.match(d, /cifras/);
+  assert.match(d, /enlace_del_word/);
+  assert.deepEqual(Object.keys(esquema('humanizar_mi_documento').properties), ['parrafos', 'deshacer']);
+  // Quien llega a humanizar no debe acabar editando una copia en el chat.
+  assert.match(descripcion('ver_mi_documento'), /humanizar_mi_documento/);
+  assert.match(descripcion('ver_mi_documento'), /python-docx/);
+});
+
+test('antes de citar o humanizar se pregunta si es el documento del servidor o uno nuevo', () => {
+  assert.match(descripcion('ver_mi_documento'), /servidor[\s\S]*uno nuevo[\s\S]*subir_mi_documento/);
+  assert.match(descripcion('humanizar_mi_documento'), /subir_mi_documento/);
+  assert.match(descripcion('subir_mi_documento'), /sin escribir la dirección/);
+  assert.deepEqual(Object.keys(esquema('subir_mi_documento').properties), []);
+});
+
+test('siguen registradas las mismas 24 herramientas', () => {
   // 17 desde que existe «enlace_del_word»: el Word lo arma el servidor, en la
   // norma del proyecto, y Claude da el enlace en vez de fabricarlo él.
   // 18 desde «mis_fuentes»: ver su biblioteca y su Zotero sin tener un tema.
   // 19 desde «trabajar_en_r»: Claude corre el análisis en R en la conversación.
   // 21 desde «ver_mi_documento» y «citar_mi_documento»: citar el Word que subió.
   // 22 desde «formato_de_la_universidad»: el formato se sube desde un enlace de Claude.
-  assert.equal(registradas.size, 22);
+  // 23 desde «humanizar_mi_documento»: el humanizador escribe en el Word que subió.
+  // 24 desde «subir_mi_documento»: el Word se sube desde un enlace de Claude.
+  assert.equal(registradas.size, 24);
   for (const nombre of [
     'listar_capitulos',
     'mi_proyecto',
@@ -263,6 +284,8 @@ test('siguen registradas las mismas 21 herramientas', () => {
     'trabajar_en_r',
     'ver_mi_documento',
     'citar_mi_documento',
+    'humanizar_mi_documento',
+    'subir_mi_documento',
   ]) {
     assert.ok(registradas.has(nombre), `falta ${nombre}`);
   }

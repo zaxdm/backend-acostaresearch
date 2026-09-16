@@ -33,6 +33,7 @@ const propiasRepository = require('../references/propias.repository');
 const bibliotecaRepository = require('../zotero/biblioteca.repository');
 const { esApoyo, CAPITULOS_DE_RESULTADOS } = require('./project.service');
 const { perfilDe } = require('../productos/producto.perfil');
+const { esDeEmpresa } = require('./project.ficha-informe');
 
 const DIAS_SIN_REPETIR = 7;
 const DIA_MS = 24 * 60 * 60 * 1000;
@@ -92,7 +93,10 @@ function elegir(estado) {
 }
 
 /** Lo que tiene que decirle Claude, según el consejo. */
-function redactar(clave, { esArticulo = false, apoyos = [], obra: suObra = null, tipo = null } = {}) {
+function redactar(
+  clave,
+  { esArticulo = false, apoyos = [], obra: suObra = null, tipo = null, empresa = false } = {},
+) {
   // La obra sale del perfil del producto; `esArticulo` se queda para quien aún lo pase.
   const obra = suObra ?? (esArticulo ? 'su artículo' : 'su tesis');
 
@@ -126,12 +130,21 @@ function redactar(clave, { esArticulo = false, apoyos = [], obra: suObra = null,
       return (
         'Ya tiene texto escrito y no ha elegido norma de citas, así que el Word sale en APA 7. ' +
         // Ya no hay selector en el panel: la norma se pregunta en la conversación.
-        (tipo === 'informe'
-          ? 'PREGÚNTALE qué norma le pide su docente y guárdala con "guardar_avance" '
-          : 'PREGÚNTALE qué norma le piden su universidad o su asesor y guárdala con "guardar_avance" ') +
+        (tipo === 'informe' && empresa
+          ? 'Si la empresa pide otra norma, guárdala con "guardar_avance" '
+          : tipo === 'informe'
+            ? 'PREGÚNTALE qué norma le pide su docente y guárdala con "guardar_avance" '
+            : 'PREGÚNTALE qué norma le piden su universidad o su asesor y guárdala con "guardar_avance" ') +
         '(estiloCitas): no hay que reescribir nada.'
       );
     case 'formato':
+      if (tipo === 'informe' && empresa) {
+        return (
+          `Ya tiene texto escrito y no ha subido un formato, así que ${obra} sale con el formato ` +
+          'por defecto. PREGÚNTALE si la empresa tiene una plantilla de informes en Word y, si la ' +
+          'tiene, dale el enlace para subirla con "formato_de_la_universidad".'
+        );
+      }
       return (
         tipo === 'informe'
           ? `Ya tiene texto escrito y no ha subido un formato, así que ${obra} sale con el formato ` +
@@ -221,7 +234,12 @@ async function consejoPara({ userId, productCode, capitulo = null, ahora = new D
   if (!clave) return null;
 
   const perfil = perfilDe(productCode);
-  const texto = redactar(clave, { obra: perfil.obra, tipo: perfil.tipo, apoyos });
+  const texto = redactar(clave, {
+    obra: perfil.obra,
+    tipo: perfil.tipo,
+    apoyos,
+    empresa: perfil.tipo === 'informe' && esDeEmpresa(proyecto.fichaInforme),
+  });
   if (!texto) return null;
 
   // Si no se puede anotar, se da igual: repetirlo la próxima vez es menos malo

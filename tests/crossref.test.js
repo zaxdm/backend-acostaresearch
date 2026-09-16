@@ -161,3 +161,66 @@ test('el resumen de Crossref viene con etiquetas XML dentro y se limpian', async
 
   assert.equal(ficha.abstract, 'Un resumen con etiquetas.');
 });
+
+// ── Buscar por tema: el respaldo de OpenAlex ────────────────────────────────
+
+const BUSQUEDA = {
+  message: {
+    'total-results': 52879,
+    items: [
+      {
+        DOI: '10.37811/cl_rcm.v6i2.2089',
+        title: ['Clima organizacional y <i>desempeño</i> laboral'],
+        author: [{ given: 'Ana', family: 'Quispe Mamani' }],
+        issued: { 'date-parts': [[2022]] },
+        'container-title': ['Ciencia Latina Revista Científica Multidisciplinar'],
+        'is-referenced-by-count': 10,
+        abstract: '<jats:p>El objetivo fue determinar la relación.</jats:p>',
+      },
+      { DOI: '10.1000/sin-titulo', title: [] },
+    ],
+  },
+};
+
+test('buscar devuelve fichas con la misma forma que las de OpenAlex', async (t) => {
+  const llamadas = fingir(t, { cuerpo: BUSQUEDA });
+
+  const { fuentes, total, caida } = await crossref.buscar({
+    tema: 'clima organizacional',
+    desdeAnio: 2020,
+    cuantas: 5,
+  });
+
+  assert.equal(caida, false);
+  assert.equal(total, 52879);
+  assert.equal(fuentes.length, 1, 'una obra sin título no sirve para citar');
+  assert.deepEqual(fuentes[0], {
+    titulo: 'Clima organizacional y desempeño laboral',
+    autores: 'Quispe Mamani, A.',
+    anio: 2022,
+    revista: 'Ciencia Latina Revista Científica Multidisciplinar',
+    doi: '10.37811/cl_rcm.v6i2.2089',
+    citas: 10,
+    idioma: null,
+    pdfLibre: null,
+    resumen: 'El objetivo fue determinar la relación.',
+  });
+
+  const url = new URL(llamadas[0]);
+  assert.equal(url.searchParams.get('query.bibliographic'), 'clima organizacional');
+  assert.equal(url.searchParams.get('filter'), 'type:journal-article,from-pub-date:2020');
+  assert.ok(
+    !url.searchParams.get('select').split(',').includes('language'),
+    'Crossref rechaza con 400 un select de «language»',
+  );
+});
+
+test('si Crossref no contesta al buscar, se dice caída', async (t) => {
+  fingir(t, { estado: 503 });
+
+  assert.deepEqual(await crossref.buscar({ tema: 'lo que sea' }), {
+    fuentes: [],
+    total: 0,
+    caida: true,
+  });
+});

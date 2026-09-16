@@ -44,7 +44,7 @@ const documentoService = require('./documento.service');
 const skillService = require('../skills/skill.service');
 const referenceService = require('../references/reference.service');
 const { guardarAvanceSchema, guardarCapituloSchema } = require('./project.schema');
-const { fusionarFicha, lineasDeFicha, NOMBRE_DE_TIPO } = require('./project.ficha-informe');
+const { fusionarFicha, lineasDeFicha, esDeEmpresa, NOMBRE_DE_TIPO } = require('./project.ficha-informe');
 const { perfilDe } = require('../productos/producto.perfil');
 const { lineaDeMaterial } = require('./project.material');
 
@@ -160,7 +160,11 @@ async function contexto(userId, productCode) {
     const asesor = lineaDeAsesor(proyecto);
     if (asesor) cabecera.push(asesor);
   }
-  cabecera.push(lineaDeNorma(proyecto));
+  cabecera.push(
+    lineaDeNorma(proyecto, {
+      empresa: perfilDe(productCode).tipo === 'informe' && esDeEmpresa(proyecto.fichaInforme),
+    }),
+  );
 
   // Se recorre el catálogo y no las etapas guardadas, para que los capítulos
   // que aún no ha tocado también salgan. Saber lo que falta es la mitad de
@@ -257,8 +261,8 @@ function datosPorEtapa(proyecto) {
  * introducción de un informe—. No están en el catálogo, así que sin esta línea
  * el asistente no sabría su clave. En tesis y artículo no hay, y no sale nada.
  */
-function lineaDeSeccionesAparte(productCode, porCapitulo) {
-  const apartes = perfilDe(productCode).seccionesAparte;
+function lineaDeSeccionesAparte(productCode, porCapitulo, ficha = null) {
+  const apartes = seccionesAparteDe(productCode, ficha);
   if (apartes.length === 0) return null;
 
   const cada = apartes.map((s) => {
@@ -356,11 +360,14 @@ async function resumen(userId, productCode) {
   // Junto a lo que le toca y no en la cabecera: la cabecera es lo que se sabe
   // de la tesis, y sin tema ni carrera tiene que quedar vacía para que el
   // panorama empiece por los capítulos.
-  loSuyo.push(lineaDeNorma(proyecto));
-  loSuyo.push(lineaDeFormato(proyecto));
+  const deEmpresa = perfilDe(productCode).tipo === 'informe' && esDeEmpresa(proyecto.fichaInforme);
+  loSuyo.push(lineaDeNorma(proyecto, { empresa: deEmpresa }));
+  loSuyo.push(lineaDeFormato(proyecto, { empresa: deEmpresa }));
   // En el informe, lo que subió del docente: sin esta línea Claude no sabe que existe.
   if (perfilDe(productCode).tipo === 'informe') {
-    loSuyo.push(lineaDeMaterial(await almacen.leerMaterial(proyecto.id).catch(() => null)));
+    loSuyo.push(
+      lineaDeMaterial(await almacen.leerMaterial(proyecto.id).catch(() => null), { empresa: deEmpresa }),
+    );
   }
 
   // Por bloques y filtrando los vacíos: un proyecto sin tema todavía, o un
@@ -369,7 +376,7 @@ async function resumen(userId, productCode) {
   return [
     cabecera.join('\n'),
     lineas.join('\n'),
-    lineaDeSeccionesAparte(productCode, porCapitulo),
+    lineaDeSeccionesAparte(productCode, porCapitulo, proyecto.fichaInforme),
     recuento,
     aviso,
     loSuyo.join('\n'),
@@ -650,6 +657,24 @@ async function guardarCapituloEnSuTurno({ userId, productCode, ...entrada }) {
 function datosDePortadaInforme(proyecto, nombre) {
   const ficha = proyecto.fichaInforme ?? {};
   const tipo = NOMBRE_DE_TIPO[ficha.tipo];
+  if (esDeEmpresa(ficha)) {
+    // Sin curso ni docente, y sin la institución: la de un informe de empresa es
+    // la empresa. `ambito` le dice a `armar` qué portada poner.
+    return {
+      ambito: 'empresa',
+      empresa: ficha.empresa,
+      tema: proyecto.tema,
+      tipo: tipo ? tipo.charAt(0).toUpperCase() + tipo.slice(1) : null,
+      destinatario: ficha.destinatario,
+      preparadoPor: ficha.preparadoPor,
+      cargo: ficha.cargo,
+      nombre,
+      periodo: ficha.periodo,
+      ciudad: ficha.ciudad,
+      fechaEntrega: ficha.fechaEntrega,
+      confidencial: ficha.confidencial === true,
+    };
+  }
   return {
     institucion: proyecto.universidad,
     programa: proyecto.carrera,
@@ -682,7 +707,7 @@ async function armarWord(userId, productCode) {
   // informe se escriben al final pero van primero. En tesis y artículo no hay.
   const perfil = perfilDe(productCode);
   const enOrden = [
-    ...perfil.seccionesAparte.map((s) => ({ code: s.clave, displayName: s.titulo })),
+    ...seccionesAparteDe(productCode, proyecto.fichaInforme).map((s) => ({ code: s.clave, displayName: s.titulo })),
     ...catalogo,
   ];
 
@@ -845,6 +870,18 @@ function armarEnApa(capitulos, porClave) {
  * bibliografía en blanco sin saber por qué.
  */
 /**
+ * Las secciones aparte con el título que les toca a este proyecto.
+ *
+ * El resumen de un informe de empresa es un resumen ejecutivo, y así se titula en
+ * el Word y en el panorama. La clave no cambia: es la misma sección.
+ */
+function seccionesAparteDe(productCode, ficha) {
+  const apartes = perfilDe(productCode).seccionesAparte;
+  if (!esDeEmpresa(ficha)) return apartes;
+  return apartes.map((s) => (s.clave === 'informe-resumen' ? { ...s, titulo: 'Resumen ejecutivo' } : s));
+}
+
+/**
  * El catálogo con las secciones aparte del producto delante.
  *
  * Lo que recorre lo escrito —el .bib, la evidencia, el repaso— tiene que ver
@@ -962,9 +999,14 @@ async function guardarPlantilla({ userId, productCode, buffer, nombre }) {
   // Si la portada no trae marcas, se buscan solas dónde van sus datos.
   // El tipo decide qué etiquetas se buscan en la portada: un informe tiene curso,
   // docente e integrantes donde una tesis tiene asesor.
-  const partes = await portadaAuto.prepararPortada(partesDePlantilla.extraer(buffer), {
-    tipo: perfilDe(productCode).tipo,
-  });
+  // Y en un informe, el ámbito: una portada de empresa lleva empresa, destinatario
+  // y quién lo prepara. La Fase 0 guarda el ámbito antes de pedir la plantilla.
+  const tipo = perfilDe(productCode).tipo;
+  const ambito =
+    tipo === 'informe' && esDeEmpresa((await projectRepository.buscar(userId, productCode))?.fichaInforme)
+      ? 'empresa'
+      : null;
+  const partes = await portadaAuto.prepararPortada(partesDePlantilla.extraer(buffer), { tipo, ambito });
 
   const proyecto = await projectRepository.asegurar(userId, productCode);
   await almacen.guardarPlantilla(proyecto.id, xml);
@@ -1008,6 +1050,15 @@ const NOMBRE_DE_CAMPO = {
   carrera: 'carrera',
   grado: 'grado',
   anio: 'año',
+  curso: 'curso',
+  docente: 'docente',
+  integrantes: 'integrantes',
+  cicloSeccion: 'ciclo y sección',
+  empresa: 'empresa',
+  destinatario: 'destinatario',
+  preparadoPor: 'nombre',
+  cargo: 'cargo',
+  periodo: 'periodo',
 };
 
 /** «a, b y c». */
@@ -1671,10 +1722,12 @@ function normaDelProyecto(proyecto) {
  * tiene que saber que nadie la ha decidido para preguntarla antes de que el
  * tesista descargue un Word en una norma que su universidad no acepta.
  */
-function lineaDeNorma(proyecto) {
+function lineaDeNorma(proyecto, { empresa = false } = {}) {
   const norma = normaDelProyecto(proyecto);
-  return norma.elegida
-    ? `Norma de citas: ${norma.nombre} (${norma.idiomaNombre})`
+  if (norma.elegida) return `Norma de citas: ${norma.nombre} (${norma.idiomaNombre})`;
+  // En empresa no se pregunta: APA 7 salvo que la empresa pida otra.
+  return empresa
+    ? `Norma de citas: sin elegir, el Word sale en ${norma.nombre}. No la preguntes: cámbiala solo si la empresa pide otra.`
     : `Norma de citas: sin elegir, el Word sale en ${norma.nombre}. Pregúntale cuál exige su universidad.`;
 }
 
@@ -1685,10 +1738,17 @@ function lineaDeNorma(proyecto) {
  * existe, así que si Claude no lo pregunta, nadie lo sube y la tesis sale en el
  * formato por defecto sin que el tesista sepa que podía ser otro.
  */
-function lineaDeFormato(proyecto) {
+function lineaDeFormato(proyecto, { empresa = false } = {}) {
   if (proyecto?.plantillaAt) {
     const nombre = proyecto.plantillaNombre ? ` («${proyecto.plantillaNombre}»)` : '';
-    return `Formato de la universidad: puesto${nombre}. Su Word sale con él.`;
+    return `Formato ${empresa ? 'de la empresa' : 'de la universidad'}: puesto${nombre}. Su Word sale con él.`;
+  }
+  if (empresa) {
+    return (
+      'Formato de la empresa: sin subir; el Word sale en el formato por defecto. PREGÚNTALE UNA ' +
+      'VEZ si la empresa tiene una plantilla de informes en Word y, si la tiene, dale el enlace ' +
+      'para subirla con "formato_de_la_universidad".'
+    );
   }
   return (
     'Formato de la universidad: sin subir; el Word sale en el formato por defecto. PREGÚNTALE ' +
@@ -1702,6 +1762,13 @@ async function formatoDelProyecto(userId, productCode) {
   const proyecto = await projectRepository.buscar(userId, productCode);
   if (!proyecto?.plantillaAt) return null;
   return plantillaDelPanel(proyecto);
+}
+
+/** Si el informe es de empresa. Falso en tesis, artículo y los informes de curso. */
+async function esInformeDeEmpresa(userId, productCode) {
+  if (perfilDe(productCode).tipo !== 'informe') return false;
+  const proyecto = await projectRepository.buscar(userId, productCode);
+  return esDeEmpresa(proyecto?.fichaInforme);
 }
 
 /** Las normas y los idiomas que se pueden elegir, para el panel. */
@@ -1950,6 +2017,7 @@ async function textoDeCapitulo(userId, productCode, skillCode, { parte = 1 } = {
 module.exports = {
   seccionAparte,
   formatoDelProyecto,
+  esInformeDeEmpresa,
   lineaDeFormato,
   textoDeCapitulo,
   enPartes,

@@ -565,6 +565,13 @@ const CAMPO_DE_MARCA = {
   ESTUDIANTES: 'integrantes',
   CICLO: 'cicloSeccion',
   SECCION: 'cicloSeccion',
+  // Del informe de empresa, con la misma idea.
+  EMPRESA: 'empresa',
+  CLIENTE: 'empresa',
+  DESTINATARIO: 'destinatario',
+  PREPARADOPOR: 'preparadoPor',
+  CARGO: 'cargo',
+  PERIODO: 'periodo',
 };
 
 /**

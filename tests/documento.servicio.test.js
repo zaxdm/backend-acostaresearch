@@ -41,7 +41,10 @@ sustituir('../src/modules/projects/project.storage', {
   leerFichaDeDocumento: async (id) => disco.get(`${id}:ficha`) ?? null,
   leerCitasDeDocumento: async (id) => ({ ...(disco.get(`${id}:citas`) ?? {}) }),
   guardarCitasDeDocumento: async (id, citados) => disco.set(`${id}:citas`, citados),
-  borrarDocumento: async (id) => ['original', 'ficha', 'citas'].map((q) => disco.delete(`${id}:${q}`)).some(Boolean),
+  leerReescritosDeDocumento: async (id) => ({ ...(disco.get(`${id}:reescritos`) ?? {}) }),
+  guardarReescritosDeDocumento: async (id, reescritos) => disco.set(`${id}:reescritos`, reescritos),
+  borrarDocumento: async (id) =>
+    ['original', 'ficha', 'citas', 'reescritos'].map((q) => disco.delete(`${id}:${q}`)).some(Boolean),
 });
 
 const FUENTE = {
@@ -146,4 +149,121 @@ test('con el proyecto ya creado pero sin licencia vigente tampoco se sube', asyn
   const r = await servicio.subir({ userId: 'u1', productCode: 'METODO', buffer: docx(['Uno.']), nombre: 'tesis.docx' });
   assert.equal(r, null);
   assert.equal(disco.size, 0);
+});
+
+// ── Humanizar ──────────────────────────────────────────────────────────────
+
+const xmlDe = (buffer) => new AdmZip(buffer).getEntry('word/document.xml').getData().toString('utf8');
+const textosDe = (buffer) =>
+  [...xmlDe(buffer).matchAll(/<w:p\b[^>]*>([\s\S]*?)<\/w:p>/g)].map((m) =>
+    [...m[1].matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)].map((t) => t[1]).join(''),
+  );
+
+test('humanizar: guarda lo aprobado, rechaza lo que cambia datos, y lo descarga revisado', async () => {
+  await servicio.subir({
+    userId: 'u1',
+    productCode: 'METODO',
+    buffer: docx([
+      'Asimismo, cabe destacar que la muestra estuvo constituida por 120 docentes.',
+      'Es importante mencionar que el alfa fue de 0,89.',
+    ]),
+    nombre: 'Mi tesis.docx',
+  });
+
+  const r = await servicio.humanizar('u1', 'METODO', [
+    { p: 1, texto: 'La muestra fue de 120 docentes.' },
+    { p: 2, texto: 'El alfa fue de 0,9.' },
+    { p: 2, texto: 'El alfa fue de 0,89 [AR11111111].' },
+  ]);
+  assert.equal(r.guardados, 1);
+  assert.deepEqual(r.rechazados.map((x) => x.p), [2, 2]);
+  assert.match(r.rechazados[0].motivo, /0,89/);
+  assert.match(r.rechazados[1].motivo, /citar_mi_documento/);
+
+  // La ronda siguiente ve el texto nuevo, marcado.
+  const leido = await servicio.ver('u1', 'METODO');
+  assert.equal(leido.lineas[0], '¶1 [humanizado] La muestra fue de 120 docentes.');
+  assert.equal(leido.humanizados, 1);
+  assert.match(await servicio.aviso('u1', 'METODO'), /humanices/);
+
+  const armado = await servicio.armar('u1', 'METODO');
+  assert.deepEqual(textosDe(armado.buffer), ['La muestra fue de 120 docentes.', 'Es importante mencionar que el alfa fue de 0,89.']);
+  assert.match(armado.nombreArchivo, /^mi-tesis-revisado-\d{4}-\d{2}-\d{2}\.docx$/);
+  // El Word subido no se sobrescribe: se puede volver atrás.
+  assert.match(xmlDe(disco.get('p1:original')), /Asimismo/);
+
+  const deshecho = await servicio.humanizar('u1', 'METODO', [], [1]);
+  assert.equal(deshecho.deshechos, 1);
+  assert.equal(deshecho.humanizados, 0);
+});
+
+test('humanizar un párrafo citado exige sus marcas, y la cita sale en el texto nuevo', async () => {
+  await servicio.subir({
+    userId: 'u1',
+    productCode: 'METODO',
+    buffer: docx(['Cabe destacar que la deserción universitaria constituye un problema creciente.']),
+    nombre: 'a.docx',
+  });
+  await servicio.citar('u1', 'METODO', [
+    { p: 1, texto: 'Cabe destacar que la deserción universitaria constituye un problema creciente [AR11111111].' },
+  ]);
+
+  const sinMarca = await servicio.humanizar('u1', 'METODO', [{ p: 1, texto: 'La deserción universitaria crece.' }]);
+  assert.match(sinMarca.rechazados[0].motivo, /AR11111111/);
+
+  const bien = await servicio.humanizar('u1', 'METODO', [{ p: 1, texto: 'La deserción universitaria crece [AR11111111].' }]);
+  assert.equal(bien.guardados, 1);
+
+  const armado = await servicio.armar('u1', 'METODO');
+  assert.equal(textosDe(armado.buffer)[0], 'La deserción universitaria crece (Tinto, 1975).');
+  assert.match(armado.nombreArchivo, /con-referencias/);
+});
+
+test('partir un párrafo corre los números y cada cita va con su parte', async () => {
+  await servicio.subir({
+    userId: 'u1',
+    productCode: 'METODO',
+    buffer: docx(['Primera idea del estudio. Segunda idea distinta.', 'Tercera idea.']),
+    nombre: 'a.docx',
+  });
+
+  const r = await servicio.humanizar('u1', 'METODO', [
+    { p: 1, texto: 'Primera idea del estudio. [APARTE] Segunda idea distinta.' },
+  ]);
+  assert.equal(r.partidos, 1);
+  assert.equal((await servicio.ver('u1', 'METODO')).lineas[0], '¶1 [humanizado] Primera idea del estudio. [APARTE] Segunda idea distinta.');
+
+  // Citar sobre el texto humanizado: una marca en cada parte y otra en el párrafo de detrás.
+  const citado = await servicio.citar('u1', 'METODO', [
+    { p: 1, texto: 'Primera idea del estudio [AR11111111]. [APARTE] Segunda idea distinta [FALTA FUENTE].' },
+    { p: 2, texto: 'Tercera idea [AR11111111].' },
+  ]);
+  assert.equal(citado.guardados, 2, JSON.stringify(citado.rechazados));
+
+  const armado = await servicio.armar('u1', 'METODO');
+  assert.deepEqual(textosDe(armado.buffer).slice(0, 3), [
+    'Primera idea del estudio (Tinto, 1975).',
+    'Segunda idea distinta [falta fuente].',
+    'Tercera idea (Tinto, 1975).',
+  ]);
+});
+
+test('volver a subir el Word conserva lo humanizado, y el ya revisado no cuenta como perdido', async () => {
+  await servicio.subir({ userId: 'u1', productCode: 'METODO', buffer: docx(['Cabe destacar que crece.']), nombre: 'a.docx' });
+  await servicio.humanizar('u1', 'METODO', [{ p: 1, texto: 'Crece.' }]);
+
+  const otra = await servicio.subir({ userId: 'u1', productCode: 'METODO', buffer: docx(['Nuevo.', 'Cabe destacar que crece.']), nombre: 'a.docx' });
+  assert.equal(otra.humanizados, 1);
+  assert.deepEqual(Object.keys(disco.get('p1:reescritos')), ['2']);
+
+  const revisado = await servicio.subir({ userId: 'u1', productCode: 'METODO', buffer: docx(['Nuevo.', 'Crece.']), nombre: 'a.docx' });
+  assert.equal(revisado.humanizados, 0);
+  assert.equal(revisado.humanizadosPerdidos, 0);
+});
+
+test('partirCitado deja cada marca con su parte', () => {
+  assert.deepEqual(servicio.partirCitado('Uno dos [AR11111111]. Tres [FALTA FUENTE].', [7, 6]), [
+    'Uno dos [AR11111111].',
+    'Tres [FALTA FUENTE].',
+  ]);
 });

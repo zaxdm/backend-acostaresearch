@@ -317,15 +317,25 @@ function leer(buffer) {
   const { xml, estilos } = abrir(buffer);
   const nombres = nombresDeEstilos(estilos);
 
+  // Lo que va debajo de «Referencias» hasta el título siguiente es la lista: ahí
+  // no se cita ni se humaniza. Se marca aquí porque solo aquí se ven los estilos.
+  let enReferencias = false;
+
   return parrafosDe(xml)
     .map((parrafo) => {
       const estilo = nombres.get(parrafo.estilo) ?? '';
+      const nivel = Number((estilo.match(/^heading (\d)$/i) || [])[1]) || null;
+      const indice = /^toc /i.test(estilo);
+      const titulo = !indice && !parrafo.enTabla && TITULO_DE_REFERENCIAS.test(normalizarTitulo(parrafo.texto));
+      if (titulo) enReferencias = true;
+      else if (nivel) enReferencias = false;
       return {
         id: parrafo.id,
         texto: parrafo.texto,
-        nivel: Number((estilo.match(/^heading (\d)$/i) || [])[1]) || null,
-        indice: /^toc /i.test(estilo),
+        nivel,
+        indice,
         enTabla: parrafo.enTabla,
+        referencias: enReferencias && !titulo,
       };
     })
     .filter((parrafo) => parrafo.texto.trim() !== '' && !parrafo.indice)
@@ -765,6 +775,13 @@ module.exports = {
   esqueleto,
   sinMarcas,
   parrafosDe,
+  abrir,
+  desescapar,
+  escaparXml,
+  nombreDe,
+  nombresDeEstilos,
+  normalizarTitulo,
+  TITULO_DE_REFERENCIAS,
   DocumentoNoValido,
   NormaConNotas,
   MAXIMO_BYTES,

@@ -337,7 +337,12 @@ async function borrarPlantilla(projectId) {
  */
 function rutaDeDocumento(projectId, que) {
   if (!SEGURO.test(projectId)) throw new Error('Identificador de proyecto no válido');
-  const nombres = { original: 'documento-original.docx', ficha: 'documento.json', citas: 'documento-citas.json' };
+  const nombres = {
+    original: 'documento-original.docx',
+    ficha: 'documento.json',
+    citas: 'documento-citas.json',
+    reescritos: 'documento-reescritos.json',
+  };
   return path.join(env.capitulosDir, projectId, nombres[que]);
 }
 
@@ -375,9 +380,17 @@ async function leerCitasDeDocumento(projectId) {
 const guardarCitasDeDocumento = (projectId, citados) =>
   escribirJson(rutaDeDocumento(projectId, 'citas'), citados);
 
+/** `{ id del párrafo: { original, texto } }`, lo que humanizó Claude. Vacío si nada. */
+async function leerReescritosDeDocumento(projectId) {
+  return (await leerJson(rutaDeDocumento(projectId, 'reescritos'))) ?? {};
+}
+
+const guardarReescritosDeDocumento = (projectId, reescritos) =>
+  escribirJson(rutaDeDocumento(projectId, 'reescritos'), reescritos);
+
 async function borrarDocumento(projectId) {
   let habia = false;
-  for (const que of ['original', 'ficha', 'citas']) {
+  for (const que of ['original', 'ficha', 'citas', 'reescritos']) {
     try {
       await fs.unlink(rutaDeDocumento(projectId, que));
       habia = true;
@@ -413,6 +426,8 @@ module.exports = {
   leerFichaDeDocumento,
   leerCitasDeDocumento,
   guardarCitasDeDocumento,
+  leerReescritosDeDocumento,
+  guardarReescritosDeDocumento,
   borrarDocumento,
   guardar,
   leer,

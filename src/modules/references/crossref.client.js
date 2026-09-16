@@ -183,4 +183,85 @@ function unir(ficha, suyo, { preferirSusAutores = false } = {}) {
   };
 }
 
-module.exports = { porDoi, completar, unir, limpiarDoi };
+/** Lo que se pide de cada obra al buscar. Sin `select` vienen las referencias enteras. */
+const CAMPOS_DE_BUSQUEDA = [
+  'DOI',
+  'URL',
+  'title',
+  'author',
+  'issued',
+  'published-print',
+  'published-online',
+  'container-title',
+  'is-referenced-by-count',
+  'abstract',
+].join(',');
+
+/**
+ * Buscar por tema. SOLO COMO RESPALDO DE OPENALEX.
+ *
+ * Arriba dice que esto no es un buscador, y como primera opción sigue sin
+ * serlo: no filtra por país de los autores ni por idioma, que es lo que pide un
+ * jurado peruano. Pero cuando OpenAlex no contesta —el 16 de septiembre de 2026
+ * se quedó sin presupuesto diario y el conector pasó el día diciendo «no
+ * responde»— es mucho mejor que nada, y mejor de lo que parece: probado ese día
+ * con «clima organizacional desempeño laboral Perú», los ocho primeros eran
+ * artículos latinoamericanos sobre eso mismo y siete traían resumen. Las
+ * revistas de Scielo y Latindex depositan sus DOI aquí.
+ *
+ * Devuelve las fuentes con la MISMA forma que `openalex.buscar`, para que quien
+ * las enseña no tenga que saber de dónde vinieron — salvo para decirlo.
+ */
+async function buscar({ tema, desdeAnio = null, cuantas = 6 }) {
+  const url = new URL(BASE);
+  url.searchParams.set('query.bibliographic', tema);
+  url.searchParams.set('rows', String(Math.min(Math.max(cuantas, 1), 25)));
+  url.searchParams.set('select', CAMPOS_DE_BUSQUEDA);
+
+  const filtros = ['type:journal-article'];
+  if (desdeAnio) filtros.push(`from-pub-date:${desdeAnio}`);
+  url.searchParams.set('filter', filtros.join(','));
+
+  const correo = contacto();
+  if (correo) url.searchParams.set('mailto', correo);
+
+  const res = await fetch(url, {
+    signal: AbortSignal.timeout(TIEMPO_LIMITE_MS),
+    headers: correo ? { 'User-Agent': `AcostaResearch/1.0 (mailto:${correo})` } : {},
+  }).catch((error) => {
+    logger.warn({ err: error, tema }, 'Crossref no respondió a tiempo al buscar');
+    return null;
+  });
+
+  if (!res || !res.ok) {
+    if (res) logger.warn({ estado: res.status, tema }, 'Crossref rechazó la búsqueda');
+    return { fuentes: [], total: 0, caida: true };
+  }
+
+  const cuerpo = await res.json().catch(() => null);
+  if (!cuerpo?.message) return { fuentes: [], total: 0, caida: true };
+
+  const fuentes = (cuerpo.message.items ?? [])
+    .map((m) => {
+      // Los títulos de Crossref traen a veces cursivas en JATS: «<i>Lima</i>».
+      const titulo = textoDelResumen(Array.isArray(m.title) ? m.title[0] : m.title);
+      if (!titulo) return null;
+      return {
+        titulo,
+        autores: autores(m.author) || '(Autor no consignado)',
+        anio: anio(m),
+        revista: (Array.isArray(m['container-title']) ? m['container-title'][0] : null) ?? null,
+        doi: limpiarDoi(m.DOI),
+        citas: m['is-referenced-by-count'] ?? 0,
+        // Crossref no dice ni el idioma ni si hay PDF libre.
+        idioma: null,
+        pdfLibre: null,
+        resumen: textoDelResumen(m.abstract),
+      };
+    })
+    .filter(Boolean);
+
+  return { fuentes, total: cuerpo.message['total-results'] ?? fuentes.length, caida: false };
+}
+
+module.exports = { porDoi, buscar, completar, unir, limpiarDoi };

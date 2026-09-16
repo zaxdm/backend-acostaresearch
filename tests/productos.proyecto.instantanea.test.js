@@ -22,6 +22,7 @@ const sustituir = (rutaRelativa, exports) => {
 
 const TESIS = 'METODO_DE_TESIS_HUMANIZADOR';
 const ARTICULO = 'ARTICULO_SCIENTIFICOS';
+const INFORME = 'INFORME_ESTUDIANTIL';
 
 /** Los catálogos nombrados como en producción: los nombres deciden fases y apoyos. */
 const CATALOGOS = {
@@ -42,6 +43,14 @@ const CATALOGOS = {
     { code: 'articulo-fase3-revision-literatura', displayName: 'Fase 3 — Revisión de la literatura' },
     { code: 'articulo-fase5-resultados', displayName: 'Fase 5 — Resultados' },
     { code: 'articulo-fase6-discusion', displayName: 'Fase 6 — Discusión' },
+    { code: 'humanizador-academico', displayName: 'Humanizador académico' },
+  ],
+  [INFORME]: [
+    { code: 'informe-fase0-encargo', displayName: 'Fase 0 — El encargo' },
+    { code: 'informe-fase1-fuentes', displayName: 'Fase 1 — Las fuentes' },
+    { code: 'informe-fase2-desarrollo', displayName: 'Fase 2 — Desarrollo' },
+    { code: 'informe-fase3-analisis-y-resultados', displayName: 'Fase 3 — Análisis y resultados' },
+    { code: 'informe-fase4-cierre', displayName: 'Fase 4 — Conclusiones' },
     { code: 'humanizador-academico', displayName: 'Humanizador académico' },
   ],
 };
@@ -69,6 +78,7 @@ sustituir('../src/modules/skills/skill.service', {
 sustituir('../src/modules/projects/project.storage', {
   fechaDeAnalisis: async () => null,
   leer: async () => null,
+  leerMaterial: async () => null,
 });
 sustituir('../src/modules/references/propias.repository', { contar: async () => 12 });
 sustituir('../src/modules/zotero/biblioteca.repository', { deUsuario: async () => null });
@@ -113,6 +123,46 @@ const PROYECTOS = {
 };
 
 const AHORA = new Date('2026-09-15T12:00:00Z');
+
+/**
+ * Un informe de curso, el de los estudiantes que ya lo usan. Se congeló el 16 de
+ * septiembre de 2026, antes de añadir el ámbito empresa a la misma ruta: el
+ * estudiante no puede notar ese cambio.
+ */
+const INFORME_DE_CURSO = {
+  id: 'p-informe',
+  productCode: INFORME,
+  tema: 'La informalidad laboral en los mercados de Lima',
+  carrera: 'Administración de Empresas',
+  universidad: 'Tecsup',
+  asesor: null,
+  estiloCitas: null,
+  plantillaAt: null,
+  consejos: null,
+  fichaInforme: {
+    tipo: 'curso',
+    curso: 'Economía General',
+    cicloSeccion: 'IV ciclo, sección B',
+    integrantes: [{ nombre: 'Ana Ruiz', codigo: 'U2023001' }, { nombre: 'Luis Soto' }],
+    fechaEntrega: '2026-09-30',
+    rubrica: 'Introducción con objetivo; tres apartados con fuentes; APA 7.',
+  },
+  updatedAt: new Date('2026-09-10T00:00:00Z'),
+  stages: [
+    { skillCode: 'informe-fase0-encargo', estado: 'LISTO', resumen: 'Esquema de tres apartados.' },
+    { skillCode: 'informe-fase2-desarrollo', estado: 'EN_CURSO', palabras: 1450 },
+  ],
+};
+
+test('el panorama y el contexto de un informe de curso no cambian', async (t) => {
+  // La línea de la entrega cuenta días desde hoy: se fija el reloj.
+  t.mock.timers.enable({ apis: ['Date'], now: AHORA });
+  estado.proyecto = structuredClone(INFORME_DE_CURSO);
+  comparar(`proyecto.${INFORME}`, {
+    resumen: await projectService.resumen('u1', INFORME),
+    contexto: await projectService.contexto('u1', INFORME),
+  });
+});
 
 for (const productCode of [TESIS, ARTICULO]) {
   test(`el panorama y el contexto de ${productCode} no cambian`, async () => {

@@ -566,6 +566,62 @@ function portadaDeInforme({
 }
 
 /**
+ * La portada de un informe de empresa.
+ *
+ * Hermana de `portadaDeInforme` y no una variante suya: la del informe de curso
+ * la vigila una instantánea (`word.informe-curso`) y tiene que salir idéntica.
+ * Un informe de empresa no lleva curso ni docente: lleva la empresa, a quién va,
+ * quién lo firma y qué periodo cubre, y la marca de confidencial si se pidió.
+ * Lo que no se sepa no sale; no se inventa.
+ */
+function portadaDeEmpresa({
+  empresa,
+  tema,
+  tipo,
+  destinatario,
+  preparadoPor,
+  cargo,
+  nombre,
+  periodo,
+  ciudad,
+  fechaEntrega,
+  confidencial = false,
+}) {
+  const centrado = (texto, opciones = {}, despues = 240) =>
+    new Paragraph({
+      children: [new TextRun({ text: texto, ...opciones })],
+      alignment: AlignmentType.CENTER,
+      indent: { firstLine: 0 },
+      spacing: { after: despues },
+    });
+  const hueco = (despues) => new Paragraph({ text: '', spacing: { after: despues } });
+
+  const hojas = [];
+  if (empresa) hojas.push(centrado(empresa.toUpperCase(), { bold: true, size: 28 }));
+  hojas.push(hueco(960));
+  hojas.push(centrado(tema ?? 'Informe', { bold: true, size: 32 }));
+  if (tipo) hojas.push(centrado(tipo, { italics: true, size: 24 }));
+  if (periodo) hojas.push(centrado(`Periodo: ${periodo}`, { size: 24 }));
+  hojas.push(hueco(960));
+
+  if (destinatario) hojas.push(centrado(`Preparado para: ${destinatario}`, { size: 24 }));
+  // Sin quién lo firma guardado, firma la cuenta: es lo único seguro.
+  const firma = [preparadoPor ?? nombre, cargo].filter(Boolean).join(', ');
+  if (firma) hojas.push(centrado(`Preparado por: ${firma}`, { size: 24 }));
+
+  hojas.push(hueco(480));
+  const lugar = [ciudad, fechaDePortada(fechaEntrega)].filter(Boolean).join(', ');
+  hojas.push(centrado(lugar.charAt(0).toUpperCase() + lugar.slice(1), { size: 24 }));
+
+  if (confidencial === true) {
+    hojas.push(hueco(480));
+    hojas.push(centrado('Documento confidencial — uso interno', { bold: true, size: 20 }));
+  }
+
+  return hojas;
+}
+
+/**
  * Los párrafos de la lista de referencias.
  *
  * Admite las dos formas en que llega. La de siempre —una lista de entradas APA
@@ -684,7 +740,9 @@ async function armar({
     ...(partes?.portada
       ? [new Paragraph({ text: partesDePlantilla.MARCA_PORTADA })]
       : portadaInforme
-        ? portadaDeInforme(portadaInforme)
+        ? portadaInforme.ambito === 'empresa'
+          ? portadaDeEmpresa(portadaInforme)
+          : portadaDeInforme(portadaInforme)
         : portada({ tema, carrera, universidad, nombre, asesor })),
     new Paragraph({ text: '', pageBreakBefore: true }),
     // «TOC Heading» y no Título 1: se ve como un Título 1 pero no entra en el
@@ -806,6 +864,13 @@ async function armar({
       integrantes: (portadaInforme?.integrantes ?? [])
         .map((i) => (i.codigo ? `${i.nombre} (${i.codigo})` : i.nombre))
         .join(', '),
+      // Del informe de empresa. Sin «Preparado por» en la ficha firma quien tiene la cuenta.
+      empresa: portadaInforme?.empresa ?? null,
+      destinatario: portadaInforme?.destinatario ?? null,
+      preparadoPor:
+        portadaInforme?.ambito === 'empresa' ? (portadaInforme.preparadoPor ?? portadaInforme.nombre ?? null) : null,
+      cargo: portadaInforme?.cargo ?? null,
+      periodo: portadaInforme?.periodo ?? null,
       // La lista de referencias es un Título 1, pero no se numera.
       sinNumero: lista.parrafos.length > 0 ? [lista.titulo] : [],
     });
@@ -928,6 +993,7 @@ module.exports = {
   ajustarEstilos,
   tituloDelCapitulo,
   portadaDeInforme,
+  portadaDeEmpresa,
   partirTabla,
   tablaApa,
   // Lo usa también el informe de R (`r.informe`): misma lista, misma maqueta.

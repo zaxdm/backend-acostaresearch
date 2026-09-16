@@ -42,10 +42,17 @@ const CAMPOS = ['titulo', 'autor', 'asesor', 'carrera', 'grado', 'anio', 'instru
  * podría marcar de más: por eso van aparte y no en la lista de siempre.
  */
 const CAMPOS_DE_INFORME = ['curso', 'docente', 'integrantes', 'cicloSeccion'];
+/**
+ * Los de un informe de empresa, que se reconocen SOLO cuando la plantilla se sube
+ * desde un informe con ámbito empresa. Una carátula de curso puede llevar
+ * «Periodo: 2024-II», y marcarlo ahí cambiaría lo que ya funciona.
+ */
+const CAMPOS_DE_EMPRESA = ['empresa', 'destinatario', 'preparadoPor', 'cargo', 'periodo'];
 /** Con alguno de estos, la portada ya sirve. */
 const CAMPOS_QUE_BASTAN = ['titulo', 'autor', 'asesor'];
+const CAMPOS_QUE_BASTAN_EN_EMPRESA = ['titulo', 'preparadoPor', 'empresa', 'destinatario'];
 const ORDEN = ['titulo', 'autor', 'asesor', 'carrera', 'grado', 'anio'];
-const ORDEN_CON_INFORME = [...ORDEN, ...CAMPOS_DE_INFORME];
+const ORDEN_CON_INFORME = [...ORDEN, ...CAMPOS_DE_INFORME, ...CAMPOS_DE_EMPRESA];
 
 const TEXTO_RE = /(<w:t(?:\s[^>]*)?>)([^<]*)(<\/w:t>)/g;
 
@@ -74,6 +81,12 @@ const MARCA_DE = {
   docente: () => '{{DOCENTE}}',
   integrantes: () => '{{INTEGRANTES}}',
   cicloSeccion: () => '{{CICLO}}',
+  // Del informe de empresa (ver CAMPOS_DE_EMPRESA).
+  empresa: () => '{{EMPRESA}}',
+  destinatario: () => '{{DESTINATARIO}}',
+  preparadoPor: () => '{{PREPARADOPOR}}',
+  cargo: () => '{{CARGO}}',
+  periodo: () => '{{PERIODO}}',
 };
 
 /** Un texto o un salto de línea dentro de un párrafo. */
@@ -196,8 +209,13 @@ function marcar(xml, campos) {
  * título partido en dos líneas, una portada para dos autores— se borran en vez
  * de repetir el dato: solo sabemos uno.
  */
-function validar(campos, lineas, { tipo = null } = {}) {
-  const admitidos = tipo === 'informe' ? [...CAMPOS, ...CAMPOS_DE_INFORME] : CAMPOS;
+function validar(campos, lineas, { tipo = null, ambito = null } = {}) {
+  const admitidos =
+    tipo === 'informe' && ambito === 'empresa'
+      ? [...CAMPOS, ...CAMPOS_DE_EMPRESA]
+      : tipo === 'informe'
+        ? [...CAMPOS, ...CAMPOS_DE_INFORME]
+        : CAMPOS;
   const vistos = new Set();
   const validos = [];
 
@@ -294,6 +312,29 @@ const EN_LINEA_INFORME_RE =
 const ETIQUETA_DENTRO_INFORME_RE =
   /(?=\b(?:autor(?:a|es|as)?|asesor(?:a)?|curso|asignatura|docente|profesor(?:a)?|integrantes|alumn[oa]s|estudiantes|ciclo|secci[oó]n)\s*:)/i;
 
+/**
+ * Las etiquetas de la portada de un informe de empresa. Sin «Para:» ni «De:»
+ * sueltos: partirían «Preparado para:» en dos y marcarían cualquier línea.
+ */
+const ETIQUETAS_DE_EMPRESA =
+  /autor(?:a|es|as)?|preparado\s+(?:para|por)|elaborado\s+(?:para|por)|dirigido\s+a|destinatario|responsable|empresa|cliente|organizaci[oó]n|entidad|cargo|puesto|per[ií]odo/
+    .source;
+const ETIQUETA_EMPRESA_RE = new RegExp(String.raw`^\s*(${ETIQUETAS_DE_EMPRESA})\s*:?\s*$`, 'i');
+const EN_LINEA_EMPRESA_RE = new RegExp(String.raw`^\s*(${ETIQUETAS_DE_EMPRESA})\s*:\s*(\S.*?)\s*$`, 'i');
+const ETIQUETA_DENTRO_EMPRESA_RE = new RegExp(String.raw`(?=\b(?:${ETIQUETAS_DE_EMPRESA})\s*:)`, 'i');
+
+/** De la etiqueta al campo, en una portada de empresa. */
+function campoDeEtiquetaDeEmpresa(etiqueta) {
+  const texto = String(etiqueta).toLowerCase();
+  // «\s+para» y no «para»: «preparado» ya lo lleva dentro.
+  if (/\s+para$|dirigido|destinatario/.test(texto)) return 'destinatario';
+  if (/empresa|cliente|organizaci|entidad/.test(texto)) return 'empresa';
+  if (/cargo|puesto/.test(texto)) return 'cargo';
+  if (/per[ií]odo/.test(texto)) return 'periodo';
+  // «Preparado por», «Elaborado por», «Responsable», «Autor».
+  return 'preparadoPor';
+}
+
 /** De la etiqueta al campo. Sin coincidencia, el dato que sigue es del autor. */
 function campoDeEtiqueta(etiqueta) {
   const texto = String(etiqueta).toLowerCase();
@@ -326,11 +367,17 @@ const ETIQUETA_DENTRO_RE = /(?=\b(?:autor(?:a|es|as)?|asesor(?:a)?)\s*:)/i;
 const GRADO_RE =
   /^\s*(?:licenciad[oa]|ingenier[oa]|abogad[oa]|maestr[oa]|doctor(?:a)?|bachiller|contador(?:a)? p[uú]blic[oa]|m[eé]dic[oa] cirujan[oa]|arquitect[oa]|economista|obstetra|enfermer[oa]|cirujano dentista|profesor(?:a)?)\s+(?:en|de)\s+(.+?)\s*$/i;
 
-function clasificarConReglas(lineas, { tipo = null } = {}) {
+function clasificarConReglas(lineas, { tipo = null, ambito = null } = {}) {
   const esInforme = tipo === 'informe';
-  const ETIQUETA = esInforme ? ETIQUETA_INFORME_RE : ETIQUETA_RE;
-  const EN_LINEA = esInforme ? EN_LINEA_INFORME_RE : EN_LINEA_RE;
-  const ETIQUETA_DENTRO = esInforme ? ETIQUETA_DENTRO_INFORME_RE : ETIQUETA_DENTRO_RE;
+  const deEmpresa = esInforme && ambito === 'empresa';
+  const ETIQUETA = deEmpresa ? ETIQUETA_EMPRESA_RE : esInforme ? ETIQUETA_INFORME_RE : ETIQUETA_RE;
+  const EN_LINEA = deEmpresa ? EN_LINEA_EMPRESA_RE : esInforme ? EN_LINEA_INFORME_RE : EN_LINEA_RE;
+  const ETIQUETA_DENTRO = deEmpresa
+    ? ETIQUETA_DENTRO_EMPRESA_RE
+    : esInforme
+      ? ETIQUETA_DENTRO_INFORME_RE
+      : ETIQUETA_DENTRO_RE;
+  const campoDe = deEmpresa ? campoDeEtiquetaDeEmpresa : campoDeEtiqueta;
   const campos = [];
   // Cada trozo entre saltos de línea, con el párrafo al que pertenece.
   const tramos = [];
@@ -352,7 +399,7 @@ function clasificarConReglas(lineas, { tipo = null } = {}) {
     const etiqueta = ETIQUETA.exec(t.texto);
     if (etiqueta) {
       primeraEtiqueta ??= t.linea;
-      const campo = campoDeEtiqueta(etiqueta[1]);
+      const campo = campoDe(etiqueta[1]);
       // Todos los nombres que siguen, hasta la próxima etiqueta o texto fijo:
       // el primero es el dato y los demás —un segundo autor— se borran al
       // validar. El ORCID de ejemplo se borra también.
@@ -378,7 +425,7 @@ function clasificarConReglas(lineas, { tipo = null } = {}) {
       primeraEtiqueta ??= t.linea;
       // Con las etiquetas de siempre esto da «autor» o «asesor», como antes; en un
       // informe reconoce además curso, docente, integrantes y ciclo.
-      campos.push({ linea: t.linea, campo: campoDeEtiqueta(enLinea[1]), texto: enLinea[2] });
+      campos.push({ linea: t.linea, campo: campoDe(enLinea[1]), texto: enLinea[2] });
       return;
     }
 
@@ -509,7 +556,7 @@ function marcarCabeceras(partes, tituloDeEjemplo) {
  * `clasificar` existe para las pruebas. Nunca lanza: si todo falla, la portada
  * no se usa y la plantilla se guarda igual con lo demás.
  */
-async function prepararPortada(partes, { clasificar = clasificarConGemini, tipo = null } = {}) {
+async function prepararPortada(partes, { clasificar = clasificarConGemini, tipo = null, ambito = null } = {}) {
   const candidata = partes?.portadaCandidata;
   // Sin portada no hay título de ejemplo que buscar, pero los autores del pie sí.
   if (!candidata) return partes ? marcarCabeceras(partes, null) : partes;
@@ -529,8 +576,9 @@ async function prepararPortada(partes, { clasificar = clasificarConGemini, tipo 
     }
   }
 
-  const reglas = validar(clasificarConReglas(lineas, { tipo }), lineas, { tipo });
-  if (!campos.some((c) => CAMPOS_QUE_BASTAN.includes(c.campo))) {
+  const reglas = validar(clasificarConReglas(lineas, { tipo, ambito }), lineas, { tipo, ambito });
+  const bastan = tipo === 'informe' && ambito === 'empresa' ? CAMPOS_QUE_BASTAN_EN_EMPRESA : CAMPOS_QUE_BASTAN;
+  if (!campos.some((c) => bastan.includes(c.campo))) {
     campos = reglas;
     origen = 'reglas';
   } else {
@@ -539,7 +587,7 @@ async function prepararPortada(partes, { clasificar = clasificarConGemini, tipo 
     // y «Licenciada en psicología», y el tesista los vio en su Word.
     const vistas = new Set(campos.map((c) => c.linea));
     const extra = reglas.filter((c) => c.campo === 'instruccion' || !vistas.has(c.linea));
-    campos = validar([...campos, ...extra], lineas, { tipo });
+    campos = validar([...campos, ...extra], lineas, { tipo, ambito });
   }
 
   // Cuánto ocupaban los datos de ejemplo: si los del tesista son más largos, al
@@ -555,7 +603,7 @@ async function prepararPortada(partes, { clasificar = clasificarConGemini, tipo 
   };
 
   const { xml, puestos } = marcar(candidata.xml, campos);
-  if (puestos.some((c) => CAMPOS_QUE_BASTAN.includes(c))) {
+  if (puestos.some((c) => bastan.includes(c))) {
     partes.portada = { ...candidata, xml };
     partes.camposDePortada = puestos;
   } else {

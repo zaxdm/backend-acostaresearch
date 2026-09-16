@@ -15,6 +15,8 @@ const projectService = require('../projects/project.service');
 const documentoService = require('../projects/documento.service');
 const subidaFormato = require('../projects/project.subida-formato');
 const subidaMaterial = require('../projects/project.subida-material');
+const subidaDocumento = require('../projects/project.subida-documento');
+const { enlaceClic } = require('../../shared/utils/enlaceClic');
 const materialService = require('../projects/material.service');
 const consejos = require('../projects/project.consejos');
 const normas = require('../projects/project.normas');
@@ -43,6 +45,12 @@ const { perfilDe } = require('../productos/producto.perfil');
 const N = '\n';
 
 const SIN_ARGUMENTOS = fromJsonSchema({ type: 'object', properties: {}, additionalProperties: false });
+
+/** «16 de septiembre de 2026», para que el tesista reconozca qué versión subió. */
+const fechaCorta = (iso) =>
+  iso
+    ? new Date(iso).toLocaleDateString('es-PE', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Lima' })
+    : 'fecha desconocida';
 
 const ESQUEMA_FUENTES = fromJsonSchema({
   type: 'object',
@@ -297,16 +305,33 @@ const ESQUEMA_GUARDAR_AVANCE_INFORME = fromJsonSchema({
       type: 'object',
       description:
         'La ficha del informe: sale en la portada del Word y marca el calendario hasta la ' +
-        'entrega. Mándala EN CUANTO el estudiante diga uno de estos datos, sin esperar a ' +
+        'entrega. Un informe de curso usa tipo, curso, docente, integrantes, cicloSeccion, ciudad, ' +
+        'fechaEntrega y rubrica; uno de empresa, ambito "empresa" y los campos marcados «Empresa». ' +
+        'No mezcles los de un ámbito con los del otro. ' +
+        'Mándala EN CUANTO te diga uno de estos datos, sin esperar a ' +
         'tenerlos todos. Lo que no mandes se queda como estaba; los integrantes se mandan ' +
         'TODOS cada vez, porque la lista sustituye a la anterior.',
       properties: {
+        ambito: {
+          type: 'string',
+          enum: ['curso', 'empresa'],
+          description:
+            'Mándalo SOLO en un informe de empresa, con "empresa". En uno de curso no lo mandes: ' +
+            'una ficha sin ámbito es de curso.',
+        },
         tipo: {
           type: 'string',
-          enum: ['curso', 'proyecto', 'caso'],
+          enum: [
+            'curso', 'proyecto', 'caso',
+            'diagnostico', 'gestion', 'factibilidad', 'mercado', 'tecnico', 'auditoria', 'avance',
+            'incidente', 'sostenibilidad', 'duediligence', 'desempeno', 'clima', 'otro',
+          ],
           description:
-            'curso = informe académico sobre un tema del curso; proyecto = informe de un ' +
-            'proyecto que hizo; caso = análisis de un caso que le dieron.',
+            'De curso: curso = informe académico sobre un tema del curso; proyecto = informe de un ' +
+            'proyecto que hizo; caso = análisis de un caso que le dieron. De empresa: diagnostico, ' +
+            'gestion (resultados de un periodo), factibilidad (o plan de negocio), mercado, ' +
+            'tecnico, auditoria (interna), avance (de un proyecto), incidente, sostenibilidad, ' +
+            'duediligence, desempeno, clima u otro.',
         },
         curso: { type: 'string', description: 'El nombre del curso, como sale en su sílabo.' },
         docente: {
@@ -341,6 +366,40 @@ const ESQUEMA_GUARDAR_AVANCE_INFORME = fromJsonSchema({
           description:
             'Los criterios de la rúbrica o de la consigna, resumidos. Con esto se revisa el ' +
             'informe antes de entregarlo: NO los inventes si no te los ha dado.',
+        },
+        // ── Solo en un informe de empresa ──
+        empresa: { type: 'string', description: 'Empresa: la empresa que se analiza, con su nombre comercial.' },
+        sector: { type: 'string', description: 'Empresa: el sector y el tamaño, en texto.' },
+        destinatario: {
+          type: 'string',
+          description: 'Empresa: a quién va el informe («Gerencia General», «el directorio», «Banco X»).',
+        },
+        preparadoPor: {
+          type: 'string',
+          description: 'Empresa: quien lo firma: la consultora, el área o la persona.',
+        },
+        cargo: { type: 'string', description: 'Empresa: el cargo de quien lo firma.' },
+        periodo: { type: 'string', description: 'Empresa: lo que cubre el informe («enero a marzo de 2026»).' },
+        confidencial: {
+          type: 'boolean',
+          description: 'Empresa: verdadero si la portada lleva la marca de documento confidencial.',
+        },
+        decision: {
+          type: 'string',
+          maxLength: 300,
+          description: 'Empresa: la decisión que tiene que apoyar el informe, en una frase.',
+        },
+        alcance: {
+          type: 'string',
+          maxLength: 1500,
+          description: 'Empresa: qué entra, qué no entra y las limitaciones, resumidos.',
+        },
+        terminos: {
+          type: 'string',
+          maxLength: 1500,
+          description:
+            'Empresa: lo que pidió el cliente en sus términos de referencia, resumido. Con esto se ' +
+            'revisa el informe antes de entregarlo: NO lo inventes.',
         },
       },
       additionalProperties: false,
@@ -670,6 +729,26 @@ function texto(contenido) {
 }
 
 /**
+ * La primera línea de una búsqueda abierta que salió por Crossref, o nada.
+ *
+ * Crossref es el respaldo de OpenAlex y no acota por país ni por idioma. Si el
+ * tesista pidió antecedentes peruanos, la lista NO lo es, y el asistente tiene
+ * que saberlo antes de presentarla.
+ */
+function avisoDeCrossref(origen, filtrosSinAplicar = []) {
+  if (origen !== 'crossref') return '';
+  const sinFiltro =
+    filtrosSinAplicar.length > 0
+      ? ` Y NO SE PUDO ACOTAR POR ${filtrosSinAplicar.join(' NI POR ').toUpperCase()}: no presentes ` +
+        'estas fuentes como si lo estuvieran; revisa en cada una de dónde es antes de decirlo.'
+      : '';
+  return (
+    'OpenAlex no respondía, así que esta búsqueda salió por Crossref, el registro de los DOI. ' +
+    `No trae si hay PDF gratis ni el idioma.${sinFiltro}${N}${N}`
+  );
+}
+
+/**
  * Construye el servidor MCP para UNA licencia concreta.
  *
  * Se crea uno por petición y muere con ella: así la licencia queda cerrada
@@ -776,7 +855,7 @@ function construirServidor(licencia) {
           : '';
 
       return texto(
-        `${perfil.tipo === 'informe' ? 'Ruta del informe estudiantil' : 'Método de tesis'} — Acosta | IA & Research\n\n${lineas.join('\n\n')}${aviso}\n\n` +
+        `${perfil.tipo === 'informe' ? 'Ruta del informe' : 'Método de tesis'} — Acosta | IA & Research\n\n${lineas.join('\n\n')}${aviso}\n\n` +
           'Para trabajar un capítulo usa la herramienta "redactar" con la clave correspondiente.',
       );
     },
@@ -1778,6 +1857,19 @@ function construirServidor(licencia) {
             cuantas,
           });
 
+          // Que no contestara no es que no haya nada. Decir «tu tema está poco
+          // estudiado» porque un servidor ajeno estaba caído mandaría al
+          // tesista a escribirlo en su justificación.
+          if (abierta.caida) {
+            return texto(
+              `No hay nada sobre «${tema}» ni en la biblioteca de Acosta ni en la del tesista, ` +
+                'y el catálogo abierto no está respondiendo ahora mismo, así que NO SE SABE si ' +
+                'hay literatura fuera.\n\n' +
+                'DÍSELO AL TESISTA ASÍ: no concluyas que su tema está poco estudiado. Que vuelva ' +
+                'a intentar en un rato con "buscar_en_la_literatura", y sigue sin citar ahí.',
+            );
+          }
+
           if (abierta.fuentes.length === 0) {
             return texto(
               `No hay nada sobre «${tema}» ni en la biblioteca de Acosta, ni en la del ` +
@@ -1809,7 +1901,8 @@ function construirServidor(licencia) {
             // se miraron las suyas. Y evita que el asistente aprenda que «la
             // biblioteca» significa siempre «la de Acosta», que es de donde
             // salía luego atribuirle a Acosta fuentes que no había revisado.
-            `No hay nada sobre «${tema}» ni en la biblioteca de Acosta ni en la del tesista ` +
+            avisoDeCrossref(abierta.origen, abierta.filtrosSinAplicar) +
+              `No hay nada sobre «${tema}» ni en la biblioteca de Acosta ni en la del tesista ` +
               `—su Zotero y lo que subió—, así que busqué en el catálogo abierto con ` +
               `«${enEspanol}»:` +
               `\n\n${deFuera.join('\n\n')}\n\n` +
@@ -1944,13 +2037,14 @@ function construirServidor(licencia) {
         prompt: tema,
       });
 
-      const { fuentes, total, caida } = await referenceService.buscarEnLaLiteratura({
-        tema,
-        idioma,
-        pais,
-        desdeAnio,
-        cuantas,
-      });
+      const { fuentes, total, caida, origen, filtrosSinAplicar } =
+        await referenceService.buscarEnLaLiteratura({
+          tema,
+          idioma,
+          pais,
+          desdeAnio,
+          cuantas,
+        });
 
       // La búsqueda abierta de OpenAlex se pausa a veces mientras su servidor se
       // recupera. No es culpa del tesista ni un fallo del conector, y decirlo
@@ -1959,12 +2053,17 @@ function construirServidor(licencia) {
         // Si no respondió, no se le cobra.
         await licenseService.releaseLimits(cupo.reserva);
         return texto(
-          'El catálogo abierto no está respondiendo ahora mismo. No es nada que hayas hecho ' +
-            'tú ni te falte configurar: es su servidor.\n\n' +
+          'El catálogo abierto no está respondiendo ahora mismo, ni su respaldo. No es nada ' +
+            'que hayas hecho tú ni te falte configurar: es su servidor.\n\n' +
             'Prueba de nuevo en un rato, o busca mientras en la biblioteca de Acosta con ' +
             '"buscar_fuentes", traduciendo el tema al inglés.',
         );
       }
+
+      // Vinieron del respaldo: se dice, y sobre todo se dice qué filtro NO se
+      // aplicó. Sin esto el asistente presentaría como «antecedentes en el Perú»
+      // una lista que no se acotó por país.
+      const avisoDeRespaldo = avisoDeCrossref(origen, filtrosSinAplicar);
 
       if (fuentes.length === 0) {
         const acotado = [idioma ? 'idioma ' + idioma : null, pais ? 'país ' + pais : null]
@@ -1996,7 +2095,8 @@ function construirServidor(licencia) {
       const cuantosHay = total > fuentes.length ? ` (hay ${total} en total)` : '';
 
       return texto(
-        `Literatura publicada sobre «${tema}»${cuantosHay}:\n\n${fichas.join('\n\n')}\n\n` +
+        avisoDeRespaldo +
+          `Literatura publicada sobre «${tema}»${cuantosHay}:\n\n${fichas.join('\n\n')}\n\n` +
           'Cita EXACTAMENTE como están escritas, sin cambiar años, autores ni DOIs, y sin ' +
           'traducir los títulos: en la bibliografía va el título original. ' +
           'Y DI DE DÓNDE VIENEN: son del catálogo abierto, no de la biblioteca revisada de ' +
@@ -2331,7 +2431,7 @@ function construirServidor(licencia) {
         'CÓMO SE USA\n' +
         '· Sin argumentos: qué hay en la sesión —las columnas de sus datos, los objetos, los ' +
         'archivos—. Si todavía no subió sus datos, devuelve un enlace para que los suba desde su ' +
-        'navegador: dáselo tal cual.\n' +
+        'navegador: dáselo como enlace que se pulsa, sin escribir la dirección.\n' +
         '· codigo: ejecuta R y devuelve la consola, los gráficos como imagen y cómo se lee cada ' +
         'prueba. Ya existen `datos` (su matriz) y estas funciones: alfa_de_cronbach(items), ' +
         'puntaje(datos, columnas), normalidad(x), descriptivos(datos), frecuencias(x) y ' +
@@ -2463,6 +2563,46 @@ function construirServidor(licencia) {
     },
   );
 
+  // ── Subir el Word que escribió por su cuenta ─────────────────────────────
+  //
+  // Desde la conversación, con un enlace, como el formato: quien pide «humaniza
+  // mi documento» no está en su perfil, y el que hay puede ser una versión vieja.
+  server.registerTool(
+    'subir_mi_documento',
+    {
+      title: 'Enlace para subir su documento',
+      description:
+        `Da un ENLACE para que el tesista suba su Word (.docx) al servidor: ${SU_OBRA} escrita por su ` +
+        'cuenta, para citarla o humanizarla. Dice también si ya hay uno subido, cuál y de qué fecha. ' +
+        'ÚSALA cuando no haya ningún documento subido, o cuando al preguntarle diga que quiere ' +
+        'trabajar con uno NUEVO en vez del que está en el servidor. Dale el enlace como enlace que se ' +
+        'pulsa, sin escribir la dirección, y dile que vuelva a la conversación cuando lo haya subido; ' +
+        'entonces léelo con "ver_mi_documento". Subir uno nuevo reemplaza al anterior, pero conserva ' +
+        'las citas y lo humanizado de los párrafos que sigan igual.',
+      inputSchema: SIN_ARGUMENTOS,
+    },
+    async () => {
+      await licenseService.recordUsage({ licenseId: licencia.id, tool: 'subir_mi_documento' });
+      const userId = licencia.user.id;
+      const { productCode } = licencia;
+
+      const ficha = await documentoService.fichaDe(userId, productCode);
+      const { url, minutos } = subidaDocumento.enlace({ userId, productCode });
+      const enlace = enlaceClic({ texto: 'Haz clic aquí para subir tu documento', url, minutos });
+
+      const hayUno = ficha
+        ? `Ahora mismo en el servidor está «${ficha.nombre}», subido el ${fechaCorta(ficha.subidoAt)}, ` +
+          `con ${ficha.citados} párrafos citados y ${ficha.humanizados} humanizados. Si sube otro, ` +
+          'reemplaza a ese: se conservan las citas y lo humanizado de los párrafos que sigan igual.'
+        : 'Todavía no hay ningún documento subido.';
+
+      return texto(
+        `${hayUno}${N}${N}Enlace para subir su Word (.docx, hasta 40 MB):${N}${enlace}${N}${N}` +
+          'Dile que vuelva aquí y te avise cuando lo haya subido; entonces léelo con "ver_mi_documento".',
+      );
+    },
+  );
+
   // ── Citar el Word que escribió por su cuenta ─────────────────────────────
   //
   // Quien llega con la tesis ya escrita la sube desde su perfil. Claude la lee
@@ -2472,12 +2612,19 @@ function construirServidor(licencia) {
   server.registerTool(
     'ver_mi_documento',
     {
-      title: 'Leer el documento que subió para citar',
+      title: 'Leer el documento que subió',
       description:
-        `Lee el Word que el tesista SUBIÓ desde su perfil para que le pongas las citas: ${SU_OBRA} ` +
-        'ya escrita por su cuenta, sin referencias. Devuelve los párrafos numerados (¶12) por ' +
-        'tandas. ÚSALA cuando diga «cita mi documento», «ponle las referencias», «ya subí mi ' +
-        'tesis», o cuando "mi_proyecto" diga que hay un documento subido. ' +
+        `Lee el Word que el tesista SUBIÓ desde su perfil: ${SU_OBRA} ya escrita por su cuenta, ` +
+        'para ponerle las citas o para humanizarla. Devuelve los párrafos numerados (¶12) por ' +
+        'tandas. ÚSALA cuando diga «cita mi documento», «ponle las referencias», «humaniza mi ' +
+        'documento», «ya subí mi tesis», o cuando "mi_proyecto" diga que hay un documento subido. ' +
+        'Es SU Word en el servidor: NO le pidas que te lo adjunte en el chat ni lo edites tú con ' +
+        'python-docx, que le mueve el formato. ' +
+        'ANTES DE CITAR O HUMANIZAR, PREGÚNTALE si trabajas con el documento que ya está en el ' +
+        'servidor (dile cuál y de qué fecha) o si quiere subir uno nuevo; si es nuevo, o no hay ' +
+        'ninguno, dale el enlace de "subir_mi_documento" y espera a que diga que lo subió. ' +
+        'PARA HUMANIZARLO sigue la skill del humanizador y guarda cada bloque aprobado con ' +
+        '"humanizar_mi_documento". ' +
         'CÓMO SE CITA, EN ORDEN: ' +
         '1) Si la norma no está elegida, PREGÚNTASELA y guárdala con "guardar_avance" ' +
         '(estiloCitas); las de notas al pie no sirven para un documento subido. ' +
@@ -2511,11 +2658,20 @@ function construirServidor(licencia) {
       const leido = await documentoService.ver(licencia.user.id, licencia.productCode, { desde });
       if (!leido) {
         return texto(
-          'El tesista no ha subido ningún documento. Dile que entre en su perfil de ' +
-            'acostaresearch.com y, en «Mi tesis», pulse «Subir mi documento» con su Word (.docx); ' +
-            'luego que vuelva y te diga «cita mi documento».',
+          'El tesista no ha subido ningún documento. Llama a "subir_mi_documento" y dale el enlace ' +
+            'para que suba su Word (.docx); cuando diga que lo subió, vuelve a leerlo con esta herramienta.',
         );
       }
+
+      // La primera tanda de la conversación empieza por la pregunta: el documento
+      // del servidor puede ser una versión vieja, y humanizar sobre ella es perder
+      // el trabajo cuando suba la buena.
+      const pregunta = desde
+        ? ''
+        : `ANTES DE TRABAJAR: si en esta conversación todavía no se lo preguntaste, PREGÚNTALE si ` +
+          `trabajas con «${leido.nombre}», subido el ${fechaCorta(leido.subidoAt)}, o si quiere subir ` +
+          'una versión nueva. Si es nueva, llama a "subir_mi_documento", dale el enlace y espera a que ' +
+          `diga que lo subió antes de seguir.${N}${N}`;
 
       const { norma } = leido;
       const lineaDeNorma =
@@ -2533,15 +2689,20 @@ function construirServidor(licencia) {
           : `No hay párrafos desde el ¶${desde}: el documento va del ¶${leido.primero} al ¶${leido.ultimo}.`;
 
       return texto(
+        pregunta +
         `Documento: «${leido.nombre}» · ${leido.total} párrafos con texto (¶${leido.primero} a ` +
-          `¶${leido.ultimo}) · ${leido.citados} ya citados.${N}${lineaDeNorma}${N}${N}` +
+          `¶${leido.ultimo}) · ${leido.citados} ya citados · ${leido.humanizados} humanizados.${N}` +
+          `${lineaDeNorma}${N}${N}` +
           `${tanda}${N}${N}` +
           (leido.siguiente
             ? `SIGUE: pide "desde": ${leido.siguiente} para la tanda siguiente.${N}${N}`
             : `Es el final del documento.${N}${N}`) +
-          'Los marcados [citado] ya tienen sus marcas guardadas. Lo que va entre corchetes al ' +
-          'principio de cada línea NO es del texto: no lo copies. ' +
-          'No guardes nada hasta haberle enseñado el resumen y tener su visto bueno.',
+          'Los marcados [citado] ya tienen sus marcas guardadas; los [humanizado] salen con su ' +
+          'texto nuevo, y [APARTE] es donde se partió un párrafo. Lo que va entre corchetes al ' +
+          'principio de cada línea NO es del texto: no lo copies. [Título], [tabla] y ' +
+          '[referencias] no se humanizan, y [no se reescribe] lleva algo (un campo de Zotero, un ' +
+          'enlace, una imagen) que solo puede cambiar el tesista en su Word. ' +
+          'No guardes nada hasta haberle enseñado lo que vas a guardar y tener su visto bueno.',
       );
     },
   );
@@ -2598,8 +2759,8 @@ function construirServidor(licencia) {
         const r = await documentoService.citar(licencia.user.id, licencia.productCode, parrafos);
         if (!r) {
           return texto(
-            'No hay ningún documento subido, así que no se ha guardado nada. Dile que lo suba ' +
-              'desde «Mi tesis» en su perfil de acostaresearch.com.',
+            'No hay ningún documento subido, así que no se ha guardado nada. Llama a ' +
+              '"subir_mi_documento" y dale el enlace para que lo suba.',
           );
         }
 
@@ -2627,6 +2788,109 @@ function construirServidor(licencia) {
     },
   );
 
+  // ── Humanizar el Word que subió ──────────────────────────────────────────
+  //
+  // El humanizador trabajaba sobre una copia adjunta en el chat y la editaba con
+  // python-docx, que al cambiar el texto de un párrafo le borra el formato. Aquí
+  // guarda el texto nuevo de cada párrafo, y el servidor lo escribe dentro del
+  // mismo Word al descargarlo, conservando estilo, cursivas y notas al pie (ver
+  // `project.reescritura`).
+  server.registerTool(
+    'humanizar_mi_documento',
+    {
+      title: 'Guardar los párrafos humanizados del documento subido',
+      description:
+        'Guarda el texto humanizado de párrafos del Word que el tesista SUBIÓ, leído con ' +
+        '"ver_mi_documento". Manda cada párrafo con su número y su texto NUEVO completo. ' +
+        'NO LA USES sin haberle enseñado antes el bloque reescrito y tener su visto bueno, ni sin ' +
+        'haberle preguntado al empezar si trabajas con el documento que está en el servidor o con uno ' +
+        'nuevo (el nuevo lo sube con el enlace de "subir_mi_documento"). ' +
+        'El Word subido no se sobrescribe: el servidor escribe los párrafos nuevos al descargarlo, ' +
+        'con el mismo estilo de párrafo, la misma letra, y las cursivas y notas al pie de las ' +
+        'palabras que siguen. Reglas que el servidor comprueba y por las que rechaza el párrafo: ' +
+        'las cifras y los años no cambian; lo que va entre comillas se copia tal cual; los ' +
+        'apellidos citados siguen ahí; no se añaden corchetes ni avisos; un párrafo [citado] trae ' +
+        'EXACTAMENTE las mismas marcas [AR…] y [FALTA FUENTE], cada una con su afirmación, y uno sin ' +
+        'citas no trae marcas. Títulos, tablas, rótulos, referencias y párrafos [no se reescribe] ' +
+        'no se aceptan. Para PARTIR un párrafo largo en dos (solo si el tesista lo aprobó), pon ' +
+        '[APARTE] donde va el corte. Para devolver párrafos a su texto original, pásalos en ' +
+        '"deshacer". Hasta 40 párrafos por llamada. Cuando termine el bloque, dale su Word con ' +
+        '"enlace_del_word".',
+      inputSchema: fromJsonSchema({
+        type: 'object',
+        properties: {
+          parrafos: {
+            type: 'array',
+            maxItems: 40,
+            description: 'Los párrafos humanizados.',
+            items: {
+              type: 'object',
+              properties: {
+                p: { type: 'integer', minimum: 1, description: 'El número del párrafo: 12 para ¶12.' },
+                texto: {
+                  type: 'string',
+                  minLength: 1,
+                  maxLength: 16000,
+                  description: 'El texto nuevo del párrafo entero, con sus marcas de cita si las tenía.',
+                },
+              },
+              required: ['p', 'texto'],
+              additionalProperties: false,
+            },
+          },
+          deshacer: {
+            type: 'array',
+            maxItems: 40,
+            items: { type: 'integer', minimum: 1 },
+            description: 'Números de párrafo que vuelven a su texto original.',
+          },
+        },
+        additionalProperties: false,
+      }),
+    },
+    async ({ parrafos, deshacer }) => {
+      await licenseService.recordUsage({ licenseId: licencia.id, tool: 'humanizar_mi_documento' });
+
+      if ((parrafos?.length ?? 0) + (deshacer?.length ?? 0) === 0) {
+        return texto('No has mandado nada: pasa los párrafos en "parrafos" o sus números en "deshacer".');
+      }
+
+      try {
+        const r = await documentoService.humanizar(licencia.user.id, licencia.productCode, parrafos, deshacer);
+        if (!r) {
+          return texto(
+            'No hay ningún documento subido, así que no se ha guardado nada. Llama a ' +
+              '"subir_mi_documento" y dale el enlace para que lo suba.',
+          );
+        }
+
+        const rechazos =
+          r.rechazados.length > 0
+            ? `${N}${N}RECHAZADOS (${r.rechazados.length}), NO se guardaron. Corrígelos y vuelve a mandarlos, ` +
+              `o dile al tesista por qué no se pueden:${N}` +
+              r.rechazados.map((x) => `¶${x.p}: ${x.motivo}`).join(N)
+            : '';
+        const avisos = r.avisos.length > 0 ? `${N}${N}AVISOS:${N}${r.avisos.join(N)}` : '';
+
+        return texto(
+          `Guardados ${r.guardados} párrafos` +
+            (r.deshechos > 0 ? `, ${r.deshechos} devueltos a su texto original` : '') +
+            `.${rechazos}${avisos}${N}${N}` +
+            `El documento lleva ahora ${r.humanizados} párrafos humanizados` +
+            (r.partidos > 0 ? `, ${r.partidos} de ellos partidos en dos` : '') +
+            `.${N}${N}Cuando termine el bloque, dale su Word con "enlace_del_word" para que lo revise: ` +
+            'es su mismo documento con su formato. No le armes tú otro Word.',
+        );
+      } catch (error) {
+        logger.error({ err: error, licenseId: licencia.id }, 'No se pudieron guardar los párrafos humanizados');
+        return texto(
+          'NO se pudieron guardar los párrafos: error del servidor. Vuelve a intentarlo; si insiste, ' +
+            'avísale de que no han quedado guardados.',
+        );
+      }
+    },
+  );
+
   // ── El formato de su universidad ─────────────────────────────────────────
   //
   // El recuadro «Subir formato» del perfil se quitó: lo pregunta Claude y, si lo
@@ -2635,17 +2899,22 @@ function construirServidor(licencia) {
   server.registerTool(
     'formato_de_la_universidad',
     {
-      title: perfil.tipo === 'informe' ? 'El formato que pide su curso' : 'El formato de su universidad para el Word',
+      title:
+        perfil.tipo === 'informe'
+          ? 'El formato que pide su curso o su empresa'
+          : 'El formato de su universidad para el Word',
       description:
         perfil.tipo === 'informe'
-          ? 'La plantilla de Word que dio su docente o su instituto para el informe, que el Word del ' +
-            'servidor aplica solo: títulos, fuentes, márgenes, encabezado, pie de página y la portada ' +
-            'llenada con sus datos (curso, docente e integrantes si la plantilla los pide). ' +
+          ? 'La plantilla de Word para el informe —la que dio su docente o su instituto, o la ' +
+            'plantilla de informes de la empresa—, que el Word del servidor aplica solo: títulos, ' +
+            'fuentes, márgenes, encabezado, pie de página y la portada llenada con sus datos (curso, ' +
+            'docente e integrantes; o empresa, destinatario, quién lo prepara y periodo, si la ' +
+            'plantilla los pide). ' +
             'PREGÚNTALE UNA VEZ, al armar el esquema o antes de darle su Word, si le dieron una ' +
-            'plantilla o un formato. ÚSALA también cuando diga «tengo la plantilla del curso» o ' +
-            '«mi profe nos dio un formato». ' +
+            'plantilla o un formato. ÚSALA también cuando diga «tengo la plantilla del curso», ' +
+            '«mi profe nos dio un formato» o «la empresa tiene su formato de informes». ' +
             'Sin argumentos dice si ya hay uno puesto y da un ENLACE para subirlo o cambiarlo: dáselo ' +
-            'tal cual y dile que vuelva cuando lo haya subido; entonces llámala otra vez para ' +
+            'como enlace que se pulsa, sin escribir la dirección, y dile que vuelva cuando lo haya subido; entonces llámala otra vez para ' +
             'confirmar qué se tomó. ' +
             'OJO, no la confundas con "material_del_curso": aquí va la plantilla DE FORMATO, y allí la ' +
             'consigna, la rúbrica o el índice que se leen. ' +
@@ -2659,7 +2928,7 @@ function construirServidor(licencia) {
             'mi formato», «mi universidad tiene plantilla» o «quiero que salga con el formato de mi ' +
             'facultad». ' +
             'Sin argumentos dice si ya hay uno puesto y da un ENLACE para subirlo o cambiarlo: dáselo ' +
-            'tal cual y dile que vuelva cuando lo haya subido; entonces llámala otra vez para ' +
+            'como enlace que se pulsa, sin escribir la dirección, y dile que vuelva cuando lo haya subido; entonces llámala otra vez para ' +
             'confirmar qué se tomó. ' +
             'NO le pidas que te pegue el formato, no lo copies tú a mano y no le armes un Word con ' +
             'ese formato: lo aplica el servidor. Si no tiene formato, no insistas.',
@@ -2710,14 +2979,19 @@ function construirServidor(licencia) {
 
       const formato = await projectService.formatoDelProyecto(userId, productCode);
       const { url, minutos } = subidaFormato.enlace({ userId, productCode });
+      const deEmpresa = await projectService.esInformeDeEmpresa(userId, productCode);
 
       if (!formato) {
-        const dioElFormato = perfil.tipo === 'informe' ? 'su docente o su instituto' : 'su facultad';
+        const dioElFormato = deEmpresa
+          ? 'la empresa'
+          : perfil.tipo === 'informe'
+            ? 'su docente o su instituto'
+            : 'su facultad';
         return texto(
           `Todavía no ha subido ningún formato: su Word sale con el formato por defecto.${N}${N}` +
-            `Si ${dioElFormato} le dio un formato o plantilla, dale este enlace para subirlo (caduca ` +
-            `en ${minutos} minutos):${N}${url}${N}${N}` +
-            'Dáselo tal cual. Dile que suba el .docx que le dieron, sin cambiarle nada y con su ' +
+            `Si ${dioElFormato} le dio un formato o plantilla, dale este enlace para subirlo:${N}` +
+            `${enlaceClic({ texto: 'Haz clic aquí para subir tu formato', url, minutos })}${N}${N}` +
+            'Dile que suba el .docx que le dieron, sin cambiarle nada y con su ' +
             'portada si la trae, y que vuelva aquí cuando lo haya subido. Solo se guarda el ' +
             'formato: el texto que traiga el documento no se conserva.',
         );
@@ -2733,12 +3007,18 @@ function construirServidor(licencia) {
         docente: 'docente',
         integrantes: 'integrantes',
         cicloSeccion: 'ciclo y sección',
+        empresa: 'empresa',
+        destinatario: 'destinatario',
+        preparadoPor: 'quién lo prepara',
+        cargo: 'cargo',
+        periodo: 'periodo',
       };
       const campos = formato.camposDePortada.map((c) => NOMBRES[c] ?? c);
       const desde = new Date(formato.desde).toISOString().slice(0, 10);
+      const deQuien = deEmpresa ? 'de la empresa' : perfil.tipo === 'informe' ? 'del curso' : 'de su universidad';
 
       return texto(
-        `Formato ${perfil.tipo === 'informe' ? 'del curso' : 'de su universidad'} puesto${formato.nombre ? `: «${formato.nombre}»` : ''}, ` +
+        `Formato ${deQuien} puesto${formato.nombre ? `: «${formato.nombre}»` : ''}, ` +
           `desde el ${desde}. Su Word sale con él` +
           (formato.portada
             ? `, con la portada del formato${campos.length > 0 ? ` llenada con su ${campos.join(', ')}` : ''}.`
@@ -2747,7 +3027,8 @@ function construirServidor(licencia) {
             ? ''
             : ' OJO: se subió antes de que se tomaran los márgenes, el encabezado, el pie y la ' +
               'portada; pídele que lo vuelva a subir con el enlace de abajo.') +
-          `${N}${N}Si quiere cambiarlo por otro, este enlace sirve (caduca en ${minutos} minutos):${N}${url}` +
+          `${N}${N}Si quiere cambiarlo por otro, este enlace sirve:${N}` +
+          enlaceClic({ texto: 'Haz clic aquí para cambiar tu formato', url, minutos }) +
           `${N}${N}Si la portada salió mal, llama con "usarNuestraPortada". Para ver cómo quedó, ` +
           'dale su Word con "enlace_del_word".',
       );
@@ -2763,17 +3044,19 @@ function construirServidor(licencia) {
     server.registerTool(
       'material_del_curso',
       {
-        title: 'El material que dio el docente',
+        title: 'El material del encargo: del docente o de la empresa',
         description:
-          'La consigna, la rúbrica o el índice (la estructura numerada) que dio el docente para el ' +
-          'informe, subidos por el estudiante para que los leas. ' +
-          'Sin argumentos lista lo que ya subió y da un ENLACE para subir más: dáselo tal cual y dile ' +
+          'En un informe de curso, la consigna, la rúbrica o el índice (la estructura numerada) que ' +
+          'dio el docente; en uno de empresa, los términos de referencia, el correo del pedido, la ' +
+          'plantilla de informes o los documentos que entregó la empresa. Subidos para que los leas. ' +
+          'Sin argumentos lista lo que ya subió y da un ENLACE para subir más: dáselo como enlace que se pulsa y dile ' +
           'que vuelva cuando lo haya subido. Acepta Word (.docx) o texto, hasta cinco archivos. ' +
           'Con "ver" (el número de la lista) devuelve su texto, por partes con "parte"; las líneas ' +
           '[Título N] e [Índice] son los títulos y el índice del documento: el esquema COPIA esa ' +
           'numeración, no la inventa. ' +
-          'ÚSALA cuando diga que tiene la consigna, la rúbrica, un índice o una plantilla con puntos ' +
-          'numerados, y antes de revisar el informe con la rúbrica. ' +
+          'ÚSALA cuando diga que tiene la consigna, la rúbrica, los términos de referencia, un índice ' +
+          'o una plantilla con puntos numerados, y antes de revisar el informe con la rúbrica o con ' +
+          'los términos. ' +
           'Si lo tiene en PDF o en foto, el enlace no lo lee: que lo adjunte en este chat con el ' +
           'clip y lo lees tú. NO inventes nada que no esté en el material.',
         inputSchema: fromJsonSchema({
@@ -2831,9 +3114,9 @@ function construirServidor(licencia) {
             : 'Todavía no ha subido material.';
 
         return texto(
-          `${subido}${N}${N}Enlace para subir la consigna, la rúbrica o el índice (caduca en ${minutos} ` +
-            `minutos):${N}${url}${N}${N}` +
-            'Dáselo tal cual. Word (.docx) o texto, hasta cinco archivos; uno con el mismo nombre ' +
+          `${subido}${N}${N}Enlace para subir la consigna, la rúbrica o el índice:${N}` +
+            `${enlaceClic({ texto: 'Haz clic aquí para subir el material de tu curso', url, minutos })}${N}${N}` +
+            'Word (.docx) o texto, hasta cinco archivos; uno con el mismo nombre ' +
             'reemplaza al anterior. Si lo tiene en PDF o en foto, que lo adjunte en este chat.',
         );
       },
@@ -2857,8 +3140,8 @@ function construirServidor(licencia) {
         'ÚSALA cuando pida su Word, su documento o descargar, y después de guardar un ' +
         'capítulo. NUNCA ARMES TÚ EL WORD NI ESCRIBAS TÚ LA BIBLIOGRAFÍA: el tuyo no ' +
         'llevaría la norma ni los campos de Zotero, y podría no coincidir con las fichas. ' +
-        'Si el tesista SUBIÓ su propio documento para citar, el enlace es el de ese documento con ' +
-        'las citas puestas. ' +
+        'Si el tesista SUBIÓ su propio documento, el enlace es el de ese documento con las citas ' +
+        'y los párrafos humanizados puestos. ' +
         'El enlace caduca a la media hora; si ya pasó, pide otro.',
       inputSchema: fromJsonSchema({ type: 'object', properties: {}, additionalProperties: false }),
     },
@@ -2872,8 +3155,9 @@ function construirServidor(licencia) {
       if (subido) {
         const { norma } = subido;
         return texto(
-          `Enlace para descargar SU DOCUMENTO con las citas y la lista de referencias (caduca en ` +
-            `${subido.minutos} minutos):${N}${subido.url}${N}${N}` +
+          `Enlace para descargar SU DOCUMENTO con lo humanizado, las citas y la lista de referencias:${N}` +
+            enlaceClic({ texto: 'Haz clic aquí para descargar tu documento', url: subido.url, minutos: subido.minutos }) +
+            `${N}${N}` +
             (norma.familia === 'notas'
               ? `OJO: la norma del proyecto es ${norma.nombre}, de notas al pie, y en un documento ` +
                 'subido no se pueden poner: el enlace dará error. Pregúntale otra norma y guárdala ' +
@@ -2883,11 +3167,12 @@ function construirServidor(licencia) {
                   ? `.${N}${N}`
                   : ', la de por defecto: nadie eligió otra. Si su universidad pide otra, ' +
                     `pregúntasela y guárdala con "guardar_avance" (estiloCitas).${N}${N}`)) +
-            'Es SU MISMO WORD, con su formato, sus tablas y sus figuras: solo se añadieron las ' +
-            'citas, lo marcado [falta fuente] en amarillo y la lista de referencias. DÁSELO TAL ' +
-            'CUAL y NO le prepares tú otro documento.' +
+            'Es SU MISMO WORD, con su formato, sus tablas y sus figuras: solo cambian los párrafos ' +
+            'humanizados, y se añadieron las citas, lo marcado [falta fuente] en amarillo y la ' +
+            'lista de referencias. NO le prepares tú otro documento.' +
             (resultado
-              ? `${N}${N}Aparte, la tesis armada con los capítulos del método: ${resultado.url}`
+              ? `${N}${N}Aparte, la tesis armada con los capítulos del método:${N}` +
+                enlaceClic({ texto: 'Haz clic aquí para descargar la tesis del método', url: resultado.url })
               : ''),
         );
       }
@@ -2901,10 +3186,10 @@ function construirServidor(licencia) {
 
       const { url, minutos, norma } = resultado;
       return texto(
-        `Enlace para descargar la tesis en Word (caduca en ${minutos} minutos):${N}${url}${N}${N}` +
+        `Enlace para descargar la tesis en Word:${N}` +
+          `${enlaceClic({ texto: 'Haz clic aquí para descargar tu Word', url, minutos })}${N}${N}` +
           `Las citas y las referencias salen en ${norma.nombre}` +
           (norma.elegida ? `.${N}${N}` : `, que es la de por defecto: nadie ha elegido otra.${N}${N}`) +
-          'DÁSELO AL TESISTA TAL CUAL para que lo abra. ' +
           (norma.elegida
             ? ''
             : 'Si su universidad pide otra norma, pregúntale cuál y guárdala con ' +

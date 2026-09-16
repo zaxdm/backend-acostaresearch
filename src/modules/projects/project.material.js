@@ -147,8 +147,24 @@ function fichas(lista) {
   }));
 }
 
-/** La línea del panorama del informe. */
-function lineaDeMaterial(lista) {
+/**
+ * La línea del panorama del informe.
+ *
+ * `empresa`: el informe es de empresa, y lo que se sube son los términos de
+ * referencia o los documentos que entregó. La de curso no cambia.
+ */
+function lineaDeMaterial(lista, { empresa = false } = {}) {
+  if (empresa) {
+    if (!lista || lista.length === 0) {
+      return (
+        'Material del encargo: nada subido. Si tiene los términos de referencia, el correo del ' +
+        'pedido o documentos de la empresa en Word, dale el enlace con "material_del_curso"; si ' +
+        'están en PDF, en Excel o en foto, que los adjunte en el chat.'
+      );
+    }
+    const nombres = lista.map((m, i) => `${i + 1}. ${m.nombre}`).join('; ');
+    return `Material del encargo, léelo con "material_del_curso" y su número: ${nombres}.`;
+  }
   if (!lista || lista.length === 0) {
     return (
       'Material del curso: nada subido. Si el estudiante tiene la consigna, la rúbrica o el índice ' +

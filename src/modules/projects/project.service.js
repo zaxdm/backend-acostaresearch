@@ -579,11 +579,30 @@ async function siguientePaso(userId, productCode) {
   const enCurso = new Set(etapas.filter((e) => e.estado === 'EN_CURSO').map((e) => e.skillCode));
   const fases = catalogo.filter((s) => !esApoyo(s.displayName));
 
-  // Si hay algo empezado, toca seguir con eso. Antes se ofrecía siempre la
-  // primera fase sin cerrar, y a quien tenía el Capítulo I a medias —y el tema
-  // ya fijado en el proyecto— se le decía «Le toca: 1 · Tema y delimitación».
+  return faseParaRetomar(fases, proyecto?.retomarEn, (s) =>
+    listos.has(s.code) ? 'LISTO' : enCurso.has(s.code) ? 'EN_CURSO' : 'PENDIENTE',
+  );
+}
+
+/**
+ * La fase por la que se retoma, entre las del método en su orden.
+ *
+ * Primero la que eligió el tesista en el panel, mientras no esté cerrada: con
+ * varias a medias, solo él sabe cuál quiere seguir hoy. Si no eligió —o la que
+ * eligió ya está LISTA, o salió del catálogo—, la primera en curso: antes se
+ * ofrecía la primera sin cerrar, y a quien tenía el Capítulo I a medias y el tema
+ * ya fijado se le decía «Le toca: 1 · Tema y delimitación». Si no hay ninguna en
+ * curso, la primera sin cerrar. Nula cuando están todas LISTAS.
+ *
+ * La usan el panel y el conector, para que la web y Claude digan lo mismo.
+ */
+function faseParaRetomar(fases, retomarEn, estadoDe) {
+  const elegida = retomarEn ? fases.find((f) => f.code === retomarEn) : null;
+  if (elegida && estadoDe(elegida) !== 'LISTO') return elegida;
   return (
-    fases.find((s) => enCurso.has(s.code)) ?? fases.find((s) => !listos.has(s.code)) ?? null
+    fases.find((f) => estadoDe(f) === 'EN_CURSO') ??
+    fases.find((f) => estadoDe(f) !== 'LISTO') ??
+    null
   );
 }
 
@@ -1050,6 +1069,39 @@ async function cambiarAsesor({ userId, productCode, asesor }) {
 
   const proyecto = await projectRepository.asegurar(userId, productCode, { asesor });
   return proyecto.asesor ?? '';
+}
+
+/** ¿Sigue mandando la fase que eligió? Solo si existe en el método y no está cerrada. */
+function retomarVigente(fases, retomarEn) {
+  const elegida = retomarEn ? fases.find((e) => e.code === retomarEn) : null;
+  return Boolean(elegida && elegida.estado !== 'LISTO');
+}
+
+/**
+ * Elige desde el panel por qué fase retomar. Nulo vuelve a la de siempre.
+ *
+ * Solo una fase del método que no esté cerrada: las herramientas de apoyo no
+ * son un sitio donde «quedarse», y una fase LISTA no se retoma. Devuelve el
+ * proyecto del panel ya recalculado, o `{ error }` con el motivo.
+ */
+async function cambiarRetomar({ userId, productCode, capitulo }) {
+  const actual = await projectRepository.buscar(userId, productCode);
+  if (!actual) {
+    const conLicencia = await projectRepository.productosConLicencia(userId);
+    if (!conLicencia.includes(productCode)) return { error: 'sin-proyecto' };
+  }
+
+  if (capitulo) {
+    const catalogo = await skillService.listCatalog(productCode);
+    const fase = catalogo.find((s) => s.code === capitulo && !esApoyo(s.displayName));
+    if (!fase) return { error: 'no-es-fase' };
+    const etapa = (actual?.stages ?? []).find((e) => e.skillCode === capitulo);
+    if (etapa?.estado === 'LISTO') return { error: 'cerrada' };
+  }
+
+  const proyecto = actual ?? (await projectRepository.asegurar(userId, productCode));
+  await projectRepository.elegirRetomar(proyecto.id, capitulo ?? null);
+  return { ok: true };
 }
 
 async function quitarPlantilla(userId, productCode) {
@@ -1712,6 +1764,7 @@ function proyectoEnBlanco(productCode) {
     carrera: null,
     universidad: null,
     asesor: null,
+    retomarEn: null,
     estiloCitas: null,
     idiomaCitas: null,
     plantillaAt: null,
@@ -1803,14 +1856,12 @@ async function deUsuario(userId, { esAdmin = false } = {}) {
         updatedAt: proyecto.updatedAt,
         etapas,
         avance: { listos, total: fases.length },
-        // La fase en curso, si hay una: es donde lo dejó, aunque haya alguna
-        // anterior sin cerrar. Si no, la primera que no esté dada por buena.
-        // Nulo cuando ya no queda ninguna, que es lo que distingue «terminó» de
-        // «no ha empezado».
-        siguiente:
-          fases.find((e) => e.estado === 'EN_CURSO') ??
-          fases.find((e) => e.estado !== 'LISTO') ??
-          null,
+        // Por dónde retomar: la que eligió, la en curso o la primera sin cerrar
+        // (ver `faseParaRetomar`). Nulo cuando ya no queda ninguna, que es lo
+        // que distingue «terminó» de «no ha empezado».
+        siguiente: faseParaRetomar(fases, proyecto.retomarEn, (e) => e.estado),
+        /** Si `siguiente` la eligió él y no la regla: el panel ofrece volver a la automática. */
+        retomarElegido: retomarVigente(fases, proyecto.retomarEn),
       };
     }),
   );
@@ -1926,9 +1977,11 @@ module.exports = {
   activarTesis,
   eliminarTesis,
   cambiarAsesor,
+  cambiarRetomar,
   quitarPortadaDePlantilla,
   auditar,
   siguientePaso,
+  faseParaRetomar,
   deUsuario,
   esApoyo,
   CAPITULOS_DE_RESULTADOS,

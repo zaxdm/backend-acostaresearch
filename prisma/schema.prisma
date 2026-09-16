@@ -1192,6 +1192,11 @@ model Project {
   /// volver a preguntárselo.
   asesor      String? @db.VarChar(160)
 
+  /// La fase por la que el tesista eligió retomar desde el panel (su clave de
+  /// skill). Nula = la de siempre: la que esté en curso o la primera sin
+  /// cerrar. Deja de contar sola en cuanto esa fase queda LISTA.
+  retomarEn   String? @db.VarChar(80)
+
   /// La norma de citas del Word: uno de los quince estilos de Zotero y el
   /// idioma de las citas. Nulos = APA 7 en español, que es como salía el Word
   /// antes de que se pudiera elegir. Ver `project.normas`.

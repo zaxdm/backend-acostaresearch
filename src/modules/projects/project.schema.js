@@ -127,6 +127,11 @@ const asesorSchema = z.object({
     .max(160, 'El nombre del asesor admite hasta 160 caracteres.'),
 });
 
+/** Por qué fase retomar, desde el panel. Nulo vuelve a la de siempre. */
+const retomarSchema = z.object({
+  capitulo: z.string().trim().min(1).max(80).nullable(),
+});
+
 /** Abrir otra tesis desde el panel (solo administradores): basta con un nombre. */
 const nuevaTesisSchema = z.object({
   nombre: z
@@ -138,6 +143,7 @@ const nuevaTesisSchema = z.object({
 
 module.exports = {
   asesorSchema,
+  retomarSchema,
   nuevaTesisSchema,
   guardarAvanceSchema,
   guardarCapituloSchema,

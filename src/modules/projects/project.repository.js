@@ -11,6 +11,7 @@ const proyectoSelect = {
   carrera: true,
   universidad: true,
   asesor: true,
+  retomarEn: true,
   estiloCitas: true,
   idiomaCitas: true,
   fichaInforme: true,
@@ -263,6 +264,7 @@ function reiniciar(projectId) {
         carrera: null,
         universidad: null,
         asesor: null,
+        retomarEn: null,
         estiloCitas: null,
         idiomaCitas: null,
         plantillaAt: null,
@@ -270,6 +272,20 @@ function reiniciar(projectId) {
       },
     }),
   ]);
+}
+
+/**
+ * Por qué fase quiere retomar. Nula vuelve a la de siempre.
+ *
+ * Va aparte de `asegurar` porque allí un nulo significa «no lo toques», y aquí
+ * es justo lo que se quiere guardar.
+ */
+function elegirRetomar(projectId, skillCode) {
+  return prisma.project.update({
+    where: { id: projectId },
+    data: { retomarEn: skillCode },
+    select: proyectoSelect,
+  });
 }
 
 /** El nombre del tesista, para la portada del Word. */
@@ -316,6 +332,7 @@ module.exports = {
   productosConLicencia,
   productosConVariasTesis,
   reiniciar,
+  elegirRetomar,
   nombreDe,
   anotarConsejos,
   marcarPlantilla,

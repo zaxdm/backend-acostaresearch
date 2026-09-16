@@ -15,6 +15,7 @@ const {
   borrarProyectoSchema,
   nuevaTesisSchema,
   asesorSchema,
+  retomarSchema,
 } = require('./project.schema');
 const descarga = require('./project.descarga');
 const { PlantillaNoValida, MAXIMO_BYTES } = require('./project.plantilla');
@@ -478,6 +479,43 @@ router.patch(
 
     return ok(res, { asesor }, {
       message: asesor ? `Listo: «${asesor}» saldrá en tu portada.` : 'Asesor quitado de tu portada.',
+    });
+  }),
+);
+
+/**
+ * Por qué fase retomar. La eligen en el panel cuando tienen varias a medias;
+ * `null` vuelve a la de siempre. Lo lee también el conector.
+ */
+router.patch(
+  '/:productCode/retomar',
+  asyncHandler(async (req, res) => {
+    const datos = retomarSchema.safeParse(req.body ?? {});
+    if (!datos.success) throw new ValidationError('Esa fase no es válida.');
+
+    const resultado = await projectService.cambiarRetomar({
+      userId: req.user.id,
+      productCode: req.params.productCode,
+      capitulo: datos.data.capitulo,
+    });
+
+    if (resultado.error === 'sin-proyecto') {
+      return res.status(404).json({
+        success: false,
+        message: 'Todavía no hay ningún proyecto de este método.',
+      });
+    }
+    if (resultado.error === 'no-es-fase') {
+      throw new ValidationError('Esa fase no es de este método.');
+    }
+    if (resultado.error === 'cerrada') {
+      throw new ValidationError('Esa fase ya está terminada: elige una que no lo esté.');
+    }
+
+    return ok(res, null, {
+      message: datos.data.capitulo
+        ? 'Listo: Claude retomará por ahí.'
+        : 'Listo: vuelves a la fase que toca por orden.',
     });
   }),
 );

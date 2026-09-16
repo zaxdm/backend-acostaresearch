@@ -2,6 +2,7 @@
 
 const asyncHandler = require('../../shared/http/asyncHandler');
 const { ok } = require('../../shared/http/apiResponse');
+const env = require('../../config/env');
 const logger = require('../../config/logger');
 const servicio = require('./biblioteca.service');
 

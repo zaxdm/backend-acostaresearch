@@ -26,7 +26,7 @@ const POR_PARTE = 20_000;
 class MaterialNoValido extends Error {}
 
 const EN_EL_CHAT =
-  'Adjúntalo directamente en el chat de Claude, con el clip, que ahí sí lo lee; o ábrelo en ' +
+  'Adjúntalo directamente en el chat de tu asistente, con el clip, que ahí sí lo lee; o ábrelo en ' +
   'Word y guárdalo como «Documento de Word (.docx)».';
 
 function esImagen(cabeza) {
@@ -101,7 +101,7 @@ function textoDe(buffer) {
   if (esImagen(cabeza)) {
     throw new MaterialNoValido(
       'Es una imagen, y aquí solo se leen documentos de Word o texto. Adjúntala directamente en el ' +
-        'chat de Claude, con el clip, que ahí sí la lee.',
+        'chat de tu asistente, con el clip, que ahí sí la lee.',
     );
   }
   if (cabeza[0] === 0xd0 && cabeza[1] === 0xcf) {

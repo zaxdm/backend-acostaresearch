@@ -29,19 +29,17 @@ const licenseService = require('../licensing/license.service');
 const enlaces = require('./r.enlaces');
 const rService = require('./r.service');
 const { ArchivoNoValido } = require('./r.formato');
+const { mensajeEnlaceNoVale } = require('../../shared/utils/enlaceNoVale');
 const { MotorNoDisponible, MotorOcupado } = require('./r.motor');
 
 const router = Router();
 
-const ENLACE_CADUCADO =
-  'Este enlace ya no vale: dura media hora. Pídele a Claude uno nuevo y vuelve a intentarlo.';
-
-/** Un enlace que no vale responde igual que uno caducado, para no dar pistas. */
+/** Vencido o alterado: cada uno con su mensaje (ver `enlaceNoVale`). */
 function enlaceDeSubida(token) {
   try {
     return enlaces.verificarSubida(token);
-  } catch {
-    throw new NotFoundError(ENLACE_CADUCADO);
+  } catch (error) {
+    throw new NotFoundError(mensajeEnlaceNoVale(error, { para: 'subir tus datos', minutos: enlaces.MINUTOS }));
   }
 }
 
@@ -125,7 +123,7 @@ router.post(
       const subido = await rService.subirDatos({ userId, productCode, bytes: req.body });
       return ok(res, subido, {
         message: subido.leido
-          ? 'Listo. Vuelve a la conversación con Claude y dile que ya subiste tus datos.'
+          ? 'Listo. Vuelve a tu conversación y di que ya subiste tus datos.'
           : 'El archivo llegó, pero R no pudo leerlo como una tabla.',
       });
     } catch (error) {
@@ -167,13 +165,14 @@ const TIPOS = {
 router.get(
   '/descarga/:token',
   asyncHandler(async (req, res) => {
-    const noVale = () => res.status(404).type('text/plain; charset=utf-8').send(ENLACE_CADUCADO);
-
     let enlace;
     try {
       enlace = enlaces.verificarDescarga(req.params.token);
-    } catch {
-      return noVale();
+    } catch (error) {
+      return res
+        .status(404)
+        .type('text/plain; charset=utf-8')
+        .send(mensajeEnlaceNoVale(error, { para: 'descargar', minutos: enlaces.MINUTOS }));
     }
 
     const bytes = await rService.leerArchivo(enlace);
@@ -181,7 +180,7 @@ router.get(
       return res
         .status(404)
         .type('text/plain; charset=utf-8')
-        .send('Ese archivo ya no está en la sesión. Pídele a Claude que lo vuelva a generar.');
+        .send('Ese archivo ya no está en la sesión. Vuelve a tu conversación y pide que lo genere otra vez.');
     }
 
     const nombre = path.posix.basename(enlace.archivo);

@@ -115,3 +115,52 @@ test('un enlace retocado da 404 y no llega a preguntarle a la base', async () =>
   assert.equal(error?.statusCode ?? error?.status, 404);
   assert.deepEqual(estado.buscados, []);
 });
+
+// ── Vencido o alterado ──────────────────────────────────────────────────────
+//
+// Con ChatGPT el estudiante leía «ya no vale» y no se sabía si el asistente le
+// había repetido un enlace viejo o se lo había estropeado al copiarlo.
+
+const jwt = require('jsonwebtoken');
+const env = require('../src/config/env');
+
+const vencidoDe = (secreto = env.JWT_ACCESS_SECRET) =>
+  jwt.sign({ typ: 'subir-formato', pc: TESIS, exp: Math.floor(Date.now() / 1000) - 60 }, secreto, {
+    subject: 'u1',
+    issuer: env.JWT_ISSUER,
+    audience: `${env.JWT_AUDIENCE}:subir-formato`,
+  });
+
+test('un enlace auténtico que pasó su media hora dice que venció y que pida otro', async () => {
+  const { error } = await pedir(vencidoDe());
+
+  assert.equal(error?.statusCode ?? error?.status, 404);
+  assert.match(error.message, /venció/);
+  assert.match(error.message, /pide uno nuevo/);
+  assert.doesNotMatch(error.message, /incompleto/);
+});
+
+test('un enlace con un carácter cambiado dice que llegó incompleto, no que venció', async () => {
+  const bueno = tokenDe(formato.enlace({ userId: 'u1', productCode: TESIS }).url);
+  // Un carácter del medio de la firma: el último lleva bits de relleno.
+  const i = bueno.length - 20;
+  const { error } = await pedir(bueno.slice(0, i) + (bueno[i] === 'A' ? 'B' : 'A') + bueno.slice(i + 1));
+
+  assert.equal(error?.statusCode ?? error?.status, 404);
+  assert.match(error.message, /incompleto/);
+  assert.doesNotMatch(error.message, /venció/);
+});
+
+test('un token vencido pero con otra firma no revela que venció', async () => {
+  const { error } = await pedir(vencidoDe('otro-secreto-que-no-es-el-del-servidor'));
+
+  assert.match(error.message, /incompleto/);
+  assert.doesNotMatch(error.message, /venció/);
+});
+
+test('los mensajes del enlace no nombran a ningún asistente', async () => {
+  for (const token of [vencidoDe(), 'no.es.un.enlace']) {
+    const { error } = await pedir(token);
+    assert.doesNotMatch(error.message, /Claude|ChatGPT|Grok/);
+  }
+});

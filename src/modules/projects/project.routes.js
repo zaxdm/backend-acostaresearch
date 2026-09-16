@@ -7,6 +7,7 @@ const asyncHandler = require('../../shared/http/asyncHandler');
 const { ok } = require('../../shared/http/apiResponse');
 const { ForbiddenError, NotFoundError, ValidationError } = require('../../shared/errors/AppError');
 const { ROLES } = require('../../config/constants');
+const { mensajeEnlaceNoVale } = require('../../shared/utils/enlaceNoVale');
 const licenseService = require('../licensing/license.service');
 const { perfilDe } = require('../productos/producto.perfil');
 const projectService = require('./project.service');
@@ -63,8 +64,8 @@ function decodificar(cabecera) {
  *
  * Es la ÚNICA ruta de proyectos sin sesión, y por eso va antes del
  * `authenticate`. Lo que la protege es el propio enlace: firmado, con dueño y
- * proyecto dentro, y media hora de vida (ver `project.descarga`). Un enlace que
- * no vale responde lo mismo que uno caducado, para no dar pistas de por qué.
+ * proyecto dentro, y media hora de vida (ver `project.descarga`). Un enlace
+ * vencido y uno alterado dicen cosas distintas (ver `enlaceNoVale`).
  */
 router.get(
   '/descarga/:token',
@@ -72,13 +73,13 @@ router.get(
     let destino;
     try {
       destino = descarga.verificar(req.params.token);
-    } catch {
+    } catch (error) {
       return res
         .status(404)
         .type('text/plain; charset=utf-8')
         .send(
-          'Este enlace ya no sirve: caduca a la media hora. Pídele a Claude uno nuevo, o ' +
-            'descarga tu tesis desde tu perfil en acostaresearch.com.',
+          `${mensajeEnlaceNoVale(error, { para: 'descargar', minutos: descarga.MINUTOS })} También ` +
+            'puedes descargarlo desde tu perfil en acostaresearch.com.',
         );
     }
 
@@ -146,15 +147,14 @@ router.get(
  * qué haber entrado en la web. Lo que se hace con el archivo es lo mismo que en
  * la subida del perfil: se queda el formato y se tira el contenido.
  */
-const ENLACE_FORMATO_CADUCADO =
-  'Este enlace ya no vale: dura media hora. Pídele a Claude uno nuevo y vuelve a intentarlo.';
-
-/** Un enlace que no vale responde igual que uno caducado, para no dar pistas. */
+/** Vencido o alterado: cada uno con su mensaje (ver `enlaceNoVale`). */
 function enlaceDeFormato(token) {
   try {
     return subidaFormato.verificar(token);
-  } catch {
-    throw new NotFoundError(ENLACE_FORMATO_CADUCADO);
+  } catch (error) {
+    throw new NotFoundError(
+      mensajeEnlaceNoVale(error, { para: 'subir tu formato', minutos: subidaFormato.MINUTOS }),
+    );
   }
 }
 
@@ -238,7 +238,7 @@ router.post(
       return ok(
         res,
         { cuantos: estilos.length, formato },
-        { message: `${mensaje} Vuelve a la conversación y dile a Claude que ya subiste tu formato.` },
+        { message: `${mensaje} Vuelve a tu conversación y di que ya subiste tu formato.` },
       );
     } catch (error) {
       // Los mensajes de la plantilla están escritos para el tesista: van tal cual.
@@ -261,10 +261,9 @@ const { MaterialNoValido, MAXIMO_BYTES: MAXIMO_MATERIAL } = require('./project.m
 function enlaceDeMaterial(token) {
   try {
     return subidaMaterial.verificar(token);
-  } catch {
+  } catch (error) {
     throw new NotFoundError(
-      'Este enlace para subir material ya no vale: caduca a la media hora. Vuelve a la conversación y ' +
-        'pídele a Claude uno nuevo.',
+      mensajeEnlaceNoVale(error, { para: 'subir material', minutos: subidaMaterial.MINUTOS }),
     );
   }
 }
@@ -323,8 +322,7 @@ router.post(
         { material: guardado.lista },
         {
           message:
-            `«${guardado.nombre}» guardado. Vuelve a la conversación y dile a Claude que ya subiste tu ` +
-            'material.',
+            `«${guardado.nombre}» guardado. Vuelve a tu conversación y di que ya subiste tu material.`,
         },
       );
     } catch (error) {
@@ -346,10 +344,9 @@ const projectRepository = require('./project.repository');
 function enlaceDeDocumento(token) {
   try {
     return subidaDocumento.verificar(token);
-  } catch {
+  } catch (error) {
     throw new NotFoundError(
-      'Este enlace para subir tu documento ya no vale: caduca a la media hora. Vuelve a la conversación y ' +
-        'pídele a Claude uno nuevo.',
+      mensajeEnlaceNoVale(error, { para: 'subir tu documento', minutos: subidaDocumento.MINUTOS }),
     );
   }
 }
@@ -421,7 +418,7 @@ router.post(
     return ok(
       res,
       { documento: subido },
-      { message: mensajeDeSubida(subido, 'Vuelve a la conversación con Claude y dile «ya lo subí».') },
+      { message: mensajeDeSubida(subido, 'Vuelve a tu conversación y di «ya lo subí».') },
     );
   }),
 );

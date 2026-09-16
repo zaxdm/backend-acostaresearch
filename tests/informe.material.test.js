@@ -100,9 +100,9 @@ test('de un Word se lee el texto en orden, con los títulos marcados y sin líne
 });
 
 test('un PDF, una foto o un .doc antiguo se rechazan con un mensaje que manda al chat', () => {
-  assert.throws(() => material.textoDe(Buffer.from('%PDF-1.7 ...')), (e) => e instanceof material.MaterialNoValido && /chat de Claude/.test(e.message));
-  assert.throws(() => material.textoDe(Buffer.from('89504e470d0a1a0a00000000', 'hex')), /chat de Claude/);
-  assert.throws(() => material.textoDe(Buffer.from('ffd8ffe000104a4649460001', 'hex')), /chat de Claude/);
+  assert.throws(() => material.textoDe(Buffer.from('%PDF-1.7 ...')), (e) => e instanceof material.MaterialNoValido && /chat de tu asistente/.test(e.message));
+  assert.throws(() => material.textoDe(Buffer.from('89504e470d0a1a0a00000000', 'hex')), /chat de tu asistente/);
+  assert.throws(() => material.textoDe(Buffer.from('ffd8ffe000104a4649460001', 'hex')), /chat de tu asistente/);
   assert.throws(() => material.textoDe(Buffer.from('d0cf11e0a1b11ae100000000', 'hex')), /\.doc antiguo/);
 });
 

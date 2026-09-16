@@ -2902,7 +2902,9 @@ function construirServidor(licencia) {
       title:
         perfil.tipo === 'informe'
           ? 'El formato que pide su curso o su empresa'
-          : 'El formato de su universidad para el Word',
+          : perfil.tipo === 'articulo'
+            ? 'La plantilla de la revista para el Word del artículo'
+            : 'El formato de su universidad para el Word',
       description:
         perfil.tipo === 'informe'
           ? 'La plantilla de Word para el informe —la que dio su docente o su instituto, o la ' +
@@ -2918,9 +2920,23 @@ function construirServidor(licencia) {
             'confirmar qué se tomó. ' +
             'OJO, no la confundas con "material_del_curso": aquí va la plantilla DE FORMATO, y allí la ' +
             'consigna, la rúbrica o el índice que se leen. ' +
-            'NO le pidas que te pegue el formato, no lo copies tú a mano y no le armes un Word con ' +
-            'ese formato: lo aplica el servidor. Si no tiene formato, no insistas.'
-          : `El formato de tesis que exige su universidad —la plantilla o el documento de formato que ` +
+            'NO le pidas que te pegue ni te adjunte el formato en el chat, no lo copies tú a mano y no ' +
+            'le armes un Word con ese formato: lo aplica el servidor. Si no tiene formato, no insistas.'
+          : perfil.tipo === 'articulo'
+            ? 'La plantilla o el formato de Word del ARTÍCULO —la plantilla de la revista a la que lo ' +
+              'envía (template, guía de autores en Word) o el formato que le pidió su universidad—, que ' +
+              'el Word del servidor aplica solo: títulos, fuentes, márgenes, encabezado y pie de página. ' +
+              'ÚSALA SIEMPRE que diga «quiero subir el formato de mi artículo», «tengo la plantilla de la ' +
+              'revista», «la revista tiene template» o «quiero que salga con el formato de la revista»: ' +
+              'la subida es por el enlace de esta herramienta, NO adjuntando el archivo en el chat. ' +
+              'PREGÚNTALE UNA VEZ, al elegir revista o antes de darle su Word, si la revista tiene ' +
+              'plantilla. ' +
+              'Sin argumentos dice si ya hay uno puesto y da un ENLACE para subirlo o cambiarlo: dáselo ' +
+              'como enlace que se pulsa, sin escribir la dirección, y dile que vuelva cuando lo haya ' +
+              'subido; entonces llámala otra vez para confirmar qué se tomó. ' +
+              'NO le pidas que te pegue ni te adjunte el formato en el chat, no lo copies tú a mano y no ' +
+              'le armes un Word con ese formato: lo aplica el servidor. Si no tiene formato, no insistas.'
+            : `El formato de tesis que exige su universidad —la plantilla o el documento de formato que ` +
             'da su facultad—, que el Word del servidor aplica solo: títulos, fuentes, márgenes, ' +
             'encabezado, pie de página y la portada llenada con sus datos. ' +
             'PREGÚNTALE UNA VEZ, al empezar a trabajar sus capítulos o antes de darle su Word, si su ' +
@@ -2930,8 +2946,8 @@ function construirServidor(licencia) {
             'Sin argumentos dice si ya hay uno puesto y da un ENLACE para subirlo o cambiarlo: dáselo ' +
             'como enlace que se pulsa, sin escribir la dirección, y dile que vuelva cuando lo haya subido; entonces llámala otra vez para ' +
             'confirmar qué se tomó. ' +
-            'NO le pidas que te pegue el formato, no lo copies tú a mano y no le armes un Word con ' +
-            'ese formato: lo aplica el servidor. Si no tiene formato, no insistas.',
+            'NO le pidas que te pegue ni te adjunte el formato en el chat, no lo copies tú a mano y no ' +
+            'le armes un Word con ese formato: lo aplica el servidor. Si no tiene formato, no insistas.',
       inputSchema: fromJsonSchema({
         type: 'object',
         properties: {
@@ -2986,7 +3002,9 @@ function construirServidor(licencia) {
           ? 'la empresa'
           : perfil.tipo === 'informe'
             ? 'su docente o su instituto'
-            : 'su facultad';
+            : perfil.tipo === 'articulo'
+              ? 'la revista o su universidad'
+              : 'su facultad';
         return texto(
           `Todavía no ha subido ningún formato: su Word sale con el formato por defecto.${N}${N}` +
             `Si ${dioElFormato} le dio un formato o plantilla, dale este enlace para subirlo:${N}` +
@@ -3015,7 +3033,13 @@ function construirServidor(licencia) {
       };
       const campos = formato.camposDePortada.map((c) => NOMBRES[c] ?? c);
       const desde = new Date(formato.desde).toISOString().slice(0, 10);
-      const deQuien = deEmpresa ? 'de la empresa' : perfil.tipo === 'informe' ? 'del curso' : 'de su universidad';
+      const deQuien = deEmpresa
+        ? 'de la empresa'
+        : perfil.tipo === 'informe'
+          ? 'del curso'
+          : perfil.tipo === 'articulo'
+            ? 'del artículo'
+            : 'de su universidad';
 
       return texto(
         `Formato ${deQuien} puesto${formato.nombre ? `: «${formato.nombre}»` : ''}, ` +

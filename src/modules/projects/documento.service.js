@@ -582,7 +582,9 @@ async function armar(userId, productCode) {
     citados = recolocarCitas(citados, hecho.partes, reescritos);
   }
 
-  if (humanizados > 0 && Object.keys(citados).length === 0) {
+  // Sin citas no pasa por la norma: el panel lo deja bajar desde que se sube,
+  // como la copia guardada de su proyecto, aunque la norma elegida sea de notas.
+  if (Object.keys(citados).length === 0) {
     return {
       buffer,
       parrafos: 0,
@@ -591,7 +593,7 @@ async function armar(userId, productCode) {
       faltas: 0,
       perdidas: 0,
       humanizados,
-      nombreArchivo: nombreCitado(ficha?.nombre, 'revisado'),
+      nombreArchivo: nombreCitado(ficha?.nombre, humanizados > 0 ? 'revisado' : 'guardado'),
     };
   }
 

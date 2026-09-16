@@ -83,6 +83,16 @@ test('sin licencia del método no se sube nada', async () => {
   assert.equal(disco.size, 0);
 });
 
+test('recién subido se descarga tal cual, aunque la norma sea de notas al pie', async () => {
+  const original = docx(['La deserción universitaria crece.']);
+  await servicio.subir({ userId: 'u1', productCode: 'METODO', buffer: original, nombre: 'Mi tesis.docx' });
+  proyecto.estiloCitas = 'chicago-notes-bibliography';
+
+  const guardado = await servicio.armar('u1', 'METODO');
+  assert.ok(guardado.buffer.equals(original));
+  assert.match(guardado.nombreArchivo, /^mi-tesis-guardado-\d{4}-\d{2}-\d{2}\.docx$/);
+});
+
 test('subir, leer, citar con rechazos, y descargar con la cita puesta', async () => {
   const subido = await servicio.subir({
     userId: 'u1',

@@ -244,6 +244,12 @@ const schema = z.object({
   // Vacío = se usa MAIL_FROM, que ya es una dirección nuestra y real.
   OPENALEX_MAILTO: vacioComoAusente(z.string()),
 
+  // La clave gratuita de openalex.org. Sin ella el presupuesto es de diez
+  // centavos al día por IP —unas cien búsquedas para todos los tesistas juntos—
+  // y cuando se acaba el catálogo abierto deja de contestar hasta la medianoche
+  // UTC. Con ella, un dólar al día.
+  OPENALEX_API_KEY: vacioComoAusente(z.string()),
+
   // ── R en la conversación ────────────────────────────────────────────────
   // Claude corre el análisis del tesista con la herramienta «trabajar_en_r».
   //

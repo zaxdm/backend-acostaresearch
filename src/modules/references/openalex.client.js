@@ -40,6 +40,35 @@ function contacto() {
 }
 
 /**
+ * Identifica la petición: correo siempre y clave si la hay.
+ *
+ * Desde 2026 OpenAlex no mide por peticiones sino por un presupuesto diario en
+ * dólares, y sin clave son diez centavos POR IP: unas cien búsquedas. Todas las
+ * de todos los tesistas salen de la misma IP del servidor, así que el
+ * presupuesto se acababa pronto y cada búsqueda volvía rechazada hasta la
+ * medianoche UTC —el «catálogo abierto no responde» que no se iba nunca—. La
+ * clave gratuita lo multiplica por diez.
+ */
+function firmar(url) {
+  url.searchParams.set('mailto', contacto());
+  if (env.OPENALEX_API_KEY) url.searchParams.set('api_key', env.OPENALEX_API_KEY);
+  return url;
+}
+
+/** Deja en el registro por qué rechazó OpenAlex, sin la clave. */
+function avisarRechazo(res, contexto, mensaje) {
+  logger.warn(
+    {
+      ...contexto,
+      estado: res.status,
+      restanteUsd: res.headers?.get?.('x-ratelimit-remaining-usd') ?? null,
+      conClave: Boolean(env.OPENALEX_API_KEY),
+    },
+    res.status === 429 ? 'OpenAlex: presupuesto diario agotado' : mensaje,
+  );
+}
+
+/**
  * Rehace el resumen desde el índice invertido.
  *
  * OpenAlex no guarda el resumen como texto seguido: guarda cada palabra con las
@@ -194,7 +223,7 @@ async function paginaDeBusqueda({ tema, idioma, pais, desdeAnio, cuantas, enTitu
   const url = new URL(BASE);
   if (!enTituloYResumen) url.searchParams.set('search', tema);
   url.searchParams.set('per_page', String(Math.min(Math.max(cuantas, 1), 25)));
-  url.searchParams.set('mailto', contacto());
+  firmar(url);
 
   const filtros = ['type:article'];
   if (idioma) filtros.push(`language:${idioma}`);
@@ -217,7 +246,7 @@ async function paginaDeBusqueda({ tema, idioma, pais, desdeAnio, cuantas, enTitu
     // La búsqueda anónima de OpenAlex se pausa a veces mientras su servidor se
     // recupera; los filtros siguen funcionando. No es culpa de nadie y no debe
     // parecer un fallo del conector.
-    logger.warn({ estado: res.status, detalle: detalle.slice(0, 160) }, 'OpenAlex rechazó la búsqueda');
+    avisarRechazo(res, { detalle: detalle.slice(0, 160) }, 'OpenAlex rechazó la búsqueda');
     return null;
   }
 
@@ -301,7 +330,7 @@ async function porDoi(crudo) {
   if (!doi) return null;
 
   const url = new URL(`${BASE}/doi:${encodeURIComponent(doi)}`);
-  url.searchParams.set('mailto', contacto());
+  firmar(url);
 
   const res = await fetch(url, { signal: AbortSignal.timeout(TIEMPO_LIMITE_MS) }).catch(
     (error) => {
@@ -317,7 +346,7 @@ async function porDoi(crudo) {
   if (res.status === 404) return null;
 
   if (!res.ok) {
-    logger.warn({ estado: res.status, doi }, 'OpenAlex rechazó la consulta por DOI');
+    avisarRechazo(res, { doi }, 'OpenAlex rechazó la consulta por DOI');
     return null;
   }
 
@@ -345,7 +374,7 @@ const enLotes = (lista, tamano) => {
 async function consultar(params) {
   const url = new URL(BASE);
   for (const [clave, valor] of Object.entries(params)) url.searchParams.set(clave, valor);
-  url.searchParams.set('mailto', contacto());
+  firmar(url);
 
   const res = await fetch(url, { signal: AbortSignal.timeout(TIEMPO_LIMITE_MS) }).catch(
     (error) => {
@@ -355,7 +384,7 @@ async function consultar(params) {
   );
 
   if (!res || !res.ok) {
-    if (res) logger.warn({ estado: res.status }, 'OpenAlex rechazó la consulta');
+    if (res) avisarRechazo(res, {}, 'OpenAlex rechazó la consulta');
     return [];
   }
 

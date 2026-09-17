@@ -262,6 +262,30 @@ test('antes de citar o humanizar se pregunta si es el documento del servidor o u
   assert.deepEqual(Object.keys(esquema('subir_mi_documento').properties), []);
 });
 
+test('el esquema de TODAS las herramientas es uno que el servidor de verdad acepta', () => {
+  /**
+   * Por qué existe esta prueba.
+   *
+   * El 17 de septiembre de 2026 se registró «estructura_de_la_tesis» con un
+   * JSON Schema crudo en vez de envolverlo en `fromJsonSchema`. El `McpServer`
+   * de mentira de este archivo solo apunta lo que se registra, así que las 1151
+   * pruebas pasaron en verde; el de verdad lanza «inputSchema must be a
+   * Standard Schema» al registrar, y eso tumba el conector ENTERO: cada
+   * petición MCP devolvía 500 y claude.ai no podía ni verificar el servidor.
+   *
+   * Se comprueba el envoltorio de todas, y no la que toque: el fallo no estaba
+   * en una herramienta concreta, estaba en olvidarse de una función.
+   */
+  for (const [nombre, config] of registradas) {
+    assert.ok(
+      config.inputSchema?.['~standard']?.jsonSchema,
+      `«${nombre}» no envuelve su inputSchema en fromJsonSchema: tumbaría el conector entero`,
+    );
+    // Y que el envoltorio sepa devolver su esquema, que es lo que se publica.
+    assert.equal(typeof config.inputSchema['~standard'].jsonSchema.input(), 'object');
+  }
+});
+
 test('siguen registradas las mismas 25 herramientas', () => {
   // 17 desde que existe «enlace_del_word»: el Word lo arma el servidor, en la
   // norma del proyecto, y Claude da el enlace en vez de fabricarlo él.

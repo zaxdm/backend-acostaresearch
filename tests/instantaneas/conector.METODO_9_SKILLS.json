@@ -174,7 +174,42 @@
     "nombre": "estructura_de_la_tesis",
     "titulo": "Los capítulos que pide su facultad",
     "descripcion": "Fija CÓMO SE NUMERAN Y SE LLAMAN los capítulos en el Word, cuando el reglamento de su facultad no coincide con el método. El método numera III Metodología, IV Resultados y V Discusión; hay universidades que meten un III de Hipótesis y corren las demás, o que juntan Resultados y Discusión en un solo capítulo. ÚSALA cuando el tesista diga que su reglamento pide otra estructura, o cuando al mirar su formato veas que no cuadra. NO la uses por tu cuenta ni supongas la estructura por la universidad: PÍDESELA y repítesela para que la confirme ANTES de guardarla, porque reordena su documento entero. Manda SIEMPRE la lista completa de capítulos, en orden: lo que mandes sustituye a lo que hubiera. Una fase con texto que no nombres sale igual, al final del Word.",
-    "esquema": null
+    "esquema": {
+      "type": "object",
+      "properties": {
+        "capitulos": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 24,
+          "description": "Los capítulos del documento, EN ORDEN, tal como los quiere su facultad.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "titulo": {
+                "type": "string",
+                "maxLength": 120,
+                "description": "Cómo se titula en el Word, con su numeración tal cual la pide el reglamento: «CAPÍTULO IV: METODOLOGÍA», «Capítulo V. Resultados y discusión»."
+              },
+              "de": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 4,
+                "description": "Las claves de las fases del método de las que sale su texto, en orden («metodologia»; o «analisis-datos-rstudio» y «discusion» para juntar Resultados y Discusión en un capítulo). Cada fase va en un capítulo y solo en uno. DÉJALO VACÍO si es un capítulo que el método no tiene, como Hipótesis: el servidor le dará su propia clave para guardar su texto."
+              }
+            },
+            "required": [
+              "titulo"
+            ]
+          }
+        },
+        "quitar": {
+          "type": "boolean",
+          "description": "Manda true, y nada más, para volver a la numeración del método. El texto guardado no se toca."
+        }
+      }
+    }
   },
   {
     "nombre": "continuar",

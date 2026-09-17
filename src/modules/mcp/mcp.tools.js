@@ -1219,7 +1219,7 @@ function construirServidor(licencia) {
           'guardarla, porque reordena su documento entero. ' +
           'Manda SIEMPRE la lista completa de capítulos, en orden: lo que mandes sustituye a lo ' +
           'que hubiera. Una fase con texto que no nombres sale igual, al final del Word.',
-        inputSchema: {
+        inputSchema: fromJsonSchema({
           type: 'object',
           properties: {
             capitulos: {
@@ -1260,7 +1260,7 @@ function construirServidor(licencia) {
                 'guardado no se toca.',
             },
           },
-        },
+        }),
       },
       async (entrada) => {
         await licenseService.recordUsage({ licenseId: licencia.id, tool: 'estructura_de_la_tesis' });

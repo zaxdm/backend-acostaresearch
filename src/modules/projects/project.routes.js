@@ -15,6 +15,7 @@ const {
   normaSchema,
   borrarProyectoSchema,
   nuevaTesisSchema,
+  autorSchema,
   asesorSchema,
   retomarSchema,
 } = require('./project.schema');
@@ -545,6 +546,33 @@ router.patch(
     }
 
     return ok(res, norma, { message: `Norma de citas: ${norma.nombre}.` });
+  }),
+);
+
+/** El autor, para la portada. */
+router.patch(
+  '/:productCode/autor',
+  asyncHandler(async (req, res) => {
+    const datos = autorSchema.safeParse(req.body ?? {});
+    if (!datos.success) {
+      throw new ValidationError(datos.error.issues[0]?.message ?? 'Ese nombre no es válido.');
+    }
+
+    const autor = await projectService.cambiarAutor({
+      userId: req.user.id,
+      productCode: req.params.productCode,
+      autor: datos.data.autor,
+    });
+    if (autor === null) {
+      return res.status(404).json({
+        success: false,
+        message: 'Todavía no hay ningún proyecto de este método.',
+      });
+    }
+
+    return ok(res, { autor }, {
+      message: autor ? `Listo: «${autor}» saldrá en tu portada.` : 'Autor actualizado en tu portada.',
+    });
   }),
 );
 

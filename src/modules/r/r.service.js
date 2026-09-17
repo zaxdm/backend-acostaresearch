@@ -537,10 +537,24 @@ async function informe({ userId, productCode, titulo, texto: contenido, norma })
 
   partes.push(
     'Si además quiere que forme parte de su tesis, guárdalo con "guardar_capitulo" en el capítulo ' +
-      'de resultados (las figuras no van en el Word de la tesis: se pegan a mano).',
+      'de resultados. Las figuras que dibujaste aquí se incrustan solas en el Word de la tesis: ' +
+      'basta con que el bloque de la figura nombre su PNG tal como lo guardaste en la sesión.',
   );
 
   return texto(partes.join(`${N}${N}`));
+}
+
+/**
+ * Un archivo de la sesión, por el identificador del proyecto.
+ *
+ * Sin pasar por la base: lo usa el Word de la tesis, que ya tiene el proyecto
+ * leído y puede pedir cinco figuras seguidas. Una consulta por figura se comería
+ * las conexiones que hay.
+ */
+async function leerArchivoDeSesion(sesion, archivo) {
+  const m = motorActual();
+  if (!m) return null;
+  return m.leerArchivo(sesion, archivo);
 }
 
 /** Un archivo de la sesión, para la ruta de descarga. */
@@ -557,6 +571,7 @@ module.exports = {
   informe,
   subirDatos,
   leerArchivo,
+  leerArchivoDeSesion,
   disponible,
   usarMotor,
   describirEstado,

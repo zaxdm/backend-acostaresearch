@@ -128,3 +128,57 @@ test('unas líneas con barras pero sin fila de guiones siguen siendo texto', asy
   assert.ok(!xml.includes('<w:tbl>'));
   assert.ok(textos(xml).some((t) => t.includes('| esto no es | una tabla |')));
 });
+
+// ── El ancho de las columnas ────────────────────────────────────────────────
+
+/** Los anchos de la rejilla de la primera tabla del documento. */
+const rejilla = (xml) =>
+  [...(xml.match(/<w:tblGrid>[\s\S]*?<\/w:tblGrid>/) ?? [''])[0].matchAll(/w:w="(\d+)"/g)].map((m) => Number(m[1]));
+
+test('las columnas se reparten por lo que llevan dentro, no por igual', async () => {
+  const xml = await xmlDe(
+    [
+      '**Tabla 1**',
+      '| Pregunta de investigación | Sí |',
+      '|---|---|',
+      '| ¿Cómo influye el clima laboral en el desempeño del personal asistencial? | No |',
+    ].join('\n'),
+  );
+
+  const anchos = rejilla(xml);
+  assert.equal(anchos.length, 2);
+  assert.ok(anchos[0] > anchos[1] * 2, `la columna larga se lleva más: ${anchos.join(' / ')}`);
+  // Con el reparto automático Word vuelve a decidir por su cuenta y la rejilla
+  // no sirve de nada: el diseño tiene que ser fijo.
+  assert.match(xml, /<w:tblLayout w:type="fixed"\/>/);
+  assert.match(xml, /<w:tcW w:type="dxa" w:w="\d+"\/>/);
+});
+
+test('la tabla no se pasa del ancho de la hoja ni deja una columna sin sitio', () => {
+  const { anchosDeColumna } = documento;
+  const util = 8788;
+
+  const dos = anchosDeColumna([['Una pregunta larguísima de cuarenta y tantos caracteres', 'Sí']], 2, util);
+  assert.equal(dos.reduce((a, b) => a + b, 0), util, 'la suma cuadra con el ancho útil');
+  assert.ok(Math.min(...dos) >= 720, 'ninguna columna baja del mínimo');
+
+  // Veinte columnas no caben ni al mínimo: se reparten por igual y que Word
+  // ajuste, que es lo que hacía antes de que hubiera anchos.
+  const muchas = anchosDeColumna([Array.from({ length: 20 }, () => 'x')], 20, util);
+  assert.equal(muchas.length, 20);
+  assert.ok(muchas.every((a) => a === muchas[0]));
+  assert.ok(muchas.reduce((a, b) => a + b, 0) <= util);
+});
+
+test('con la plantilla de la facultad, la tabla mide lo que da su margen', async () => {
+  const buffer = await documento.armar({
+    tema: 'Tema',
+    nombre: 'Alguien',
+    // Media carta, con márgenes anchos: 9360 - 2000 - 2000 = 5360.
+    pagina: { tamano: { width: 9360, height: 12240 }, margen: { top: 1440, right: 2000, bottom: 1440, left: 2000 } },
+    capitulos: [{ titulo: 'Capítulo I', texto: '**Tabla 1**\n| A | B |\n|---|---|\n| 1 | 2 |' }],
+  });
+  const xml = new AdmZip(buffer).getEntry('word/document.xml').getData().toString('utf8');
+
+  assert.equal(rejilla(xml).reduce((a, b) => a + b, 0), 5360);
+});

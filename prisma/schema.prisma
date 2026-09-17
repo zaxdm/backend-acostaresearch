@@ -1187,6 +1187,14 @@ model Project {
   tema        String? @db.VarChar(500)
   carrera     String? @db.VarChar(160)
   universidad String? @db.VarChar(160)
+  /// El autor o tesista de la investigación, para la portada del Word.
+  /// Nulo = se usa el nombre de la cuenta (User.firstName/lastName) como respaldo.
+  autor       String? @db.VarChar(160)
+
+  /// Los capítulos del DOCUMENTO cuando su facultad los numera de otra forma
+  /// que el método. Nulo = la estructura del catálogo, que es lo de siempre.
+  /// Ver `project.esquema`.
+  esquema     Json?
   /// Su asesor, como sale en la portada del Word («Dr. Juan Pérez Gómez»).
   /// Nulo = no se ha preguntado; vacío = todavía no tiene, y no hay que
   /// volver a preguntárselo.

@@ -49,20 +49,11 @@ const { HUECO_RE } = require('../projects/project.citas');
 const IMAGEN_RE = /^!\[[^\]]*\]\(\s*([^)\s]+)\s*\)$/;
 
 /**
- * Lo más ancha que sale una figura, en píxeles a 96 ppp: unos 15 cm, el ancho
- * de la caja de texto con márgenes de tesis. Una figura de R a 1600 píxeles
- * saldría del papel si se pusiera a su tamaño.
+ * El tamaño máximo de una figura y el lector de PNG viven en `project.docx`,
+ * que es donde se incrustan las figuras del Word de la tesis. Aquí se toman de
+ * allí para que las dos salgan igual de anchas.
  */
-const ANCHO_MAXIMO = 560;
-
-/** El ancho y el alto de un PNG, leídos de su cabecera. Null si no es un PNG. */
-function dimensionesPng(bytes) {
-  const firma = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
-  if (!bytes || bytes.length < 24 || !firma.every((b, i) => bytes[i] === b)) return null;
-  const ancho = bytes.readUInt32BE(16);
-  const alto = bytes.readUInt32BE(20);
-  return ancho > 0 && alto > 0 ? { ancho, alto } : null;
-}
+const { ANCHO_MAXIMO, dimensionesPng } = documento;
 
 /** Los bloques del texto: lo que separa una línea en blanco. */
 function bloquesDe(texto) {

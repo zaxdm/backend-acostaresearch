@@ -262,7 +262,7 @@ test('antes de citar o humanizar se pregunta si es el documento del servidor o u
   assert.deepEqual(Object.keys(esquema('subir_mi_documento').properties), []);
 });
 
-test('siguen registradas las mismas 24 herramientas', () => {
+test('siguen registradas las mismas 25 herramientas', () => {
   // 17 desde que existe «enlace_del_word»: el Word lo arma el servidor, en la
   // norma del proyecto, y Claude da el enlace en vez de fabricarlo él.
   // 18 desde «mis_fuentes»: ver su biblioteca y su Zotero sin tener un tema.
@@ -271,7 +271,10 @@ test('siguen registradas las mismas 24 herramientas', () => {
   // 22 desde «formato_de_la_universidad»: el formato se sube desde un enlace de Claude.
   // 23 desde «humanizar_mi_documento»: el humanizador escribe en el Word que subió.
   // 24 desde «subir_mi_documento»: el Word se sube desde un enlace de Claude.
-  assert.equal(registradas.size, 24);
+  // 25 desde «estructura_de_la_tesis»: los capítulos que numera su facultad.
+  //    Es la única que NO tienen todos los productos: solo la tesis tiene
+  //    reglamento de capítulos (ver la prueba del informe, más abajo).
+  assert.equal(registradas.size, 25);
   for (const nombre of [
     'listar_capitulos',
     'mi_proyecto',
@@ -286,6 +289,7 @@ test('siguen registradas las mismas 24 herramientas', () => {
     'citar_mi_documento',
     'humanizar_mi_documento',
     'subir_mi_documento',
+    'estructura_de_la_tesis',
   ]) {
     assert.ok(registradas.has(nombre), `falta ${nombre}`);
   }

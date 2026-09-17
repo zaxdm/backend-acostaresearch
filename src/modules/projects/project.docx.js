@@ -41,11 +41,16 @@ const {
   FootnoteReferenceRun,
   Tab,
   TabStopType,
+  ImageRun,
   Table,
   TableRow,
   TableCell,
+  TableLayoutType,
   WidthType,
   BorderStyle,
+  CommentRangeStart,
+  CommentRangeEnd,
+  CommentReference,
 } = require('docx');
 
 const AdmZip = require('adm-zip');
@@ -83,6 +88,74 @@ function conCampo(tramos, clave, zotero) {
   ];
 }
 
+// ── Los pendientes ─────────────────────────────────────────────────────────
+
+/**
+ * Lo que las skills dejan marcado para completar: «[PENDIENTE — el año]».
+ *
+ * Se admite con guion, con raya o con dos puntos, y sin nada detrás, que es
+ * como aparece en el método. El texto de dentro no puede llevar corchetes.
+ */
+const PENDIENTE_RE = /\[\s*PENDIENTE\s*(?:[—–:-]\s*)?([^\]]*)\]/gi;
+
+/** Quién firma los comentarios del margen. */
+const AUTOR_DE_COMENTARIOS = { author: 'Acosta | IA & Research', initials: 'AR' };
+
+/**
+ * Un pendiente, hecho comentario de Word en el margen.
+ *
+ * POR QUÉ NO SE DEJA EL TEXTO ENTERO EN EL PÁRRAFO
+ * ------------------------------------------------
+ * «[PENDIENTE — completar antes de imprimir: el año de la ordenanza]» dentro de
+ * la frase rompe la lectura del capítulo, y es lo que veía el jurado si el
+ * tesista imprimía sin repasar. En el margen se ve igual de claro, no estorba
+ * al leer, y Word lo lista todo junto en el panel de revisión.
+ *
+ * EN EL CUERPO SE QUEDA UNA MARCA
+ * -------------------------------
+ * «[PENDIENTE]», resaltado. Un comentario solo se ve con el panel abierto, y
+ * un pendiente que se puede pasar por alto no sirve de nada: la marca corta se
+ * ve siempre, y la explicación queda al lado.
+ */
+function comoComentario(detalle, contexto) {
+  const comentarios = contexto?.comentarios;
+  const texto = String(detalle ?? '').trim();
+  // Sin registro donde anotarlo —una llamada suelta, o las pruebas de una
+  // función sola— el pendiente se queda como estaba: texto y nada más.
+  if (!comentarios) return [new TextRun({ text: `[PENDIENTE${texto ? ` — ${texto}` : ''}]`, highlight: 'yellow' })];
+
+  const id = comentarios.length;
+  comentarios.push({
+    id,
+    ...AUTOR_DE_COMENTARIOS,
+    date: contexto.fecha ?? new Date(),
+    children: [new Paragraph(texto ? `Pendiente: ${texto}` : 'Pendiente de completar.')],
+  });
+
+  return [
+    new CommentRangeStart(id),
+    new TextRun({ text: '[PENDIENTE]', highlight: 'yellow' }),
+    new CommentRangeEnd(id),
+    new TextRun({ children: [new CommentReference(id)] }),
+  ];
+}
+
+/** El texto con énfasis y con los pendientes sacados al margen. */
+function conEnfasisYPendientes(texto, contexto) {
+  if (!PENDIENTE_RE.test(texto)) return conEnfasis(texto);
+  PENDIENTE_RE.lastIndex = 0;
+
+  const hijos = [];
+  let desde = 0;
+  for (const m of texto.matchAll(PENDIENTE_RE)) {
+    if (m.index > desde) hijos.push(...conEnfasis(texto.slice(desde, m.index)));
+    hijos.push(...comoComentario(m[1], contexto));
+    desde = m.index + m[0].length;
+  }
+  if (desde < texto.length) hijos.push(...conEnfasis(texto.slice(desde)));
+  return hijos;
+}
+
 /**
  * Una línea de texto hecha corridas, con sus citas puestas.
  *
@@ -91,13 +164,13 @@ function conCampo(tramos, clave, zotero) {
  */
 function corridas(texto, contexto) {
   const { citas = null, notas = null, zotero = false } = contexto ?? {};
-  if (!citas) return conEnfasis(texto);
+  if (!citas) return conEnfasisYPendientes(texto, contexto);
 
   const hijos = [];
   let desde = 0;
 
   for (const hueco of texto.matchAll(HUECO_RE)) {
-    if (hueco.index > desde) hijos.push(...conEnfasis(texto.slice(desde, hueco.index)));
+    if (hueco.index > desde) hijos.push(...conEnfasisYPendientes(texto.slice(desde, hueco.index), contexto));
     desde = hueco.index + hueco[0].length;
 
     const cita = citas.get(Number(hueco[1]));
@@ -115,7 +188,7 @@ function corridas(texto, contexto) {
     }
   }
 
-  if (desde < texto.length) hijos.push(...conEnfasis(texto.slice(desde)));
+  if (desde < texto.length) hijos.push(...conEnfasisYPendientes(texto.slice(desde), contexto));
   return hijos.length > 0 ? hijos : [new TextRun('')];
 }
 
@@ -186,6 +259,75 @@ function partirTabla(lineas) {
 const LINEA_APA = { style: BorderStyle.SINGLE, size: 8, color: '000000' };
 const SIN_LINEA = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' };
 
+/** Página A4 con los márgenes de tesis: lo que queda para el texto, en twips. */
+const ANCHO_POR_DEFECTO = 11906 - 1701 - 1417;
+/** Ninguna columna baja de esto: media pulgada, o no cabe ni una palabra. */
+const COLUMNA_MINIMA = 720;
+/**
+ * A partir de aquí, más texto ya no pide más ancho.
+ *
+ * Una celda de doscientos caracteres y otra de sesenta no necesitan columnas en
+ * esa proporción: las dos van a partirse en varias líneas, y repartir por el
+ * largo entero deja a las demás en un hilo. Cuarenta caracteres es lo que ocupa
+ * una línea de celda cómoda.
+ */
+const LARGO_QUE_SATURA = 40;
+
+/** Lo que queda para el texto entre los márgenes, con la plantilla o sin ella. */
+function anchoDelCuerpo(pagina) {
+  const ancho = pagina?.tamano?.width;
+  const margen = pagina?.margen;
+  if (!ancho || !margen) return ANCHO_POR_DEFECTO;
+  return Math.max(2000, ancho - Math.abs(margen.left ?? 0) - Math.abs(margen.right ?? 0));
+}
+
+/**
+ * El ancho de cada columna, por lo que lleva dentro.
+ *
+ * POR QUÉ NO SE DEJA A WORD
+ * -------------------------
+ * Sin anchos, Word reparte la tabla por su cuenta y una celda larga —la
+ * pregunta de investigación en una matriz de consistencia— se come la mitad de
+ * la hoja y deja «Sí/No» en una columna de tres líneas. El Word que armaba
+ * Claude en el chat sí los cuadraba, y era la diferencia que se veía a simple
+ * vista entre los dos documentos.
+ *
+ * Se reparte por el texto más largo de cada columna, saturado (ver
+ * `LARGO_QUE_SATURA`) para que una celda enorme no se lo lleve todo, y con un
+ * mínimo por columna. Si ni con el mínimo cabe —una tabla de doce columnas—, se
+ * reparte por igual y que Word ajuste: es lo que hacía antes.
+ */
+function anchosDeColumna(filas, columnas, anchoUtil) {
+  const total = Math.max(2000, Math.round(anchoUtil || ANCHO_POR_DEFECTO));
+  if (columnas < 1) return [];
+  if (columnas * COLUMNA_MINIMA > total) {
+    return Array.from({ length: columnas }, () => Math.floor(total / columnas));
+  }
+
+  const pesos = Array.from({ length: columnas }, (_, i) =>
+    Math.min(
+      LARGO_QUE_SATURA,
+      Math.max(1, ...filas.map((fila) => sinEnfasis(String(fila[i] ?? '')).length)),
+    ),
+  );
+  const suma = pesos.reduce((a, b) => a + b, 0);
+
+  // El reparto, y detrás el reajuste: subir una columna al mínimo le quita
+  // ancho a las demás, y sin descontarlo la tabla se pasaba del margen.
+  const anchos = pesos.map((peso) => Math.max(COLUMNA_MINIMA, Math.floor((total * peso) / suma)));
+  let sobra = anchos.reduce((a, b) => a + b, 0) - total;
+  while (sobra > 0) {
+    const mayor = anchos.indexOf(Math.max(...anchos));
+    const quita = Math.min(sobra, anchos[mayor] - COLUMNA_MINIMA);
+    if (quita <= 0) break;
+    anchos[mayor] -= quita;
+    sobra -= quita;
+  }
+  // Lo que falte para cuadrar con el total, a la columna más ancha.
+  if (sobra < 0) anchos[anchos.indexOf(Math.max(...anchos))] -= sobra;
+  return anchos;
+}
+
 /**
  * Una tabla en el formato de APA 7.
  *
@@ -233,11 +375,15 @@ function tablaApa({ antes, cabecera, filas, despues }, contexto) {
     );
   }
 
-  const celda = (texto, { esCabecera = false, ultimaFila = false } = {}) => {
+  // Las columnas, repartidas por lo que lleva cada una (ver `anchosDeColumna`).
+  const anchos = anchosDeColumna([cabecera, ...filas], columnas, contexto?.anchoUtil);
+
+  const celda = (texto, { esCabecera = false, ultimaFila = false, columna = 0 } = {}) => {
     const negrita = /^\*\*.+\*\*$/.test(texto);
     const limpio = negrita ? texto.slice(2, -2) : texto;
     const hijos = negrita ? [new TextRun({ text: limpio, bold: true })] : corridas(limpio, contexto);
     return new TableCell({
+      width: { size: anchos[columna] ?? COLUMNA_MINIMA, type: WidthType.DXA },
       children: [
         new Paragraph({
           children: hijos,
@@ -262,7 +408,11 @@ function tablaApa({ antes, cabecera, filas, despues }, contexto) {
 
   elementos.push(
     new Table({
-      width: { size: 100, type: WidthType.PERCENTAGE },
+      width: { size: anchos.reduce((a, b) => a + b, 0), type: WidthType.DXA },
+      // Con el reparto automático, Word ignora la rejilla y vuelve a decidir
+      // por el contenido: los anchos solo mandan con el diseño fijo.
+      layout: TableLayoutType.FIXED,
+      columnWidths: anchos,
       borders: {
         top: LINEA_APA,
         bottom: LINEA_APA,
@@ -274,12 +424,14 @@ function tablaApa({ antes, cabecera, filas, despues }, contexto) {
       rows: [
         new TableRow({
           tableHeader: true,
-          children: cabecera.map((texto) => celda(texto, { esCabecera: true })),
+          children: cabecera.map((texto, columna) => celda(texto, { esCabecera: true, columna })),
         }),
         ...filas.map(
           (fila, i) =>
             new TableRow({
-              children: ajustar(fila).map((texto) => celda(texto, { ultimaFila: i === filas.length - 1 })),
+              children: ajustar(fila).map((texto, columna) =>
+                celda(texto, { ultimaFila: i === filas.length - 1, columna }),
+              ),
             }),
         ),
       ],
@@ -319,6 +471,79 @@ const MARCA_FIGURA_RE = /^(\[Insertar aquí[^\]]*\]|!\[[^\]]*\]\([^)]+\))$/i;
 function textoDeMarca(linea, numero) {
   const imagen = linea.match(/^!\[[^\]]*\]\(([^)]+)\)$/);
   return imagen ? `[Insertar aquí la ${sinEnfasis(numero)}: ${imagen[1]}]` : linea;
+}
+
+/**
+ * Lo más ancha que sale una figura, en píxeles a 96 ppp: unos 15 cm, el ancho
+ * de la caja de texto con márgenes de tesis. Una figura de R a 1600 píxeles
+ * saldría del papel si se pusiera a su tamaño.
+ *
+ * Vivía en `r.informe`, que era el único que incrustaba imágenes; ahora el Word
+ * de la tesis también, y el informe lo toma de aquí para que las dos midan igual.
+ */
+const ANCHO_MAXIMO = 560;
+
+/** El ancho y el alto de un PNG, leídos de su cabecera. Null si no es un PNG. */
+function dimensionesPng(bytes) {
+  const firma = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+  if (!bytes || bytes.length < 24 || !firma.every((b, i) => bytes[i] === b)) return null;
+  const ancho = bytes.readUInt32BE(16);
+  const alto = bytes.readUInt32BE(20);
+  return ancho > 0 && alto > 0 ? { ancho, alto } : null;
+}
+
+/**
+ * De qué archivo es la marca de una figura.
+ *
+ * Solo PNG: es lo que genera R —y lo único cuyo tamaño se puede leer sin una
+ * librería de imágenes—, así que una figura en otro formato sigue saliendo como
+ * la marca amarilla de siempre, que es lo que había para todas.
+ */
+function archivoDeMarca(linea) {
+  const enMarkdown = String(linea).match(/^!\[[^\]]*\]\(\s*([^)\s]+)\s*\)$/);
+  const archivo = enMarkdown ? enMarkdown[1] : (String(linea).match(/:\s*([^\]\s]+)\s*\]$/) ?? [])[1];
+  return archivo && /\.png$/i.test(archivo) ? archivo : null;
+}
+
+/** Los archivos de figura que pide un capítulo, en orden y sin repetir. */
+function figurasDe(texto) {
+  const archivos = [];
+  for (const bruto of String(texto ?? '').split(/\n{2,}/)) {
+    const lineas = bruto
+      .trim()
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean);
+    if (lineas.length === 0 || !FIGURA_RE.test(lineas[0])) continue;
+    for (const linea of lineas) {
+      const archivo = MARCA_FIGURA_RE.test(linea) ? archivoDeMarca(linea) : null;
+      if (archivo && !archivos.includes(archivo)) archivos.push(archivo);
+    }
+  }
+  return archivos;
+}
+
+/** La imagen, a lo ancho que quepa. Null si esos bytes no son un PNG. */
+function comoImagen(bytes, keepNext) {
+  const medidas = dimensionesPng(bytes);
+  if (!medidas) return null;
+  const escala = Math.min(1, ANCHO_MAXIMO / medidas.ancho);
+  return new Paragraph({
+    alignment: AlignmentType.CENTER,
+    keepNext,
+    indent: { firstLine: 0 },
+    spacing: { before: 120, after: 120 },
+    children: [
+      new ImageRun({
+        type: 'png',
+        data: bytes,
+        transformation: {
+          width: Math.round(medidas.ancho * escala),
+          height: Math.round(medidas.alto * escala),
+        },
+      }),
+    ],
+  });
 }
 
 /**
@@ -365,13 +590,27 @@ function figuraApa(lineas, contexto) {
 
   for (const linea of despues) {
     if (MARCA_FIGURA_RE.test(linea)) {
+      /**
+       * La imagen, si el servidor la tiene.
+       *
+       * La tiene cuando el análisis se corrió aquí: los PNG quedan en la sesión
+       * de R del proyecto (ver `armarWord`). Hasta ahora el Word de la tesis
+       * dejaba SIEMPRE una marca amarilla para que el tesista pegara cada
+       * imagen a mano, aunque el servidor acabara de dibujarlas él mismo.
+       *
+       * Si no la tiene —analizó en SPSS, o la figura es suya—, la marca sigue
+       * ahí y se pega a mano, como antes.
+       */
+      const archivo = archivoDeMarca(linea);
+      const imagen = archivo ? comoImagen(contexto?.figuras?.get(archivo), true) : null;
       elementos.push(
-        new Paragraph({
-          children: [new TextRun({ text: textoDeMarca(linea, numero), highlight: 'yellow' })],
-          alignment: AlignmentType.CENTER,
-          keepNext: true,
-          indent: { firstLine: 0 }, spacing: { before: 120, after: 120 },
-        }),
+        imagen ??
+          new Paragraph({
+            children: [new TextRun({ text: textoDeMarca(linea, numero), highlight: 'yellow' })],
+            alignment: AlignmentType.CENTER,
+            keepNext: true,
+            indent: { firstLine: 0 }, spacing: { before: 120, after: 120 },
+          }),
       );
       continue;
     }
@@ -718,10 +957,18 @@ async function armar({
   partes = null,
   citas = null,
   zotero = null,
+  /**
+   * Los PNG de las figuras, por nombre de archivo, cuando el servidor los tiene
+   * (ver `figurasDeLaSesion` en `project.service`). Sin ellos, cada figura sale
+   * con su marca resaltada para pegarla a mano, como salían todas hasta ahora.
+   */
+  figuras = null,
   // Solo el informe estudiantil: los datos de su portada. Nulo = la de siempre.
   portadaInforme = null,
 }) {
   const notas = {};
+  /** Los pendientes del texto, que van al margen (ver `comoComentario`). */
+  const comentarios = [];
   const plantilla = Boolean(estilos);
   // Si la numeración de la plantilla ya escribe «Capítulo I», el título no lo
   // repite: saldría «CAPÍTULO I CAPÍTULO I · PROBLEMA Y OBJETIVOS».
@@ -730,7 +977,18 @@ async function armar({
   // interlineado y su sangría sin tocar «Normal», del que heredan la portada,
   // el encabezado y el pie.
   const estiloCuerpo = estilos && /w:styleId="CuerpoTesis"/.test(estilos) ? 'CuerpoTesis' : null;
-  const contexto = { citas, notas, zotero: Boolean(zotero), plantilla, estiloCuerpo };
+  const contexto = {
+    citas,
+    notas,
+    comentarios,
+    figuras,
+    zotero: Boolean(zotero),
+    plantilla,
+    estiloCuerpo,
+    // Lo que mide una línea de texto: de ahí salen los anchos de las columnas
+    // de las tablas (ver `anchosDeColumna`).
+    anchoUtil: anchoDelCuerpo(pagina),
+  };
   // El espaciado de los títulos de capítulo: con plantilla, el de su estilo.
   const espacioDeTitulo = plantilla ? {} : { spacing: { after: 240 } };
 
@@ -797,6 +1055,7 @@ async function armar({
     creator: 'Acosta | IA & Research',
     title: tema ?? 'Tesis',
     ...(Object.keys(notas).length > 0 ? { footnotes: notas } : {}),
+    ...(comentarios.length > 0 ? { comments: { children: comentarios } } : {}),
     ...(zotero ? { customProperties: zotero.preferencias } : {}),
     ...(estilos ? { externalStyles: estilos } : {}),
     ...(estilos ? {} : { styles: {
@@ -996,6 +1255,10 @@ module.exports = {
   portadaDeEmpresa,
   partirTabla,
   tablaApa,
+  anchosDeColumna,
+  figurasDe,
+  dimensionesPng,
+  ANCHO_MAXIMO,
   // Lo usa también el informe de R (`r.informe`): misma lista, misma maqueta.
   referenciasDelDocumento,
 };

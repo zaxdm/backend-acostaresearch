@@ -93,6 +93,10 @@
           "type": "string",
           "description": "Su universidad."
         },
+        "autor": {
+          "type": "string",
+          "description": "Quién firma la tesis, tal como debe salir en la portada del Word y con sus dos apellidos («Ana María Quispe Flores»). Sin esto la portada sale con el nombre de la CUENTA, que no siempre es el del tesista: guárdalo en cuanto sepas que es otro."
+        },
         "asesor": {
           "type": "string",
           "description": "El nombre de su asesor o asesora, tal como debe salir en la portada del Word, con su grado si lo dice («Dr. Juan Pérez Gómez»). Si todavía no tiene, manda \"\" (vacío): así queda anotado que ya se preguntó y no se le vuelve a preguntar."
@@ -152,7 +156,7 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 30000,
-          "description": "El texto del capítulo tal y como va a la tesis, en Markdown: ## para los subtítulos y párrafos separados por una línea en blanco. NADA de comentarios tuyos, ni «aquí tienes», ni notas tuyas entre corchetes —solo valen las claves de cita, [FALTA FUENTE] y la marca de una figura—: esto se convierte en el Word que el tesista entrega. Si pasa de 30.000 caracteres, mándalo por partes. LAS TABLAS van en Markdown y salen en el Word como tablas en formato APA, en un solo bloque sin líneas en blanco: «**Tabla 1**», en la línea siguiente «*Título de la tabla*», luego la cabecera «| Col A | Col B |», la fila «|---|---|», las filas, y si hace falta «*Nota.* …» justo debajo. Las celdas admiten citas con clave. NO armes tú un Word para tener las tablas: el servidor ya las pone. LAS FIGURAS, también en un solo bloque: «**Figura 1**», «*Título de la figura*», «[Insertar aquí la Figura 1: nombre-del-archivo.png]» y, si hace falta, «*Nota.* …». El Word pone el rótulo y deja la marca resaltada donde el tesista pega la imagen: dile cuál va en cada marca."
+          "description": "El texto del capítulo tal y como va a la tesis, en Markdown: ## para los subtítulos y párrafos separados por una línea en blanco. NADA de comentarios tuyos, ni «aquí tienes», ni notas tuyas entre corchetes —solo valen las claves de cita, [FALTA FUENTE] y la marca de una figura—: esto se convierte en el Word que el tesista entrega. Si pasa de 30.000 caracteres, mándalo por partes. LAS TABLAS van en Markdown y salen en el Word como tablas en formato APA, en un solo bloque sin líneas en blanco: «**Tabla 1**», en la línea siguiente «*Título de la tabla*», luego la cabecera «| Col A | Col B |», la fila «|---|---|», las filas, y si hace falta «*Nota.* …» justo debajo. Las celdas admiten citas con clave. NO armes tú un Word para tener las tablas: el servidor ya las pone. LAS FIGURAS, también en un solo bloque: «**Figura 1**», «*Título de la figura*», «[Insertar aquí la Figura 1: nombre-del-archivo.png]» y, si hace falta, «*Nota.* …». Si el gráfico se dibujó en \"trabajar_en_r\", PON EL NOMBRE DEL PNG TAL CUAL lo guardaste en la sesión: el Word lo incrusta ya en su sitio. Si la imagen es del tesista, el Word deja una marca resaltada donde la pegue él: dile cuál va en cada marca."
         },
         "anadir": {
           "type": "boolean",

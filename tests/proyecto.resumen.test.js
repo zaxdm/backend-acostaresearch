@@ -298,7 +298,10 @@ test('sin tema ni carrera, el panorama no empieza por una línea en blanco', asy
 
   assert.doesNotMatch(t, /^\s/, 'no debe empezar por un espacio ni un salto');
   assert.doesNotMatch(t, /\n\n\n/, 'ni dejar secciones en blanco por el medio');
-  assert.match(t, /^\[pendiente\] 1 · Tema y delimitación/);
+  // La cabecera ya nunca queda vacía: quién firma la portada se dice siempre,
+  // porque sin dato sale el nombre de la cuenta y eso no siempre es cierto.
+  assert.match(t, /^Autor \(portada\): sin dato\./);
+  assert.match(t, /\n\[pendiente\] 1 · Tema y delimitación/);
 });
 
 test('un estado que no esté en MARCAS no tumba el panorama', async () => {

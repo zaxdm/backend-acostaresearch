@@ -116,13 +116,18 @@ function altoDeParrafo(parrafo, metricas, ancho) {
 
 /** Lo que ocupa una tabla: cada fila, lo que su celda más alta. */
 function altoDeTabla(tabla, metricas, ancho) {
+  // La rejilla de la tabla, si la trae: las columnas no tienen por qué medir lo
+  // mismo (ver `anchosDeColumna` en `project.docx`), y repartir el ancho por
+  // igual daba de menos justo en la columna larga, que es la que manda.
+  const rejilla = [...tabla.matchAll(/<w:gridCol\b[^>]*\bw:w="(\d+)"/g)].map((m) => Number(m[1]));
+
   let alto = 0;
   for (const fila of tabla.matchAll(/<w:tr\b[\s\S]*?<\/w:tr>/g)) {
     const celdas = [...fila[0].matchAll(/<w:tc\b[\s\S]*?<\/w:tc>/g)].map((c) => c[0]);
-    const anchoDeCelda = ancho / Math.max(1, celdas.length);
-    const altos = celdas.map((celda) =>
+    const anchoDeCelda = (i) => rejilla[i] ?? ancho / Math.max(1, celdas.length);
+    const altos = celdas.map((celda, i) =>
       [...celda.matchAll(/<w:p\b[^>]*>[\s\S]*?<\/w:p>/g)].reduce(
-        (suma, p) => suma + altoDeParrafo(p[0], metricas, anchoDeCelda).alto,
+        (suma, p) => suma + altoDeParrafo(p[0], metricas, anchoDeCelda(i)).alto,
         0,
       ),
     );
@@ -132,6 +137,14 @@ function altoDeTabla(tabla, metricas, ancho) {
 }
 
 const nivelDe = (bloque) => NIVEL_DE_TITULO[primero(bloque, /^<w:p\b[^>]*>\s*<w:pPr>\s*<w:pStyle w:val="([^"]+)"/)] ?? 0;
+
+/**
+ * El rótulo de una tabla o de una figura: «Tabla 1», «Figura 2a».
+ *
+ * Es el párrafo entero, no una parte: «la Tabla 1 muestra…» es texto del
+ * capítulo y no puede acabar en el índice de tablas.
+ */
+const ROTULO_RE = /^(?:Tabla|Figura)\s+\d+[A-Za-z]?$/i;
 
 function entrada(titulo, ancho, inicioDelCampo = '') {
   return (
@@ -200,54 +213,129 @@ function rellenarIndice(documento, estilos) {
   }
 
   let id = [...documento.matchAll(/w:id="(\d+)"/g)].reduce((maximo, m) => Math.max(maximo, Number(m[1])), 0);
-  const titulos = [];
-  for (const bloque of bloques) {
-    const esTabla = bloque.xml.startsWith('<w:tbl');
-    if (!esTabla && /<w:pageBreakBefore\/>/.test(bloque.xml) && altura > 0) {
-      pagina += 1;
-      altura = 0;
-    }
-    const medida = esTabla ? { alto: altoDeTabla(bloque.xml, metricas, ancho), primera: 0 } : altoDeParrafo(bloque.xml, metricas, ancho);
-    const nivel = esTabla ? 0 : nivelDe(bloque.xml);
 
-    // Un título no se queda solo al pie de la hoja: Word lo pasa a la siguiente
-    // con las dos primeras líneas del párrafo que le sigue.
-    const hastaDondeLlega = nivel ? medida.alto + 2 * lineaDeCuerpo : medida.primera;
-    if (altura > 0 && altura + hastaDondeLlega > alto) {
-      pagina += 1;
-      altura = 0;
-    }
-    if (nivel) {
-      id += 1;
-      titulos.push({ ...bloque, nivel, pagina, id, marca: `_TocAR${String(titulos.length + 1).padStart(4, '0')}`, texto: textoDe(bloque.xml) });
-    }
+  /**
+   * El recorrido del cuerpo, hoja a hoja.
+   *
+   * Se hace DOS veces, y no por descuido: los índices de tablas y de figuras van
+   * entre el índice general y el primer capítulo, así que ocupan hojas y corren
+   * todo lo que viene detrás. La primera pasada dice cuántas tablas y cuántas
+   * figuras hay —de ahí sale lo que miden esos dos índices—, y la segunda vuelve
+   * a contar ya con esas hojas puestas. De una sola pasada, los números de
+   * página saldrían cortos por dos o tres hojas en todo el documento.
+   */
+  function recorrer(desdePagina, desdeAltura) {
+    let pag = desdePagina;
+    let alt = desdeAltura;
+    let ultimo = id;
+    const titulos = [];
+    const rotulos = [];
 
-    altura += medida.alto;
+    bloques.forEach((bloque, i) => {
+      const esTabla = bloque.xml.startsWith('<w:tbl');
+      if (!esTabla && /<w:pageBreakBefore\/>/.test(bloque.xml) && alt > 0) {
+        pag += 1;
+        alt = 0;
+      }
+      const medida = esTabla ? { alto: altoDeTabla(bloque.xml, metricas, ancho), primera: 0 } : altoDeParrafo(bloque.xml, metricas, ancho);
+      const nivel = esTabla ? 0 : nivelDe(bloque.xml);
+
+      // Un título no se queda solo al pie de la hoja: Word lo pasa a la siguiente
+      // con las dos primeras líneas del párrafo que le sigue.
+      const hastaDondeLlega = nivel ? medida.alto + 2 * lineaDeCuerpo : medida.primera;
+      if (alt > 0 && alt + hastaDondeLlega > alto) {
+        pag += 1;
+        alt = 0;
+      }
+
+      if (nivel) {
+        ultimo += 1;
+        titulos.push({ ...bloque, nivel, pagina: pag, id: ultimo, marca: `_TocAR${String(titulos.length + 1).padStart(4, '0')}`, texto: textoDe(bloque.xml) });
+      } else if (!esTabla) {
+        /**
+         * El rótulo de una tabla o de una figura.
+         *
+         * Es «Tabla 1» en su propio párrafo, con el título en cursiva en el de
+         * debajo: así lo pide APA y así lo escribe `project.docx`. La entrada
+         * del índice junta los dos, que es lo que el jurado espera leer.
+         */
+        const etiqueta = textoDe(bloque.xml).trim();
+        if (ROTULO_RE.test(etiqueta)) {
+          ultimo += 1;
+          const siguiente = bloques[i + 1];
+          const titulo =
+            siguiente && !siguiente.xml.startsWith('<w:tbl') && !ROTULO_RE.test(textoDe(siguiente.xml).trim())
+              ? textoDe(siguiente.xml).trim()
+              : '';
+          rotulos.push({
+            ...bloque,
+            pagina: pag,
+            id: ultimo,
+            de: /^tabla/i.test(etiqueta) ? 'tablas' : 'figuras',
+            marca: `_RotAR${String(rotulos.length + 1).padStart(4, '0')}`,
+            texto: titulo ? `${etiqueta}. ${titulo}` : etiqueta,
+          });
+        }
+      }
+
+      alt += medida.alto;
+      while (alt > alto) {
+        pag += 1;
+        alt -= alto;
+      }
+      if (/<w:sectPr\b|<w:br w:type="page"\/>/.test(bloque.xml)) {
+        pag += 1;
+        alt = 0;
+      }
+    });
+
+    return { titulos, rotulos, ultimo };
+  }
+
+  /** Lo que ocupa un índice de tantas entradas, con su título. */
+  const altoDeLista = (entradas) =>
+    altoDeLinea(tituloDelIndice) + tituloDelIndice.antes + tituloDelIndice.despues +
+    entradas * (altoDeLinea(deIndice) + deIndice.antes + deIndice.despues);
+
+  // Primera pasada: cuántas tablas y cuántas figuras hay.
+  const primera = recorrer(pagina, altura);
+  const listas = [
+    { de: 'tablas', titulo: 'Índice de tablas' },
+    { de: 'figuras', titulo: 'Índice de figuras' },
+  ].filter((lista) => primera.rotulos.some((r) => r.de === lista.de));
+
+  // Cada índice empieza hoja, como el general. Lo que ocupan corre el cuerpo.
+  for (const lista of listas) {
+    pagina += 1;
+    altura = altoDeLista(primera.rotulos.filter((r) => r.de === lista.de).length);
     while (altura > alto) {
       pagina += 1;
       altura -= alto;
     }
-    if (/<w:sectPr\b|<w:br w:type="page"\/>/.test(bloque.xml)) {
-      pagina += 1;
-      altura = 0;
-    }
   }
+
+  // Segunda pasada: los números buenos, ya con esas hojas por delante.
+  const { titulos, rotulos } = listas.length > 0 ? recorrer(pagina, altura) : primera;
+  for (const lista of listas) lista.entradas = rotulos.filter((r) => r.de === lista.de);
 
   // Si la numeración empieza de nuevo en la sección del cuerpo, se descuentan
   // las hojas de delante.
   const inicio = numeroDe(seccion, /<w:pgNumType\b[^>]*\bw:start="(\d+)"/, null);
   const hojasDeLaPortada = (antes.match(/<w:sectPr\b/g) || []).length > 0 ? saltosAntes : 0;
-  for (const titulo of titulos) {
-    titulo.numero = inicio === null ? titulo.pagina : titulo.pagina - hojasDeLaPortada + inicio - 1;
-  }
+  const numeroDePagina = (cual) =>
+    inicio === null ? cual.pagina : cual.pagina - hojasDeLaPortada + inicio - 1;
+  for (const titulo of titulos) titulo.numero = numeroDePagina(titulo);
+  for (const rotulo of rotulos) rotulo.numero = numeroDePagina(rotulo);
 
-  // Los marcadores, de atrás adelante para no mover las posiciones.
+  // Los marcadores, de atrás adelante para no mover las posiciones. Los rótulos
+  // llevan el suyo como los títulos: así su número de página es un campo que
+  // Word rehace cuando puede, y no un número escrito a mano que se queda viejo.
   let nuevoCuerpo = cuerpo;
-  for (const titulo of [...titulos].reverse()) {
-    const conMarca = titulo.xml
-      .replace(/^(<w:p\b[^>]*>(?:\s*<w:pPr>[\s\S]*?<\/w:pPr>)?)/, (apertura) => `${apertura}<w:bookmarkStart w:id="${titulo.id}" w:name="${titulo.marca}"/>`)
-      .replace(/<\/w:p>$/, `<w:bookmarkEnd w:id="${titulo.id}"/></w:p>`);
-    nuevoCuerpo = nuevoCuerpo.slice(0, titulo.indice) + conMarca + nuevoCuerpo.slice(titulo.indice + titulo.xml.length);
+  for (const cual of [...titulos, ...rotulos].sort((a, b) => b.indice - a.indice)) {
+    const conMarca = cual.xml
+      .replace(/^(<w:p\b[^>]*>(?:\s*<w:pPr>[\s\S]*?<\/w:pPr>)?)/, (apertura) => `${apertura}<w:bookmarkStart w:id="${cual.id}" w:name="${cual.marca}"/>`)
+      .replace(/<\/w:p>$/, `<w:bookmarkEnd w:id="${cual.id}"/></w:p>`);
+    nuevoCuerpo = nuevoCuerpo.slice(0, cual.indice) + conMarca + nuevoCuerpo.slice(cual.indice + cual.xml.length);
   }
 
   const entradas =
@@ -257,7 +345,27 @@ function rellenarIndice(documento, estilos) {
   const nuevoCampo =
     campo[0].slice(0, inicioDelContenido) + entradas + campo[0].slice(inicioDelContenido + contenido[1].length);
 
-  return antes + nuevoCampo + nuevoCuerpo;
+  /**
+   * Los índices de tablas y de figuras, detrás del general.
+   *
+   * No son un campo TOC de Word: uno de tablas se arma con campos SEQ y rótulos
+   * con estilo «Descripción», y este Word no los usa. Se escriben aquí enteros,
+   * que además es lo único que se ve en la vista protegida, igual que el índice
+   * general (ver la cabecera de este archivo).
+   *
+   * Solo salen si hay algo que listar: un «Índice de tablas» vacío en una tesis
+   * sin tablas es una hoja de más que alguien tendría que borrar a mano.
+   */
+  const listasXml = listas
+    .map(
+      (lista) =>
+        `<w:p><w:pPr><w:pStyle w:val="TOCHeading"/><w:pageBreakBefore/></w:pPr>` +
+        `<w:r><w:t xml:space="preserve">${lista.titulo}</w:t></w:r></w:p>` +
+        lista.entradas.map((rotulo) => entrada({ ...rotulo, nivel: 1 }, ancho)).join(''),
+    )
+    .join('');
+
+  return antes + nuevoCampo + listasXml + nuevoCuerpo;
 }
 
 /** El Word con el índice relleno. Si algo no cuadra, lo devuelve como estaba. */

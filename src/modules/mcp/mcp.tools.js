@@ -21,6 +21,7 @@ const materialService = require('../projects/material.service');
 const consejos = require('../projects/project.consejos');
 const normas = require('../projects/project.normas');
 const etapas = require('../projects/project.etapas');
+const esquemaDeCapitulos = require('../projects/project.esquema');
 const bloquesDeAnalisis = require('../projects/project.bloques');
 const rService = require('../r/r.service');
 const { perfilDe } = require('../productos/producto.perfil');
@@ -241,6 +242,13 @@ const GUARDAR_AVANCE = {
     },
     carrera: { type: 'string', description: 'La carrera del tesista.' },
     universidad: { type: 'string', description: 'Su universidad.' },
+    autor: {
+      type: 'string',
+      description:
+        'Quién firma la tesis, tal como debe salir en la portada del Word y con sus dos ' +
+        'apellidos («Ana María Quispe Flores»). Sin esto la portada sale con el nombre de la ' +
+        'CUENTA, que no siempre es el del tesista: guárdalo en cuanto sepas que es otro.',
+    },
     asesor: {
       type: 'string',
       description:
@@ -430,9 +438,10 @@ const GUARDAR_CAPITULO = {
         '«*Nota.* …» justo debajo. Las celdas admiten citas con clave. NO armes tú un Word para ' +
         'tener las tablas: el servidor ya las pone. ' +
         'LAS FIGURAS, también en un solo bloque: «**Figura 1**», «*Título de la figura*», ' +
-        '«[Insertar aquí la Figura 1: nombre-del-archivo.png]» y, si hace falta, «*Nota.* …». El ' +
-        'Word pone el rótulo y deja la marca resaltada donde el tesista pega la imagen: dile ' +
-        'cuál va en cada marca.',
+        '«[Insertar aquí la Figura 1: nombre-del-archivo.png]» y, si hace falta, «*Nota.* …». Si ' +
+        'el gráfico se dibujó en "trabajar_en_r", PON EL NOMBRE DEL PNG TAL CUAL lo guardaste en ' +
+        'la sesión: el Word lo incrusta ya en su sitio. Si la imagen es del tesista, el Word deja ' +
+        'una marca resaltada donde la pegue él: dile cuál va en cada marca.',
     },
     anadir: {
       type: 'boolean',
@@ -975,7 +984,7 @@ function construirServidor(licencia) {
       // que no es de esta licencia es leer el proyecto de otro método.
       // Las secciones aparte del informe (resumen, introducción) no están en el
       // catálogo, pero se leen como un capítulo. En tesis y artículo no hay.
-      const aparte = projectService.seccionAparte(licencia.productCode, capitulo);
+      const aparte = await projectService.seccionDelDocumento(licencia.user.id, licencia.productCode, capitulo);
       const skill = aparte ?? (await skillService.findByCode(capitulo));
       if (!skill || (!aparte && !skillService.perteneceAlGrupo(skill, licencia.productCode))) {
         return texto(
@@ -1139,12 +1148,17 @@ function construirServidor(licencia) {
     async (entrada) => {
       await licenseService.recordUsage({ licenseId: licencia.id, tool: 'guardar_capitulo' });
 
-      const aparte = projectService.seccionAparte(licencia.productCode, entrada.capitulo);
+      const aparte = await projectService.seccionDelDocumento(
+        licencia.user.id,
+        licencia.productCode,
+        entrada.capitulo,
+      );
       const skill = aparte ?? (await skillService.findByCode(entrada.capitulo));
       if (!skill || (!aparte && !skillService.perteneceAlGrupo(skill, licencia.productCode))) {
         return texto(
           `No existe ningún capítulo con la clave "${entrada.capitulo}". ` +
-            'Usa listar_capitulos para ver las claves válidas. No se ha guardado nada.',
+            'Usa listar_capitulos para ver las claves del método, y mi_proyecto para las de los ' +
+            'capítulos propios de su facultad. No se ha guardado nada.',
         );
       }
 
@@ -1177,6 +1191,147 @@ function construirServidor(licencia) {
       }
     },
   );
+
+  /**
+   * La estructura de capítulos que exige su facultad.
+   *
+   * Solo en la tesis: es donde hay reglamento. Un artículo lo estructura la
+   * revista y un informe, el docente, y para esos dos el método ya encaja.
+   *
+   * No entra en `guardar_avance` a propósito. Ahí van datos sueltos que se
+   * corrigen sin consecuencias; esto REORDENA el documento entero, y tiene que
+   * costar una llamada aparte, con su confirmación y su respuesta enseñando
+   * cómo queda.
+   */
+  if (perfil.tipo === 'tesis') {
+    server.registerTool(
+      'estructura_de_la_tesis',
+      {
+        title: 'Los capítulos que pide su facultad',
+        description:
+          'Fija CÓMO SE NUMERAN Y SE LLAMAN los capítulos en el Word, cuando el reglamento de ' +
+          'su facultad no coincide con el método. El método numera III Metodología, IV ' +
+          'Resultados y V Discusión; hay universidades que meten un III de Hipótesis y corren ' +
+          'las demás, o que juntan Resultados y Discusión en un solo capítulo. ' +
+          'ÚSALA cuando el tesista diga que su reglamento pide otra estructura, o cuando al ' +
+          'mirar su formato veas que no cuadra. NO la uses por tu cuenta ni supongas la ' +
+          'estructura por la universidad: PÍDESELA y repítesela para que la confirme ANTES de ' +
+          'guardarla, porque reordena su documento entero. ' +
+          'Manda SIEMPRE la lista completa de capítulos, en orden: lo que mandes sustituye a lo ' +
+          'que hubiera. Una fase con texto que no nombres sale igual, al final del Word.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            capitulos: {
+              type: 'array',
+              minItems: 1,
+              maxItems: 24,
+              description:
+                'Los capítulos del documento, EN ORDEN, tal como los quiere su facultad.',
+              items: {
+                type: 'object',
+                properties: {
+                  titulo: {
+                    type: 'string',
+                    maxLength: 120,
+                    description:
+                      'Cómo se titula en el Word, con su numeración tal cual la pide el ' +
+                      'reglamento: «CAPÍTULO IV: METODOLOGÍA», «Capítulo V. Resultados y discusión».',
+                  },
+                  de: {
+                    type: 'array',
+                    items: { type: 'string' },
+                    maxItems: 4,
+                    description:
+                      'Las claves de las fases del método de las que sale su texto, en orden ' +
+                      '(«metodologia»; o «analisis-datos-rstudio» y «discusion» para juntar ' +
+                      'Resultados y Discusión en un capítulo). Cada fase va en un capítulo y solo ' +
+                      'en uno. DÉJALO VACÍO si es un capítulo que el método no tiene, como ' +
+                      'Hipótesis: el servidor le dará su propia clave para guardar su texto.',
+                  },
+                },
+                required: ['titulo'],
+              },
+            },
+            quitar: {
+              type: 'boolean',
+              description:
+                'Manda true, y nada más, para volver a la numeración del método. El texto ' +
+                'guardado no se toca.',
+            },
+          },
+        },
+      },
+      async (entrada) => {
+        await licenseService.recordUsage({ licenseId: licencia.id, tool: 'estructura_de_la_tesis' });
+
+        if (entrada?.quitar === true) {
+          const habia = await projectService.quitarEsquema({
+            userId: licencia.user.id,
+            productCode: licencia.productCode,
+          });
+          return texto(
+            habia
+              ? 'Hecho: su Word vuelve a salir con los capítulos del método. El texto que tenía ' +
+                  'guardado sigue ahí, incluido el de los capítulos propios de su facultad.'
+              : 'No había ninguna estructura propia guardada: su Word ya sale con la del método.',
+          );
+        }
+
+        try {
+          const { esquema, catalogo, sobrantes, huerfanos } = await projectService.guardarEsquema({
+            userId: licencia.user.id,
+            productCode: licencia.productCode,
+            capitulos: entrada?.capitulos,
+          });
+
+          const nombreDe = new Map(catalogo.map((s) => [s.code, s.displayName]));
+          const lineas = esquema.capitulos.map((c, i) => {
+            const origen = c.clave
+              ? `capítulo propio de su facultad · guarda su texto con la clave "${c.clave}"`
+              : c.de.map((f) => nombreDe.get(f) ?? f).join(' + ');
+            return `${i + 1}. ${c.titulo}\n     ← ${origen}`;
+          });
+
+          const avisos = [];
+          if (sobrantes.length > 0) {
+            avisos.push(
+              'NO has nombrado estas fases, que tienen texto guardado: ' +
+                `${sobrantes.map((s) => s.displayName).join(', ')}. Saldrán igual, al FINAL del ` +
+                'Word y con su nombre del método. Si van dentro de algún capítulo, vuelve a ' +
+                'mandar la estructura entera con ellas en su sitio.',
+            );
+          }
+          if (huerfanos.length > 0) {
+            avisos.push(
+              'Estos capítulos propios ya no están en la estructura, pero su texto sigue ' +
+                `guardado: ${huerfanos.join(', ')}. No saldrá en el Word mientras no los vuelvas ` +
+                'a incluir.',
+            );
+          }
+
+          return texto(
+            `Guardada. Su Word sale así:${N}${N}${lineas.join(N)}${N}${N}` +
+              (avisos.length > 0 ? `${avisos.join(`${N}${N}`)}${N}${N}` : '') +
+              'Nómbrale los capítulos así de ahora en adelante. Las claves para guardar y leer ' +
+              'NO cambian: siguen siendo las del método, salvo las de los capítulos propios.',
+          );
+        } catch (error) {
+          if (error instanceof esquemaDeCapitulos.EsquemaNoValido) {
+            return texto(`NO se ha guardado: ${error.message}`);
+          }
+          logger.error(
+            { err: error, licenseId: licencia.id },
+            'No se pudo guardar la estructura de capítulos',
+          );
+          return texto(
+            'NO se ha guardado la estructura: error del servidor. Su Word sigue saliendo con ' +
+              'los capítulos del método.',
+          );
+        }
+      },
+    );
+  }
 
   server.registerTool(
     'continuar',

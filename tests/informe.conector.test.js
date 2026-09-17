@@ -85,14 +85,22 @@ const esquema = (config) => config.inputSchema['~standard'].jsonSchema.input();
 
 // ── Las herramientas ───────────────────────────────────────────────────────
 
-test('el informe tiene las herramientas de la tesis más el material del curso, con su revisión', () => {
+test('el informe cambia la revisión, gana el material del curso y pierde la estructura de capítulos', () => {
   const informe = herramientas(INFORME);
   const tesis = herramientas(TESIS);
 
-  assert.equal(informe.size, tesis.size + 1);
   assert.ok(informe.has('material_del_curso'));
   assert.ok(informe.has('revisar_el_informe'));
   assert.ok(!informe.has('revisar_la_tesis'));
+
+  // La estructura de capítulos sale de un reglamento de facultad: un informe de
+  // curso no tiene reglamento, la estructura se la da su docente y para eso
+  // está el material del curso.
+  assert.ok(tesis.has('estructura_de_la_tesis'));
+  assert.ok(!informe.has('estructura_de_la_tesis'));
+
+  // Una de cada: entra el material del curso y sale la estructura.
+  assert.equal(informe.size, tesis.size);
 });
 
 test('la revisión del informe habla de la rúbrica y no de variables', () => {

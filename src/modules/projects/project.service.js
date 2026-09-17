@@ -47,6 +47,7 @@ const { guardarAvanceSchema, guardarCapituloSchema } = require('./project.schema
 const { fusionarFicha, lineasDeFicha, esDeEmpresa, NOMBRE_DE_TIPO } = require('./project.ficha-informe');
 const { perfilDe } = require('../productos/producto.perfil');
 const { lineaDeMaterial } = require('./project.material');
+const esquemaDeCapitulos = require('./project.esquema');
 
 /** Cómo se ve cada estado en el texto que recibe el asistente. */
 const MARCAS = {
@@ -157,6 +158,7 @@ async function contexto(userId, productCode) {
     // El informe no tiene asesor: tiene curso, docente, integrantes y entrega.
     cabecera.push(...lineasDeFicha(proyecto.fichaInforme ?? {}, { conRubrica: true }));
   } else {
+    cabecera.push(lineaDeAutor(proyecto));
     const asesor = lineaDeAsesor(proyecto);
     if (asesor) cabecera.push(asesor);
   }
@@ -182,16 +184,47 @@ async function contexto(userId, productCode) {
     if (etapa?.resumen) lineas.push(`      quedó así: ${etapa.resumen}`);
   }
 
+  // La estructura de su facultad va DETRÁS de las fases: las claves con las que
+  // se guarda y se lee siguen siendo las del método, y leerlas antes que el
+  // esquema es lo que evita que el asistente empiece a inventar claves nuevas.
+  const estructura = esquemaDeCapitulos.comoTexto(proyecto.esquema, catalogo);
+
   return [
     'LO QUE ESTE SERVIDOR YA SABE DE SU PROYECTO',
     ...cabecera,
     '',
     ...lineas,
     '',
+    ...(estructura ? [estructura, ''] : []),
     ...(aviso ? [aviso, ''] : []),
     'Da esto por sabido: NO se lo vuelvas a preguntar. Si algo de aquí ya no es ' +
       'cierto porque lo han cambiado hablando, corrígelo con "guardar_avance".',
   ].join('\n');
+}
+
+/**
+ * El autor de la tesis, en lo que lee el asistente.
+ *
+ * POR QUÉ SE DICE SIEMPRE, Y NO SOLO CUANDO FALTA
+ * -----------------------------------------------
+ * Sin dato, la portada sale con el nombre de la CUENTA, y eso es cierto casi
+ * siempre —el tesista trabaja su propia tesis— pero no siempre: un asesor que
+ * acompaña a varios, o una cuenta abierta con el nombre de otro, y la portada
+ * sale con el nombre equivocado sin que nadie lo note hasta que se descarga el
+ * Word. Se vio así, en uso real, el 17 de septiembre de 2026: la portada salió
+ * a nombre del titular de la cuenta y no del tesista.
+ *
+ * El asistente no puede comprobarlo desde aquí —el nombre de la cuenta no entra
+ * en este bloque, y consultarlo sería una consulta más en cada respuesta—, así
+ * que se le pide que lo confirme UNA vez antes de la primera descarga.
+ */
+function lineaDeAutor(proyecto) {
+  if (proyecto.autor) return `Autor (portada): ${proyecto.autor}`;
+  return (
+    'Autor (portada): sin dato. La portada del Word saldrá con el nombre de la CUENTA. ' +
+    'Confírmaselo UNA vez antes de que descargue —«¿la tesis sale a tu nombre?»— y, si el ' +
+    'nombre es otro, guárdalo con "guardar_avance" (autor). No vuelvas a preguntarlo después.'
+  );
 }
 
 /**
@@ -302,6 +335,7 @@ async function resumen(userId, productCode) {
   if (perfilDe(productCode).tipo === 'informe') {
     cabecera.push(...lineasDeFicha(proyecto.fichaInforme ?? {}));
   } else {
+    cabecera.push(lineaDeAutor(proyecto));
     const asesor = lineaDeAsesor(proyecto);
     if (asesor) cabecera.push(asesor);
   }
@@ -707,20 +741,34 @@ async function armarWord(userId, productCode) {
   // informe se escriben al final pero van primero. En tesis y artículo no hay.
   const perfil = perfilDe(productCode);
   const enOrden = [
-    ...seccionesAparteDe(productCode, proyecto.fichaInforme).map((s) => ({ code: s.clave, displayName: s.titulo })),
-    ...catalogo,
+    ...seccionesAparteDe(productCode, proyecto.fichaInforme).map((s) => ({ titulo: s.titulo, partes: [s.clave] })),
+    /**
+     * Y detrás, los capítulos del documento.
+     *
+     * Con el esquema de su facultad, los suyos: renumerados, renombrados y con
+     * varias fases fundidas en uno si su reglamento lo pide. Sin esquema, el
+     * catálogo tal cual, que es como salía el Word hasta ahora. Ver
+     * `project.esquema`.
+     */
+    ...esquemaDeCapitulos.capitulosDelDocumento({ esquema: proyecto.esquema, catalogo, conTexto }).capitulos,
   ];
 
   const capitulos = [];
-  for (const skill of enOrden) {
-    if (!conTexto.has(skill.code)) continue;
-    const texto = await almacen.leer(proyecto.id, skill.code);
-    if (texto && texto.trim() !== '') {
-      capitulos.push({ titulo: skill.displayName, texto });
+  for (const capitulo of enOrden) {
+    // Un capítulo puede salir de varias fases —«Resultados y discusión»—, y se
+    // pegan en su orden, separadas como dos bloques de texto.
+    const partes = [];
+    for (const clave of capitulo.partes) {
+      if (!conTexto.has(clave)) continue;
+      const texto = await almacen.leer(proyecto.id, clave);
+      if (texto && texto.trim() !== '') partes.push(texto.trim());
     }
+    if (partes.length > 0) capitulos.push({ titulo: capitulo.titulo, texto: partes.join('\n\n') });
   }
 
   if (capitulos.length === 0) return null;
+
+  const figuras = await figurasDeLaSesion(proyecto.id, capitulos);
 
   /**
    * Las citas se resuelven ahora, no al escribir el capítulo.
@@ -770,16 +818,23 @@ async function armarWord(userId, productCode) {
     );
   }
 
+  /**
+   * Quién firma la portada: el autor del proyecto y, si no se ha dicho, el
+   * nombre de la cuenta, que es lo que se hacía antes de que existiera el campo.
+   */
+  const autor = proyecto.autor?.trim() || nombre;
+
   const buffer = await documento.armar({
     tema: proyecto.tema,
     carrera: proyecto.carrera,
     universidad: proyecto.universidad,
     asesor: proyecto.asesor,
-    nombre,
+    nombre: autor,
     estilos,
     pagina,
     partes,
-    ...(perfil.tipo === 'informe' ? { portadaInforme: datosDePortadaInforme(proyecto, nombre) } : {}),
+    figuras,
+    ...(perfil.tipo === 'informe' ? { portadaInforme: datosDePortadaInforme(proyecto, autor) } : {}),
     ...armado.documento,
   });
 
@@ -888,10 +943,36 @@ function seccionesAparteDe(productCode, ficha) {
  * también el resumen y la introducción de un informe: ahí también hay citas.
  * En tesis y artículo devuelve el catálogo tal cual.
  */
-function conSeccionesAparte(productCode, catalogo) {
-  const apartes = perfilDe(productCode).seccionesAparte;
-  if (apartes.length === 0) return catalogo;
-  return [...apartes.map((s) => ({ code: s.clave, displayName: s.titulo })), ...catalogo];
+function conSeccionesAparte(productCode, catalogo, { esquema = null, conTexto = new Set() } = {}) {
+  const apartes = perfilDe(productCode).seccionesAparte.map((s) => ({
+    code: s.clave,
+    displayName: s.titulo,
+  }));
+
+  /**
+   * Y los capítulos del documento, en el orden en que salen en el Word.
+   *
+   * Con el esquema de su facultad hay que pasar por aquí o se pierden dos
+   * cosas: las citas de un capítulo propio —que no está en el catálogo— no
+   * llegarían al .bib ni al repaso de evidencia, y el tesista tendría una
+   * bibliografía a la que le faltan fuentes sin saber por qué. Sin esquema
+   * devuelve el catálogo tal cual, que es lo que había.
+   */
+  const nombreDeFase = new Map(catalogo.map((s) => [s.code, s.displayName]));
+  const { capitulos } = esquemaDeCapitulos.capitulosDelDocumento({ esquema, catalogo, conTexto });
+  const delDocumento = capitulos.flatMap((capitulo) =>
+    capitulo.partes.map((code) => ({
+      code,
+      // Un capítulo que junta varias fases se dice con las dos: quien lee el
+      // repaso necesita saber de qué parte del texto le están hablando.
+      displayName:
+        capitulo.partes.length > 1
+          ? `${capitulo.titulo} · ${nombreDeFase.get(code) ?? code}`
+          : capitulo.titulo,
+    })),
+  );
+
+  return [...apartes, ...delDocumento];
 }
 
 async function armarBibtex(userId, productCode) {
@@ -907,7 +988,7 @@ async function armarBibtex(userId, productCode) {
   );
 
   const textos = [];
-  for (const skill of conSeccionesAparte(productCode, catalogo)) {
+  for (const skill of conSeccionesAparte(productCode, catalogo, { esquema: proyecto.esquema, conTexto })) {
     if (!conTexto.has(skill.code)) continue;
     const texto = await almacen.leer(proyecto.id, skill.code);
     if (texto && texto.trim() !== '') textos.push(texto);
@@ -958,7 +1039,7 @@ async function revisarEvidencia(userId, productCode, { capitulo = null } = {}) {
   );
 
   const capitulos = [];
-  for (const skill of conSeccionesAparte(productCode, catalogo)) {
+  for (const skill of conSeccionesAparte(productCode, catalogo, { esquema: proyecto.esquema, conTexto })) {
     if (!conTexto.has(skill.code)) continue;
     if (capitulo && skill.code !== capitulo) continue;
 
@@ -1120,6 +1201,121 @@ async function cambiarAsesor({ userId, productCode, asesor }) {
 
   const proyecto = await projectRepository.asegurar(userId, productCode, { asesor });
   return proyecto.asesor ?? '';
+}
+
+/**
+ * Las figuras que pide el texto, leídas de la sesión de R del proyecto.
+ *
+ * POR QUÉ DE AHÍ
+ * --------------
+ * Cuando el análisis se corrió en el servidor, los PNG ya están ahí: los dibujó
+ * R en la carpeta de la sesión, y el informe de R lleva incrustándolos desde
+ * que existe. El Word de la tesis, en cambio, dejaba SIEMPRE una marca amarilla
+ * para que el tesista pegara a mano una imagen que el servidor acababa de
+ * dibujar. Esto es lo que cierra ese absurdo.
+ *
+ * Lo que no esté —quien analizó en SPSS o en Excel, o una foto suya— sigue
+ * saliendo como la marca, que es lo que había para todas.
+ *
+ * SE PIDE TARDE Y A PROPÓSITO
+ * ---------------------------
+ * `r.service` depende de este módulo, así que aquí se pide cuando hace falta y
+ * no al cargar el archivo: los dos están enteros para cuando alguien descarga
+ * un Word. Y si el motor de R está apagado o la sesión ya no existe, no puede
+ * dejar a nadie sin su documento: se anota y salen las marcas.
+ */
+async function figurasDeLaSesion(sesion, capitulos) {
+  const nombres = [...new Set(capitulos.flatMap((c) => documento.figurasDe(c.texto)))];
+  if (nombres.length === 0) return null;
+
+  const figuras = new Map();
+  try {
+    // eslint-disable-next-line global-require
+    const rService = require('../r/r.service');
+    for (const nombre of nombres) {
+      const bytes = await rService.leerArchivoDeSesion(sesion, nombre);
+      if (bytes) figuras.set(nombre, bytes);
+    }
+  } catch (error) {
+    logger.warn({ err: error, sesion }, 'No se pudieron leer las figuras de la sesión de R');
+    return figuras.size > 0 ? figuras : null;
+  }
+
+  return figuras.size > 0 ? figuras : null;
+}
+
+/**
+ * Fija los capítulos del documento tal como los numera su facultad.
+ *
+ * Devuelve, además del esquema guardado, lo que hay que decirle al tesista: las
+ * fases con texto que el esquema no nombra —que salen igual, al final— y los
+ * capítulos propios que se han quedado sin sitio pero conservan su texto.
+ * Ninguna de las dos cosas impide guardar: avisar y dejar el texto donde está
+ * es mejor que rechazar el esquema entero por un capítulo suelto.
+ */
+async function guardarEsquema({ userId, productCode, capitulos }) {
+  const [actual, catalogo] = await Promise.all([
+    projectRepository.buscar(userId, productCode),
+    skillService.listCatalog(productCode),
+  ]);
+
+  const conTexto = new Set(
+    (actual?.stages ?? []).filter((e) => (e.palabras ?? 0) > 0).map((e) => e.skillCode),
+  );
+
+  const esquema = esquemaDeCapitulos.normalizar(
+    { capitulos },
+    { catalogo, anterior: actual?.esquema, conTexto },
+  );
+
+  const proyecto = await projectRepository.asegurar(userId, productCode, { esquema });
+  const { sobrantes } = esquemaDeCapitulos.capitulosDelDocumento({ esquema, catalogo, conTexto });
+  const huerfanos = [...conTexto].filter(
+    (clave) =>
+      esquemaDeCapitulos.esClavePropia(clave) && !esquema.capitulos.some((c) => c.clave === clave),
+  );
+
+  return { esquema: proyecto.esquema, catalogo, sobrantes, huerfanos };
+}
+
+/** Vuelve a la estructura del método. El texto guardado no se toca. */
+async function quitarEsquema({ userId, productCode }) {
+  const actual = await projectRepository.buscar(userId, productCode);
+  if (!actual?.esquema) return false;
+  await projectRepository.asegurar(userId, productCode, { esquema: {} });
+  return true;
+}
+
+/**
+ * El capítulo de esa clave que no está en el catálogo: una sección aparte del
+ * informe o un capítulo propio del reglamento de su facultad.
+ *
+ * La consulta a la base solo se hace con una clave propia («propio-…»): las del
+ * método y las del informe se resuelven sin tocar la base, que es lo que pasa
+ * casi siempre.
+ */
+async function seccionDelDocumento(userId, productCode, clave) {
+  const aparte = seccionAparte(productCode, clave);
+  if (aparte) return aparte;
+  if (!esquemaDeCapitulos.esClavePropia(clave)) return null;
+
+  const proyecto = await projectRepository.buscar(userId, productCode);
+  return esquemaDeCapitulos.capituloPropio(proyecto?.esquema, clave);
+}
+
+/**
+ * Cambia el autor del proyecto desde el panel.
+ * Si no se especifica, queda nulo y se usa la cuenta como respaldo.
+ */
+async function cambiarAutor({ userId, productCode, autor }) {
+  const actual = await projectRepository.buscar(userId, productCode);
+  if (!actual) {
+    const conLicencia = await projectRepository.productosConLicencia(userId);
+    if (!conLicencia.includes(productCode)) return null;
+  }
+
+  const proyecto = await projectRepository.asegurar(userId, productCode, { autor });
+  return proyecto.autor ?? '';
 }
 
 /** ¿Sigue mandando la fase que eligió? Solo si existe en el método y no está cerrada. */
@@ -1645,7 +1841,7 @@ async function auditar(userId, productCode) {
   );
 
   const capitulos = [];
-  for (const skill of conSeccionesAparte(productCode, catalogo)) {
+  for (const skill of conSeccionesAparte(productCode, catalogo, { esquema: proyecto.esquema, conTexto })) {
     if (!conTexto.has(skill.code)) continue;
     const texto = await almacen.leer(proyecto.id, skill.code);
     if (texto && texto.trim() !== '') {
@@ -1830,6 +2026,8 @@ function proyectoEnBlanco(productCode) {
     tema: null,
     carrera: null,
     universidad: null,
+    autor: null,
+    esquema: null,
     asesor: null,
     retomarEn: null,
     estiloCitas: null,
@@ -1911,6 +2109,13 @@ async function deUsuario(userId, { esAdmin = false } = {}) {
         tema: proyecto.tema,
         carrera: proyecto.carrera,
         universidad: proyecto.universidad,
+        /** Quién firma la portada. Nulo = el nombre de la cuenta. */
+        autor: proyecto.autor ?? null,
+        /**
+         * Los capítulos del documento, si su facultad los numera de otra forma.
+         * Nulo = la estructura del método. Ver `project.esquema`.
+         */
+        esquema: esquemaDeCapitulos.tieneEsquema(proyecto.esquema) ? proyecto.esquema.capitulos : null,
         asesor: proyecto.asesor ?? null,
         /** Tesis, artículo o informe: el panel cambia sus textos con esto. */
         tipo: perfilDe(proyecto.productCode).tipo,
@@ -1991,12 +2196,17 @@ function seccionAparte(productCode, clave) {
 
 async function textoDeCapitulo(userId, productCode, skillCode, { parte = 1 } = {}) {
   const aparte = seccionAparte(productCode, skillCode);
-  const [proyecto, skill] = await Promise.all([
+  const [proyecto, delCatalogo] = await Promise.all([
     projectRepository.buscar(userId, productCode),
     aparte ?? skillService.findByCode(skillCode),
   ]);
 
-  if (!skill || (!aparte && !skillService.perteneceAlGrupo(skill, productCode))) return null;
+  // Un capítulo propio del reglamento de su facultad no está en el catálogo: se
+  // resuelve contra el esquema del proyecto, que ya está leído aquí.
+  const propio = aparte ?? esquemaDeCapitulos.capituloPropio(proyecto?.esquema, skillCode);
+  const skill = propio ?? delCatalogo;
+
+  if (!skill || (!propio && !skillService.perteneceAlGrupo(skill, productCode))) return null;
 
   const texto = proyecto ? await almacen.leer(proyecto.id, skillCode) : null;
   if (!texto || texto.trim() === '') return { skill, vacio: true };
@@ -2016,6 +2226,9 @@ async function textoDeCapitulo(userId, productCode, skillCode, { parte = 1 } = {
 
 module.exports = {
   seccionAparte,
+  seccionDelDocumento,
+  guardarEsquema,
+  quitarEsquema,
   formatoDelProyecto,
   esInformeDeEmpresa,
   lineaDeFormato,
@@ -2044,6 +2257,7 @@ module.exports = {
   crearTesis,
   activarTesis,
   eliminarTesis,
+  cambiarAutor,
   cambiarAsesor,
   cambiarRetomar,
   quitarPortadaDePlantilla,

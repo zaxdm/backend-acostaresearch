@@ -420,6 +420,50 @@ test('la ficha reducida se completa con el catálogo abierto antes de guardarla'
   assert.equal(guardada.abstract, 'Resumen del catálogo abierto.');
 });
 
+/**
+ * Un artículo de cincuenta firmantes no puede tumbar la importación entera.
+ *
+ * `comoFila` recorta cada campo a la longitud de su columna, pero `completar`
+ * los REEMPLAZA por los del catálogo abierto. Crossref devuelve la lista
+ * completa de autores sin tope, y con 500 caracteres de columna MySQL no
+ * trunca: rechaza la fila con un 1406 que sale como «Ocurrió un error
+ * inesperado» y se lleva por delante las fichas que sí cabían, porque
+ * `guardarLote` va de una en una.
+ *
+ * Se mide aquí y no en la base porque aquí se ve por qué: la columna es la de
+ * `prisma/schema.prisma`, y es la misma que respetan `comoFila` y el lector de
+ * exports.
+ */
+test('los autores que da Crossref se recortan a lo que cabe en la columna', async () => {
+  empezar();
+  elsevier.responder = respuestaCon([FICHA_REDUCIDA]);
+  const cincuenta = Array.from({ length: 50 }, (_, i) => `Apellido${i}, N.`).join('; ');
+  abierto.crossref = {
+    authors: cincuenta,
+    source: 'S'.repeat(400),
+    volume: 'V'.repeat(60),
+    issue: 'I'.repeat(60),
+    pages: 'P'.repeat(60),
+  };
+  abierto.openalex = { abstract: 'Resumen del catálogo abierto.', tags: 'T'.repeat(700) };
+
+  await servicio.importar('u1', { eids: [EID] });
+
+  const guardada = biblioteca.filas[0];
+  assert.ok(cincuenta.length > 500, 'la lista de prueba tiene que pasarse de largo');
+  assert.equal(guardada.authors.length, 500);
+  assert.ok(guardada.authors.startsWith('Apellido0, N.;'), 'se recorta por el final, no por el principio');
+  // La revista y la paginación llegan de Scopus en esta ficha, así que Crossref
+  // no las pisa; lo que se fija es que ninguna columna se pase si algún día sí.
+  assert.ok((guardada.source ?? '').length <= 300);
+  assert.ok((guardada.volume ?? '').length <= 40);
+  assert.ok((guardada.issue ?? '').length <= 40);
+  assert.ok((guardada.pages ?? '').length <= 40);
+  assert.ok(guardada.tags.length <= 500);
+  // Y el resumen sigue entrando: es TEXT, y recortarlo sería perderlo.
+  assert.equal(guardada.abstract, 'Resumen del catálogo abierto.');
+});
+
 test('el resumen completado entra en la columna con la que se busca', async () => {
   empezar();
   elsevier.responder = respuestaCon([FICHA_REDUCIDA]);

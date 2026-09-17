@@ -258,6 +258,21 @@ function estaCompleta(ficha) {
  * y el tipo de documento son lo que el tesista vio al marcar la casilla, y
  * cambiárselos por detrás por los de otro catálogo haría que la ficha guardada
  * no fuera la que eligió.
+ *
+ * LO QUE ENTRA POR AQUÍ SE RECORTA IGUAL QUE LO DE `comoFila`
+ * ----------------------------------------------------------
+ * `comoFila` recorta cada campo a la longitud de su columna, pero esta función
+ * los REEMPLAZA por los del catálogo abierto, y esos no los ha medido nadie.
+ * Crossref devuelve la lista COMPLETA de firmantes sin tope —OpenAlex corta en
+ * ocho, Crossref no corta— y un artículo de cincuenta autores da un `authors`
+ * de varios miles de caracteres para una columna de 500. MySQL no lo trunca:
+ * lo rechaza con un 1406, que llega al tesista como «Ocurrió un error
+ * inesperado» y tumba la importación ENTERA, incluidas las fichas que sí
+ * cabían. Justo por eso el de Scopus sin token institucional —el que más
+ * necesita completarse— era el que más fallaba.
+ *
+ * Las longitudes son las de `prisma/schema.prisma` y las mismas que usan
+ * `comoFila` y el lector de exports. Si cambian allí, cambian en los tres.
  */
 function completar(fila, { deOpenAlex = null, deCrossref = null } = {}) {
   if (!deOpenAlex && !deCrossref) return fila;
@@ -266,13 +281,14 @@ function completar(fila, { deOpenAlex = null, deCrossref = null } = {}) {
 
   return conBusqueda({
     ...fila,
-    authors: preferido(deCrossref?.authors, deOpenAlex?.authors, fila.authors) ?? '',
+    authors: recortar(preferido(deCrossref?.authors, deOpenAlex?.authors, fila.authors), 500) ?? '',
+    // `abstract` y `busqueda` son TEXT: no se recortan, y no hace falta.
     abstract: preferido(fila.abstract, deOpenAlex?.abstract, deCrossref?.abstract),
-    volume: preferido(fila.volume, deCrossref?.volume, deOpenAlex?.volume),
-    issue: preferido(fila.issue, deCrossref?.issue, deOpenAlex?.issue),
-    pages: preferido(fila.pages, deCrossref?.pages, deOpenAlex?.pages),
-    source: preferido(fila.source, deCrossref?.source, deOpenAlex?.source),
-    tags: fila.tags || String(deOpenAlex?.tags ?? '').slice(0, 500),
+    volume: recortar(preferido(fila.volume, deCrossref?.volume, deOpenAlex?.volume), 40),
+    issue: recortar(preferido(fila.issue, deCrossref?.issue, deOpenAlex?.issue), 40),
+    pages: recortar(preferido(fila.pages, deCrossref?.pages, deOpenAlex?.pages), 40),
+    source: recortar(preferido(fila.source, deCrossref?.source, deOpenAlex?.source), 300),
+    tags: fila.tags || recortar(deOpenAlex?.tags, 500) || '',
   });
 }
 

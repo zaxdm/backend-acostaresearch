@@ -110,13 +110,15 @@ sustituir('../src/modules/references/crossref.client', {
   },
 });
 
-const conexion = { fila: { userId: 'u1', mode: 'APIKEY', status: 'ACTIVA', imported: 0 } };
+const conexion = { fila: { userId: 'u1', mode: 'APIKEY', status: 'ACTIVA', imported: 0 }, creadas: [] };
 
 sustituir('../src/modules/scopus/scopus.repository', {
   deUsuario: async () => conexion.fila,
   anotarBusqueda: async () => {},
   sumarImportadas: async () => {},
-  guardarConexion: async () => {},
+  guardarConexion: async (datos) => {
+    conexion.creadas.push(datos);
+  },
   desconectar: async () => {},
 });
 
@@ -181,7 +183,9 @@ function empezar() {
   abierto.crossref = null;
   abierto.preguntados = [];
   conexion.fila = { userId: 'u1', mode: 'APIKEY', status: 'ACTIVA', imported: 0 };
+  conexion.creadas = [];
   env.scopusApiEnabled = true;
+  env.scopusOauthEnabled = false;
   env.scopusView = 'COMPLETE';
 }
 
@@ -283,15 +287,50 @@ test('la segunda página se pide por desplazamiento, no repitiendo la primera', 
   assert.equal(elsevier.peticiones[0].url.searchParams.get('count'), '25');
 });
 
-test('sin conexión no se le pregunta nada a Elsevier', async () => {
+/**
+ * Sin OAuth no hay nada que conectar, y por eso no se pide.
+ *
+ * Se pregunta con la clave de la casa, que es de este servidor: «conectar» era
+ * un clic de trámite entre el tesista y el buscador que no establecía nada. Se
+ * quitó el 17 de septiembre de 2026, y esta prueba fija las dos mitades —porque
+ * con OAuth SÍ hace falta, y aflojarlo ahí dejaría buscar sin credencial suya—.
+ */
+test('sin OAuth se busca sin conectar nada; con OAuth se exige la conexión', async () => {
   empezar();
   conexion.fila = null;
+
+  // Modo de clave compartida: no hay fila y se busca igual.
+  const busqueda = await servicio.buscar('u1', { ecuacion: 'TITLE-ABS-KEY(mobile)' });
+  assert.equal(busqueda.resultados.length, 1);
+  assert.equal(elsevier.peticiones.length, 1);
+
+  // Con el OAuth de Elsevier habilitado, la conexión vuelve a ser obligatoria.
+  env.scopusOauthEnabled = true;
+  elsevier.peticiones = [];
 
   await assert.rejects(
     () => servicio.buscar('u1', { ecuacion: 'TITLE-ABS-KEY(mobile)' }),
     /No tienes Scopus conectado/,
   );
-  assert.equal(elsevier.peticiones.length, 0);
+  assert.equal(elsevier.peticiones.length, 0, 'y no se le pregunta nada a Elsevier');
+});
+
+/**
+ * La fila se crea al IMPORTAR, no al mirar.
+ *
+ * Es el contador de lo que ha traído, no un permiso. Crearla al entrar en la
+ * pantalla dejaría una fila por cada visita que solo pasó a mirar.
+ */
+test('sin OAuth, buscar no deja rastro; importar sí crea el contador', async () => {
+  empezar();
+  conexion.fila = null;
+  conexion.creadas = [];
+
+  await servicio.buscar('u1', { ecuacion: 'TITLE-ABS-KEY(mobile)' });
+  assert.deepEqual(conexion.creadas, [], 'mirar no crea nada');
+
+  await servicio.importar('u1', { eids: [EID] });
+  assert.deepEqual(conexion.creadas, [{ userId: 'u1', mode: 'APIKEY' }]);
 });
 
 test('apagado en el servidor quiere decir apagado', async () => {
@@ -513,6 +552,8 @@ test('la vuelta lleva a /perfil, que es donde está la tarjeta', () => {
 
 test('una conexión revocada no se presenta como conectada', async () => {
   empezar();
+  // Solo se puede revocar lo que se autorizó: este caso es del modo OAuth.
+  env.scopusOauthEnabled = true;
   conexion.fila = { userId: 'u1', mode: 'OAUTH', status: 'REVOCADA', imported: 12 };
 
   const estado = await servicio.estado('u1');

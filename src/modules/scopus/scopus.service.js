@@ -30,18 +30,23 @@ const repositorio = require('./scopus.repository');
  * todos— y filas de una persona, y la única forma de no confundirlas nunca es
  * que solo un archivo sepa escribirlas.
  *
- * LOS DOS MODOS DE ESTAR CONECTADO
- * --------------------------------
+ * LOS DOS MODOS, Y POR QUÉ SOLO UNO TIENE BOTÓN
+ * ---------------------------------------------
+ * APIKEY — se pregunta con la clave de la casa, que es de este servidor. No hay
+ *          ninguna credencial del tesista que intercambiar, así que TAMPOCO HAY
+ *          NADA QUE CONECTAR: el buscador está desde el primer momento, igual
+ *          que la caja de subir el archivo. Es lo que hay mientras Elsevier no
+ *          habilite el OAuth.
  * OAUTH  — el tesista autoriza en Elsevier y se guardan SUS tokens, cifrados.
- *          Requiere que Elsevier habilite el flujo para esta aplicación: hoy
- *          no lo da por autoservicio. Ver `scopus.oauth`.
- * APIKEY — se pregunta con la clave de la casa. «Conectar» no intercambia
- *          ninguna credencial: deja constancia de que esta persona aceptó las
- *          condiciones de uso del contenido de Elsevier, y enciende su
- *          buscador. Es lo que hay mientras Elsevier no conteste.
+ *          Ahí sí hace falta conectar, porque sin sus tokens no hay con qué
+ *          preguntar en su nombre. Ver `scopus.oauth`.
  *
- * El botón es el mismo y la pantalla es la misma. Lo que cambia por detrás es
- * con qué credencial se pregunta, y el panel lo dice sin rodeos.
+ * Hubo un botón «Conectar Scopus» también en el primer modo, y se quitó el 17 de
+ * septiembre de 2026: era un clic de trámite entre el tesista y el buscador que
+ * no establecía nada, y dejaba un estado más que podía quedarse a medias.
+ *
+ * La fila de `scopus_connections` sigue existiendo en los dos modos, pero en el
+ * primero es solo el contador de lo que ha importado: se crea sola al importar.
  */
 
 /**
@@ -74,8 +79,28 @@ function exigirQueEsteEncendido() {
   }
 }
 
-async function exigirConexion(userId) {
+/**
+ * La conexión con la que se va a preguntar, o `null` si no hace falta ninguna.
+ *
+ * SIN OAUTH NO HAY NADA QUE CONECTAR, Y POR ESO NO SE PIDE
+ * -------------------------------------------------------
+ * Se pregunta con la clave de la casa, que es de este servidor y no del
+ * tesista. «Conectar» era entonces un botón que no intercambiaba ninguna
+ * credencial: un clic de trámite entre él y el buscador, y un estado más que
+ * podía quedarse a medias. Se quitó — el buscador está desde el primer momento,
+ * como lo está la caja de subir el archivo.
+ *
+ * La fila sigue existiendo, pero para llevar la cuenta de lo que ha importado,
+ * no para dar permiso. Se crea sola la primera vez que importa algo.
+ *
+ * CON OAUTH SÍ HACE FALTA, y entonces vuelve a exigirse: ahí la conexión son
+ * SUS tokens, y sin ellos no hay con qué preguntar en su nombre.
+ */
+async function conexionParaUsar(userId) {
   const conexion = await repositorio.deUsuario(userId);
+
+  if (!env.scopusOauthEnabled) return conexion;
+
   if (!conexion) {
     throw new NotFoundError('No tienes Scopus conectado. Pulsa «Conectar Scopus» y vuelve.');
   }
@@ -192,7 +217,9 @@ const MARGEN_MS = 60_000;
  * camino.
  */
 async function tokenDe(conexion) {
-  if (conexion.mode !== 'OAUTH' || !conexion.accessTokenCipher) return null;
+  // Sin fila se pregunta con la clave de la casa, que es lo normal mientras
+  // Elsevier no habilite el OAuth. Ver `conexionParaUsar`.
+  if (!conexion || conexion.mode !== 'OAUTH' || !conexion.accessTokenCipher) return null;
 
   const vigente =
     !conexion.expiresAt || conexion.expiresAt.getTime() - MARGEN_MS > Date.now();
@@ -255,7 +282,7 @@ async function tokenDe(conexion) {
  */
 async function buscar(userId, { ecuacion, pagina = 1 }) {
   exigirQueEsteEncendido();
-  const conexion = await exigirConexion(userId);
+  const conexion = await conexionParaUsar(userId);
 
   const numero = Math.max(Math.trunc(Number(pagina)) || 1, 1);
   const desde = (numero - 1) * cliente.POR_PAGINA;
@@ -338,7 +365,7 @@ async function claveDeLasQueYaTiene(userId, resultados) {
  */
 async function importar(userId, { eids }) {
   exigirQueEsteEncendido();
-  const conexion = await exigirConexion(userId);
+  const conexion = await conexionParaUsar(userId);
 
   const lista = [...new Set((eids ?? []).map((eid) => String(eid).trim()))].filter(mapper.esEid);
 
@@ -392,6 +419,10 @@ async function importar(userId, { eids }) {
   // en vez de duplicarla.
   const { guardadas, repetidas } = await propiasRepository.guardarLote(userId, filas);
 
+  // La fila se crea aquí la primera vez, no al entrar en la pantalla: así una
+  // visita que solo mira no deja rastro, y quien importa algo sí tiene dónde
+  // llevar la cuenta. `sumarImportadas` es un update y sin fila no haría nada.
+  if (!conexion) await repositorio.guardarConexion({ userId, mode: 'APIKEY' }).catch(() => {});
   await repositorio.sumarImportadas(userId, guardadas).catch(() => {});
 
   const sinResumen = filas.filter((fila) => !fila.abstract).length;
@@ -492,11 +523,19 @@ async function estado(userId) {
     conResumenes: env.scopusView === 'COMPLETE',
   };
 
-  if (!conexion) return { ...comun, conectado: false };
+  /**
+   * Sin OAuth se está conectado siempre que la función esté encendida.
+   *
+   * No es un atajo: es que no hay ningún vínculo que establecer. La web se
+   * apoya en esto para no enseñar un botón de conectar que no conecta nada.
+   */
+  const conectadoDeSerie = !env.scopusOauthEnabled && env.scopusApiEnabled;
+
+  if (!conexion) return { ...comun, conectado: conectadoDeSerie };
 
   return {
     ...comun,
-    conectado: conexion.status !== 'REVOCADA',
+    conectado: conectadoDeSerie || conexion.status !== 'REVOCADA',
     estado: conexion.status,
     cuenta: conexion.scopusName,
     importadas: conexion.imported,

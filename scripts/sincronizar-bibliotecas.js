@@ -39,6 +39,7 @@ const env = require('../src/config/env');
 const prisma = require('../src/lib/prisma');
 const repositorio = require('../src/modules/zotero/biblioteca.repository');
 const servicio = require('../src/modules/zotero/biblioteca.service');
+const scopus = require('../src/modules/scopus/scopus.repository');
 
 /** Un respiro entre personas, para no encadenar ráfagas contra Zotero. */
 const PAUSA_MS = 1_000;
@@ -46,6 +47,20 @@ const PAUSA_MS = 1_000;
 const espera = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function principal() {
+  /**
+   * Los intercambios de Scopus que nadie terminó, de paso.
+   *
+   * No hay nada que sincronizar de Scopus —conectar, buscar e importar es a
+   * mano, y la sincronización automática es otra decisión que no está tomada—
+   * pero sus pagarés a medias se acumulan igual que los de Zotero, y esta es
+   * la única tarea que pasa cada noche por aquí. Va ANTES del corte de abajo:
+   * si Zotero está apagado y Scopus no, alguien tiene que barrerlos.
+   */
+  if (env.scopusOauthEnabled) {
+    const { count } = await scopus.limpiarEstadosViejos();
+    if (count > 0) console.log(`${count} autorizaciones de Scopus a medias, barridas.`);
+  }
+
   if (!env.zoteroOauthEnabled) {
     console.log('Conectar Zotero no está configurado: no hay bibliotecas que traer.');
     return;

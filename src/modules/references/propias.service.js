@@ -64,9 +64,15 @@ function comoFila(ficha) {
  * POR QUÉ UN ARCHIVO Y NO LA API DE SCOPUS
  * ----------------------------------------
  * La API de Elsevier exige que la INSTITUCIÓN esté suscrita y un token atado a
- * ella, y su acceso gratuito es explícitamente para uso no comercial. Este
- * producto se vende, así que esa puerta no está cerrada por precio sino por
- * licencia, y no hay ingeniería que la rodee.
+ * ella, y su acuerdo de servicio prohíbe almacenar su contenido de forma
+ * sistemática y darle acceso a terceros. Este producto se vende, así que esa
+ * puerta no está cerrada por precio sino por licencia, y no hay ingeniería que
+ * la rodee.
+ *
+ * Existe de todas formas `modules/scopus/`, que conecta, busca e importa por la
+ * API, y que entra en esta misma tabla por `guardarLote`. Está APAGADO justo por
+ * lo de arriba. Se añadió AL LADO de esta vía y no en su lugar: esta funciona
+ * sin depender de nadie, y por eso es la que no se toca. Ver `docs/scopus-api.md`.
  *
  * Pero no hace falta: el tesista SÍ tiene Scopus, por su universidad. El método
  * ya le arma la ecuación de búsqueda para que la pegue allí; lo único que

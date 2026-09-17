@@ -108,6 +108,41 @@ const zoteroConectarLimiter = build({
 });
 
 /**
+ * Buscar e importar desde la API de Scopus.
+ *
+ * Cada búsqueda es una petición a api.elsevier.com con la clave de la casa, y
+ * esa clave tiene CUOTA SEMANAL: unos miles de peticiones para todos los
+ * compradores juntos. No es como OpenAlex, que se recupera a medianoche; aquí
+ * quien se ponga a paginar sin mirar deja sin buscador a los demás durante
+ * días.
+ *
+ * Treinta cada diez minutos y POR PERSONA: son más de las que pasa alguien
+ * revisando resultados de verdad, y no se gastan entre tesistas que comparten
+ * la IP de una universidad. El importar va por el mismo cubo porque también es
+ * una petición a Elsevier.
+ */
+const scopusBuscarLimiter = build({
+  windowMs: 10 * 60 * 1000,
+  max: 30,
+  message: 'Has buscado en Scopus muchas veces seguidas. Espera unos minutos.',
+  keyGenerator: porUsuario,
+});
+
+/**
+ * Conectar y desconectar Scopus.
+ *
+ * Aparte del de buscar y más holgado, por lo mismo que en Zotero: conectar no
+ * consulta el catálogo, y quien reintenta un par de veces no puede encontrarse
+ * el botón respondiendo 429 sin haber traído nada.
+ */
+const scopusConectarLimiter = build({
+  windowMs: 10 * 60 * 1000,
+  max: 30,
+  message: 'Has intentado conectar Scopus muchas veces seguidas. Espera unos minutos.',
+  keyGenerator: porUsuario,
+});
+
+/**
  * Recoger un conector de un enlace de prueba.
  *
  * Holgado a propósito: un taller entero sale a internet por la wifi de la
@@ -205,6 +240,8 @@ module.exports = {
   trialClaimLimiter,
   zoteroSyncLimiter,
   zoteroConectarLimiter,
+  scopusBuscarLimiter,
+  scopusConectarLimiter,
   asistenteLimiter,
   reclamoLimiter,
   mcpLimiter,

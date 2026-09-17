@@ -33,7 +33,8 @@
     "corpus:sincronizar": "node scripts/sincronizar-zotero.js",
     "precio:oferta": "node scripts/precio-de-oferta.js",
     "bibliotecas:sincronizar": "node scripts/sincronizar-bibliotecas.js",
-    "fuentes:reparar": "node scripts/reparar-fuentes.js"
+    "fuentes:reparar": "node scripts/reparar-fuentes.js",
+    "scopus:probar": "node scripts/probar-scopus.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.123.0",

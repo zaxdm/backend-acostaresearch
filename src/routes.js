@@ -14,6 +14,7 @@ const tutorialRoutes = require('./modules/tutorials/tutorial.routes');
 const projectRoutes = require('./modules/projects/project.routes');
 const trialRoutes = require('./modules/trials/trial.routes');
 const zoteroRoutes = require('./modules/zotero/biblioteca.routes');
+const scopusRoutes = require('./modules/scopus/scopus.routes');
 const asistenteRoutes = require('./modules/asistente/asistente.routes');
 const reclamoRoutes = require('./modules/reclamos/reclamo.routes');
 const rRoutes = require('./modules/r/r.routes');
@@ -57,6 +58,10 @@ router.use('/pruebas', trialRoutes);
 // El Zotero de cada comprador. Aparte de /referencias, que es el corpus de la
 // casa: aquello lo administra Acosta y esto lo conecta cada tesista.
 router.use('/mi-zotero', zoteroRoutes);
+// El Scopus de cada comprador: conectar, buscar e importar lo que elija. Sus
+// fuentes acaban en el mismo sitio que su export y que su Zotero, y solo las
+// ve él. Apagado salvo que el .env lo encienda: ver SCOPUS_API_ENABLED.
+router.use('/mi-scopus', scopusRoutes);
 // El chat de la web. Público: está para quien todavía no tiene cuenta.
 router.use('/asistente', asistenteRoutes);
 // El Libro de Reclamaciones. Presentar una hoja es público; responderla, del

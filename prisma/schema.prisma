@@ -75,6 +75,9 @@ model User {
   /// Su Zotero, si lo conectó. Como mucho uno. Ver `ZoteroAccount`.
   zoteroAccount ZoteroAccount?
 
+  /// Su conexión con Scopus, si la tiene. Como mucho una. Ver `ScopusConnection`.
+  scopusConnection ScopusConnection?
+
   /// Enlace de prueba del que salió esta cuenta. Nulo en toda cuenta real.
   ///
   /// Con valor, NO es una persona registrada: es el titular de relleno de un
@@ -1194,16 +1197,16 @@ model Project {
   /// Los capítulos del DOCUMENTO cuando su facultad los numera de otra forma
   /// que el método. Nulo = la estructura del catálogo, que es lo de siempre.
   /// Ver `project.esquema`.
-  esquema     Json?
+  esquema Json?
   /// Su asesor, como sale en la portada del Word («Dr. Juan Pérez Gómez»).
   /// Nulo = no se ha preguntado; vacío = todavía no tiene, y no hay que
   /// volver a preguntárselo.
-  asesor      String? @db.VarChar(160)
+  asesor  String? @db.VarChar(160)
 
   /// La fase por la que el tesista eligió retomar desde el panel (su clave de
   /// skill). Nula = la de siempre: la que esté en curso o la primera sin
   /// cerrar. Deja de contar sola en cuanto esa fase queda LISTA.
-  retomarEn   String? @db.VarChar(80)
+  retomarEn String? @db.VarChar(80)
 
   /// La norma de citas del Word: uno de los quince estilos de Zotero y el
   /// idioma de las citas. Nulos = APA 7 en español, que es como salía el Word
@@ -1225,9 +1228,9 @@ model Project {
   /// administrador puede abrir más (1, 2…) para probar. La 0 es la que nace
   /// sola desde el conector, y su unicidad es lo que impide que dos llamadas
   /// simultáneas de Claude creen dos proyectos para el mismo tesista.
-  ranura Int @default(0)
+  ranura     Int      @default(0)
   /// Cómo la llama quien tiene varias, para distinguirlas en el panel.
-  nombre String? @db.VarChar(80)
+  nombre     String?  @db.VarChar(80)
   /// La tesis activa es la de fecha más reciente: con la que trabaja el
   /// conector y la que enseña el panel. Elegir otra es ponerle la fecha de ahora.
   activadaAt DateTime @default(now())
@@ -1371,6 +1374,120 @@ model ZoteroOauthRequest {
   @@map("zotero_oauth_requests")
 }
 
+/// La conexión de un tesista con Scopus.
+///
+/// GEMELA DE `ZoteroAccount`, Y A PROPÓSITO: la misma forma —una fila por
+/// persona, el secreto cifrado, el último fallo a la vista— para que quien
+/// entienda una entienda la otra. Los nombres siguen los de aquella
+/// (`userId`, `...Cipher`) en vez de los del boceto (`ownerUserId`,
+/// `...Encrypted`): en esta base «ownerUserId» significa otra cosa —el dueño
+/// de una FUENTE— y reutilizar el nombre para el dueño de una CONEXIÓN es
+/// pedirle a alguien que confunda las dos tablas dentro de seis meses.
+///
+/// QUÉ GUARDA Y QUÉ NO
+/// -------------------
+/// Las FUENTES no están aquí: van a `references` por el mismo camino que el
+/// export de Scopus y que el Zotero del tesista. Aquí vive solo la conexión.
+///
+/// POR QUÉ LOS TOKENS SON OPCIONALES
+/// ---------------------------------
+/// Porque hay dos formas de estar conectado y solo una tiene tokens. Ver
+/// `ScopusConnectionMode`: con OAuth los hay y se cifran; con la clave de la
+/// casa no hay ninguno que guardar, y la fila existe igualmente para poder
+/// decir «conectado», recordar cuándo fue la última búsqueda y —lo que de
+/// verdad importa— dejar constancia de que esta persona aceptó las
+/// condiciones de uso del contenido de Elsevier.
+model ScopusConnection {
+  id     String @id @default(uuid()) @db.Char(36)
+  userId String @unique @db.Char(36)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Por dónde está conectado. Ver el enum.
+  mode ScopusConnectionMode @default(APIKEY)
+
+  /// Su identificador en Elsevier, si el intercambio lo devuelve. Solo para
+  /// enseñárselo y que reconozca qué cuenta conectó; nunca se usa para filtrar
+  /// nada, que para eso está `userId`.
+  scopusUserId String? @db.VarChar(64)
+  /// Su nombre o correo en Elsevier, por lo mismo.
+  scopusName   String? @db.VarChar(200)
+
+  /// Los tokens, CIFRADOS con AES-256-GCM. Ver `shared/utils/secretos.js`.
+  ///
+  /// Nunca salen de aquí en claro: ni al panel, ni a un log, ni enmascarados.
+  /// Nulos en el modo de clave compartida, que no tiene ninguno.
+  accessTokenCipher  String?   @db.VarChar(2000)
+  refreshTokenCipher String?   @db.VarChar(2000)
+  /// Cuándo caduca el de acceso. Nulo = no caduca o no se sabe.
+  expiresAt          DateTime?
+
+  status ScopusConnectionStatus @default(ACTIVA)
+
+  /// Lo último que falló, tal cual, para poder decírselo en el panel. Igual
+  /// que en Zotero: una conexión que dejó de funcionar tiene que verse ahí y
+  /// no solo en el log del servidor.
+  lastError String? @db.VarChar(500)
+
+  lastSearchAt DateTime?
+  /// Cuántas fuentes ha traído por aquí en total. Es lo que enseña la tarjeta.
+  imported     Int       @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("scopus_connections")
+}
+
+/// Cómo está autorizada una conexión de Scopus.
+enum ScopusConnectionMode {
+  /// Con la clave de la casa (`ELSEVIER_API_KEY`), que es de este servidor y
+  /// no del tesista. Es lo único que Elsevier da por autoservicio hoy: el
+  /// portal emite API Keys y nada más. «Conectar» aquí no es un intercambio
+  /// de credenciales sino la aceptación de las condiciones de uso.
+  APIKEY
+  /// Con tokens del propio tesista, obtenidos por el flujo de autorización de
+  /// Elsevier. Solo se puede usar cuando Elsevier habilite OAuth para esta
+  /// aplicación y se rellenen sus endpoints en el `.env`.
+  OAUTH
+}
+
+/// En qué estado está la conexión.
+enum ScopusConnectionStatus {
+  /// Funciona.
+  ACTIVA
+  /// El token de acceso venció y no hay refresco que valga. Se le pide volver
+  /// a conectar. La fila se queda para no perder la cuenta de lo importado.
+  CADUCADA
+  /// Elsevier dejó de aceptarla —clave revocada, entitlement retirado—. Se
+  /// distingue de CADUCADA porque no se arregla volviendo a pulsar el botón.
+  REVOCADA
+}
+
+/// El pagaré de un OAuth de Scopus a medias.
+///
+/// Mismo papel que `ZoteroOauthRequest` y por las mismas razones: el paso de
+/// en medio ocurre FUERA —el tesista se va a Elsevier y vuelve— y al volver
+/// trae un código que hay que canjear con algo que se guardó al empezar.
+///
+/// Lo que se guarda aquí es el VERIFICADOR de PKCE, no un secreto de OAuth 1.
+/// PKCE existe justo para esto: el código que vuelve por la barra de
+/// direcciones no sirve de nada sin el verificador, que nunca salió de este
+/// servidor. Va cifrado igual, porque una fila de la base no es un sitio donde
+/// dejar en claro algo que autoriza un canje.
+///
+/// Y se guarda de quién es: el que vuelve llega desde otro dominio y su cookie
+/// de sesión puede no viajar, así que la identidad sale de esta fila.
+model ScopusOauthState {
+  state          String @id @db.VarChar(64)
+  verifierCipher String @db.VarChar(500)
+  userId         String @db.Char(36)
+
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@map("scopus_oauth_states")
+}
+
 enum ReclamoTipo {
   /// Disconformidad con el producto o el servicio.
   RECLAMO
@@ -1414,8 +1531,8 @@ model Reclamo {
 
   tipoBien        ReclamoBien
   /// En soles. Nulo = no reclama un importe.
-  montoReclamado  Decimal?         @db.Decimal(10, 2)
-  descripcionBien String           @db.VarChar(500)
+  montoReclamado  Decimal?    @db.Decimal(10, 2)
+  descripcionBien String      @db.VarChar(500)
 
   detalle String @db.Text
   pedido  String @db.Text

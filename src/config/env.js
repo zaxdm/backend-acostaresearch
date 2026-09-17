@@ -225,6 +225,69 @@ const schema = z.object({
   ZOTERO_OAUTH_CLIENT_KEY: vacioComoAusente(z.string()),
   ZOTERO_OAUTH_CLIENT_SECRET: vacioComoAusente(z.string()),
 
+
+  // ── Scopus por API (Elsevier) ───────────────────────────────────────────
+  // ESTO ESTÁ APAGADO POR DEFECTO, Y NO ES PRUDENCIA DE MÁS.
+  //
+  // El Acuerdo de Servicio de la API de Elsevier dice que la licencia se rige
+  // por «the agreement between Elsevier and Your institution, company or
+  // organization», y prohíbe expresamente dos cosas que este producto haría:
+  // «substantially or systematically reproduce, retain, store locally» el
+  // contenido, y «share with and/or enable a third party access to the
+  // Elsevier content». Guardar fichas de Scopus en la biblioteca de cada
+  // comprador de un producto que se vende es justo eso.
+  //
+  // Registrar la clave en dev.elsevier.com es gratis y no arregla nada de lo
+  // anterior: da acceso técnico, no permiso. Por eso hace falta encender esto
+  // A MANO, y solo cuando exista por escrito el acuerdo con Elsevier que lo
+  // ampare. Mientras esté en false, las rutas contestan que no está disponible
+  // y la web no ofrece el botón: la subida de exports sigue igual que siempre,
+  // que es la vía que no depende de nadie.
+  SCOPUS_API_ENABLED: booleanish.default('false'),
+
+  // La clave de dev.elsevier.com. Va en la cabecera `X-ELS-APIKey` y NUNCA
+  // sale de este servidor: ni al navegador, ni en una URL, ni en un log.
+  ELSEVIER_API_KEY: vacioComoAusente(z.string()),
+
+  // El token institucional, si Elsevier lo emite para esta clave.
+  //
+  // Sin él, la clave se autentica POR LA IP desde la que sale la petición, y
+  // la de este servidor no pertenece a ninguna universidad suscrita: lo que
+  // vuelve es la vista STANDARD, que NO TRAE RESUMEN. Y una ficha sin resumen
+  // se puede citar pero no se puede encontrar — es el mismo problema que ya
+  // avisa la web cuando alguien exporta sin marcar «Abstract & keywords».
+  //
+  // Lo pide la biblioteca de una institución suscrita a Elsevier, indicando la
+  // clave. Elsevier lo puede revocar en cualquier momento y sin avisar.
+  ELSEVIER_INSTTOKEN: vacioComoAusente(z.string()),
+
+  // ── OAuth de Elsevier ───────────────────────────────────────────────────
+  // Los endpoints van en el `.env` y no escritos en el código A PROPÓSITO.
+  //
+  // Elsevier dice en su documentación de autenticación que ofrece «an oauth
+  // implementation for developers wanting to integrate ScienceDirect and/or
+  // Scopus content into client-side applications requiring access to user
+  // level content», pero NO PUBLICA los endpoints, ni los scopes, ni cómo se
+  // registra un client_id: el portal solo emite API Keys. Se consigue
+  // escribiendo a apisupport@elsevier.com.
+  //
+  // Escribir aquí una URL adivinada sería peor que no tenerla: el día que
+  // Elsevier conteste, alguien tendría que descubrir que el valor de verdad
+  // estaba enterrado en un archivo y no en la configuración. Con esto vacío,
+  // el botón conecta por el modo de clave compartida; rellenándolo, y sin
+  // tocar una línea, pasa a ser el OAuth del propio tesista.
+  ELSEVIER_CLIENT_ID: vacioComoAusente(z.string()),
+  ELSEVIER_CLIENT_SECRET: vacioComoAusente(z.string()),
+  // A dónde devuelve Elsevier al tesista. Tiene que coincidir carácter por
+  // carácter con la que quede registrada en Elsevier. Vacío = se arma sola
+  // sobre APP_URL, que es lo correcto salvo que Elsevier exija otra.
+  ELSEVIER_REDIRECT_URI: vacioComoAusente(z.string().url()),
+  // La pantalla de autorización y el canje del código. Los da Elsevier.
+  ELSEVIER_AUTH_URL: vacioComoAusente(z.string().url()),
+  ELSEVIER_TOKEN_URL: vacioComoAusente(z.string().url()),
+  // Los permisos que se piden, separados por espacios. Los da Elsevier.
+  ELSEVIER_SCOPE: vacioComoAusente(z.string()),
+
   // ── La llave con la que se guardan secretos de otros ────────────────────
   // 32 bytes en hexadecimal o en base64: «openssl rand -base64 32».
   //
@@ -401,6 +464,33 @@ const env = Object.freeze({
   // en claro, así que es mejor no ofrecer el botón.
   zoteroOauthEnabled: Boolean(
     raw.ZOTERO_OAUTH_CLIENT_KEY && raw.ZOTERO_OAUTH_CLIENT_SECRET && raw.SECRETS_KEY,
+  ),
+  // ── Scopus por API ──────────────────────────────────────────────────────
+  // Las dos cosas a la vez: el interruptor que dice que hay permiso de
+  // Elsevier para esto, y una clave con la que preguntar. Falta cualquiera y
+  // la función no se ofrece — ni el botón en la web, ni las rutas contestando
+  // otra cosa que «no está disponible». La subida de exports no depende de
+  // esto y sigue funcionando pase lo que pase.
+  scopusApiEnabled: Boolean(raw.SCOPUS_API_ENABLED && raw.ELSEVIER_API_KEY),
+  // Con token institucional se puede pedir la vista COMPLETE, que es la que
+  // trae resumen y palabras clave. Sin él, lo que vuelva será STANDARD aunque
+  // se pida otra cosa, así que es mejor no pedirla y no prometer resúmenes.
+  scopusView: raw.ELSEVIER_INSTTOKEN ? 'COMPLETE' : 'STANDARD',
+  // El OAuth del propio tesista exige TODO: los endpoints que Elsevier todavía
+  // no publica, las credenciales de la aplicación, y la llave con la que se
+  // cifran los tokens que devuelva. Sin la última, los tokens de la gente
+  // acabarían en la base en claro, así que es mejor no ofrecer el flujo.
+  //
+  // Mientras esto sea false, «Conectar Scopus» conecta por la clave de la
+  // casa. Es la misma pantalla y el mismo botón: lo que cambia por detrás es
+  // con qué credencial se pregunta.
+  scopusOauthEnabled: Boolean(
+    raw.SCOPUS_API_ENABLED &&
+      raw.ELSEVIER_CLIENT_ID &&
+      raw.ELSEVIER_CLIENT_SECRET &&
+      raw.ELSEVIER_AUTH_URL &&
+      raw.ELSEVIER_TOKEN_URL &&
+      raw.SECRETS_KEY,
   ),
   paypalApiBase:
     raw.PAYPAL_ENV === 'live' ? 'https://api-m.paypal.com' : 'https://api-m.sandbox.paypal.com',

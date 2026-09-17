@@ -121,6 +121,29 @@ async function doisDe(userId, limite) {
   return filas.map((fila) => fila.doi);
 }
 
+/**
+ * De estas identidades, cuáles ya están en su biblioteca.
+ *
+ * Es para MARCAR resultados de búsqueda antes de importarlos, no para
+ * filtrarlos: quien busca en Scopus quiere ver los mismos artículos que ve en
+ * Scopus, y esconderle los que ya tiene le haría contarlos mal.
+ *
+ * Se pregunta por `sourceRef` y no por DOI a propósito: es la misma identidad
+ * con la que va a escribir `guardarLote`, así que lo que aquí salga marcado es
+ * exactamente lo que allí se contará como repetido. Con el dueño en el `where`,
+ * como todo en este archivo.
+ */
+async function cualesTiene(userId, referencias) {
+  if (referencias.length === 0) return [];
+
+  const filas = await prisma.reference.findMany({
+    where: { ownerUserId: userId, sourceRef: { in: referencias } },
+    select: { sourceRef: true },
+  });
+
+  return filas.map((fila) => fila.sourceRef);
+}
+
 /** Cuántas tiene ya. Se consulta antes de importar, para aplicar el tope. */
 function contar(userId) {
   return prisma.reference.count({ where: { ownerUserId: userId } });
@@ -244,6 +267,7 @@ async function vaciar(userId, conservar = []) {
 module.exports = {
   guardarLote,
   doisDe,
+  cualesTiene,
   contar,
   contarSinResumen,
   contarDeZotero,

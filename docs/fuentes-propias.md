@@ -6,9 +6,15 @@ Cómo funciona y dónde tocar. La vía descartada —conectar Zotero por API— 
 ## Por qué un archivo y no la API de Scopus
 
 La API de Elsevier exige que **la institución** esté suscrita y un token atado a
-ella, y su acceso gratuito es explícitamente para uso **no comercial**. Este
-producto se vende. Esa puerta no está cerrada por precio sino por licencia, y no
-hay ingeniería que la rodee.
+ella, y su acuerdo de servicio prohíbe almacenar su contenido de forma
+sistemática y darle acceso a terceros. Este producto se vende. Esa puerta no está
+cerrada por precio sino por licencia, y no hay ingeniería que la rodee.
+
+> **Desde el 17 de septiembre de 2026** existe además el módulo `modules/scopus/`,
+> que conecta, busca e importa por la API. Está **apagado** (`SCOPUS_API_ENABLED`)
+> justo por lo de arriba, y se añadió al lado de esta vía, no en su lugar: lo que
+> se describe en este documento sigue siendo lo que funciona sin depender de
+> nadie. Lo que falta de Elsevier, en `scopus-api.md`.
 
 Pero no hace falta: el tesista sí tiene Scopus, por su universidad. El método ya
 le arma la ecuación de búsqueda para que la pegue allí, y la web ya prometía que

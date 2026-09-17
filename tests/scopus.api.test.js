@@ -493,6 +493,24 @@ test('un canje que Elsevier rechaza se distingue de uno que no llegó a salir', 
   }
 });
 
+/**
+ * La vuelta de Elsevier tiene que caer en una ruta QUE EXISTA.
+ *
+ * `/mi-conector` es el nombre del componente que pinta la tarjeta, no una ruta
+ * de la web; las que hay son `/perfil` y `/admin`. Y el comodín `**` de Angular
+ * manda a la portada todo lo que no reconoce, así que equivocarse aquí no da
+ * ningún error: deja al tesista en la página de inicio sin saber si autorizó.
+ * Pasó el 17 de septiembre de 2026.
+ */
+test('la vuelta lleva a /perfil, que es donde está la tarjeta', () => {
+  for (const resultado of ['ok', 'cancelado', 'rechazado', 'error']) {
+    assert.equal(
+      servicio.urlDelPanel(resultado),
+      `https://acostaresearch.com/perfil?scopus=${resultado}`,
+    );
+  }
+});
+
 test('una conexión revocada no se presenta como conectada', async () => {
   empezar();
   conexion.fila = { userId: 'u1', mode: 'OAUTH', status: 'REVOCADA', imported: 12 };

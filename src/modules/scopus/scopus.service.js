@@ -44,8 +44,16 @@ const repositorio = require('./scopus.repository');
  * con qué credencial se pregunta, y el panel lo dice sin rodeos.
  */
 
-/** A dónde vuelve el tesista, con el resultado en la dirección. */
-const urlDelPanel = (resultado) => `${env.APP_URL}/mi-conector?scopus=${resultado}`;
+/**
+ * A dónde vuelve el tesista, con el resultado en la dirección.
+ *
+ * `/perfil`, la MISMA que la vuelta de Zotero, y no `/mi-conector`: eso último
+ * es el nombre del COMPONENTE que pinta la tarjeta, no una ruta de la web. El
+ * comodín `**` de Angular manda a la portada cualquier cosa que no reconozca,
+ * así que una ruta inventada no da error: deja al tesista en la página de
+ * inicio preguntándose si autorizó o no. Hay una prueba que lo fija.
+ */
+const urlDelPanel = (resultado) => `${env.APP_URL}/perfil?scopus=${resultado}`;
 
 /**
  * Cuántos artículos se pueden importar de una tacada.

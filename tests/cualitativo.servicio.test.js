@@ -319,7 +319,7 @@ test('sin nada codificado, tablas, red, capítulo y qdpx lo dicen', async () => 
 test('la herramienta: «citas» devuelve las citas de un código, no solo cuántas', async () => {
   await codificarDePrueba();
   const respuesta = await llamar({ accion: 'citas', codigo: 'falta de apoyo DOCENTE' });
-  assert.match(respuesta, /Citas de el código «Falta de apoyo docente»: 2/);
+  assert.match(respuesta, /Citas del código «Falta de apoyo docente»: 2/);
   assert.match(respuesta, /E1 ¶2 · Falta de apoyo docente\n«El profesor nunca respondía mis correos»/);
   assert.match(await llamar({ accion: 'citas', codigo: 'Inventado' }), /No hay ninguna código/);
 });

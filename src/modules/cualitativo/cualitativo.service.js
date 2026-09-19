@@ -200,13 +200,13 @@ async function citasDe(userId, productCode, { codigo, entrevista, desde = 1 } = 
   if (codigo) {
     const cual = (codificacion?.codigos ?? []).find((c) => reglas.claveDe(c.nombre) === reglas.claveDe(codigo));
     if (!cual) return { noExiste: `código «${String(codigo).trim()}»` };
-    de = `el código «${cual.nombre}»`;
+    de = `del código «${cual.nombre}»`;
     elegidas = elegidas.filter((c) => c.codigos.includes(cual.nombre));
   }
   if (entrevista) {
     const id = idDe(entrevista);
     if (!entrevistas.some((e) => e.id === id)) return { noExiste: `entrevista ${String(entrevista).trim()}` };
-    de = de ? `${de} en ${id}` : `la entrevista ${id}`;
+    de = de ? `${de} en ${id}` : `de la entrevista ${id}`;
     elegidas = elegidas.filter((c) => c.entrevista === id);
   }
 
@@ -221,7 +221,7 @@ async function citasDe(userId, productCode, { codigo, entrevista, desde = 1 } = 
   }
 
   return {
-    de: de ?? 'todo el análisis',
+    de: de ?? 'de todo el análisis',
     total: elegidas.length,
     citas: tanda,
     siguiente: primera - 1 + tanda.length < elegidas.length ? primera + tanda.length : null,

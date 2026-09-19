@@ -3612,14 +3612,14 @@ function construirServidor(licencia) {
             const leidas = await cualitativoService.citasDe(userId, productCode, { codigo, entrevista, desde });
             if (!leidas) return texto(nadaCodificado);
             if (leidas.noExiste) return texto(`No hay ninguna ${leidas.noExiste}.`);
-            if (leidas.total === 0) return texto(`No hay citas de ${leidas.de}.`);
+            if (leidas.total === 0) return texto(`No hay citas ${leidas.de}.`);
             const cuerpo = leidas.citas
               .map((c) => `${c.entrevista} ¶${c.parrafo} · ${c.codigos.join(' + ')}${N}«${c.texto}»`)
               .join(`${N}${N}`);
             const sigue = leidas.siguiente
               ? `SIGUE: pide "desde": ${leidas.siguiente} para leer el resto.`
               : 'No hay más.';
-            return texto(`Citas de ${leidas.de}: ${leidas.total}.${N}${N}${cuerpo}${N}${N}${sigue}`);
+            return texto(`Citas ${leidas.de}: ${leidas.total}.${N}${N}${cuerpo}${N}${N}${sigue}`);
           }
 
           if (accion === 'buscar') {
@@ -3814,7 +3814,9 @@ function construirServidor(licencia) {
             return texto(
               `No se guardó nada: ${error.errores.length === 1 ? 'hay un problema' : `hay ${error.errores.length} problemas`}.${N}` +
                 `${error.errores.map((e) => `- ${e}`).join(N)}${N}${N}` +
-                'Corrígelos y vuelve a mandar la entrevista completa.',
+                (accion === 'codificar'
+                  ? 'Corrígelos y vuelve a mandar la entrevista completa.'
+                  : 'Corrígelo y vuelve a intentarlo.'),
             );
           }
           throw error;

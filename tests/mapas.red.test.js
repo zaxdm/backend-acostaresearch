@@ -252,3 +252,20 @@ test('relevancia: un término que sale con todo puntúa menos que uno concentrad
   const r = relevancia(conjuntos);
   assert.ok(r.get('general') < r.get('a1'));
 });
+
+// ── Asistente: umbral y «Verify selected items» ─────────────────────────────
+
+test('el recuento del umbral cuenta documentos y citas por unidad, con el tesauro aplicado', () => {
+  const { recuentoDeUnidades } = require('../src/modules/mapas/mapas.red');
+  const pares = recuentoDeUnidades(
+    [doc(['AI', 'x'], { citas: 5 }), doc(['artificial intelligence'], { citas: 3 }), doc(['x'], { citas: 1 })],
+    { tesauro: 'ai = artificial intelligence' },
+  );
+  assert.deepEqual(pares.sort(), [[2, 6], [2, 8]].sort());
+});
+
+test('con selección, entran esas y ninguna más, aunque otra tenga más fuerza', () => {
+  const documentos = [doc(['A', 'B', 'C']), doc(['A', 'B', 'C']), doc(['A', 'B'])];
+  const mapa = construirRed(documentos, { minimo: 1, seleccion: ['b', 'c'] });
+  assert.deepEqual(mapa.resumen.filas.map((f) => f.clave).sort(), ['b', 'c']);
+});

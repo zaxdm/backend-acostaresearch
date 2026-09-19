@@ -83,6 +83,9 @@ function frasesNominales(texto) {
     };
 
     for (const t of oracion.terms ?? []) {
+      // Un signo delante también corta: en «modeling (SEM)» el paréntesis va
+      // pegado a «SEM», y sin esto salía «structural equation modeling sem».
+      if (CORTE.test(t.pre ?? '')) cerrar();
       const tags = new Set(t.tags ?? []);
       const palabra = String(t.normal ?? '').replace(/[^a-z0-9-]/g, '');
       const funcional = ['Pronoun', 'Possessive', 'Determiner', 'Preposition', 'Conjunction'].some((g) => tags.has(g));
@@ -167,7 +170,9 @@ function relevancia(conjuntos) {
  * ocurrencias de cada término, que se devuelve en `ocurrencias`.
  */
 function terminosDeLosDocumentos(documentos, opciones = {}) {
-  const porDocumento = documentos.map((d) => frasesNominales(d.texto));
+  // Las frases pueden venir ya extraídas: el asistente pide el umbral, la
+  // lista y el mapa sobre los mismos textos, y etiquetar mil resúmenes tarda.
+  const porDocumento = opciones.frases ?? documentos.map((d) => frasesNominales(d.texto));
 
   const binarias = new Map();
   const completas = new Map();
@@ -191,7 +196,10 @@ function terminosDeLosDocumentos(documentos, opciones = {}) {
   const relevancias = relevancia(conjuntos);
 
   const porcentaje = Math.min(Math.max(Number(opciones.porcentaje) || 60, 10), 100);
-  const cuantos = Math.max(1, Math.round((candidatos.size * porcentaje) / 100));
+  // «Choose number of terms» de VOSviewer: un número exacto gana al porcentaje.
+  const cuantos = Number.isInteger(opciones.cuantos) && opciones.cuantos > 0
+    ? Math.min(opciones.cuantos, candidatos.size)
+    : Math.max(1, Math.round((candidatos.size * porcentaje) / 100));
   const seleccionados = new Set(
     [...candidatos]
       .sort((a, b) => (relevancias.get(b) ?? 0) - (relevancias.get(a) ?? 0) || a.localeCompare(b))
@@ -210,4 +218,16 @@ function terminosDeLosDocumentos(documentos, opciones = {}) {
   };
 }
 
-module.exports = { frasesNominales, relevancia, terminosDeLosDocumentos, singular };
+/**
+ * Cuántas veces sale cada término, sin umbral: lo que necesita el paso
+ * «Elegir el umbral». Binario = en cuántos documentos; completo = cuántas veces.
+ */
+function ocurrenciasDeTerminos(frases, recuento = 'binario') {
+  const cuenta = new Map();
+  for (const lista of frases) {
+    for (const f of recuento === 'completo' ? lista : new Set(lista)) cuenta.set(f, (cuenta.get(f) ?? 0) + 1);
+  }
+  return [...cuenta.values()];
+}
+
+module.exports = { frasesNominales, relevancia, terminosDeLosDocumentos, ocurrenciasDeTerminos, singular };

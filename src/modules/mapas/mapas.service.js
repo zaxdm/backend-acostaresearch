@@ -4,8 +4,9 @@ const prisma = require('../../lib/prisma');
 const openalex = require('../references/openalex.client');
 const { AppError } = require('../../shared/errors/AppError');
 const { ERROR_CODES } = require('../../config/constants');
-const { construirRed, clave } = require('./mapas.red');
-const { terminosDeLosDocumentos } = require('./mapas.terminos');
+const { construirRed, clave, recuentoDeUnidades, umbralPropuesto } = require('./mapas.red');
+const { terminosDeLosDocumentos, frasesNominales, ocurrenciasDeTerminos } = require('./mapas.terminos');
+const cache = require('./mapas.cache');
 
 /**
  * Los mapas de VOSviewer: qué análisis, con qué unidad y de dónde salen los datos.
@@ -133,44 +134,74 @@ function catalogoCaido() {
 const noAlcanza = (mensaje) => new AppError(mensaje, { statusCode: 422, code: ERROR_CODES.VALIDATION_ERROR });
 
 /**
+ * Todo lo que puede necesitar cualquier análisis. Se pide de una vez para que
+ * cambiar de análisis en el asistente no vuelva a consultar OpenAlex: el
+ * resumen y las referencias pesan, pero una sola vez.
+ */
+const TODOS_LOS_CAMPOS = ['palabras', 'autores', 'fuente', 'referencias', 'texto'];
+
+/**
  * Las obras del mapa, del origen que sea, en la forma de `obraDelMapa`.
  *
- * Devuelve `{ obras, total, extra }`. `extra` cuenta lo que el tesista tiene
- * que saber de sus fuentes: cuántas no tenían DOI o no estaban en OpenAlex.
+ * Devuelve `{ obras, total, extra, clave }`. `extra` cuenta lo que el tesista
+ * tiene que saber de sus fuentes: cuántas no tenían DOI o no estaban en
+ * OpenAlex. `clave` identifica estas obras en la caché del asistente.
+ *
+ * Una búsqueda de OpenAlex se guarda para todos —son datos públicos, y dos
+ * tesistas con el mismo tema no tienen por qué pagarla dos veces—; lo que sale
+ * de las fuentes de alguien, solo para él, y cambia en cuanto sube o borra una.
  */
 async function obtenerObras(userId, datos, campos) {
   if (datos.origen === 'openalex') {
-    const { obras, total, caida } = await openalex.obrasParaMapa({
-      tema: datos.tema,
-      desdeAnio: datos.desdeAnio,
-      hastaAnio: datos.hastaAnio,
-      cuantas: datos.cuantas,
-      campos,
+    const clave = JSON.stringify([
+      'openalex',
+      datos.tema.toLowerCase(),
+      datos.desdeAnio ?? null,
+      datos.hastaAnio ?? null,
+      datos.cuantas ?? 500,
+    ]);
+    const resultado = await cache.recordar(clave, async () => {
+      const { obras, total, caida } = await openalex.obrasParaMapa({
+        tema: datos.tema,
+        desdeAnio: datos.desdeAnio,
+        hastaAnio: datos.hastaAnio,
+        cuantas: datos.cuantas,
+        campos: TODOS_LOS_CAMPOS,
+      });
+      if (caida) throw catalogoCaido();
+      return { obras, total, extra: {} };
     });
-    if (caida) throw catalogoCaido();
-    return { obras, total, extra: {} };
+    return { ...resultado, clave };
   }
 
   const fuentes = await prisma.reference.findMany({
     where: { ownerUserId: userId },
-    select: { title: true, abstract: true, tags: true, year: true, doi: true },
+    select: { title: true, abstract: true, tags: true, year: true, doi: true, updatedAt: true },
   });
   if (fuentes.length === 0) {
     throw noAlcanza('Todavía no tienes fuentes. Sube el export de Scopus o Web of Science y vuelve a intentarlo.');
   }
+  const ultima = Math.max(...fuentes.map((f) => new Date(f.updatedAt).getTime()));
 
   // Lo que se hace con sus propios datos, sin salir a OpenAlex.
   const soloPropias = campos.length === 0 || campos.every((c) => c === 'texto');
-  const propias = fuentes.map((f, i) => ({
-    id: `propia-${i}`,
-    doi: f.doi,
-    titulo: f.title ?? '',
-    anio: f.year ?? null,
-    citas: 0,
-    palabrasAutor: terminosDeEtiquetas(f.tags),
-    resumen: f.abstract ?? null,
-  }));
-  if (soloPropias) return { obras: propias, total: fuentes.length, extra: { sinCitas: true } };
+  if (soloPropias) {
+    const obras = fuentes.map((f, i) => ({
+      id: `propia-${i}`,
+      doi: f.doi,
+      titulo: f.title ?? '',
+      anio: f.year ?? null,
+      citas: 0,
+      palabrasAutor: terminosDeEtiquetas(f.tags),
+      resumen: f.abstract ?? null,
+    }));
+    return {
+      obras,
+      total: fuentes.length,
+      extra: { sinCitas: true },
+      clave: JSON.stringify(['propias', userId, fuentes.length, ultima]),
+    };
+  }
 
   const conDoi = fuentes.map((f) => f.doi).filter(Boolean);
   if (conDoi.length === 0) {
@@ -178,14 +209,35 @@ async function obtenerObras(userId, datos, campos) {
       'Ninguna de tus fuentes tiene DOI, y este análisis lo necesita para traer autores, revistas y referencias. Prueba con «Coocurrencia» o «Términos».',
     );
   }
-  const obras = await openalex.obrasPorDoi(conDoi, campos);
-  if (obras.length === 0) throw catalogoCaido();
+  const clave = JSON.stringify(['doi', userId, fuentes.length, ultima]);
+  const resultado = await cache.recordar(clave, async () => {
+    const obras = await openalex.obrasPorDoi(conDoi, TODOS_LOS_CAMPOS);
+    if (obras.length === 0) throw catalogoCaido();
+    return {
+      obras,
+      total: fuentes.length,
+      extra: { conDoi: conDoi.length, encontradas: obras.length, sinDoi: fuentes.length - conDoi.length },
+    };
+  });
+  return { ...resultado, clave };
+}
 
-  return {
-    obras,
-    total: fuentes.length,
-    extra: { conDoi: conDoi.length, encontradas: obras.length, sinDoi: fuentes.length - conDoi.length },
-  };
+/** Las frases nominales de cada obra, extraídas una vez por conjunto de obras. */
+function frasesDe(obras, claveObras, unidad) {
+  return cache.recordar(`${claveObras}|frases|${unidad}`, () =>
+    obras.map((o) =>
+      frasesNominales(unidad === 'titulo' ? o.titulo : [o.titulo, o.resumen].filter(Boolean).join('. ')),
+    ),
+  );
+}
+
+/** El análisis y la unidad de lo que se pide, ya resueltos. */
+function resolver(datos) {
+  const analisis = datos.analisis;
+  let unidad = datos.unidad ?? ANALISIS[analisis].unidades[0];
+  // De una búsqueda no hay palabras de autor: solo las de OpenAlex.
+  if (datos.origen === 'openalex' && unidad === 'palabras-autor') unidad = 'palabras-openalex';
+  return { analisis, unidad };
 }
 
 /**
@@ -254,6 +306,50 @@ function documentosPara(obras, unidad, { maxAutores, analisis }) {
   }
 
   return documentos;
+}
+
+/**
+ * El paso «Elegir el umbral» del asistente de VOSviewer.
+ *
+ * Devuelve cuántos documentos y citas tiene cada unidad —en pares, sin
+ * nombres—, para que la pantalla diga mientras se escribe «de los 2 345
+ * autores, 87 cumplen los umbrales», como el programa de escritorio. Y el
+ * umbral que propondríamos si no se toca.
+ */
+async function umbral(userId, datos) {
+  const { analisis, unidad } = resolver(datos);
+  const campos = camposNecesarios(analisis, unidad);
+  const { obras, total, extra, clave: claveObras } = await obtenerObras(userId, datos, campos);
+
+  let pares;
+  if (analisis === 'terminos') {
+    const frases = await frasesDe(obras, claveObras, unidad);
+    const recuento = datos.recuento === 'completo' ? 'completo' : 'binario';
+    pares = ocurrenciasDeTerminos(frases, recuento).map((n) => [n, 0]);
+  } else if (analisis === 'cocitacion') {
+    const citadas = new Map();
+    for (const o of obras) for (const r of new Set(o.referencias)) citadas.set(r, (citadas.get(r) ?? 0) + 1);
+    pares = [...citadas.values()].map((n) => [n, 0]);
+  } else {
+    const documentos = documentosPara(obras, unidad, {
+      maxAutores: datos.maxAutores ?? MAX_AUTORES_POR_DEFECTO,
+      analisis,
+    });
+    pares = recuentoDeUnidades(documentos, { tesauro: datos.sinonimos, excluir: datos.excluir });
+  }
+
+  let propuesto = null;
+  if (analisis === 'terminos') propuesto = Math.max(2, Math.min(10, umbralPropuesto(pares, 150)));
+  else if (unidad !== 'documentos') propuesto = umbralPropuesto(pares, datos.maximo ?? 100);
+
+  return {
+    analisis,
+    unidad,
+    pares,
+    propuesto,
+    origen: { tipo: datos.origen, total, analizados: obras.length },
+    detalle: extra,
+  };
 }
 
 /**
@@ -327,13 +423,9 @@ function tituloDelMapa(datos, unidad) {
  * recuento es uno de los que admite el análisis.
  */
 async function crearMapa(userId, datos) {
-  const analisis = datos.analisis;
-  let unidad = datos.unidad ?? ANALISIS[analisis].unidades[0];
-  // De una búsqueda no hay palabras de autor: solo las de OpenAlex.
-  if (datos.origen === 'openalex' && unidad === 'palabras-autor') unidad = 'palabras-openalex';
-
+  const { analisis, unidad } = resolver(datos);
   const campos = camposNecesarios(analisis, unidad);
-  const { obras, total, extra } = await obtenerObras(userId, datos, campos);
+  const { obras, total, extra, clave: claveObras } = await obtenerObras(userId, datos, campos);
   const maximo = datos.maximo ?? 100;
 
   let documentos;
@@ -348,17 +440,20 @@ async function crearMapa(userId, datos) {
     tesauro: datos.sinonimos,
     nombreUnidad: NOMBRE_DE_UNIDAD[unidad],
     titulo: tituloDelMapa(datos, unidad),
+    // Las que el tesista dejó marcadas en «Verificar»: son esas y ninguna más.
+    ...(Array.isArray(datos.seleccion) && datos.seleccion.length > 0 && { seleccion: datos.seleccion }),
   };
   const detalle = { ...extra };
 
   if (analisis === 'terminos') {
-    const textos = obras.map((o) => ({
-      texto: unidad === 'titulo' ? o.titulo : [o.titulo, o.resumen].filter(Boolean).join('. '),
-    }));
+    const frases = await frasesDe(obras, claveObras, unidad);
+    const textos = obras.map(() => ({}));
     const t = terminosDeLosDocumentos(textos, {
       recuento: datos.recuento === 'completo' ? 'completo' : 'binario',
       minimo: datos.minimo ?? null,
       porcentaje: datos.relevancia ?? 60,
+      cuantos: datos.cuantosTerminos ?? null,
+      frases,
     });
     documentos = obras.map((o, i) => ({
       id: o.id,
@@ -380,7 +475,8 @@ async function crearMapa(userId, datos) {
         minimoAutomatico: t.minimoAutomatico,
         candidatos: t.candidatos,
         seleccionados: t.seleccionados,
-        porcentaje: datos.relevancia ?? 60,
+        // El real: con «número de términos» ya no es el 60 % de antemano.
+        porcentaje: t.candidatos > 0 ? Math.round((t.seleccionados / t.candidatos) * 100) : 0,
         recuento: datos.recuento === 'completo' ? 'completo' : 'binario',
         conResumen: obras.filter((o) => o.resumen).length,
       },
@@ -443,4 +539,4 @@ async function crearMapa(userId, datos) {
   };
 }
 
-module.exports = { crearMapa, terminosDeEtiquetas, ANALISIS, MINIMO_DE_DOCUMENTOS };
+module.exports = { crearMapa, umbral, terminosDeEtiquetas, ANALISIS, MINIMO_DE_DOCUMENTOS };

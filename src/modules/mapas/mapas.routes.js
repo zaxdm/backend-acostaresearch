@@ -3,7 +3,7 @@
 const { Router } = require('express');
 const authenticate = require('../../middlewares/authenticate');
 const validate = require('../../middlewares/validate');
-const { mapasLimiter } = require('../../middlewares/rateLimit');
+const { mapasLimiter, mapasUmbralLimiter } = require('../../middlewares/rateLimit');
 const { mapaSchema } = require('./mapas.schema');
 const mapasController = require('./mapas.controller');
 
@@ -23,6 +23,8 @@ router.use(authenticate);
  * nombre con el que nació, cuando solo había ese: se deja para la web que ya
  * está publicada, que manda sin `analisis` y recibe una coocurrencia.
  */
+/** El paso «Elegir el umbral» del asistente: cuántas unidades cumplen cada mínimo. */
+router.post('/umbral', mapasUmbralLimiter, validate({ body: mapaSchema }), mapasController.umbral);
 router.post('/mapa', mapasLimiter, validate({ body: mapaSchema }), mapasController.mapa);
 router.post('/coocurrencia', mapasLimiter, validate({ body: mapaSchema }), mapasController.coocurrencia);
 

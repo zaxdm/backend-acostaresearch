@@ -174,6 +174,18 @@ const mapasLimiter = build({
 });
 
 /**
+ * El paso del umbral del asistente de mapas. Más holgado que el de crear:
+ * responde de lo ya leído (ver `mapas.cache`), sin volver a OpenAlex, y la
+ * pantalla lo pide cada vez que se cambia el tope de autores o el tesauro.
+ */
+const mapasUmbralLimiter = build({
+  windowMs: 10 * 60 * 1000,
+  max: 90,
+  message: 'Has cambiado el umbral muchas veces seguidas. Espera unos minutos.',
+  keyGenerator: porUsuario,
+});
+
+/**
  * Conectar y desconectar Scopus.
  *
  * Aparte del de buscar y más holgado, por lo mismo que en Zotero: conectar no
@@ -290,6 +302,7 @@ module.exports = {
   scopusIaLimiter,
   scopusCuentasLimiter,
   mapasLimiter,
+  mapasUmbralLimiter,
   asistenteLimiter,
   reclamoLimiter,
   mcpLimiter,

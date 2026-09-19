@@ -309,6 +309,79 @@ function fuerzaTotal(pares) {
 }
 
 /**
+ * Las unidades de cada documento, ya pasadas por el tesauro y lo excluido, con
+ * sus documentos, citas y años. Es lo primero que hace VOSviewer, antes de
+ * aplicar ningún umbral, y lo comparten la red y el paso del umbral.
+ */
+function reunirUnidades(documentos, opciones = {}) {
+  const excluidos = leerExcluidos(opciones.excluir);
+  const tesauro = leerTesauro(opciones.tesauro);
+  const norm = citasNormalizadas(documentos);
+
+  // Por unidad: sus formas escritas, cuántos documentos, qué citas y años.
+  const info = new Map();
+  const unidadesDe = [];
+
+  documentos.forEach((doc, i) => {
+    const propias = [];
+    for (const u of doc.unidades ?? []) {
+      let k = u.clave ?? clave(u.etiqueta);
+      let forma = etiqueta(u.etiqueta);
+      if (!k || !forma) continue;
+
+      const clTesauro = clave(u.etiqueta);
+      if (tesauro.has(clTesauro)) {
+        const reemplazo = tesauro.get(clTesauro);
+        if (reemplazo === null) continue;
+        k = u.clave ? k : reemplazo.clave;
+        forma = reemplazo.etiqueta;
+      }
+      if (excluidos.has(k) || excluidos.has(clave(forma)) || propias.includes(k)) continue;
+
+      propias.push(k);
+      if (!info.has(k)) {
+        info.set(k, {
+          formas: new Map(),
+          docs: 0,
+          citas: 0,
+          citasNorm: 0,
+          anios: [],
+          extra: u,
+        });
+      }
+      const x = info.get(k);
+      x.formas.set(forma, (x.formas.get(forma) ?? 0) + 1);
+      x.docs += 1;
+      x.citas += doc.citas || 0;
+      x.citasNorm += norm[i];
+      if (Number.isFinite(doc.anio)) x.anios.push(doc.anio);
+    }
+    unidadesDe.push(propias);
+  });
+
+  return { info, unidadesDe };
+}
+
+/**
+ * Cuántos documentos y citas tiene cada unidad: lo que necesita el paso
+ * «Elegir el umbral» para decir, mientras se escribe, cuántas lo cumplen.
+ * Pares `[documentos, citas]`, sin nombres: son miles y no hacen falta.
+ */
+function recuentoDeUnidades(documentos, opciones = {}) {
+  const { info } = reunirUnidades(documentos, opciones);
+  return [...info.values()].map((x) => [x.docs, x.citas]);
+}
+
+/** El umbral automático, para proponerlo en el paso del umbral. */
+function umbralPropuesto(pares, maximo = MAXIMO_POR_DEFECTO) {
+  return umbralAutomatico(
+    pares.map(([n]) => n),
+    maximo * 3,
+    2,
+  );
+}
+
+/**
  * De los documentos a la red de VOSviewer.
  *
  * `documentos`: `[{ id, anio, citas, referencias?, unidades: [{ etiqueta, clave?, url?, descripcion?, anio? }] }]`.
@@ -335,54 +408,24 @@ function construirRed(documentos, opciones = {}) {
   const perfil = PERFILES[opciones.perfil ?? 'terminos'];
   const enlace = opciones.enlace ?? 'coocurrencia';
   const maximo = Math.min(Math.max(Number(opciones.maximo) || MAXIMO_POR_DEFECTO, 5), 1000);
-  const excluidos = leerExcluidos(opciones.excluir);
-  const tesauro = leerTesauro(opciones.tesauro);
   const esDocumentos = opciones.perfil === 'documentos';
   const esReferencias = opciones.perfil === 'referencias';
 
-  const norm = citasNormalizadas(documentos);
-
-  // Por unidad: sus formas escritas, cuántos documentos, qué citas y años.
-  const info = new Map();
-  const unidadesDe = [];
-
-  documentos.forEach((doc, i) => {
-    const propias = [];
-    for (const u of doc.unidades ?? []) {
-      let k = u.clave ?? clave(u.etiqueta);
-      let forma = etiqueta(u.etiqueta);
-      if (!k || !forma) continue;
-
-      const clTesauro = clave(u.etiqueta);
-      if (tesauro.has(clTesauro)) {
-        const reemplazo = tesauro.get(clTesauro);
-        if (reemplazo === null) continue;
-        k = u.clave ? k : reemplazo.clave;
-        forma = reemplazo.etiqueta;
-      }
-      if (excluidos.has(k) || excluidos.has(clave(forma)) || propias.includes(k)) continue;
-
-      propias.push(k);
-      if (!info.has(k)) {
-        info.set(k, { formas: new Map(), docs: 0, citas: 0, citasNorm: 0, anios: [], extra: u });
-      }
-      const x = info.get(k);
-      x.formas.set(forma, (x.formas.get(forma) ?? 0) + 1);
-      x.docs += 1;
-      x.citas += doc.citas || 0;
-      x.citasNorm += norm[i];
-      if (Number.isFinite(doc.anio)) x.anios.push(doc.anio);
-    }
-    unidadesDe.push(propias);
-  });
+  const { info, unidadesDe } = reunirUnidades(documentos, opciones);
 
   // ── Selección, como en VOSviewer: umbral, y de lo que pasa, fuerza total ──
   const citasDe = (k) => (esReferencias ? info.get(k).docs : info.get(k).citas);
   const pedido = Number.isInteger(opciones.minimo) && opciones.minimo >= 1 ? opciones.minimo : null;
   const minimo = esDocumentos
     ? 1
-    : pedido ?? umbralAutomatico([...info.values()].map((x) => x.docs), maximo * 3, 2);
-  const minimoCitas = Number.isInteger(opciones.minimoCitas) && opciones.minimoCitas > 0 ? opciones.minimoCitas : 0;
+    : (pedido ??
+      umbralAutomatico(
+        [...info.values()].map((x) => x.docs),
+        maximo * 3,
+        2,
+      ));
+  const minimoCitas =
+    Number.isInteger(opciones.minimoCitas) && opciones.minimoCitas > 0 ? opciones.minimoCitas : 0;
 
   let candidatas = [...info.keys()].filter(
     (k) => info.get(k).docs >= minimo && (esReferencias || info.get(k).citas >= minimoCitas),
@@ -394,19 +437,31 @@ function construirRed(documentos, opciones = {}) {
       .slice(0, TOPE_DE_CANDIDATAS);
   }
 
-  const argumentos = { tipo: enlace, recuento: opciones.recuento, documentos, unidadesDe };
-  const previa = fuerzaTotal(calcularEnlaces({ ...argumentos, validas: new Set(candidatas) }));
-  const elegidas = new Set(
-    candidatas
-      .sort(
-        (a, b) =>
-          (previa.fuerza.get(b) ?? 0) - (previa.fuerza.get(a) ?? 0) ||
-          info.get(b).docs - info.get(a).docs ||
-          citasDe(b) - citasDe(a) ||
-          a.localeCompare(b),
-      )
-      .slice(0, maximo),
-  );
+  const argumentos = {
+    tipo: enlace,
+    recuento: opciones.recuento,
+    documentos,
+    unidadesDe,
+  };
+  // «Verify selected items»: si el tesista ya eligió cuáles, son esas y
+  // ninguna otra, sin volver a seleccionar por fuerza.
+  const seleccion = Array.isArray(opciones.seleccion) ? new Set(opciones.seleccion) : null;
+  const previa = seleccion
+    ? null
+    : fuerzaTotal(calcularEnlaces({ ...argumentos, validas: new Set(candidatas) }));
+  const elegidas = seleccion
+    ? new Set([...info.keys()].filter((k) => seleccion.has(k)))
+    : new Set(
+        candidatas
+          .sort(
+            (a, b) =>
+              (previa.fuerza.get(b) ?? 0) - (previa.fuerza.get(a) ?? 0) ||
+              info.get(b).docs - info.get(a).docs ||
+              citasDe(b) - citasDe(a) ||
+              a.localeCompare(b),
+          )
+          .slice(0, maximo),
+      );
 
   // Los enlaces se recalculan SOLO entre las elegidas: es lo que enseña
   // VOSviewer, y los números del mapa tienen que cuadrar con los de la tabla.
@@ -440,7 +495,7 @@ function construirRed(documentos, opciones = {}) {
         fuerza: redondear(fuerza.get(k) ?? 0, 4),
         anio:
           esReferencias || esDocumentos
-            ? x.extra.anio ?? (anios[0] ?? null)
+            ? (x.extra.anio ?? anios[0] ?? null)
             : anios.length > 0
               ? redondear(anios.reduce((s, a) => s + a, 0) / anios.length)
               : null,
@@ -493,7 +548,11 @@ function construirRed(documentos, opciones = {}) {
     .map(([par, n]) => {
       const [x, y] = par.split('').map((k) => idDe.get(k));
       // Siempre del menor al mayor: el enlace no tiene sentido y así cada par sale una vez igual.
-      return { source_id: Math.min(x, y), target_id: Math.max(x, y), strength: redondear(n, 4) };
+      return {
+        source_id: Math.min(x, y),
+        target_id: Math.max(x, y),
+        strength: redondear(n, 4),
+      };
     })
     .filter((l) => l.source_id && l.target_id && l.strength > 0)
     .sort((x, y) => x.source_id - y.source_id || x.target_id - y.target_id);
@@ -530,9 +589,13 @@ function construirRed(documentos, opciones = {}) {
       enElMapa: filas.length,
       sinEnlaces: elegidas.size - filas.length,
       enlaces: links.length,
-      fuerzaTotal: redondear(links.reduce((s, l) => s + l.strength, 0), 2),
+      fuerzaTotal: redondear(
+        links.reduce((s, l) => s + l.strength, 0),
+        2,
+      ),
       conAnio,
-      filas: filas.map(({ clave: _clave, descripcion: _d, ...resto }) => resto),
+      // La clave va: es con lo que el paso «Verificar» dice cuáles se quedan.
+      filas: filas.map(({ descripcion: _d, ...resto }) => resto),
     },
     archivos: {
       mapa: archivoMapa(items, perfil, extra?.nombre),
@@ -576,6 +639,8 @@ function archivoMapa(items, perfil, nombreExtra) {
 
 module.exports = {
   construirRed,
+  recuentoDeUnidades,
+  umbralPropuesto,
   clave,
   etiqueta,
   leerTesauro,

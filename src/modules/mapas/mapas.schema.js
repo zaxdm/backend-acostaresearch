@@ -31,6 +31,9 @@ const mapaSchema = z
     relevancia: entero(10, 100),
     excluir: z.string().max(5000, 'La lista de términos a excluir es demasiado larga.').optional(),
     sinonimos: z.string().max(60000, 'El tesauro es demasiado largo.').optional(),
+    // «Choose number of terms» y «Verify selected items» del asistente.
+    cuantosTerminos: entero(1, 1000),
+    seleccion: z.array(z.string().max(400)).max(1000).optional().nullable(),
   })
   .refine((d) => d.origen !== 'openalex' || (d.tema && d.tema.length >= 3), {
     message: 'Escribe el tema que quieres mapear.',

@@ -5,6 +5,10 @@ const { ok } = require('../../shared/http/apiResponse');
 const servicio = require('./mapas.service');
 
 const mapasController = {
+  umbral: asyncHandler(async (req, res) => {
+    return ok(res, await servicio.umbral(req.user.id, req.body));
+  }),
+
   mapa: asyncHandler(async (req, res) => {
     return ok(res, await servicio.crearMapa(req.user.id, req.body));
   }),

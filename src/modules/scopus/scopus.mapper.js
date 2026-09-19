@@ -129,6 +129,10 @@ function comoResultado(ficha) {
     autores: autores(ficha),
     anio: anio(ficha['prism:coverDate']),
     revista: recortar(ficha['prism:publicationName'], 300),
+    /** Para el «26(1), 534» que se pinta debajo de la revista, como en Scopus. */
+    volumen: recortar(ficha['prism:volume'], 40),
+    numero: recortar(ficha['prism:issueIdentifier'], 40),
+    paginas: paginas(ficha),
     doi,
     tipo: recortar(ficha.subtypeDescription, 60),
     citas: Number(ficha['citedby-count'] ?? 0) || 0,

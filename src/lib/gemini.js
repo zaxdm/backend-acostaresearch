@@ -52,6 +52,7 @@ async function generar({
   modelo = env.GEMINI_MODEL,
   maxTokens = 900,
   timeoutMs = 20_000,
+  json = false,
   fetchImpl = fetch,
 }) {
   const url = `${BASE}/models/${encodeURIComponent(modelo)}:generateContent`;
@@ -68,6 +69,10 @@ async function generar({
       generationConfig: {
         maxOutputTokens: maxTokens,
         thinkingConfig: { thinkingLevel: env.GEMINI_THINKING },
+        // Con `json`, Google garantiza que la respuesta sea JSON bien formado.
+        // Sin esto, de vez en cuando llegaba con texto alrededor o cortado, y
+        // quien lo leía se quedaba sin nada que enseñar.
+        ...(json ? { responseMimeType: 'application/json' } : {}),
       },
     }),
     signal: AbortSignal.timeout(timeoutMs),

@@ -63,6 +63,18 @@ const texto = (valor, largo) =>
     : '';
 
 /**
+ * Los números de citas, vengan como vengan. El modelo a veces los escribe como
+ * texto —"[1]", "1, 3", "Referencia 2"— en vez de como números, y leerlos así
+ * tiraba puntos que sí estaban citados.
+ */
+function numerosDe(citas) {
+  const lista = Array.isArray(citas) ? citas : citas === undefined || citas === null ? [] : [citas];
+  return lista.flatMap((cita) =>
+    typeof cita === 'number' ? [cita] : (String(cita).match(/\d+/g) ?? []).map(Number),
+  );
+}
+
+/**
  * Lo que devolvió el modelo, en lo que se puede enseñar.
  *
  * Exportado para las pruebas: es lo que impide que llegue a la pantalla una
@@ -79,9 +91,7 @@ function normalizar(bruto, cuantas) {
         .slice(0, 6)
         .map((punto) => ({
           texto: texto(punto?.texto, 900),
-          citas: [...new Set((Array.isArray(punto?.citas) ? punto.citas : []).map(Number))]
-            .filter(valida)
-            .sort((a, b) => a - b),
+          citas: [...new Set(numerosDe(punto?.citas))].filter(valida).sort((a, b) => a - b),
         }))
         .filter((punto) => punto.texto && punto.citas.length > 0),
     }))
@@ -148,42 +158,55 @@ async function resumir(
     .map((turno) => `Pregunta anterior: ${turno.pregunta}\nRespuesta anterior: ${turno.respuesta}`)
     .join('\n\n');
 
-  let respuesta;
-  try {
-    ({ texto: respuesta } = await generar({
-      modelos: [env.GEMINI_MODEL, env.GEMINI_MODEL_RESPALDO].filter(Boolean),
-      sistema: SISTEMA,
-      mensajes: [
-        {
-          rol: 'usuario',
-          texto:
-            (contexto ? `${contexto}\n\n` : '') +
-            `Pregunta: ${pregunta}\n\nArtículos:\n\n${comoLista(conResumen)}`,
-        },
-      ],
-      maxTokens: 2200,
-      timeoutMs: 30_000,
-    }));
-  } catch (fallo) {
-    logger.warn({ err: fallo.message }, 'Resumen con IA: Gemini no contestó');
-    throw noDisponible(
-      fallo instanceof GeminiError && fallo.bloqueado
-        ? 'La IA no quiso procesar esta pregunta. Formúlala de otra forma.'
-        : 'La IA no contestó a tiempo. Vuelve a intentarlo en un momento.',
+  const mensaje =
+    (contexto ? `${contexto}\n\n` : '') +
+    `Pregunta: ${pregunta}\n\nArtículos:\n\n${comoLista(conResumen)}`;
+
+  // Dos intentos. El 19-sep-2026, en producción, una petición volvió sin
+  // ningún punto citable y la misma, repetida a mano 40 s después, salió
+  // bien: el modelo falla de vez en cuando, y es mejor que el segundo intento
+  // lo haga el servidor que el tesista.
+  let resultado = null;
+  let ultimaRespuesta = '';
+  for (let intento = 1; intento <= 2 && !resultado; intento += 1) {
+    let respuesta;
+    try {
+      ({ texto: respuesta } = await generar({
+        modelos: [env.GEMINI_MODEL, env.GEMINI_MODEL_RESPALDO].filter(Boolean),
+        sistema: SISTEMA,
+        mensajes: [{ rol: 'usuario', texto: mensaje }],
+        maxTokens: 3000,
+        timeoutMs: 30_000,
+        json: true,
+      }));
+    } catch (fallo) {
+      logger.warn({ err: fallo.message, intento }, 'Resumen con IA: Gemini no contestó');
+      if (fallo instanceof GeminiError && fallo.bloqueado) {
+        throw noDisponible('La IA no quiso procesar esta pregunta. Formúlala de otra forma.');
+      }
+      continue;
+    }
+
+    ultimaRespuesta = respuesta;
+    let bruto = null;
+    try {
+      const json = respuesta.match(/\{[\s\S]*\}/)?.[0];
+      bruto = json ? JSON.parse(json) : null;
+    } catch {
+      bruto = null;
+    }
+
+    const normalizado = normalizar(bruto, lista.length);
+    if (normalizado.secciones.length > 0) resultado = normalizado;
+  }
+
+  if (!resultado) {
+    // Lo que devolvió, recortado: es texto del modelo, no del tesista, y es
+    // lo único que dice por qué no se pudo leer.
+    logger.warn(
+      { muestra: ultimaRespuesta.slice(0, 400), largo: ultimaRespuesta.length },
+      'Resumen con IA: la respuesta no traía puntos con citas válidas',
     );
-  }
-
-  let bruto = null;
-  try {
-    const json = respuesta.match(/\{[\s\S]*\}/)?.[0];
-    bruto = json ? JSON.parse(json) : null;
-  } catch {
-    bruto = null;
-  }
-
-  const resultado = normalizar(bruto, lista.length);
-  if (resultado.secciones.length === 0) {
-    logger.warn('Resumen con IA: la respuesta no traía puntos con citas válidas');
     throw noDisponible('La IA no devolvió un resumen que se pueda citar. Vuelve a intentarlo.');
   }
 

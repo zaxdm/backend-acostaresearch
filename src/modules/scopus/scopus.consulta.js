@@ -122,6 +122,7 @@ async function generarConsulta(tema, { generar = generarConRespaldo } = {}) {
       mensajes: [{ rol: 'usuario', texto: tema }],
       maxTokens: 700,
       timeoutMs: 15_000,
+      json: true,
     }));
   } catch (fallo) {
     logger.warn({ err: fallo.message }, 'Generador de consultas: Gemini no contestó');

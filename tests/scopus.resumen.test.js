@@ -160,3 +160,29 @@ test('«Ver resumen»: los de la página, y si OpenAlex falla, ninguno en vez de
   };
   assert.deepEqual(await resumenesDeLaPagina(['10.1/a'], { resumenes: falla }), {});
 });
+
+test('citas escritas como texto también cuentan', () => {
+  const resultado = normalizar(
+    { secciones: [{ titulo: 'S', puntos: [{ texto: 'p', citas: ['[2]', '1, 3', 'Referencia 9'] }] }] },
+    3,
+  );
+  assert.deepEqual(resultado.secciones[0].puntos[0].citas, [1, 2, 3]);
+});
+
+test('si la primera respuesta no sirve, se reintenta una vez antes de rendirse', async () => {
+  let llamadas = 0;
+  const generar = async ({ json }) => {
+    llamadas += 1;
+    assert.equal(json, true, 'se pide JSON estricto');
+    return {
+      texto:
+        llamadas === 1
+          ? 'no es json'
+          : JSON.stringify({ titulo: 'T', secciones: [{ titulo: 'S', puntos: [{ texto: 'p', citas: [1] }] }] }),
+    };
+  };
+
+  const resultado = await resumir({ pregunta: '¿Qué dicen?', fuentes: FUENTES }, { generar, resumenes: conResumenes });
+  assert.equal(llamadas, 2);
+  assert.equal(resultado.secciones.length, 1);
+});

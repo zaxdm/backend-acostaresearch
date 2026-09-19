@@ -139,4 +139,47 @@ async function generarConRespaldo({ modelos, ...opciones }) {
   throw ultimoError ?? new GeminiError('No hay ningún modelo de Gemini configurado');
 }
 
-module.exports = { generar, generarConRespaldo, GeminiError };
+/**
+ * Los vectores de unos textos, para comparar su significado.
+ *
+ * Los usa la búsqueda semántica de Scopus: la pregunta va con la tarea
+ * `RETRIEVAL_QUERY` y los artículos con `RETRIEVAL_DOCUMENT`, que es como
+ * Google entrena el modelo para que se encuentren. De cien en cien, que es lo
+ * que admite `batchEmbedContents`; 768 dimensiones, que para ordenar sobran.
+ */
+async function embeber(
+  textos,
+  { tarea = 'RETRIEVAL_DOCUMENT', modelo = env.GEMINI_EMBEDDING_MODEL, fetchImpl = fetch } = {},
+) {
+  const vectores = [];
+
+  for (let i = 0; i < textos.length; i += 100) {
+    const lote = textos.slice(i, i + 100);
+    const url = `${BASE}/models/${encodeURIComponent(modelo)}:batchEmbedContents`;
+    const respuesta = await fetchImpl(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY ?? '' },
+      body: JSON.stringify({
+        requests: lote.map((texto) => ({
+          model: `models/${modelo}`,
+          content: { parts: [{ text: String(texto).slice(0, 8000) }] },
+          taskType: tarea,
+          outputDimensionality: 768,
+        })),
+      }),
+      signal: AbortSignal.timeout(20_000),
+    });
+
+    const cuerpo = await respuesta.json().catch(() => null);
+    if (!respuesta.ok || !Array.isArray(cuerpo?.embeddings)) {
+      throw new GeminiError(cuerpo?.error?.message ?? `Gemini respondió ${respuesta.status}`, {
+        status: respuesta.status,
+      });
+    }
+    vectores.push(...cuerpo.embeddings.map((e) => e.values ?? []));
+  }
+
+  return vectores;
+}
+
+module.exports = { generar, generarConRespaldo, embeber, GeminiError };

@@ -7,6 +7,8 @@ const logger = require('../../config/logger');
 const servicio = require('./scopus.service');
 const { generarConsulta } = require('./scopus.consulta');
 const { resumir, resumenesDeLaPagina } = require('./scopus.resumen');
+const { aproximadas } = require('./scopus.cuentas');
+const guardadas = require('./scopus.guardadas');
 
 /**
  * La cookie que ata el intercambio con Elsevier al navegador que lo empezó.
@@ -112,6 +114,39 @@ const scopusController = {
 
   resumenes: asyncHandler(async (req, res) => {
     return ok(res, { resumenes: await resumenesDeLaPagina(req.body.dois) });
+  }),
+
+  cuentas: asyncHandler(async (req, res) => {
+    return ok(res, await servicio.cuentas(req.user.id, req.body));
+  }),
+
+  cuentasAproximadas: asyncHandler(async (req, res) => {
+    return ok(res, await aproximadas(req.body));
+  }),
+
+  semantica: asyncHandler(async (req, res) => {
+    return ok(res, await servicio.buscarSemantica(req.user.id, req.body));
+  }),
+
+  guardadas: asyncHandler(async (req, res) => {
+    return ok(res, { guardadas: await guardadas.listar(req.user.id) });
+  }),
+
+  guardada: asyncHandler(async (req, res) => {
+    return ok(res, { guardada: await guardadas.una(req.user.id, req.params.id) });
+  }),
+
+  guardar: asyncHandler(async (req, res) => {
+    return ok(res, { guardada: await guardadas.crear(req.user.id, req.body) });
+  }),
+
+  actualizarGuardada: asyncHandler(async (req, res) => {
+    return ok(res, { guardada: await guardadas.actualizar(req.user.id, req.params.id, req.body) });
+  }),
+
+  borrarGuardada: asyncHandler(async (req, res) => {
+    await guardadas.borrar(req.user.id, req.params.id);
+    return ok(res, { ok: true });
   }),
 
   importar: asyncHandler(async (req, res) => {

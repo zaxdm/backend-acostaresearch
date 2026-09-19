@@ -450,6 +450,39 @@ async function resumenesPorDoi(dois) {
   return resumenes;
 }
 
+/**
+ * Cuántas obras hay en cada valor de un campo, para un filtro.
+ *
+ * El `group_by` de OpenAlex: da los valores con más obras y su número, en una
+ * sola consulta. Lo usan los números aproximados de los filtros del buscador
+ * de Scopus, que Scopus no nos da. Devuelve `{ total, grupos }`, o nulo si
+ * OpenAlex no contesta: sin números no se rompe nada, solo no se enseñan.
+ */
+async function agrupar(filtro, grupo, cuantos = 8) {
+  const url = new URL(BASE);
+  url.searchParams.set('filter', filtro);
+  url.searchParams.set('group_by', grupo);
+  url.searchParams.set('per_page', String(cuantos));
+  firmar(url);
+
+  const res = await fetch(url, { signal: AbortSignal.timeout(TIEMPO_LIMITE_MS) }).catch(() => null);
+  if (!res || !res.ok) {
+    if (res) avisarRechazo(res, { grupo }, 'OpenAlex rechazó la consulta agrupada');
+    return null;
+  }
+
+  const datos = await res.json().catch(() => null);
+  if (!datos) return null;
+  return {
+    total: datos.meta?.count ?? 0,
+    grupos: (datos.group_by ?? []).slice(0, cuantos).map((g) => ({
+      clave: String(g.key ?? ''),
+      nombre: String(g.key_display_name ?? ''),
+      obras: Number(g.count) || 0,
+    })),
+  };
+}
+
 /** Las fichas de una lista de identificadores de OpenAlex. */
 async function porIds(ids) {
   const fichas = [];
@@ -497,6 +530,7 @@ module.exports = {
   referenciasDe,
   porIds,
   resumenesPorDoi,
+  agrupar,
   citanA,
   limpiarDoi,
   nombreApa,

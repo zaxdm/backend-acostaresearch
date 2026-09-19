@@ -113,7 +113,65 @@ const resumenesSchema = z.object({
   dois: z.array(z.string().trim().min(3).max(200)).min(1).max(25),
 });
 
+// ── Cuentas de los filtros ─────────────────────────────────────────────────
+
+const cuentasSchema = z.object({
+  ecuacion,
+  faceta: z.enum(['anio', 'tipo', 'idioma', 'abierto', 'fuente', 'etapa']),
+});
+
+const conceptoSchema = z.object({
+  nombre: z.string().trim().min(1).max(120),
+  sinonimos: z.array(z.string().trim().min(1).max(120)).max(8).optional(),
+});
+
+const aproximadasSchema = z.object({
+  conceptos: z.array(conceptoSchema).min(1).max(8),
+  desde: z.coerce.number().int().min(1800).max(2100).nullable().optional(),
+  hasta: z.coerce.number().int().min(1800).max(2100).nullable().optional(),
+});
+
+// ── Búsqueda semántica ─────────────────────────────────────────────────────
+
+const semanticaSchema = z.object({
+  ecuacion,
+  pregunta: z.string().trim().min(3, 'Escribe tu pregunta.').max(800),
+});
+
+// ── Búsquedas guardadas ────────────────────────────────────────────────────
+
+/** Un JSON con techo: lo guarda la web, y una base no es un vertedero. */
+const jsonConTecho = (maximo) =>
+  z.any().refine((valor) => JSON.stringify(valor ?? null).length <= maximo, {
+    message: 'Es demasiado grande para guardarlo.',
+  });
+
+const guardadaSchema = z.object({
+  tipo: z.enum(['BUSQUEDA', 'COPILOTO']),
+  titulo: z.string().trim().min(1, 'Ponle un nombre.').max(200),
+  ecuacion: z.string().trim().min(1).max(4000),
+  estado: jsonConTecho(20_000).refine((v) => v && typeof v === 'object' && !Array.isArray(v), {
+    message: 'Falta el estado del buscador.',
+  }),
+  hilo: jsonConTecho(80_000)
+    .refine((v) => v === null || v === undefined || (Array.isArray(v) && v.length <= 10), {
+      message: 'La conversación es demasiado larga para guardarla.',
+    })
+    .optional(),
+  total: z.coerce.number().int().min(0).max(100_000_000).optional(),
+});
+
+const guardadaCambioSchema = guardadaSchema.omit({ tipo: true }).partial();
+
+const guardadaIdSchema = z.object({ id: z.string().uuid('Esa búsqueda no existe.') });
+
 module.exports = {
+  aproximadasSchema,
+  cuentasSchema,
+  guardadaCambioSchema,
+  guardadaIdSchema,
+  guardadaSchema,
+  semanticaSchema,
   buscarSchema,
   consultaSchema,
   importarSchema,

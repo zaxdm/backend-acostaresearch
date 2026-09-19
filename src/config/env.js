@@ -95,6 +95,10 @@ const schema = z.object({
   // Vacío = sin respaldo.
   GEMINI_MODEL_RESPALDO: vacioComoAusente(z.string()).default('gemini-3.1-flash-lite'),
   GEMINI_THINKING: z.enum(['minimal', 'low', 'medium', 'high']).default('minimal'),
+  // El de los vectores con los que la búsqueda semántica de Scopus ordena por
+  // significado. Probado en el servidor el 19-sep-2026: los 002 y
+  // text-embedding-004 ya dan 404.
+  GEMINI_EMBEDDING_MODEL: z.string().default('gemini-embedding-001'),
   // Mensajes al día para todo el sitio, contados en memoria. 0 = sin tope.
   ASISTENTE_MAX_DIARIO: z.coerce.number().int().nonnegative().default(1500),
 

@@ -17,6 +17,7 @@ const cliente = require('./scopus.client');
 const mapper = require('./scopus.mapper');
 const oauth = require('./scopus.oauth');
 const repositorio = require('./scopus.repository');
+const gemini = require('../../lib/gemini');
 
 /**
  * Conectar Scopus, buscar, elegir e importar.
@@ -558,10 +559,226 @@ async function desconectar(userId) {
   return { ok: true };
 }
 
+// ── Cuántos hay en cada opción de un filtro ─────────────────────────────────
+
+/**
+ * Las opciones de los filtros que se cuentan con Scopus, con su cláusula.
+ *
+ * Solo las de lista corta y fija. Scopus no nos da sus facetas con esta clave
+ * («not entitled to access facets»), así que cada número es una consulta de un
+ * resultado contra la cuota de la casa: el área, con 27 opciones, se cuenta
+ * aproximada con OpenAlex (ver `scopus.cuentas`). Los valores son los mismos
+ * que usa la web en sus casillas.
+ */
+function opcionesDeLaFaceta(faceta) {
+  const lista = (campo, valores) => valores.map((v) => ({ valor: v, clausula: `${campo}(${v})` }));
+  switch (faceta) {
+    case 'tipo':
+      return lista('DOCTYPE', ['ar', 're', 'cp', 'ch', 'bk', 'cr', 'ed', 'le', 'no', 'sh', 'dp', 'er']);
+    case 'idioma':
+      return lista('LANGUAGE', ['english', 'spanish', 'portuguese', 'french', 'german', 'italian', 'chinese', 'russian']);
+    case 'abierto':
+      return lista('OA', ['all', 'publisherfullgold', 'publisherhybridgold', 'publisherfree2read', 'repository']);
+    case 'fuente':
+      return lista('SRCTYPE', ['j', 'p', 'b', 'k', 'd']);
+    case 'etapa':
+      return lista('PUBSTAGE', ['final', 'aip']);
+    case 'anio': {
+      // Los diez últimos años: es lo que dibuja la gráfica de barras, y lo
+      // que mira un jurado.
+      const este = new Date().getFullYear();
+      return Array.from({ length: 10 }, (_, i) => este - 9 + i).map((anio) => ({
+        valor: String(anio),
+        clausula: `PUBYEAR = ${anio}`,
+      }));
+    }
+    default:
+      return [];
+  }
+}
+
+/**
+ * Lo ya contado, compartido entre tesistas: el número de una ecuación no
+ * depende de quién pregunte, y volver a abrir una sección no debe gastar cuota.
+ * Media hora y como mucho quinientas entradas.
+ */
+const CUENTAS_GUARDADAS = new Map();
+const VIDA_DE_UNA_CUENTA_MS = 30 * 60 * 1000;
+
+function cuentaGuardada(clave) {
+  const guardada = CUENTAS_GUARDADAS.get(clave);
+  if (!guardada) return undefined;
+  if (Date.now() - guardada.cuando > VIDA_DE_UNA_CUENTA_MS) {
+    CUENTAS_GUARDADAS.delete(clave);
+    return undefined;
+  }
+  return guardada.valor;
+}
+
+function guardarCuenta(clave, valor) {
+  if (CUENTAS_GUARDADAS.size >= 500) CUENTAS_GUARDADAS.delete(CUENTAS_GUARDADAS.keys().next().value);
+  CUENTAS_GUARDADAS.set(clave, { valor, cuando: Date.now() });
+}
+
+/** De varias en varias, para no lanzar doce peticiones a la vez contra Elsevier. */
+async function enTandas(tareas, deAVez = 4) {
+  const resultados = new Array(tareas.length);
+  let siguiente = 0;
+  const trabajador = async () => {
+    while (siguiente < tareas.length) {
+      const i = siguiente++;
+      resultados[i] = await tareas[i]();
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(deAVez, tareas.length) }, trabajador));
+  return resultados;
+}
+
+/**
+ * Cuántos resultados da la ecuación con cada opción de un filtro, exactos.
+ *
+ * Una consulta por opción, de un solo resultado —solo interesa el total—. Una
+ * que falle deja su número en nulo y no tumba las demás.
+ */
+async function cuentas(userId, { ecuacion, faceta }) {
+  exigirQueEsteEncendido();
+  const opciones = opcionesDeLaFaceta(faceta);
+  if (opciones.length === 0) throw new ValidationError('Ese filtro no se cuenta.');
+
+  const clave = `${faceta}|${ecuacion}`;
+  const guardada = cuentaGuardada(clave);
+  if (guardada) return { faceta, cuentas: guardada };
+
+  const conexion = await conexionParaUsar(userId);
+  const accessToken = await tokenDe(conexion);
+
+  const totales = await enTandas(
+    opciones.map((opcion) => async () => {
+      try {
+        const { total } = await cliente.buscar({
+          ecuacion: `(${ecuacion}) AND ${opcion.clausula}`,
+          cuantas: 1,
+          accessToken,
+        });
+        return total;
+      } catch (fallo) {
+        logger.warn({ err: fallo.message, faceta }, 'Scopus: no se pudo contar una opción');
+        return null;
+      }
+    }),
+  );
+
+  const resultado = Object.fromEntries(opciones.map((opcion, i) => [opcion.valor, totales[i]]));
+  if (totales.some((t) => t !== null)) guardarCuenta(clave, resultado);
+  return { faceta, cuentas: resultado };
+}
+
+// ── Búsqueda semántica ─────────────────────────────────────────────────────
+
+/** Cuántos candidatos se ordenan por significado: tres páginas de Scopus. */
+const CANDIDATOS_SEMANTICA = 75;
+
+const coseno = (a, b) => {
+  let producto = 0;
+  let normaA = 0;
+  let normaB = 0;
+  for (let i = 0; i < a.length; i += 1) {
+    producto += a[i] * b[i];
+    normaA += a[i] * a[i];
+    normaB += b[i] * b[i];
+  }
+  return normaA && normaB ? producto / Math.sqrt(normaA * normaB) : 0;
+};
+
+/**
+ * Los artículos más cercanos a la PREGUNTA, no a las palabras.
+ *
+ * Lo que hace la búsqueda semántica de Scopus, con lo nuestro: se traen los 75
+ * más relevantes de la ecuación, se completan con su resumen de OpenAlex, y
+ * se ordenan por lo parecido que es lo que dicen a lo que el tesista preguntó,
+ * con los vectores de Gemini. Se devuelven los 25 más cercanos.
+ *
+ * Como el resumen con IA, pasa títulos de Scopus por Gemini; Benicio lo
+ * decidió sabiéndolo el 19-sep-2026.
+ */
+async function buscarSemantica(
+  userId,
+  { ecuacion, pregunta },
+  { embeber = gemini.embeber, resumenes = openalex.resumenesPorDoi } = {},
+) {
+  exigirQueEsteEncendido();
+  if (!env.asistenteEnabled) {
+    throw new AppError('La búsqueda por significado no está disponible ahora.', {
+      statusCode: 503,
+      code: ERROR_CODES.ASSISTANT_UNAVAILABLE,
+    });
+  }
+
+  const conexion = await conexionParaUsar(userId);
+  const accessToken = await tokenDe(conexion);
+
+  const candidatos = [];
+  let total = 0;
+  for (let desde = 0; desde < CANDIDATOS_SEMANTICA; desde += cliente.POR_PAGINA) {
+    const pagina = await cliente.buscar({ ecuacion, desde, orden: 'relevancia', accessToken });
+    total = pagina.total;
+    candidatos.push(...pagina.fichas.map(mapper.comoResultado).filter((r) => r.eid));
+    if (candidatos.length >= total || pagina.fichas.length < cliente.POR_PAGINA) break;
+  }
+  await repositorio.anotarBusqueda(userId).catch(() => {});
+
+  if (candidatos.length === 0) {
+    return { total: 0, pagina: 1, paginas: 1, desde: 1, porPagina: cliente.POR_PAGINA, candidatos: 0, semantica: true, orden: 'significado', conResumenes: env.scopusView === 'COMPLETE', resultados: [] };
+  }
+
+  const porDoi = await resumenes(candidatos.map((c) => c.doi).filter(Boolean)).catch(() => new Map());
+  const textos = candidatos.map((c) => {
+    const resumen = c.doi ? porDoi.get(c.doi.toLowerCase()) : null;
+    return resumen ? `${c.titulo}. ${resumen.slice(0, 1500)}` : c.titulo;
+  });
+
+  let vectores;
+  try {
+    const [consulta] = await embeber([pregunta], { tarea: 'RETRIEVAL_QUERY' });
+    const documentos = await embeber(textos, { tarea: 'RETRIEVAL_DOCUMENT' });
+    vectores = { consulta, documentos };
+  } catch (fallo) {
+    logger.warn({ err: fallo.message }, 'Búsqueda semántica: Gemini no dio los vectores');
+    throw new AppError('La búsqueda por significado no contestó. Vuelve a intentarlo en un momento.', {
+      statusCode: 503,
+      code: ERROR_CODES.ASSISTANT_UNAVAILABLE,
+    });
+  }
+
+  const ordenados = candidatos
+    .map((c, i) => ({ ...c, afinidad: Number(coseno(vectores.consulta, vectores.documentos[i]).toFixed(3)) }))
+    .sort((a, b) => b.afinidad - a.afinidad)
+    .slice(0, cliente.POR_PAGINA);
+
+  const yaLasTiene = await claveDeLasQueYaTiene(userId, ordenados);
+
+  return {
+    total,
+    pagina: 1,
+    paginas: 1,
+    desde: 1,
+    porPagina: cliente.POR_PAGINA,
+    /** De cuántos se eligieron estos: los más relevantes de la ecuación. */
+    candidatos: candidatos.length,
+    semantica: true,
+    orden: 'significado',
+    conResumenes: env.scopusView === 'COMPLETE',
+    resultados: ordenados.map((r) => ({ ...r, yaLaTienes: yaLasTiene.has(identidadDe(r)) })),
+  };
+}
+
 module.exports = {
   empezar,
   terminar,
   buscar,
+  cuentas,
+  buscarSemantica,
+  opcionesDeLaFaceta,
   importar,
   estado,
   desconectar,

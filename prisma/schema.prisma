@@ -77,6 +77,8 @@ model User {
 
   /// Su conexión con Scopus, si la tiene. Como mucho una. Ver `ScopusConnection`.
   scopusConnection ScopusConnection?
+  /// Sus búsquedas guardadas y sus conversaciones con el copiloto de Scopus.
+  scopusBusquedas  ScopusBusqueda[]
 
   /// Enlace de prueba del que salió esta cuenta. Nulo en toda cuenta real.
   ///
@@ -1465,6 +1467,48 @@ model ScopusConnection {
   updatedAt DateTime @updatedAt
 
   @@map("scopus_connections")
+}
+
+/// Una búsqueda de Scopus guardada, o una conversación con el copiloto.
+///
+/// Es la columna de la izquierda del buscador, como en la IA de Scopus: «Hoy»,
+/// «Últimos 7 días»… Las del copiloto se guardan solas al llegar el resumen;
+/// las de la búsqueda normal, cuando el tesista pulsa «Guardar búsqueda».
+///
+/// Se guarda lo que hace falta para VOLVER a ella, no los resultados: la
+/// ecuación y el estado del buscador (modo, conceptos, sinónimos, filtros,
+/// orden), y en las del copiloto el hilo de preguntas con sus resúmenes, que
+/// es lo que costó una llamada a la IA. Los artículos se vuelven a pedir a
+/// Scopus al abrirla: guardarlos sería almacenar su contenido, que es justo lo
+/// que su acuerdo prohíbe.
+model ScopusBusqueda {
+  id     String @id @default(uuid()) @db.Char(36)
+  userId String @db.Char(36)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  tipo   ScopusBusquedaTipo @default(BUSQUEDA)
+  titulo String             @db.VarChar(200)
+  /// La ecuación completa que se mandó, filtros incluidos.
+  ecuacion String @db.Text
+  /// El estado del buscador, tal como lo da la web. Con techo en el esquema.
+  estado   Json
+  /// Las preguntas y los resúmenes del copiloto. Nulo en las búsquedas normales.
+  hilo     Json?
+  /// Cuántos resultados dio, para enseñarlo en la lista.
+  total    Int    @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, updatedAt])
+  @@map("scopus_busquedas")
+}
+
+enum ScopusBusquedaTipo {
+  /// Guardada a mano desde la búsqueda normal o la avanzada.
+  BUSQUEDA
+  /// Una conversación con el copiloto; se guarda sola.
+  COPILOTO
 }
 
 /// Cómo está autorizada una conexión de Scopus.

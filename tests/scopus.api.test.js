@@ -623,3 +623,68 @@ test('una conexión revocada no se presenta como conectada', async () => {
     /dejó de aceptar tu conexión/,
   );
 });
+
+// ── Los números de los filtros ─────────────────────────────────────────────
+
+test('cuentas exactas: una consulta de un resultado por opción, y lo contado no se repite', async () => {
+  empezar();
+  elsevier.responder = respuestaCon([FICHA], 7);
+
+  const ecuacion = 'TITLE-ABS-KEY(cuentas-unicas)';
+  const { cuentas } = await servicio.cuentas('u1', { ecuacion, faceta: 'etapa' });
+
+  assert.deepEqual(cuentas, { final: 7, aip: 7 });
+  const pedidas = elsevier.peticiones.map((p) => p.url.searchParams.get('query')).sort();
+  assert.deepEqual(pedidas, [`(${ecuacion}) AND PUBSTAGE(aip)`, `(${ecuacion}) AND PUBSTAGE(final)`]);
+  assert.ok(elsevier.peticiones.every((p) => p.url.searchParams.get('count') === '1'));
+
+  elsevier.peticiones = [];
+  await servicio.cuentas('u1', { ecuacion, faceta: 'etapa' });
+  assert.equal(elsevier.peticiones.length, 0, 'la segunda vez sale de lo guardado');
+});
+
+test('los años que se cuentan son los diez últimos, uno a uno', () => {
+  const opciones = servicio.opcionesDeLaFaceta('anio');
+  const este = new Date().getFullYear();
+  assert.equal(opciones.length, 10);
+  assert.equal(opciones.at(-1).clausula, `PUBYEAR = ${este}`);
+  assert.equal(opciones[0].valor, String(este - 9));
+});
+
+// ── La búsqueda semántica ──────────────────────────────────────────────────
+
+test('por significado: se ordenan por cercanía a la pregunta, no por el orden de Scopus', async () => {
+  empezar();
+  env.asistenteEnabled = true;
+  const cercana = { ...FICHA, eid: '2-s2.0-1', 'dc:title': 'Cerca', 'prism:doi': '10.1/cerca' };
+  const lejana = { ...FICHA, eid: '2-s2.0-2', 'dc:title': 'Lejos', 'prism:doi': '10.1/lejos' };
+  elsevier.responder = respuestaCon([lejana, cercana], 2);
+
+  const embeber = async (textos, { tarea }) =>
+    tarea === 'RETRIEVAL_QUERY' ? [[1, 0]] : textos.map((t) => (t.startsWith('Cerca') ? [1, 0.1] : [0, 1]));
+  const resumenes = async () => new Map([['10.1/cerca', 'resumen']]);
+
+  const busqueda = await servicio.buscarSemantica(
+    'u1',
+    { ecuacion: 'TITLE-ABS-KEY(x)', pregunta: '¿qué?' },
+    { embeber, resumenes },
+  );
+
+  assert.equal(busqueda.semantica, true);
+  assert.deepEqual(busqueda.resultados.map((r) => r.titulo), ['Cerca', 'Lejos']);
+  assert.ok(busqueda.resultados[0].afinidad > busqueda.resultados[1].afinidad);
+  assert.equal(elsevier.peticiones[0].url.searchParams.get('sort'), 'relevancy');
+});
+
+test('si Gemini no da los vectores, 503 del asistente y no un 500', async () => {
+  empezar();
+  env.asistenteEnabled = true;
+  const embeber = async () => {
+    throw new Error('caído');
+  };
+
+  await assert.rejects(
+    () => servicio.buscarSemantica('u1', { ecuacion: 'TITLE-ABS-KEY(x)', pregunta: '¿qué?' }, { embeber, resumenes: async () => new Map() }),
+    (error) => error.statusCode === 503 && error.code === 'ASSISTANT_UNAVAILABLE',
+  );
+});

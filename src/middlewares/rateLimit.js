@@ -144,6 +144,21 @@ const scopusIaLimiter = build({
 });
 
 /**
+ * Los números de los filtros del buscador de Scopus.
+ *
+ * Abrir una sección con números exactos son hasta doce consultas a Elsevier,
+ * contra la cuota semanal de la casa. Cuarenta cada diez minutos por persona:
+ * da para abrir todas las secciones de varias búsquedas, y corta a quien
+ * abra y cierre sin parar. Lo ya contado se guarda media hora y no gasta.
+ */
+const scopusCuentasLimiter = build({
+  windowMs: 10 * 60 * 1000,
+  max: 40,
+  message: 'Has pedido los números de los filtros muchas veces seguidas. Espera unos minutos.',
+  keyGenerator: porUsuario,
+});
+
+/**
  * Conectar y desconectar Scopus.
  *
  * Aparte del de buscar y más holgado, por lo mismo que en Zotero: conectar no
@@ -258,6 +273,7 @@ module.exports = {
   scopusBuscarLimiter,
   scopusConectarLimiter,
   scopusIaLimiter,
+  scopusCuentasLimiter,
   asistenteLimiter,
   reclamoLimiter,
   mcpLimiter,

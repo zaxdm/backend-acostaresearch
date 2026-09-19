@@ -7,8 +7,15 @@ const {
   scopusBuscarLimiter,
   scopusConectarLimiter,
   scopusIaLimiter,
+  scopusCuentasLimiter,
 } = require('../../middlewares/rateLimit');
 const {
+  aproximadasSchema,
+  cuentasSchema,
+  guardadaCambioSchema,
+  guardadaIdSchema,
+  guardadaSchema,
+  semanticaSchema,
   buscarSchema,
   consultaSchema,
   importarSchema,
@@ -108,6 +115,34 @@ router.post(
   validate({ body: importarSchema }),
   scopusController.importar,
 );
+/**
+ * Cuántos resultados hay en cada opción de un filtro. Exactas de Scopus en
+ * las listas cortas; aproximadas de OpenAlex en el área y en las que dependen
+ * de lo encontrado. Con su propio límite: cada sección abierta son varias
+ * consultas.
+ */
+router.post('/cuentas', scopusCuentasLimiter, validate({ body: cuentasSchema }), scopusController.cuentas);
+router.post(
+  '/cuentas-aproximadas',
+  scopusCuentasLimiter,
+  validate({ body: aproximadasSchema }),
+  scopusController.cuentasAproximadas,
+);
+
+/** Los más cercanos a la pregunta, por significado. Gasta Gemini y Scopus. */
+router.post('/semantica', scopusIaLimiter, validate({ body: semanticaSchema }), scopusController.semantica);
+
+/** Las búsquedas guardadas y las conversaciones del copiloto: la columna de la izquierda. */
+router.get('/guardadas', scopusController.guardadas);
+router.post('/guardadas', validate({ body: guardadaSchema }), scopusController.guardar);
+router.get('/guardadas/:id', validate({ params: guardadaIdSchema }), scopusController.guardada);
+router.put(
+  '/guardadas/:id',
+  validate({ params: guardadaIdSchema, body: guardadaCambioSchema }),
+  scopusController.actualizarGuardada,
+);
+router.delete('/guardadas/:id', validate({ params: guardadaIdSchema }), scopusController.borrarGuardada);
+
 router.delete('/', scopusController.desconectar);
 
 module.exports = router;

@@ -21,6 +21,7 @@ const materialService = require('../projects/material.service');
 const cualitativoService = require('../cualitativo/cualitativo.service');
 const subidaEntrevistas = require('../cualitativo/cualitativo.enlaces');
 const { CodificacionNoValida } = require('../cualitativo/cualitativo.codificacion');
+const rEnlaces = require('../r/r.enlaces');
 const consejos = require('../projects/project.consejos');
 const normas = require('../projects/project.normas');
 const etapas = require('../projects/project.etapas');
@@ -3341,13 +3342,35 @@ function construirServidor(licencia) {
           '"libro" devuelve el libro de códigos con cuántas citas y entrevistas tiene cada uno. ' +
           '"renombrar" cambia el nombre de un código en todas sus citas; si el nombre nuevo ya existe, ' +
           'los junta. "quitar_codigo" y "quitar_entrevista" solo si el usuario lo pide. ' +
+          'CUANDO TODO ESTÉ CODIFICADO: "tablas" devuelve la tabla de frecuencias y la de coocurrencia ' +
+          'en Markdown, calculadas por el servidor: pégalas TAL CUAL en el capítulo, poniendo solo el ' +
+          'número de tabla, y no escribas tú ninguna cifra. "red" dibuja con R la red de códigos y la ' +
+          'deja como red-de-codigos.png. "capitulo" arma el Word de resultados con "titulo" y "texto" ' +
+          '(Markdown: # títulos, las tablas, la figura como **Figura N** / *título* / ' +
+          '![](red-de-codigos.png) / *Nota.* …, y las fuentes con su clave [AR…] si hay): organízalo por categorías u ' +
+          'objetivos, ilustra cada código con lo que dijeron los entrevistados —entre comillas, o en ' +
+          'bloque con "> " si pasa de 40 palabras— indicando de quién y de dónde (E3, ¶12). Antes de ' +
+          'armarlo, el servidor busca cada cita en las transcripciones y, si alguna no está, no arma ' +
+          'nada y dice cuál. "qdpx" da el proyecto para abrirlo ya codificado en ATLAS.ti, NVivo, ' +
+          'MAXQDA o QualCoder (este último es gratis). ' +
           'NO inventes citas ni pongas en boca del entrevistado lo que no dijo.',
         inputSchema: fromJsonSchema({
           type: 'object',
           properties: {
             accion: {
               type: 'string',
-              enum: ['ver', 'codificar', 'libro', 'renombrar', 'quitar_codigo', 'quitar_entrevista'],
+              enum: [
+                'ver',
+                'codificar',
+                'libro',
+                'renombrar',
+                'quitar_codigo',
+                'quitar_entrevista',
+                'tablas',
+                'red',
+                'capitulo',
+                'qdpx',
+              ],
               description: 'Qué hacer. Sin acción: la lista de entrevistas y el enlace para subir.',
             },
             entrevista: {
@@ -3399,11 +3422,23 @@ function construirServidor(licencia) {
             codigo: { type: 'string', description: 'Con "quitar_codigo": el nombre del código.' },
             de: { type: 'string', description: 'Con "renombrar": el nombre actual.' },
             a: { type: 'string', description: 'Con "renombrar": el nombre nuevo, o el del código con que se junta.' },
+            titulo: {
+              type: 'string',
+              description: 'Con "capitulo": el título, una línea por renglón: "CAPÍTULO IV\\nRESULTADOS".',
+            },
+            texto: { type: 'string', description: 'Con "capitulo": el capítulo entero, en Markdown.' },
+            norma: {
+              type: 'string',
+              enum: normas.IDS_DE_NORMA,
+              description:
+                'Con "capitulo": la norma de citas. PREGÚNTASELA si su proyecto no tiene una. Sin ella sale ' +
+                'la de su proyecto, o APA 7.',
+            },
           },
           additionalProperties: false,
         }),
       },
-      async ({ accion, entrevista, desde, codigos, citas, codigo, de, a }) => {
+      async ({ accion, entrevista, desde, codigos, citas, codigo, de, a, titulo, texto: capitulo, norma }) => {
         await licenseService.recordUsage({ licenseId: licencia.id, tool: 'analisis_cualitativo' });
         const userId = licencia.user.id;
         const { productCode } = licencia;
@@ -3481,6 +3516,99 @@ function construirServidor(licencia) {
             );
           }
 
+          const nadaCodificado =
+            'Todavía no hay nada codificado: codifica las entrevistas con "codificar" antes.';
+          const descarga = (archivo, textoDelEnlace) => {
+            const { url, minutos } = rEnlaces.enlaceDeDescarga({ userId, productCode, archivo });
+            return enlaceClic({ texto: textoDelEnlace, url, minutos });
+          };
+
+          if (accion === 'tablas') {
+            const hechas = await cualitativoService.tablas(userId, productCode);
+            if (!hechas) return texto(nadaCodificado);
+            return texto(
+              'Tablas calculadas por el servidor. Pégalas TAL CUAL en el capítulo: cambia solo la X por ' +
+                'el número de tabla que les toque y cítalas en el texto antes de que aparezcan.' +
+                `${N}${N}${hechas.frecuencias}${N}${N}` +
+                (hechas.coocurrencia ??
+                  'Ningún par de códigos comparte una cita, así que no hay tabla de coocurrencia: dilo así ' +
+                    'en el capítulo si hace falta.'),
+            );
+          }
+
+          if (accion === 'red') {
+            const dibujada = await cualitativoService.red(userId, productCode);
+            if (!dibujada) return texto(nadaCodificado);
+            if (dibujada.error) {
+              return texto(`R no pudo dibujar la red. No se guardó nada.${N}${dibujada.error}`);
+            }
+            return texto(
+              `Red dibujada: ${dibujada.codigos} códigos y ${dibujada.lazos} lazos de coocurrencia` +
+                (dibujada.omitidos > 0 ? ` (se dejaron fuera ${dibujada.omitidos} códigos con menos citas).` : '.') +
+                `${N}Para ponerla en el capítulo, usa este bloque, con su número de figura:${N}${N}` +
+                `**Figura N**${N}*Red de coocurrencia de los códigos*${N}![](${dibujada.archivo})${N}` +
+                '*Nota.* El tamaño de cada código indica su número de citas; el grosor de cada línea, las ' +
+                'citas que comparten dos códigos; el color, su categoría. Elaborado en R.' +
+                `${N}${N}Si el usuario quiere verla ya: ${descarga(dibujada.archivo, 'Haz clic aquí para ver la red de códigos')}`,
+            );
+          }
+
+          if (accion === 'capitulo') {
+            if (!String(capitulo ?? '').trim()) {
+              return texto('Con "capitulo" manda el capítulo entero en "texto". No se armó nada.');
+            }
+            const armado = await cualitativoService.capitulo(userId, productCode, {
+              titulo,
+              texto: capitulo,
+              norma,
+            });
+            if (!armado) return texto(nadaCodificado);
+            if (armado.comprobadas.faltan.length > 0) {
+              return texto(
+                `NO SE ARMÓ EL WORD: ${armado.comprobadas.faltan.length} citas no están en ninguna ` +
+                  `transcripción:${N}${armado.comprobadas.faltan.map((c) => `- «${c.slice(0, 160)}»`).join(N)}` +
+                  `${N}${N}Cópialas tal cual de la entrevista (con "ver"), marca los cortes con […], o ` +
+                  'quítalas. Luego vuelve a mandar el capítulo.',
+              );
+            }
+            if (armado.faltanFiguras.length > 0) {
+              return texto(
+                `NO SE ARMÓ EL WORD: faltan las figuras ${armado.faltanFiguras.join(', ')}. La red de ` +
+                  'códigos se genera con "red" y se llama red-de-codigos.png.',
+              );
+            }
+            const partes = [
+              `Capítulo listo: ${armado.tablas} tablas, ${armado.figuras} figuras y ` +
+                `${armado.comprobadas.revisadas} citas textuales, todas encontradas en las transcripciones. ` +
+                `Citas bibliográficas en ${armado.norma.nombre}.`,
+              `Enlace para bajarlo:${N}${descarga(armado.archivo, 'Haz clic aquí para descargar tu capítulo en Word')}`,
+            ];
+            if (armado.perdidas.length > 0) {
+              partes.push(
+                `OJO: ${armado.perdidas.length} citas bibliográficas no corresponden a ninguna de sus ` +
+                  `fuentes (${armado.perdidas.join(', ')}) y salen marcadas en el Word.`,
+              );
+            }
+            partes.push(
+              'Si quiere que forme parte de su tesis, guarda ESTE MISMO texto con "guardar_capitulo" en el ' +
+                'capítulo de resultados: la red se incrusta sola en el Word de la tesis.',
+            );
+            return texto(partes.join(`${N}${N}`));
+          }
+
+          if (accion === 'qdpx') {
+            const exportado = await cualitativoService.qdpx(userId, productCode);
+            if (!exportado) return texto(nadaCodificado);
+            return texto(
+              `Proyecto listo: ${exportado.entrevistas} entrevistas, ${exportado.codigos} códigos y ` +
+                `${exportado.citas} citas.${N}` +
+                `${descarga(exportado.archivo, 'Haz clic aquí para descargar tu proyecto (.qdpx)')}${N}${N}` +
+                'Dile cómo abrirlo: en ATLAS.ti, «Importar proyecto REFI-QDA»; en NVivo y MAXQDA, ' +
+                '«Importar proyecto de intercambio QDA (REFI-QDA)»; en QualCoder, que es gratis, ' +
+                '«Importar proyecto REFI-QDA». Encontrará sus entrevistas con los códigos puestos.',
+            );
+          }
+
           if (accion === 'quitar_entrevista') {
             const quitada = await cualitativoService.quitarEntrevista(userId, productCode, entrevista);
             if (!quitada) return texto(noExiste);
@@ -3490,6 +3618,12 @@ function construirServidor(licencia) {
             );
           }
         } catch (error) {
+          if (error instanceof cualitativoService.SinMotor) {
+            return texto(
+              'El servidor de R no está disponible ahora mismo, y hace falta para la red, el Word y el ' +
+                '.qdpx. No se generó nada. Díselo con normalidad y sigue con la codificación o con otra parte.',
+            );
+          }
           if (error instanceof CodificacionNoValida) {
             return texto(
               `No se guardó nada: ${error.errores.length === 1 ? 'hay un problema' : `hay ${error.errores.length} problemas`}.${N}` +

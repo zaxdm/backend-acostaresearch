@@ -423,6 +423,58 @@ function textoParaCifras(texto) {
 }
 
 /**
+ * El Word de un informe: las citas puestas en la norma pedida o la del
+ * proyecto, con el APA de respaldo si la norma falla, y maquetado con
+ * `r.informe`. Lo usan el informe de R y el capítulo cualitativo.
+ *
+ * Devuelve el Word y lo resuelto: la norma usada, las referencias y las citas
+ * que no corresponden a ninguna fuente.
+ */
+async function armarWord({ userId, proyecto, titulo, texto: cuerpo, norma, figuras }) {
+  const claves = citas.clavesDe(cuerpo);
+  const fuentes = claves.length > 0 ? await referenceService.porClaves(claves, userId) : [];
+  const porClave = new Map(fuentes.map((f) => [f.ref, f]));
+  const idNorma = norma || proyecto.estiloCitas;
+
+  let resuelto;
+  try {
+    const r = csl.renderizar({
+      norma: idNorma,
+      idioma: proyecto.idiomaCitas,
+      capitulos: [{ titulo: titulo || 'Informe', texto: cuerpo }],
+      porClave,
+    });
+    resuelto = {
+      texto: r.textos[0],
+      citas: r.citas,
+      referencias: r.bibliografia ?? [],
+      perdidas: r.perdidas,
+      norma: r.norma,
+    };
+  } catch (error) {
+    logger.error({ err: error, userId, norma: idNorma }, 'Informe: la norma falló, sale en APA');
+    const r = citas.resolver(cuerpo, porClave);
+    resuelto = {
+      texto: r.texto,
+      citas: null,
+      referencias: citas.bibliografiaConCursivas([...r.usadas.values()]),
+      perdidas: r.perdidas,
+      norma: normas.normaDe('apa'),
+    };
+  }
+
+  const buffer = await informeWord.armar({
+    titulo,
+    tema: proyecto.tema,
+    texto: resuelto.texto,
+    citas: resuelto.citas,
+    referencias: resuelto.referencias,
+    figuras,
+  });
+  return { buffer, resuelto };
+}
+
+/**
  * El Word del análisis, en la norma que elija el tesista.
  *
  * Claude manda el contenido; aquí se buscan las figuras en la sesión, se ponen
@@ -461,47 +513,7 @@ async function informe({ userId, productCode, titulo, texto: contenido, norma })
     );
   }
 
-  // Las citas, en la norma pedida o la del proyecto, con el APA de respaldo.
-  const claves = citas.clavesDe(cuerpo);
-  const fuentes = claves.length > 0 ? await referenceService.porClaves(claves, userId) : [];
-  const porClave = new Map(fuentes.map((f) => [f.ref, f]));
-  const idNorma = norma || proyecto.estiloCitas;
-
-  let resuelto;
-  try {
-    const r = csl.renderizar({
-      norma: idNorma,
-      idioma: proyecto.idiomaCitas,
-      capitulos: [{ titulo: titulo || 'Informe', texto: cuerpo }],
-      porClave,
-    });
-    resuelto = {
-      texto: r.textos[0],
-      citas: r.citas,
-      referencias: r.bibliografia ?? [],
-      perdidas: r.perdidas,
-      norma: r.norma,
-    };
-  } catch (error) {
-    logger.error({ err: error, userId, norma: idNorma }, 'Informe de R: la norma falló, sale en APA');
-    const r = citas.resolver(cuerpo, porClave);
-    resuelto = {
-      texto: r.texto,
-      citas: null,
-      referencias: citas.bibliografiaConCursivas([...r.usadas.values()]),
-      perdidas: r.perdidas,
-      norma: normas.normaDe('apa'),
-    };
-  }
-
-  const buffer = await informeWord.armar({
-    titulo,
-    tema: proyecto.tema,
-    texto: resuelto.texto,
-    citas: resuelto.citas,
-    referencias: resuelto.referencias,
-    figuras,
-  });
+  const { buffer, resuelto } = await armarWord({ userId, proyecto, titulo, texto: cuerpo, norma, figuras });
   await m.guardarArchivo(sesion, NOMBRE_DEL_INFORME, buffer);
 
   const { url, minutos } = enlaces.enlaceDeDescarga({ userId, productCode, archivo: NOMBRE_DEL_INFORME });
@@ -569,6 +581,8 @@ async function leerArchivo({ userId, productCode, archivo }) {
 module.exports = {
   trabajar,
   informe,
+  armarWord,
+  motorActual,
   subirDatos,
   leerArchivo,
   leerArchivoDeSesion,

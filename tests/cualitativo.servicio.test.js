@@ -191,3 +191,125 @@ test('la herramienta está en tesis, artículo e informe', () => {
     assert.ok(herramientas(producto).has('analisis_cualitativo'), producto);
   }
 });
+
+// ── Tablas, red, capítulo y .qdpx, con un motor de R de mentira ─────────────
+
+const AdmZip = require('adm-zip');
+const rService = require('../src/modules/r/r.service');
+
+/** Un PNG de 1×1 de verdad: el Word lo mide antes de incrustarlo. */
+const PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  'base64',
+);
+
+function motorFalso() {
+  const archivos = new Map();
+  const ordenes = [];
+  return {
+    archivos,
+    ordenes,
+    listo: async () => true,
+    guardarArchivo: async (sesion, nombre, bytes) => archivos.set(`${sesion}/${nombre}`, bytes),
+    leerArchivo: async (sesion, nombre) => archivos.get(`${sesion}/${nombre}`) ?? null,
+    ejecutar: async (sesion, codigo) => {
+      ordenes.push({ sesion, codigo });
+      archivos.set(`${sesion}/red-de-codigos.png`, PNG);
+      return { resultado: 'ok', salida: 'Red de codigos: 2 codigos, 1 lazos' };
+    },
+  };
+}
+
+async function codificarDePrueba() {
+  empezar();
+  await servicio.guardar({ userId: 'u1', productCode: TESIS, buffer: txt(ENTREVISTA_1), nombre: 'ana.txt' });
+  await servicio.codificar('u1', TESIS, 'E1', {
+    codigos: [
+      { nombre: 'Falta de apoyo docente', definicion: 'El docente no orienta.', categoria: 'Barreras' },
+      { nombre: 'Ayuda externa', definicion: 'Busca apoyo fuera.', categoria: 'Estrategias' },
+    ],
+    citas: [
+      { parrafo: 2, texto: 'El profesor nunca respondía mis correos', codigos: ['Falta de apoyo docente'] },
+      { parrafo: 2, texto: 'tuve que buscar ayuda afuera.', codigos: ['Ayuda externa', 'Falta de apoyo docente'] },
+    ],
+  });
+}
+
+test('la herramienta: tablas calculadas por el servidor, listas para pegar', async () => {
+  await codificarDePrueba();
+  const respuesta = await llamar({ accion: 'tablas' });
+  assert.match(respuesta, /\*\*Tabla X\*\*\n\*Frecuencia de los códigos por entrevista\*/);
+  assert.match(respuesta, /\| Ayuda externa \| Falta de apoyo docente \| 1 \| 0,50 \|/);
+});
+
+test('la herramienta: la red se dibuja en una sesión aparte y queda en la del proyecto', async () => {
+  await codificarDePrueba();
+  const m = motorFalso();
+  rService.usarMotor(m);
+  try {
+    const respuesta = await llamar({ accion: 'red' });
+    assert.match(respuesta, /Red dibujada: 2 códigos y 1 lazos/);
+    assert.match(respuesta, /!\[\]\(red-de-codigos\.png\)/);
+    assert.equal(m.ordenes.length, 1);
+    assert.equal(m.ordenes[0].sesion, 'p1-cual', 'no en la sesión del análisis cuantitativo');
+    assert.ok(m.archivos.has('p1-cual/red-nodos.csv'));
+    assert.ok(m.archivos.has('p1/red-de-codigos.png'));
+  } finally {
+    rService.usarMotor(null);
+  }
+});
+
+test('la herramienta: el capítulo con una cita inventada no se arma; con las buenas, sí', async () => {
+  await codificarDePrueba();
+  const m = motorFalso();
+  m.archivos.set('p1/red-de-codigos.png', PNG);
+  rService.usarMotor(m);
+  try {
+    const inventado = await llamar({
+      accion: 'capitulo',
+      titulo: 'CAPÍTULO IV\nRESULTADOS',
+      texto: 'Dijo que «el profesor jamás contestaba ninguno de mis correos» (E1, ¶2).',
+    });
+    assert.match(inventado, /NO SE ARMÓ EL WORD: 1 citas no están/);
+    assert.equal(m.archivos.has('p1/capitulo-cualitativo.docx'), false);
+
+    const bueno = await llamar({
+      accion: 'capitulo',
+      titulo: 'CAPÍTULO IV\nRESULTADOS',
+      texto: [
+        '# 4.1 Barreras',
+        'Una participante contó que «el profesor nunca respondía mis correos» (E1, ¶2).',
+        '**Figura 1**\n*Red de coocurrencia de los códigos*\n![](red-de-codigos.png)\n*Nota.* Elaborado en R.',
+      ].join('\n\n'),
+    });
+    assert.match(bueno, /Capítulo listo: 0 tablas, 1 figuras y 1 citas textuales/);
+    const word = m.archivos.get('p1/capitulo-cualitativo.docx');
+    const xml = new AdmZip(word).getEntry('word/document.xml').getData().toString('utf8');
+    assert.match(xml, /el profesor nunca respondía mis correos/);
+    assert.match(xml, /<pic:pic/, 'la red va incrustada');
+  } finally {
+    rService.usarMotor(null);
+  }
+});
+
+test('la herramienta: el .qdpx queda en la sesión, y sin R lo dice sin romper', async () => {
+  await codificarDePrueba();
+  const m = motorFalso();
+  rService.usarMotor(m);
+  try {
+    assert.match(await llamar({ accion: 'qdpx' }), /Proyecto listo: 1 entrevistas, 2 códigos y 2 citas/);
+    assert.ok(new AdmZip(m.archivos.get('p1/analisis-cualitativo.qdpx')).getEntry('project.qde'));
+    m.listo = async () => false;
+    assert.match(await llamar({ accion: 'qdpx' }), /servidor de R no está disponible/);
+  } finally {
+    rService.usarMotor(null);
+  }
+});
+
+test('sin nada codificado, tablas, red, capítulo y qdpx lo dicen', async () => {
+  empezar();
+  for (const accion of ['tablas', 'red', 'qdpx']) {
+    assert.match(await llamar({ accion }), /Todavía no hay nada codificado/, accion);
+  }
+  assert.match(await llamar({ accion: 'capitulo', texto: 'Algo.' }), /Todavía no hay nada codificado/);
+});

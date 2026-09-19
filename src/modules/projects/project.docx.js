@@ -678,6 +678,27 @@ function comoParrafos(texto, contexto = {}) {
       continue;
     }
 
+    // Una cita en bloque («> …» en cada línea): la cita textual de 40 palabras o
+    // más de APA 7, en su propio párrafo, sangrada entera y sin comillas. La usa
+    // sobre todo el capítulo cualitativo, con lo que dijo cada entrevistado.
+    const lineasDelBloque = bloque.split('\n');
+    if (lineasDelBloque.every((l) => /^\s*>/.test(l))) {
+      const cita = lineasDelBloque
+        .map((l) => l.replace(/^\s*>\s?/, '').trim())
+        .filter(Boolean)
+        .join(' ');
+      parrafos.push(
+        new Paragraph({
+          children: corridas(cita, contexto),
+          ...(contexto.estiloCuerpo ? { style: contexto.estiloCuerpo } : {}),
+          alignment: AlignmentType.JUSTIFIED,
+          indent: { left: SANGRIA, firstLine: 0 },
+          ...(contexto.plantilla ? {} : { spacing: { line: DOBLE } }),
+        }),
+      );
+      continue;
+    }
+
     // Las listas se respetan como líneas sueltas sin sangría de primera línea.
     // Sangrar la primera línea de una viñeta la desalinea de las siguientes.
     const esLista = /^\s*([-*•]|\d+[.)])\s+/.test(bloque);

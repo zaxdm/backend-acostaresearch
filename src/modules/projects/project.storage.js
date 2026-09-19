@@ -138,6 +138,8 @@ async function borrarProyecto(projectId) {
   // Y su sesión de R, con la matriz que subió: sus datos no se quedan aquí
   // cuando se va. La carpeta se llama como el proyecto (ver `r.motor`).
   await fs.rm(path.join(env.rSesionesDir, projectId), { recursive: true, force: true });
+  // Y la sesión aparte donde R dibuja la red de códigos (ver `cualitativo.service`).
+  await fs.rm(path.join(env.rSesionesDir, `${projectId}-cual`), { recursive: true, force: true });
 }
 
 /**

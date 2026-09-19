@@ -16,6 +16,10 @@ const almacen = require('../projects/project.storage');
 const { enSerie } = require('../../shared/utils/enSerie');
 const lectura = require('./cualitativo.lectura');
 const reglas = require('./cualitativo.codificacion');
+const tablasCualitativas = require('./cualitativo.tablas');
+const redDeCodigos = require('./cualitativo.red');
+const citasDelCapitulo = require('./cualitativo.citas');
+const exportar = require('./cualitativo.qdpx');
 
 const MAXIMO_ENTREVISTAS = 40;
 /** Lo que devuelve «ver» de una vez, en caracteres. */
@@ -222,7 +226,145 @@ function quitarEntrevista(userId, productCode, entrevista) {
   });
 }
 
+// ── Lo que sale de la codificación: tablas, red, capítulo y .qdpx ──────────
+//
+// La red la dibuja R y el Word y el .qdpx se dejan en la carpeta de la sesión
+// de R del proyecto, para bajarlos con el mismo enlace que lo que produce R.
+// La red se dibuja en una sesión APARTE (`<proyecto>-cual`): las órdenes de R
+// se suman al guion de su sesión, y el guion del análisis cuantitativo del
+// tesista no tiene por qué llevar la red de sus entrevistas.
+
+const CAPITULO = 'capitulo-cualitativo.docx';
+const sesionDeLaRed = (projectId) => `${projectId}-cual`;
+
+class SinMotor extends Error {}
+
+function motor() {
+  // Se pide aquí y no arriba: `r.service` carga medio proyecto, y el servicio
+  // cualitativo lo usan también la subida y las pruebas, que no lo necesitan.
+  const rService = require('../r/r.service');
+  return rService.motorActual();
+}
+
+async function motorListo() {
+  const m = motor();
+  if (!m || !(await m.listo())) throw new SinMotor();
+  return m;
+}
+
+/** Las entrevistas y la codificación del proyecto, o null si no hay nada codificado. */
+async function codificado(userId, productCode) {
+  const proyecto = await projectRepository.buscar(userId, productCode);
+  if (!proyecto) return null;
+  const { entrevistas, codificacion } = await cargar(proyecto.id);
+  if (!codificacion || codificacion.citas.length === 0) return null;
+  return { proyecto, entrevistas, codificacion };
+}
+
+/** Las dos tablas en Markdown, listas para el capítulo. Null si no hay nada codificado. */
+async function tablas(userId, productCode) {
+  const hay = await codificado(userId, productCode);
+  if (!hay) return null;
+  return {
+    frecuencias: tablasCualitativas.tablaDeFrecuencias(hay.entrevistas, hay.codificacion),
+    coocurrencia: tablasCualitativas.tablaDeCoocurrencia(hay.codificacion),
+    pares: tablasCualitativas.coocurrencias(hay.codificacion).length,
+  };
+}
+
+/**
+ * Dibuja la red con R y la deja en la sesión del proyecto como
+ * `red-de-codigos.png`. Null si no hay nada codificado; lanza `SinMotor` si R no
+ * está disponible.
+ */
+async function red(userId, productCode) {
+  const hay = await codificado(userId, productCode);
+  if (!hay) return null;
+  const m = await motorListo();
+
+  const datos = redDeCodigos.datos(hay.entrevistas, hay.codificacion);
+  const sesion = sesionDeLaRed(hay.proyecto.id);
+  await m.guardarArchivo(sesion, redDeCodigos.NODOS, Buffer.from(datos.nodos, 'utf8'));
+  await m.guardarArchivo(sesion, redDeCodigos.ENLACES, Buffer.from(datos.enlaces, 'utf8'));
+  const hecho = await m.ejecutar(sesion, redDeCodigos.GUION);
+  const figura = hecho.resultado === 'ok' ? await m.leerArchivo(sesion, redDeCodigos.FIGURA) : null;
+  if (!figura) return { ...datos, error: String(hecho.salida ?? '').slice(-800) || hecho.resultado };
+
+  await m.guardarArchivo(hay.proyecto.id, redDeCodigos.FIGURA, figura);
+  return { ...datos, archivo: redDeCodigos.FIGURA, error: null };
+}
+
+/**
+ * Arma el Word del capítulo. Antes comprueba cada cita textual contra las
+ * entrevistas: si falta alguna, no arma nada y devuelve cuáles.
+ */
+async function capitulo(userId, productCode, { titulo, texto, norma }) {
+  const hay = await codificado(userId, productCode);
+  if (!hay) return null;
+
+  const comprobadas = citasDelCapitulo.comprobar(texto, hay.entrevistas, hay.codificacion);
+  if (comprobadas.faltan.length > 0) return { comprobadas, faltanFiguras: [], buffer: null };
+
+  const m = await motorListo();
+  const rService = require('../r/r.service');
+  const informeWord = require('../r/r.informe');
+
+  const figuras = new Map();
+  const faltanFiguras = [];
+  for (const archivo of informeWord.figurasDe(texto)) {
+    const bytes = await m.leerArchivo(hay.proyecto.id, archivo);
+    if (bytes && informeWord.dimensionesPng(bytes)) figuras.set(archivo, bytes);
+    else faltanFiguras.push(archivo);
+  }
+  if (faltanFiguras.length > 0) return { comprobadas, faltanFiguras, buffer: null };
+
+  const { buffer, resuelto } = await rService.armarWord({
+    userId,
+    proyecto: hay.proyecto,
+    titulo,
+    texto,
+    norma,
+    figuras,
+  });
+  await m.guardarArchivo(hay.proyecto.id, CAPITULO, buffer);
+  return {
+    comprobadas,
+    faltanFiguras,
+    archivo: CAPITULO,
+    tablas: informeWord.cuantasTablas(texto),
+    figuras: figuras.size,
+    perdidas: resuelto.perdidas,
+    norma: resuelto.norma,
+  };
+}
+
+/** El .qdpx del proyecto, guardado en la sesión. Null si no hay nada codificado. */
+async function qdpx(userId, productCode) {
+  const hay = await codificado(userId, productCode);
+  if (!hay) return null;
+  const m = await motorListo();
+  const buffer = exportar.armar({
+    entrevistas: hay.entrevistas,
+    codificacion: hay.codificacion,
+    titulo: hay.proyecto.tema || 'Análisis cualitativo',
+  });
+  await m.guardarArchivo(hay.proyecto.id, exportar.NOMBRE, buffer);
+  return {
+    archivo: exportar.NOMBRE,
+    entrevistas: hay.entrevistas.length,
+    codigos: hay.codificacion.codigos.length,
+    citas: hay.codificacion.citas.length,
+  };
+}
+
 module.exports = {
+  tablas,
+  red,
+  capitulo,
+  qdpx,
+  SinMotor,
+  sesionDeLaRed,
+  CAPITULO,
   guardar,
   lista,
   ver,

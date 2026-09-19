@@ -156,6 +156,8 @@ const TIPOS = {
   '.pdf': 'application/pdf',
   '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  // El proyecto del análisis cualitativo, para ATLAS.ti, NVivo, MAXQDA o QualCoder.
+  '.qdpx': 'application/zip',
 };
 
 /**

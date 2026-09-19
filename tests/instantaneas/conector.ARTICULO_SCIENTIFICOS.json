@@ -676,7 +676,7 @@
   {
     "nombre": "analisis_cualitativo",
     "titulo": "Análisis cualitativo: entrevistas y codificación",
-    "descripcion": "Análisis cualitativo de entrevistas o grupos focales: subir las transcripciones, leerlas y guardar su codificación (libro de códigos y citas). ÚSALA cuando el estudio sea cualitativo o mixto y el usuario tenga transcripciones, o pida codificar, categorizar, hacer un análisis temático o «hacerlo como en ATLAS.ti». Sin argumentos lista las entrevistas subidas y da un ENLACE para subir más: dáselo como enlace que se pulsa y dile que vuelva cuando las haya subido (Word, PDF con texto o .txt, una entrevista por archivo). \"ver\" (con \"entrevista\", p. ej. \"E1\", y \"desde\") devuelve sus párrafos numerados ¶n, por tandas. CÓMO SE CODIFICA: de UNA entrevista a la vez. Léela entera, propón al usuario los códigos (nombre, definición y categoría) y las citas de cada uno, y guarda con \"codificar\" SOLO cuando él lo apruebe: nadie codifica a ciegas. Reutiliza los códigos que ya están en el libro antes de crear otros parecidos. Cada cita es un fragmento COPIADO TAL CUAL de un párrafo, sin resumirlo ni corregirlo: si el texto no está en ese párrafo, se rechaza la codificación entera y se dice qué cita falló. Una cita puede llevar varios códigos. \"codificar\" REEMPLAZA lo que tenía esa entrevista: para corregir, vuelve a mandarla completa. \"libro\" devuelve el libro de códigos con cuántas citas y entrevistas tiene cada uno. \"renombrar\" cambia el nombre de un código en todas sus citas; si el nombre nuevo ya existe, los junta. \"quitar_codigo\" y \"quitar_entrevista\" solo si el usuario lo pide. NO inventes citas ni pongas en boca del entrevistado lo que no dijo.",
+    "descripcion": "Análisis cualitativo de entrevistas o grupos focales: subir las transcripciones, leerlas y guardar su codificación (libro de códigos y citas). ÚSALA cuando el estudio sea cualitativo o mixto y el usuario tenga transcripciones, o pida codificar, categorizar, hacer un análisis temático o «hacerlo como en ATLAS.ti». Sin argumentos lista las entrevistas subidas y da un ENLACE para subir más: dáselo como enlace que se pulsa y dile que vuelva cuando las haya subido (Word, PDF con texto o .txt, una entrevista por archivo). \"ver\" (con \"entrevista\", p. ej. \"E1\", y \"desde\") devuelve sus párrafos numerados ¶n, por tandas. CÓMO SE CODIFICA: de UNA entrevista a la vez. Léela entera, propón al usuario los códigos (nombre, definición y categoría) y las citas de cada uno, y guarda con \"codificar\" SOLO cuando él lo apruebe: nadie codifica a ciegas. Reutiliza los códigos que ya están en el libro antes de crear otros parecidos. Cada cita es un fragmento COPIADO TAL CUAL de un párrafo, sin resumirlo ni corregirlo: si el texto no está en ese párrafo, se rechaza la codificación entera y se dice qué cita falló. Una cita puede llevar varios códigos. \"codificar\" REEMPLAZA lo que tenía esa entrevista: para corregir, vuelve a mandarla completa. \"libro\" devuelve el libro de códigos con cuántas citas y entrevistas tiene cada uno. \"renombrar\" cambia el nombre de un código en todas sus citas; si el nombre nuevo ya existe, los junta. \"quitar_codigo\" y \"quitar_entrevista\" solo si el usuario lo pide. CUANDO TODO ESTÉ CODIFICADO: \"tablas\" devuelve la tabla de frecuencias y la de coocurrencia en Markdown, calculadas por el servidor: pégalas TAL CUAL en el capítulo, poniendo solo el número de tabla, y no escribas tú ninguna cifra. \"red\" dibuja con R la red de códigos y la deja como red-de-codigos.png. \"capitulo\" arma el Word de resultados con \"titulo\" y \"texto\" (Markdown: # títulos, las tablas, la figura como **Figura N** / *título* / ![](red-de-codigos.png) / *Nota.* …, y las fuentes con su clave [AR…] si hay): organízalo por categorías u objetivos, ilustra cada código con lo que dijeron los entrevistados —entre comillas, o en bloque con \"> \" si pasa de 40 palabras— indicando de quién y de dónde (E3, ¶12). Antes de armarlo, el servidor busca cada cita en las transcripciones y, si alguna no está, no arma nada y dice cuál. \"qdpx\" da el proyecto para abrirlo ya codificado en ATLAS.ti, NVivo, MAXQDA o QualCoder (este último es gratis). NO inventes citas ni pongas en boca del entrevistado lo que no dijo.",
     "esquema": {
       "type": "object",
       "properties": {
@@ -688,7 +688,11 @@
             "libro",
             "renombrar",
             "quitar_codigo",
-            "quitar_entrevista"
+            "quitar_entrevista",
+            "tablas",
+            "red",
+            "capitulo",
+            "qdpx"
           ],
           "description": "Qué hacer. Sin acción: la lista de entrevistas y el enlace para subir."
         },
@@ -768,6 +772,35 @@
         "a": {
           "type": "string",
           "description": "Con \"renombrar\": el nombre nuevo, o el del código con que se junta."
+        },
+        "titulo": {
+          "type": "string",
+          "description": "Con \"capitulo\": el título, una línea por renglón: \"CAPÍTULO IV\\nRESULTADOS\"."
+        },
+        "texto": {
+          "type": "string",
+          "description": "Con \"capitulo\": el capítulo entero, en Markdown."
+        },
+        "norma": {
+          "type": "string",
+          "enum": [
+            "apa",
+            "ieee",
+            "nlm-citation-sequence",
+            "american-medical-association",
+            "american-chemical-society",
+            "nature",
+            "modern-language-association",
+            "chicago-author-date",
+            "chicago-notes-bibliography",
+            "chicago-shortened-notes-bibliography",
+            "harvard-cite-them-right",
+            "elsevier-harvard",
+            "american-political-science-association",
+            "american-sociological-association",
+            "mhra-notes"
+          ],
+          "description": "Con \"capitulo\": la norma de citas. PREGÚNTASELA si su proyecto no tiene una. Sin ella sale la de su proyecto, o APA 7."
         }
       },
       "additionalProperties": false

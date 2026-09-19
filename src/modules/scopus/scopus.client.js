@@ -55,6 +55,19 @@ const POR_PAGINA = 25;
 const TOPE_DE_DESPLAZAMIENTO = 5000;
 
 /**
+ * Los órdenes que se ofrecen, con el valor de `sort` que entiende Elsevier.
+ *
+ * Probados contra la API el 19-sep-2026. «Más citados» es el de siempre: lo
+ * que más ha pesado en su campo, que es lo que pide quien busca antecedentes.
+ */
+const ORDENES = Object.freeze({
+  citas: '-citedby-count',
+  recientes: '-coverDate',
+  antiguos: '+coverDate',
+  relevancia: 'relevancy',
+});
+
+/**
  * Los fallos de Elsevier, dichos en palabras del tesista.
  *
  * NUNCA se le reenvía el cuerpo del error tal cual. Elsevier contesta cosas
@@ -127,7 +140,13 @@ function cabeceras(accessToken) {
  * Elsevier y aquel habla con la base, y mezclarlos obligaría a cambiar los dos
  * cada vez que cambie uno.
  */
-async function buscar({ ecuacion, desde = 0, cuantas = POR_PAGINA, accessToken = null }) {
+async function buscar({
+  ecuacion,
+  desde = 0,
+  cuantas = POR_PAGINA,
+  orden = 'citas',
+  accessToken = null,
+}) {
   if (!env.scopusApiEnabled) {
     throw new AppError('La búsqueda en Scopus no está activada en este servidor.', {
       statusCode: 503,
@@ -147,9 +166,9 @@ async function buscar({ ecuacion, desde = 0, cuantas = POR_PAGINA, accessToken =
   url.searchParams.set('start', String(desde));
   url.searchParams.set('count', String(Math.min(cuantas, POR_PAGINA)));
   url.searchParams.set('view', env.scopusView);
-  // Lo más citado primero. Es el orden que pide quien busca antecedentes: lo
-  // que más ha pesado en su campo, no lo que Elsevier considere más parecido.
-  url.searchParams.set('sort', '-citedby-count');
+  // Lo más citado primero si no se pide otra cosa. Un orden desconocido cae
+  // también ahí: nunca llega a Elsevier nada que no esté en la lista.
+  url.searchParams.set('sort', Object.hasOwn(ORDENES, orden) ? ORDENES[orden] : ORDENES.citas);
 
   let respuesta;
   try {
@@ -202,4 +221,4 @@ async function buscar({ ecuacion, desde = 0, cuantas = POR_PAGINA, accessToken =
   };
 }
 
-module.exports = { buscar, POR_PAGINA, TOPE_DE_DESPLAZAMIENTO };
+module.exports = { buscar, POR_PAGINA, TOPE_DE_DESPLAZAMIENTO, ORDENES };

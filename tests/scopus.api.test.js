@@ -279,6 +279,18 @@ test('lo que ya tiene sale marcado, pero no se le esconde', async () => {
   assert.equal(busqueda.resultados[0].yaLaTienes, true);
 });
 
+test('el orden elegido llega a Elsevier, y uno desconocido cae en «más citados»', async () => {
+  empezar();
+  const recientes = await servicio.buscar('u1', { ecuacion: 'TITLE-ABS-KEY(mobile)', orden: 'recientes' });
+  assert.equal(elsevier.peticiones[0].url.searchParams.get('sort'), '-coverDate');
+  assert.equal(recientes.orden, 'recientes');
+
+  empezar();
+  const raro = await servicio.buscar('u1', { ecuacion: 'TITLE-ABS-KEY(mobile)', orden: 'constructor' });
+  assert.equal(elsevier.peticiones[0].url.searchParams.get('sort'), '-citedby-count');
+  assert.equal(raro.orden, 'citas');
+});
+
 test('la segunda página se pide por desplazamiento, no repitiendo la primera', async () => {
   empezar();
   await servicio.buscar('u1', { ecuacion: 'TITLE-ABS-KEY(mobile)', pagina: 3 });

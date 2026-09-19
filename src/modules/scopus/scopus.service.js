@@ -280,7 +280,7 @@ async function tokenDe(conexion) {
  *
  * Lo que sí se hace es acotar su tamaño, en el esquema de la ruta.
  */
-async function buscar(userId, { ecuacion, pagina = 1 }) {
+async function buscar(userId, { ecuacion, pagina = 1, orden = 'citas' }) {
   exigirQueEsteEncendido();
   const conexion = await conexionParaUsar(userId);
 
@@ -291,6 +291,7 @@ async function buscar(userId, { ecuacion, pagina = 1 }) {
     ecuacion,
     desde,
     cuantas: cliente.POR_PAGINA,
+    orden,
     accessToken: await tokenDe(conexion),
   });
 
@@ -322,6 +323,7 @@ async function buscar(userId, { ecuacion, pagina = 1 }) {
     paginas,
     desde: desde + 1,
     porPagina: cliente.POR_PAGINA,
+    orden: Object.hasOwn(cliente.ORDENES, orden) ? orden : 'citas',
     /** Sin token institucional las fichas llegan sin resumen. El panel lo dice. */
     conResumenes: env.scopusView === 'COMPLETE',
     resultados: resultados.map((resultado) => ({

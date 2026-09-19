@@ -5,6 +5,7 @@ const { ok } = require('../../shared/http/apiResponse');
 const env = require('../../config/env');
 const logger = require('../../config/logger');
 const servicio = require('./scopus.service');
+const { generarConsulta } = require('./scopus.consulta');
 
 /**
  * La cookie que ata el intercambio con Elsevier al navegador que lo empezó.
@@ -82,6 +83,7 @@ const scopusController = {
     const resultado = await servicio.buscar(req.user.id, {
       ecuacion: req.body.ecuacion,
       pagina: req.body.pagina,
+      orden: req.body.orden,
     });
 
     return ok(res, resultado, {
@@ -90,6 +92,10 @@ const scopusController = {
           ? 'Scopus no encontró nada con esa ecuación. Prueba con menos términos o quita comillas.'
           : undefined,
     });
+  }),
+
+  generarConsulta: asyncHandler(async (req, res) => {
+    return ok(res, await generarConsulta(req.body.tema));
   }),
 
   importar: asyncHandler(async (req, res) => {

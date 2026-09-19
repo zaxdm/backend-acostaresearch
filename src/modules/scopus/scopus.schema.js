@@ -25,6 +25,21 @@ const ecuacion = z
 const buscarSchema = z.object({
   ecuacion,
   pagina: z.coerce.number().int().min(1).max(200).optional(),
+  orden: z.enum(['citas', 'recientes', 'antiguos', 'relevancia']).optional(),
+});
+
+/**
+ * El tema que el tesista describe para que la IA le arme la búsqueda.
+ *
+ * Con techo: es una descripción de su tema, no un capítulo, y lo que se manda
+ * a Gemini se paga por palabra.
+ */
+const consultaSchema = z.object({
+  tema: z
+    .string({ required_error: 'Describe tu tema.' })
+    .trim()
+    .min(8, 'Cuéntalo con un poco más de detalle: al menos una frase.')
+    .max(800, 'Resúmelo un poco: con dos o tres frases basta.'),
 });
 
 /**
@@ -59,4 +74,4 @@ const vueltaSchema = z
   })
   .passthrough();
 
-module.exports = { buscarSchema, importarSchema, vueltaSchema };
+module.exports = { buscarSchema, consultaSchema, importarSchema, vueltaSchema };

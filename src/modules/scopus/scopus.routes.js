@@ -3,8 +3,12 @@
 const { Router } = require('express');
 const authenticate = require('../../middlewares/authenticate');
 const validate = require('../../middlewares/validate');
-const { scopusBuscarLimiter, scopusConectarLimiter } = require('../../middlewares/rateLimit');
-const { buscarSchema, importarSchema, vueltaSchema } = require('./scopus.schema');
+const {
+  scopusBuscarLimiter,
+  scopusConectarLimiter,
+  scopusIaLimiter,
+} = require('../../middlewares/rateLimit');
+const { buscarSchema, consultaSchema, importarSchema, vueltaSchema } = require('./scopus.schema');
 const scopusController = require('./scopus.controller');
 
 const router = Router();
@@ -58,6 +62,17 @@ router.post(
   scopusBuscarLimiter,
   validate({ body: buscarSchema }),
   scopusController.buscar,
+);
+/**
+ * Del tema en español a los conceptos en inglés, con Gemini. No busca: propone,
+ * y el tesista revisa antes de pulsar «Buscar». Con su propio límite porque
+ * gasta Gemini y no la cuota de Elsevier.
+ */
+router.post(
+  '/generar-consulta',
+  scopusIaLimiter,
+  validate({ body: consultaSchema }),
+  scopusController.generarConsulta,
 );
 router.post(
   '/importar',

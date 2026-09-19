@@ -129,6 +129,20 @@ const scopusBuscarLimiter = build({
 });
 
 /**
+ * El generador de consultas con IA del buscador de Scopus.
+ *
+ * Cada uso es una llamada a Gemini, que se paga. Quince cada diez minutos por
+ * persona: sobra para ir afinando la descripción del tema, y corta a quien lo
+ * use de traductor.
+ */
+const scopusIaLimiter = build({
+  windowMs: 10 * 60 * 1000,
+  max: 15,
+  message: 'Has usado el generador con IA muchas veces seguidas. Espera unos minutos.',
+  keyGenerator: porUsuario,
+});
+
+/**
  * Conectar y desconectar Scopus.
  *
  * Aparte del de buscar y más holgado, por lo mismo que en Zotero: conectar no
@@ -242,6 +256,7 @@ module.exports = {
   zoteroConectarLimiter,
   scopusBuscarLimiter,
   scopusConectarLimiter,
+  scopusIaLimiter,
   asistenteLimiter,
   reclamoLimiter,
   mcpLimiter,

@@ -399,6 +399,8 @@ async function buscarParaLicencia({
     propia: fuente.ownerUserId !== null,
     /** De su propio Zotero conectado: se enseña aparte de lo que subió por export o DOI. */
     deZotero: fuente.ownerUserId !== null && fuente.origin === 'ZOTERO',
+    /** De su Mendeley conectado. Tampoco lleva campos de Zotero en el Word. */
+    deMendeley: fuente.ownerUserId !== null && fuente.origin === 'MENDELEY',
   }));
 }
 

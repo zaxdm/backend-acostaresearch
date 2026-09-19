@@ -10,6 +10,7 @@ const { normalizar } = require('./zotero.mapper');
 const propiasRepository = require('./propias.repository');
 const { clavesCitadas } = require('./citadas');
 const bibliotecaRepository = require('../zotero/biblioteca.repository');
+const mendeleyRepository = require('../mendeley/mendeley.repository');
 
 const recortar = (valor, largo) => {
   const texto = String(valor ?? '').trim();
@@ -222,10 +223,12 @@ const POR_PAGINA = 40;
 async function biblioteca(userId, { pagina = 1, origen = 'todas' } = {}) {
   const numero = Math.max(Math.trunc(Number(pagina)) || 1, 1);
 
-  const [total, deZotero, cuenta] = await Promise.all([
+  const [total, deZotero, deMendeley, cuenta, cuentaMendeley] = await Promise.all([
     propiasRepository.contar(userId),
     propiasRepository.contarDeZotero(userId),
+    propiasRepository.contarDeMendeley(userId),
     bibliotecaRepository.deUsuario(userId),
+    mendeleyRepository.deUsuario(userId),
   ]);
 
   const listado = await propiasRepository.pagina(userId, {
@@ -237,13 +240,24 @@ async function biblioteca(userId, { pagina = 1, origen = 'todas' } = {}) {
   return {
     total,
     deZotero,
-    subidas: total - deZotero,
+    deMendeley,
+    subidas: total - deZotero - deMendeley,
     zotero: cuenta
       ? {
           coleccion: cuenta.collectionName,
           ultima: cuenta.lastRunAt,
           trayendo: Boolean(cuenta.runningSince),
           error: cuenta.lastError,
+        }
+      : null,
+    // La misma forma que `zotero`, con la carpeta en `coleccion`: el conector
+    // arma los avisos de las dos con el mismo código.
+    mendeley: cuentaMendeley
+      ? {
+          coleccion: cuentaMendeley.folderName,
+          ultima: cuentaMendeley.lastRunAt,
+          trayendo: Boolean(cuentaMendeley.runningSince),
+          error: cuentaMendeley.lastError,
         }
       : null,
     origen,

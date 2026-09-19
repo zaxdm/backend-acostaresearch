@@ -74,6 +74,8 @@ model User {
   projects      Project[]
   /// Su Zotero, si lo conectó. Como mucho uno. Ver `ZoteroAccount`.
   zoteroAccount ZoteroAccount?
+  /// Su Mendeley, si lo conectó. Como mucho uno. Ver `MendeleyAccount`.
+  mendeleyAccount MendeleyAccount?
 
   /// Su conexión con Scopus, si la tiene. Como mucho una. Ver `ScopusConnection`.
   scopusConnection ScopusConnection?
@@ -992,7 +994,8 @@ model Reference {
   ownerUserId String? @db.Char(36)
   owner       User?   @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
 
-  /// De dónde salió: ZOTERO (la casa) o SCOPUS (subida por un comprador).
+  /// De dónde salió: ZOTERO (la casa o su Zotero), SCOPUS (subida por un
+  /// comprador) o MENDELEY (su Mendeley conectado).
   ///
   /// Se guarda porque cambia lo que se le dice al asistente: lo de la casa lleva
   /// la nota de Acosta y lo importado no, y esa diferencia tiene que llegarle al
@@ -1067,6 +1070,12 @@ enum ReferenceOrigin {
   ZOTERO
   /// Un export que subió un comprador. Trae resumen, no lleva nota.
   SCOPUS
+  /// Lo que trajo un comprador de SU Mendeley conectado. Ver `MendeleyAccount`.
+  ///
+  /// Valor propio y no SCOPUS, al revés que la API de Scopus: al tesista SÍ le
+  /// importa distinguirlo —«muéstrame lo de Mendeley»— y la limpieza de lo que
+  /// sacó de su carpeta tiene que poder acotarse a lo que vino de allí.
+  MENDELEY
 }
 
 /// A qué productos pertenece una fuente. Mismo trato que `SkillGroup`.
@@ -1410,6 +1419,74 @@ model ZoteroOauthRequest {
 
   @@index([createdAt])
   @@map("zotero_oauth_requests")
+}
+
+/// El Mendeley de UN tesista.
+///
+/// GEMELA DE `ZoteroAccount` en lo que hace —una carpeta elegida, una pasada
+/// por noche, su cerrojo, su último fallo— y de `ScopusConnection` en cómo se
+/// autoriza: Mendeley es OAuth 2, y el token de acceso vive UNA HORA. Por eso
+/// se guardan los dos tokens, cifrados, y el de acceso se renueva antes de
+/// cada pasada con el de refresco. Una clave que no caduca, como la de Zotero,
+/// aquí no existe.
+///
+/// Las fuentes no están aquí: van a `references` con `origin = MENDELEY` y
+/// `sourceRef = mendeley:<perfil>:<documento>`, por el mismo camino que todo lo
+/// demás que es del tesista.
+model MendeleyAccount {
+  id     String @id @default(uuid()) @db.Char(36)
+  userId String @unique @db.Char(36)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// El id de su perfil en Mendeley (un UUID). Forma el prefijo de sus
+  /// fuentes; lo devuelve `/profiles/me` al terminar de autorizar.
+  profileId   String  @db.VarChar(64)
+  /// Su nombre en Mendeley, solo para que reconozca qué cuenta conectó.
+  displayName String? @db.VarChar(200)
+
+  /// Los tokens, CIFRADOS. Ver `shared/utils/secretos.js`. Nunca salen en
+  /// claro: ni al panel, ni a un log, ni enmascarados.
+  accessTokenCipher  String   @db.VarChar(2000)
+  refreshTokenCipher String?  @db.VarChar(2000)
+  /// Cuándo vence el de acceso. Se renueva un minuto antes.
+  expiresAt          DateTime
+
+  /// La carpeta que eligió, o «*» para toda la biblioteca. NULA = conectó
+  /// pero no ha elegido, y en ese estado no se trae nada.
+  folderId   String? @db.VarChar(64)
+  folderName String? @db.VarChar(200)
+
+  lastRunAt DateTime?
+  /// Cuántas fuentes suyas quedaron tras la última pasada.
+  lastCount Int       @default(0)
+
+  /// Cerrojo por persona, con la hora de entrada: ver `ZoteroAccount`.
+  runningSince DateTime?
+
+  /// Lo último que falló, para decírselo en el panel.
+  lastError String? @db.VarChar(500)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("mendeley_accounts")
+}
+
+/// El pagaré de un OAuth de Mendeley a medias.
+///
+/// Mismo papel que `ScopusOauthState`: el tesista se va a mendeley.com y
+/// vuelve con un código, y la identidad de quién empezó sale de esta fila y
+/// no de su sesión, que puede no viajar en una vuelta desde otro dominio.
+/// Mendeley no admite PKCE, así que no hay verificador que guardar: lo que ata
+/// la vuelta al navegador que empezó es el `state` en una cookie httpOnly.
+model MendeleyOauthState {
+  state  String @id @db.VarChar(64)
+  userId String @db.Char(36)
+
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@map("mendeley_oauth_states")
 }
 
 /// La conexión de un tesista con Scopus.

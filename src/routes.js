@@ -15,6 +15,7 @@ const guiaRoutes = require('./modules/guias/guia.routes');
 const projectRoutes = require('./modules/projects/project.routes');
 const trialRoutes = require('./modules/trials/trial.routes');
 const zoteroRoutes = require('./modules/zotero/biblioteca.routes');
+const mendeleyRoutes = require('./modules/mendeley/mendeley.routes');
 const scopusRoutes = require('./modules/scopus/scopus.routes');
 const mapasRoutes = require('./modules/mapas/mapas.routes');
 const asistenteRoutes = require('./modules/asistente/asistente.routes');
@@ -62,6 +63,8 @@ router.use('/pruebas', trialRoutes);
 // El Zotero de cada comprador. Aparte de /referencias, que es el corpus de la
 // casa: aquello lo administra Acosta y esto lo conecta cada tesista.
 router.use('/mi-zotero', zoteroRoutes);
+// Su Mendeley, gemelo del anterior. Ver `modules/mendeley`.
+router.use('/mi-mendeley', mendeleyRoutes);
 // El Scopus de cada comprador: conectar, buscar e importar lo que elija. Sus
 // fuentes acaban en el mismo sitio que su export y que su Zotero, y solo las
 // ve él. Apagado salvo que el .env lo encienda: ver SCOPUS_API_ENABLED.

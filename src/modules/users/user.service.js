@@ -333,6 +333,8 @@ const userService = {
       prisma.reference.deleteMany({ where: { ownerUserId: userId } }),
       prisma.zoteroAccount.deleteMany({ where: { userId } }),
       prisma.zoteroOauthRequest.deleteMany({ where: { userId } }),
+      prisma.mendeleyAccount.deleteMany({ where: { userId } }),
+      prisma.mendeleyOauthState.deleteMany({ where: { userId } }),
       // Las sesiones se borran en vez de revocarse: guardan la IP y el navegador,
       // y un token que ya no existe se rechaza igual que uno revocado.
       prisma.refreshToken.deleteMany({ where: { userId } }),

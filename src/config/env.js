@@ -229,6 +229,17 @@ const schema = z.object({
   ZOTERO_OAUTH_CLIENT_KEY: vacioComoAusente(z.string()),
   ZOTERO_OAUTH_CLIENT_SECRET: vacioComoAusente(z.string()),
 
+  // ── El Mendeley de cada tesista (OAuth 2) ───────────────────────────────
+  // Se registra una vez en dev.mendeley.com/myapps.html: de ahí salen el id de
+  // la aplicación y su secreto, y allí se escribe la dirección de vuelta, que
+  // Mendeley compara carácter por carácter. Por defecto es
+  // `${APP_URL}/api/v1/mi-mendeley/vuelta`; si la registrada es otra, va aquí.
+  //
+  // Vacías = la conexión no se ofrece, igual que Zotero.
+  MENDELEY_CLIENT_ID: vacioComoAusente(z.string()),
+  MENDELEY_CLIENT_SECRET: vacioComoAusente(z.string()),
+  MENDELEY_REDIRECT_URI: vacioComoAusente(z.string().url()),
+
 
   // ── Scopus por API (Elsevier) ───────────────────────────────────────────
   // ESTO ESTÁ APAGADO POR DEFECTO, Y NO ES PRUDENCIA DE MÁS.
@@ -468,6 +479,11 @@ const env = Object.freeze({
   // en claro, así que es mejor no ofrecer el botón.
   zoteroOauthEnabled: Boolean(
     raw.ZOTERO_OAUTH_CLIENT_KEY && raw.ZOTERO_OAUTH_CLIENT_SECRET && raw.SECRETS_KEY,
+  ),
+  // Lo mismo para Mendeley: la aplicación registrada y la llave con la que se
+  // cifran los tokens. Sin la llave, los tokens acabarían en claro en la base.
+  mendeleyOauthEnabled: Boolean(
+    raw.MENDELEY_CLIENT_ID && raw.MENDELEY_CLIENT_SECRET && raw.SECRETS_KEY,
   ),
   // ── Scopus por API ──────────────────────────────────────────────────────
   // Las dos cosas a la vez: el interruptor que dice que hay permiso de

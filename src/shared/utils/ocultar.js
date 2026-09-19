@@ -30,8 +30,8 @@ const RUTAS_CON_SECRETO = [
   /(\/r\/(?:subir|descarga)\/)([A-Za-z0-9._-]+)/g,
 ];
 
-/** Parámetros de consulta que llevan una credencial: la vuelta del OAuth de Zotero. */
-const CLAVES_SECRETAS = ['oauth_token', 'oauth_verifier', 'token', 'code'];
+/** Parámetros de consulta que llevan una credencial: la vuelta de los OAuth (Zotero, Scopus, Mendeley). */
+const CLAVES_SECRETAS = ['oauth_token', 'oauth_verifier', 'token', 'code', 'state'];
 const PARAMETROS_CON_SECRETO = new RegExp(`([?&](?:${CLAVES_SECRETAS.join('|')})=)[^&#]*`, 'gi');
 
 const OCULTO = '…';

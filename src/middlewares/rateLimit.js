@@ -108,6 +108,26 @@ const zoteroConectarLimiter = build({
 });
 
 /**
+ * Los mismos dos de arriba, para Mendeley. Contadores propios: el limitador
+ * cuenta por usuario y no por ruta, así que compartir los de Zotero haría que
+ * quien conecta los dos gastara el cupo de uno con el otro, y el aviso diría
+ * «Zotero» a quien estaba en Mendeley.
+ */
+const mendeleySyncLimiter = build({
+  windowMs: 10 * 60 * 1000,
+  max: 6,
+  message: 'Has pedido tu biblioteca de Mendeley varias veces seguidas. Espera unos minutos.',
+  keyGenerator: porUsuario,
+});
+
+const mendeleyConectarLimiter = build({
+  windowMs: 10 * 60 * 1000,
+  max: 30,
+  message: 'Has intentado conectar Mendeley muchas veces seguidas. Espera unos minutos.',
+  keyGenerator: porUsuario,
+});
+
+/**
  * Buscar e importar desde la API de Scopus.
  *
  * Cada búsqueda es una petición a api.elsevier.com con la clave de la casa, y
@@ -297,6 +317,8 @@ module.exports = {
   trialClaimLimiter,
   zoteroSyncLimiter,
   zoteroConectarLimiter,
+  mendeleySyncLimiter,
+  mendeleyConectarLimiter,
   scopusBuscarLimiter,
   scopusConectarLimiter,
   scopusIaLimiter,

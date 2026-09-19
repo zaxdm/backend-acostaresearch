@@ -203,10 +203,19 @@ function contarDeZotero(userId) {
   return prisma.reference.count({ where: { ownerUserId: userId, origin: 'ZOTERO' } });
 }
 
-/** «zotero» = lo que trajo su Zotero; «subidas» = export o DOI; otra cosa = todo. */
+/** Cuántas de las suyas vinieron de su Mendeley. Por el origen, igual que Zotero. */
+function contarDeMendeley(userId) {
+  return prisma.reference.count({ where: { ownerUserId: userId, origin: 'MENDELEY' } });
+}
+
+/**
+ * «zotero» y «mendeley» = lo que trajo cada uno; «subidas» = export o DOI, o
+ * sea, lo que no vino de ninguna de las dos conexiones; otra cosa = todo.
+ */
 function filtroDeOrigen(origen) {
   if (origen === 'zotero') return { origin: 'ZOTERO' };
-  if (origen === 'subidas') return { origin: { not: 'ZOTERO' } };
+  if (origen === 'mendeley') return { origin: 'MENDELEY' };
+  if (origen === 'subidas') return { origin: { notIn: ['ZOTERO', 'MENDELEY'] } };
   return {};
 }
 
@@ -271,6 +280,7 @@ module.exports = {
   contar,
   contarSinResumen,
   contarDeZotero,
+  contarDeMendeley,
   pagina,
   resumen,
   vaciar,

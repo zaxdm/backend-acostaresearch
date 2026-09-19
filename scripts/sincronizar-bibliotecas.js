@@ -1,7 +1,8 @@
 'use strict';
 
 /**
- * Trae de noche la colección de Zotero de cada tesista que la conectó.
+ * Trae de noche la colección de Zotero —y la carpeta de Mendeley— de cada
+ * tesista que la conectó.
  *
  * Es el hermano de `sincronizar-zotero.js`, y las diferencias importan:
  *
@@ -40,6 +41,8 @@ const prisma = require('../src/lib/prisma');
 const repositorio = require('../src/modules/zotero/biblioteca.repository');
 const servicio = require('../src/modules/zotero/biblioteca.service');
 const scopus = require('../src/modules/scopus/scopus.repository');
+const mendeleyRepositorio = require('../src/modules/mendeley/mendeley.repository');
+const mendeleyServicio = require('../src/modules/mendeley/mendeley.service');
 
 /** Un respiro entre personas, para no encadenar ráfagas contra Zotero. */
 const PAUSA_MS = 1_000;
@@ -61,18 +64,38 @@ async function principal() {
     if (count > 0) console.log(`${count} autorizaciones de Scopus a medias, barridas.`);
   }
 
-  if (!env.zoteroOauthEnabled) {
-    console.log('Conectar Zotero no está configurado: no hay bibliotecas que traer.');
-    return;
+  // Zotero y Mendeley van uno detrás de otro y cada uno con su interruptor:
+  // que uno esté apagado no puede dejar sin pasada al otro.
+  let mal = 0;
+  if (env.zoteroOauthEnabled) {
+    mal += await recorrer('Zotero', repositorio.limpiarPeticionesViejas, repositorio.conColeccion, servicio.sincronizar);
+  } else {
+    console.log('Conectar Zotero no está configurado: no hay bibliotecas de Zotero que traer.');
   }
 
-  // Los intercambios que nadie terminó no tienen por qué seguir aquí mañana.
-  const { count: barridos } = await repositorio.limpiarPeticionesViejas();
+  if (env.mendeleyOauthEnabled) {
+    mal += await recorrer(
+      'Mendeley',
+      mendeleyRepositorio.limpiarEstadosViejos,
+      mendeleyRepositorio.conCarpeta,
+      mendeleyServicio.sincronizar,
+    );
+  } else {
+    console.log('Conectar Mendeley no está configurado: no hay bibliotecas de Mendeley que traer.');
+  }
 
-  const cuentas = await repositorio.conColeccion();
+  if (mal > 0) process.exitCode = 1;
+}
+
+/** Una vuelta por las cuentas de un servicio. Devuelve cuántas fallaron. */
+async function recorrer(nombre, barrer, cuentasDe, sincronizar) {
+  // Los intercambios que nadie terminó no tienen por qué seguir aquí mañana.
+  const { count: barridos } = await barrer();
+
+  const cuentas = await cuentasDe();
   if (cuentas.length === 0) {
-    console.log(`Ninguna biblioteca conectada con colección elegida. ${barridos} pagarés barridos.`);
-    return;
+    console.log(`${nombre}: ninguna biblioteca con qué traer elegido. ${barridos} pagarés barridos.`);
+    return 0;
   }
 
   let bien = 0;
@@ -82,7 +105,7 @@ async function principal() {
 
   for (const { userId } of cuentas) {
     try {
-      const resultado = await servicio.sincronizar(userId);
+      const resultado = await sincronizar(userId);
       fuentes += resultado.guardadas;
       bien += 1;
     } catch (error) {
@@ -97,11 +120,11 @@ async function principal() {
 
   const minutos = ((Date.now() - empezado) / 60_000).toFixed(1);
   console.log(
-    `${new Date().toISOString().slice(0, 19)}  ${bien} bibliotecas al día, ${mal} con fallo, ` +
+    `${new Date().toISOString().slice(0, 19)}  ${nombre}: ${bien} bibliotecas al día, ${mal} con fallo, ` +
       `${fuentes} fuentes nuevas, en ${minutos} min`,
   );
 
-  if (mal > 0) process.exitCode = 1;
+  return mal;
 }
 
 principal()

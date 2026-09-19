@@ -75,6 +75,8 @@ sustituir('../src/lib/prisma', {
   reference: { deleteMany: anotar('reference.deleteMany') },
   zoteroAccount: { deleteMany: anotar('zoteroAccount.deleteMany') },
   zoteroOauthRequest: { deleteMany: anotar('zoteroOauthRequest.deleteMany') },
+  mendeleyAccount: { deleteMany: anotar('mendeleyAccount.deleteMany') },
+  mendeleyOauthState: { deleteMany: anotar('mendeleyOauthState.deleteMany') },
   refreshToken: { deleteMany: anotar('refreshToken.deleteMany') },
   $transaction: async (operaciones) => operaciones,
 });
@@ -176,7 +178,7 @@ test('borrar la cuenta se lleva sus proyectos, de la base y del disco', async ()
   );
 });
 
-test('borrar la cuenta se lleva también sus fuentes, su Zotero, sus sesiones y sus textos', async () => {
+test('borrar la cuenta se lleva también sus fuentes, su Zotero, su Mendeley, sus sesiones y sus textos', async () => {
   // La política de privacidad lo promete: la fila anónima se queda por los
   // pagos, así que nada de esto se va solo por cascada.
   empezar();
@@ -187,6 +189,8 @@ test('borrar la cuenta se lleva también sus fuentes, su Zotero, sus sesiones y 
     'reference.deleteMany',
     'zoteroAccount.deleteMany',
     'zoteroOauthRequest.deleteMany',
+    'mendeleyAccount.deleteMany',
+    'mendeleyOauthState.deleteMany',
     'refreshToken.deleteMany',
     'rewrite.updateMany',
   ]) {

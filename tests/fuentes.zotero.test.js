@@ -35,15 +35,22 @@ sustituir('../src/modules/references/reference.repository', {
 });
 
 /** Su biblioteca y su conexión de Zotero. */
-const mia = { total: 0, deZotero: 0, cuenta: null, filas: [], pedidos: [] };
+const mia = { total: 0, deZotero: 0, deMendeley: 0, cuenta: null, mendeley: null, filas: [], pedidos: [] };
 sustituir('../src/modules/references/propias.repository', {
   TOPE_POR_USUARIO: 5000,
   contar: async () => mia.total,
   contarDeZotero: async () => mia.deZotero,
+  contarDeMendeley: async () => mia.deMendeley,
   pagina: async (userId, { saltar, tomar, origen }) => {
     mia.pedidos.push({ userId, saltar, tomar, origen });
     const lista = mia.filas.filter((f) =>
-      origen === 'zotero' ? f.origin === 'ZOTERO' : origen === 'subidas' ? f.origin !== 'ZOTERO' : true,
+      origen === 'zotero'
+        ? f.origin === 'ZOTERO'
+        : origen === 'mendeley'
+          ? f.origin === 'MENDELEY'
+          : origen === 'subidas'
+            ? !['ZOTERO', 'MENDELEY'].includes(f.origin)
+            : true,
     );
     return { total: lista.length, fuentes: lista.slice(saltar, saltar + tomar) };
   },
@@ -56,6 +63,9 @@ sustituir('../src/modules/references/propias.repository', {
 sustituir('../src/modules/zotero/biblioteca.repository', {
   deUsuario: async () => mia.cuenta,
   prefijoDe: (id) => `zotero:users/${id}:`,
+});
+sustituir('../src/modules/mendeley/mendeley.repository', {
+  deUsuario: async () => mia.mendeley,
 });
 sustituir('../src/modules/licensing/license.service', {
   recordUsage: async () => {},
@@ -245,5 +255,45 @@ test('con Zotero conectado y sin colección elegida, se le dice lo que falta', a
 
 test('sin Zotero ni fuentes, se le explica cómo traerlas', async () => {
   mia.cuenta = null;
-  assert.match(await llamar('mis_fuentes'), /conectando su Zotero en «Tu Zotero»/);
+  assert.match(await llamar('mis_fuentes'), /conectando su Zotero o su Mendeley/);
+});
+
+test('lo de su Mendeley se cuenta aparte, con su carpeta, y lleva su propia marca', async () => {
+  mia.total = 3;
+  mia.deZotero = 1;
+  mia.deMendeley = 1;
+  mia.cuenta = null;
+  mia.mendeley = {
+    folderName: 'Tesis',
+    lastRunAt: new Date('2026-09-19T15:00:00Z'),
+    runningSince: null,
+    lastError: null,
+  };
+  mia.filas = [
+    ficha('1', { ownerUserId: 'U1' }),
+    ficha('2', { ownerUserId: 'U1', origin: 'MENDELEY' }),
+    ficha('3', { ownerUserId: 'U1', origin: 'SCOPUS' }),
+  ];
+
+  const texto = await llamar('mis_fuentes');
+  assert.match(texto, /1 de su Mendeley —de «Tesis», al día del .*2026—/);
+  assert.match(texto, /Título 2   · Mendeley$/m);
+  assert.match(texto, /Título 1   · Zotero$/m);
+  assert.match(texto, /Título 3   · subida$/m);
+  assert.match(texto, /1 que subió él/, 'lo de Mendeley no cuenta como subido');
+
+  const soloMendeley = await llamar('mis_fuentes', { origen: 'mendeley' });
+  assert.match(soloMendeley, /solo las de Mendeley/);
+  assert.equal(mia.pedidos.at(-1).origen, 'mendeley');
+});
+
+test('con Mendeley conectado y sin carpeta elegida, se le dice lo que falta', async () => {
+  mia.total = 0;
+  mia.deZotero = 0;
+  mia.deMendeley = 0;
+  mia.filas = [];
+  mia.mendeley = { folderName: null, lastRunAt: null, runningSince: null, lastError: null };
+
+  assert.match(await llamar('mis_fuentes'), /Mendeley conectado pero NO HA ELEGIDO QUÉ TRAER/);
+  mia.mendeley = null;
 });

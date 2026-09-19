@@ -328,6 +328,16 @@ const schema = z.object({
   // UTC. Con ella, un dólar al día.
   OPENALEX_API_KEY: vacioComoAusente(z.string()),
 
+  // ── Unpaywall, el refuerzo del enlace abierto ───────────────────────────
+  // Unpaywall exige un correo en cada petición, igual que OpenAlex. Se le
+  // pregunta solo por los DOI que OpenAlex no conoce todavía —lo recién
+  // depositado en repositorios, que es justo lo de este año— y como mucho por
+  // diez en cada búsqueda: su API abierta no tiene consulta por lotes.
+  //
+  // Vacío = se usa OPENALEX_MAILTO, y si tampoco, MAIL_FROM. No hay clave que
+  // pedir ni nada que registrar: el correo es todo lo que quieren.
+  UNPAYWALL_MAILTO: vacioComoAusente(z.string()),
+
   // ── R en la conversación ────────────────────────────────────────────────
   // Claude corre el análisis del tesista con la herramienta «trabajar_en_r».
   //

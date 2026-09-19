@@ -4,6 +4,10 @@ Cómo funciona, qué falta de Elsevier y por qué está apagado. La vía que **s
 funciona sin depender de nadie —subir el export— está en `fuentes-propias.md`, y
 **sigue intacta**: esto se añadió al lado, no en su lugar.
 
+El enlace a la copia que se lee gratis, que se pega a estos resultados y no
+depende de Elsevier para nada, está en `enlace-abierto.md`. Ahí está también
+por qué NO se juntó ScienceDirect, con lo que contestó su API el 19-sep-2026.
+
 ## Lo primero, porque decide todo lo demás
 
 **Esta función está apagada** (`SCOPUS_API_ENABLED=false`) y tiene que seguir así

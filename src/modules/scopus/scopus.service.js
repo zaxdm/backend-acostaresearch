@@ -13,6 +13,7 @@ const secretos = require('../../shared/utils/secretos');
 const propiasRepository = require('../references/propias.repository');
 const openalex = require('../references/openalex.client');
 const crossref = require('../references/crossref.client');
+const enlaceAbierto = require('../references/enlaceAbierto');
 const cliente = require('./scopus.client');
 const mapper = require('./scopus.mapper');
 const oauth = require('./scopus.oauth');
@@ -327,10 +328,25 @@ async function buscar(userId, { ecuacion, pagina = 1, orden = 'citas' }) {
     orden: Object.hasOwn(cliente.ORDENES, orden) ? orden : 'citas',
     /** Sin token institucional las fichas llegan sin resumen. El panel lo dice. */
     conResumenes: env.scopusView === 'COMPLETE',
-    resultados: resultados.map((resultado) => ({
-      ...resultado,
-      yaLaTienes: yaLasTiene.has(identidadDe(resultado)),
-    })),
+    /**
+     * Dónde se lee gratis cada una, de los catálogos abiertos.
+     *
+     * Scopus dice SI un artículo es de acceso abierto pero no DÓNDE está la
+     * copia, y sin el dónde la etiqueta no sirve de nada: el tesista veía
+     * «Acceso abierto» y seguía sin poder leerlo. Se pide aquí y no cuando
+     * pincha, como los resúmenes, porque la etiqueta ya está en pantalla desde
+     * el primer momento y un cartel que promete acceso tiene que llevar a
+     * alguna parte.
+     *
+     * Cuesta UNA consulta a OpenAlex por página —las veinticinco juntas— y
+     * falla hacia el silencio: si no contesta, los resultados salen como antes.
+     */
+    resultados: await enlaceAbierto.pegarALosResultados(
+      resultados.map((resultado) => ({
+        ...resultado,
+        yaLaTienes: yaLasTiene.has(identidadDe(resultado)),
+      })),
+    ),
   };
 }
 
@@ -768,7 +784,12 @@ async function buscarSemantica(
     semantica: true,
     orden: 'significado',
     conResumenes: env.scopusView === 'COMPLETE',
-    resultados: ordenados.map((r) => ({ ...r, yaLaTienes: yaLasTiene.has(identidadDe(r)) })),
+    /** El enlace abierto también aquí: si estuviera solo en la búsqueda normal,
+     *  el mismo artículo tendría dónde leerse o no según por qué pestaña se
+     *  llegó a él, que no hay forma de explicarle a nadie. */
+    resultados: await enlaceAbierto.pegarALosResultados(
+      ordenados.map((r) => ({ ...r, yaLaTienes: yaLasTiene.has(identidadDe(r)) })),
+    ),
   };
 }
 

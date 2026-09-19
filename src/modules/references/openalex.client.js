@@ -451,6 +451,91 @@ async function resumenesPorDoi(dois) {
 }
 
 /**
+ * Dónde se lee gratis, y legalmente, cada uno de estos DOI.
+ *
+ * POR QUÉ HACÍA FALTA
+ * -------------------
+ * Scopus ya dice si un artículo es de acceso abierto —el `openaccessFlag` que
+ * pinta la etiqueta «Acceso abierto» en la tabla— pero NO dice dónde está la
+ * copia. El tesista veía el cartel y seguía sin poder leer el artículo: le
+ * quedaba ir a la editorial, chocarse con el muro de pago y buscarlo a mano.
+ * Esto cierra ese hueco con lo que OpenAlex ya sabe y da en abierto.
+ *
+ * Solo dos campos por obra, como en `resumenesPorDoi` y por lo mismo: una
+ * página son veinticinco DOI y sin `select` vendrían veinticinco obras enteras
+ * con sus resúmenes y sus listas de citas.
+ *
+ * QUÉ DEVUELVE, Y POR QUÉ LA VERSIÓN NO ES UN DETALLE
+ * ---------------------------------------------------
+ * Una copia abierta no siempre es EL artículo. OpenAlex distingue tres, y la
+ * diferencia le importa a quien está citando:
+ *
+ *   · `publishedVersion` — la del editor. Se cita sin más.
+ *   · `acceptedVersion`  — el manuscrito aceptado: mismo contenido, otra
+ *     maquetación. Sirve para leer y para citar la idea, NO para una cita
+ *     textual con número de página, porque las páginas no son las mismas.
+ *   · `submittedVersion` — un preprint, sin revisión por pares todavía. Puede
+ *     decir cosas que el artículo publicado ya no dice.
+ *
+ * Por eso se devuelve cuál es y la vista lo avisa. Un tesista que cite el
+ * preprint creyendo que es el publicado tiene un problema que el asesor ve.
+ *
+ * Devuelve un `Map` de DOI en minúsculas donde el valor es
+ * `{ url, esPdf, version, licencia, donde }` si hay copia abierta y `null` si
+ * OpenAlex conoce la obra y no la hay. Los que OpenAlex NO CONOCE no están en
+ * el `Map`, y esa diferencia es deliberada: es lo único que permite a quien
+ * llama preguntarle a Unpaywall solo por esos —lo recién depositado, que es
+ * donde los dos catálogos discrepan— en vez de por todos. Con `has()` se sabe
+ * si OpenAlex contestó; con el valor, qué contestó.
+ */
+async function enlacesAbiertosPorDoi(dois) {
+  const limpios = [...new Set(dois.map(limpiarDoi).filter(Boolean))];
+  const enlaces = new Map();
+
+  for (const lote of enLotes(limpios, POR_FILTRO)) {
+    const resultados = await consultar({
+      filter: `doi:${lote.join('|')}`,
+      select: 'doi,open_access,best_oa_location',
+      'per-page': String(POR_FILTRO),
+    });
+    for (const w of resultados) {
+      const doi = limpiarDoi(w.doi);
+      // Se anota aunque no haya enlace: que OpenAlex conozca la obra y no le
+      // vea copia abierta YA ES su respuesta, y no hay que volver a preguntar.
+      if (doi) enlaces.set(doi.toLowerCase(), comoEnlaceAbierto(w));
+    }
+  }
+
+  return enlaces;
+}
+
+/**
+ * La mejor copia abierta de una obra, o nulo si no hay ninguna.
+ *
+ * El orden de preferencia no es capricho. El `pdf_url` es el archivo, que es
+ * lo que el tesista quiere; el `landing_page_url` es la página del repositorio
+ * que lo contiene, un clic más pero se llega igual; y el `oa_url` de
+ * `open_access` es el último recurso, que a veces trae algo cuando
+ * `best_oa_location` viene vacío.
+ */
+function comoEnlaceAbierto(w) {
+  const mejor = w.best_oa_location ?? null;
+  const url = mejor?.pdf_url || mejor?.landing_page_url || w.open_access?.oa_url || null;
+  if (!url) return null;
+
+  return {
+    url,
+    /** Si al otro lado está el PDF o la página desde la que se descarga. */
+    esPdf: Boolean(mejor?.pdf_url) && url === mejor.pdf_url,
+    /** `publishedVersion` | `acceptedVersion` | `submittedVersion` | null. */
+    version: mejor?.version ?? null,
+    licencia: mejor?.license ?? null,
+    /** El repositorio o la revista que la aloja, para decir de dónde sale. */
+    donde: mejor?.source?.display_name ?? null,
+  };
+}
+
+/**
  * Cuántas obras hay en cada valor de un campo, para un filtro.
  *
  * El `group_by` de OpenAlex: da los valores con más obras y su número, en una
@@ -704,6 +789,7 @@ module.exports = {
   referenciasDe,
   porIds,
   resumenesPorDoi,
+  enlacesAbiertosPorDoi,
   agrupar,
   citanA,
   obrasParaMapa,

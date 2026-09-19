@@ -95,13 +95,21 @@ sustituir('../src/modules/references/propias.repository', {
 });
 
 /** Lo que contestan los catálogos abiertos, y a qué DOI se les preguntó. */
-const abierto = { openalex: null, crossref: null, preguntados: [] };
+const abierto = { openalex: null, crossref: null, preguntados: [], enlaces: new Map() };
 
 sustituir('../src/modules/references/openalex.client', {
   porDoi: async (doi) => {
     abierto.preguntados.push(`openalex:${doi}`);
     return abierto.openalex;
   },
+  /** Dónde se lee gratis cada uno, para el enlace abierto de los resultados. */
+  enlacesAbiertosPorDoi: async (dois) => {
+    abierto.preguntados.push(`enlaces:${dois.join(',')}`);
+    return new Map(dois.map((doi) => [doi, abierto.enlaces.get(doi) ?? null]));
+  },
+});
+sustituir('../src/modules/references/unpaywall.client', {
+  enlacesAbiertosPorDoi: async () => new Map(),
 });
 sustituir('../src/modules/references/crossref.client', {
   porDoi: async (doi) => {
@@ -182,6 +190,7 @@ function empezar() {
   abierto.openalex = null;
   abierto.crossref = null;
   abierto.preguntados = [];
+  abierto.enlaces = new Map();
   conexion.fila = { userId: 'u1', mode: 'APIKEY', status: 'ACTIVA', imported: 0 };
   conexion.creadas = [];
   env.scopusApiEnabled = true;
@@ -297,6 +306,49 @@ test('la segunda página se pide por desplazamiento, no repitiendo la primera', 
 
   assert.equal(elsevier.peticiones[0].url.searchParams.get('start'), '50');
   assert.equal(elsevier.peticiones[0].url.searchParams.get('count'), '25');
+});
+
+/**
+ * Dónde se lee gratis, pegado a cada resultado.
+ *
+ * Scopus dice SI un artículo es de acceso abierto —la etiqueta ya estaba— pero
+ * no DÓNDE está la copia, y sin el dónde el cartel no le servía de nada al
+ * tesista: le quedaba chocarse con el muro de pago de la editorial y buscar el
+ * PDF por su cuenta. Lo ponen los catálogos abiertos, que no tocan la cuota de
+ * Elsevier ni piden permiso a nadie.
+ */
+test('el resultado llega con el enlace al texto abierto, y con qué versión es', async () => {
+  empezar();
+  abierto.enlaces.set(DOI.toLowerCase(), {
+    url: 'https://repositorio.edu.pe/articulo.pdf',
+    esPdf: true,
+    version: 'acceptedVersion',
+    licencia: 'cc-by',
+    donde: 'Repositorio institucional',
+  });
+
+  const busqueda = await servicio.buscar('u1', { ecuacion: 'TITLE-ABS-KEY(mobile)' });
+  const [resultado] = busqueda.resultados;
+
+  assert.equal(resultado.enlaceAbierto.url, 'https://repositorio.edu.pe/articulo.pdf');
+  assert.equal(resultado.enlaceAbierto.esPdf, true);
+  // La versión llega hasta la vista: un manuscrito aceptado tiene otra
+  // paginación, y quien cite una página de ahí la va a citar mal.
+  assert.equal(resultado.enlaceAbierto.version, 'acceptedVersion');
+  assert.equal(resultado.enlaceAbierto.mismoQueEditorial, false);
+  // Y no se le preguntó nada más a Elsevier por ello.
+  assert.equal(elsevier.peticiones.length, 1);
+});
+
+test('sin copia abierta el resultado sale igual que siempre', async () => {
+  empezar();
+
+  const busqueda = await servicio.buscar('u1', { ecuacion: 'TITLE-ABS-KEY(mobile)' });
+  const [resultado] = busqueda.resultados;
+
+  assert.equal(resultado.enlaceAbierto, null);
+  assert.equal(resultado.titulo, FICHA['dc:title']);
+  assert.equal(resultado.eid, EID);
 });
 
 /**

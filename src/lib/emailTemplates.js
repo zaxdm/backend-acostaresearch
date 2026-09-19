@@ -851,13 +851,18 @@ function manualPaymentRejected({ firstName, planName, motivo }) {
  *
  * EL ORDEN DE LOS PASOS IMPORTA
  * ------------------------------
- * Primero crear la cuenta, después canjear. Al revés no existe: el código se
- * pega en el perfil, y al perfil solo se entra con sesión iniciada. Decirlo en
- * ese orden evita el mensaje de «no encuentro dónde meterlo».
+ * Primero crear la cuenta, después canjear: canjear pide sesión iniciada.
+ * Decirlo en ese orden evita el mensaje de «no encuentro dónde meterlo».
+ *
+ * Se canjea en la página de precios, que es el único sitio donde se puede. Con
+ * un solo código el enlace lo lleva ya escrito en el recuadro.
  */
 function activationCode({ codes, planName, expiresAt }) {
   const registro = `${appUrl()}/auth/registro`;
-  const panel = `${appUrl()}/perfil`;
+  const canje =
+    codes.length === 1
+      ? `${appUrl()}/planes?codigo=${encodeURIComponent(codes[0])}`
+      : `${appUrl()}/planes`;
   const vence = fecha(expiresAt);
   const caduca = vence ? ` Tienes hasta el ${vence} para canjearlo.` : '';
   const varios = codes.length > 1;
@@ -893,7 +898,7 @@ function activationCode({ codes, planName, expiresAt }) {
       '',
       'Cómo activarlo, en dos pasos:',
       `  1. Crea tu cuenta en ${registro} (te pedimos un código de 6 cifras por correo para verificarla).`,
-      `  2. Entra en tu perfil, ${panel}, pega el código en «¿Compraste por Yape o transferencia?» y pulsa Canjear.`,
+      `  2. Entra en ${canje}, pega el código en «¿Compraste por Yape o transferencia?» y pulsa Canjear.`,
       '',
       'En cuanto lo canjees te llega otro correo con tu URL personal del conector, que es lo que se pega en Claude.',
       '',
@@ -923,8 +928,9 @@ function activationCode({ codes, planName, expiresAt }) {
          de 6 cifras por correo para verificarla.
        </p>
        <p style="margin:0 0 22px;font-size:14.5px;line-height:1.65">
-         <strong>2.</strong> Entra en <a href="${panel}" style="color:#1a56db">tu perfil</a>, pega
-         el código en «¿Compraste por Yape o transferencia?» y pulsa Canjear.
+         <strong>2.</strong> Entra en <a href="${canje}" style="color:#1a56db">la página de
+         precios</a>, pega el código en «¿Compraste por Yape o transferencia?», arriba a la
+         derecha, y pulsa Canjear.
        </p>
 
        <p style="margin:0 0 18px;font-size:14px;line-height:1.65;color:#52606d">
@@ -938,7 +944,7 @@ function activationCode({ codes, planName, expiresAt }) {
       {
         preheader: varios
           ? `${codes.length} códigos de activación de ${escapar(planName)}.`
-          : `Tu código es ${escapar(codes[0])}. Se canjea desde tu perfil.`,
+          : `Tu código es ${escapar(codes[0])}. Se canjea en la página de precios.`,
       },
     ),
   };

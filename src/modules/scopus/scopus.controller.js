@@ -6,7 +6,7 @@ const env = require('../../config/env');
 const logger = require('../../config/logger');
 const servicio = require('./scopus.service');
 const { generarConsulta } = require('./scopus.consulta');
-const { resumir } = require('./scopus.resumen');
+const { resumir, resumenesDeLaPagina } = require('./scopus.resumen');
 
 /**
  * La cookie que ata el intercambio con Elsevier al navegador que lo empezó.
@@ -108,6 +108,10 @@ const scopusController = {
         anteriores: req.body.anteriores ?? [],
       }),
     );
+  }),
+
+  resumenes: asyncHandler(async (req, res) => {
+    return ok(res, { resumenes: await resumenesDeLaPagina(req.body.dois) });
   }),
 
   importar: asyncHandler(async (req, res) => {

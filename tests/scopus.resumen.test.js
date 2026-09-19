@@ -34,7 +34,7 @@ sustituir('../src/config/env', env);
 sustituir('../src/config/logger', { info: () => {}, warn: () => {}, error: () => {} });
 sustituir('../src/modules/references/openalex.client', { resumenesPorDoi: async () => new Map() });
 
-const { resumir, normalizar } = require('../src/modules/scopus/scopus.resumen');
+const { resumir, resumenesDeLaPagina, normalizar } = require('../src/modules/scopus/scopus.resumen');
 
 const FUENTES = [
   { eid: 'e1', doi: '10.1/A', titulo: 'Primero', anio: 2024 },
@@ -147,4 +147,16 @@ test('las preguntas anteriores viajan como contexto de la de seguimiento', async
 
   assert.ok(leido.startsWith('Pregunta anterior: ¿Qué dicen?\nRespuesta anterior: Que mejora.'));
   assert.ok(leido.includes('Pregunta: ¿Y en secundaria?'));
+});
+
+test('«Ver resumen»: los de la página, y si OpenAlex falla, ninguno en vez de un error', async () => {
+  assert.deepEqual(await resumenesDeLaPagina(['10.1/a', '10.1/b'], { resumenes: conResumenes }), {
+    '10.1/a': 'Resumen del primero.',
+    '10.1/b': 'Resumen del segundo.',
+  });
+
+  const falla = async () => {
+    throw new Error('caído');
+  };
+  assert.deepEqual(await resumenesDeLaPagina(['10.1/a'], { resumenes: falla }), {});
 });

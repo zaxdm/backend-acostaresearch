@@ -12,6 +12,7 @@ const {
   buscarSchema,
   consultaSchema,
   importarSchema,
+  resumenesSchema,
   resumirSchema,
   vueltaSchema,
 } = require('./scopus.schema');
@@ -89,6 +90,17 @@ router.post(
   scopusIaLimiter,
   validate({ body: resumirSchema }),
   scopusController.resumir,
+);
+/**
+ * Los resúmenes de la página, de OpenAlex, para «Ver resumen». No toca la
+ * cuota de Elsevier; va por el límite de buscar porque es una consulta por
+ * página y así nadie la usa para recorrer OpenAlex entero.
+ */
+router.post(
+  '/resumenes',
+  scopusBuscarLimiter,
+  validate({ body: resumenesSchema }),
+  scopusController.resumenes,
 );
 router.post(
   '/importar',

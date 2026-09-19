@@ -194,4 +194,19 @@ async function resumir(
   };
 }
 
-module.exports = { resumir, normalizar, MAXIMO_FUENTES };
+/**
+ * Los resúmenes de los artículos de una página, para «Ver resumen» en la tabla.
+ *
+ * Scopus no nos los da con nuestra clave; OpenAlex sí, en abierto y en una
+ * sola consulta para toda la página. Se piden los de la página entera al abrir
+ * el primero: abrir el segundo ya no cuesta nada.
+ */
+async function resumenesDeLaPagina(dois, { resumenes = openalex.resumenesPorDoi } = {}) {
+  const porDoi = await resumenes(dois).catch((fallo) => {
+    logger.warn({ err: fallo.message }, 'Ver resumen: OpenAlex no contestó');
+    return new Map();
+  });
+  return Object.fromEntries(porDoi);
+}
+
+module.exports = { resumir, resumenesDeLaPagina, normalizar, MAXIMO_FUENTES };

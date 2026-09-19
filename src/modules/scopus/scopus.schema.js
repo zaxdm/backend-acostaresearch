@@ -108,4 +108,16 @@ const resumirSchema = z.object({
     .optional(),
 });
 
-module.exports = { buscarSchema, consultaSchema, importarSchema, resumirSchema, vueltaSchema };
+/** Los DOI de una página de resultados, para traer sus resúmenes. */
+const resumenesSchema = z.object({
+  dois: z.array(z.string().trim().min(3).max(200)).min(1).max(25),
+});
+
+module.exports = {
+  buscarSchema,
+  consultaSchema,
+  importarSchema,
+  resumenesSchema,
+  resumirSchema,
+  vueltaSchema,
+};

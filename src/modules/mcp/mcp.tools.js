@@ -21,6 +21,7 @@ const materialService = require('../projects/material.service');
 const cualitativoService = require('../cualitativo/cualitativo.service');
 const subidaEntrevistas = require('../cualitativo/cualitativo.enlaces');
 const { CodificacionNoValida } = require('../cualitativo/cualitativo.codificacion');
+const memosCualitativos = require('../cualitativo/cualitativo.memos');
 const rEnlaces = require('../r/r.enlaces');
 const consejos = require('../projects/project.consejos');
 const normas = require('../projects/project.normas');
@@ -3384,7 +3385,14 @@ function construirServidor(licencia) {
           'CÓDIGOS: si cada cita lleva uno solo no hay coocurrencia y la red sale en puntos sueltos. ' +
           '"codificar" REEMPLAZA ' +
           'lo que tenía esa entrevista: para corregir, vuelve a mandarla completa. ' +
-          '"libro" devuelve el libro de códigos con cuántas citas y entrevistas tiene cada uno. ' +
+          '"libro" devuelve el libro de códigos con cuántas citas y entrevistas tiene cada uno, y "citas" ' +
+          '(con "codigo" o "entrevista") las citas mismas, para releerlas al revisar o al redactar. ' +
+          '"buscar" (con "busca") encuentra una palabra en todas las transcripciones. ' +
+          '"atributos" guarda los datos del participante de una entrevista (rol, sexo, años); con ellos, ' +
+          '"tablas" añade una tabla comparativa por grupos, que es lo que sostiene frases como «los docentes ' +
+          'insisten en X». ' +
+          '"memo" anota lo que el usuario decide y por qué —por qué juntó dos códigos, qué le llama la ' +
+          'atención de una entrevista—, "memos" los lee y "quitar_memo" borra uno; van también en el .qdpx. ' +
           '"renombrar" cambia el nombre de un código en todas sus citas; si el nombre nuevo ya existe, ' +
           'los junta. "quitar_codigo" y "quitar_entrevista" solo si el usuario lo pide. ' +
           'CUANDO TODO ESTÉ CODIFICADO: "tablas" devuelve la tabla de frecuencias y la de coocurrencia ' +
@@ -3411,6 +3419,12 @@ function construirServidor(licencia) {
                 'renombrar',
                 'quitar_codigo',
                 'quitar_entrevista',
+                'citas',
+                'buscar',
+                'atributos',
+                'memo',
+                'memos',
+                'quitar_memo',
                 'tablas',
                 'red',
                 'capitulo',
@@ -3464,7 +3478,33 @@ function construirServidor(licencia) {
                 additionalProperties: false,
               },
             },
-            codigo: { type: 'string', description: 'Con "quitar_codigo": el nombre del código.' },
+            codigo: {
+              type: 'string',
+              description: 'El nombre del código: con "quitar_codigo", y con "citas" para leer las suyas.',
+            },
+            busca: {
+              type: 'string',
+              description: 'Con "buscar": la palabra o frase que se busca en todas las transcripciones.',
+            },
+            atributos: {
+              type: 'object',
+              description:
+                'Con "atributos": los datos del participante de esa entrevista, para comparar grupos después. ' +
+                'Por ejemplo {"Rol": "Docente", "Sexo": "Mujer", "Años de experiencia": "Más de 10"}. Usa los ' +
+                'mismos nombres de atributo en todas las entrevistas.',
+              additionalProperties: { type: 'string' },
+            },
+            tipo: {
+              type: 'string',
+              enum: ['codigo', 'entrevista', 'analisis'],
+              description: 'Con "memo" y "memos": sobre qué es la nota.',
+            },
+            sobre: {
+              type: 'string',
+              description: 'Con "memo" y "memos": el nombre del código o el número de la entrevista.',
+            },
+            nota: { type: 'string', description: 'Con "memo": lo que se anota.' },
+            memo: { type: 'string', description: 'Con "quitar_memo": el número del memo, "m3".' },
             de: { type: 'string', description: 'Con "renombrar": el nombre actual.' },
             a: { type: 'string', description: 'Con "renombrar": el nombre nuevo, o el del código con que se junta.' },
             titulo: {
@@ -3483,7 +3523,25 @@ function construirServidor(licencia) {
           additionalProperties: false,
         }),
       },
-      async ({ accion, entrevista, desde, codigos, citas, codigo, de, a, titulo, texto: capitulo, norma }) => {
+      async ({
+        accion,
+        entrevista,
+        desde,
+        codigos,
+        citas,
+        codigo,
+        de,
+        a,
+        titulo,
+        texto: capitulo,
+        norma,
+        busca,
+        atributos,
+        tipo,
+        sobre,
+        nota,
+        memo,
+      }) => {
         await licenseService.recordUsage({ licenseId: licencia.id, tool: 'analisis_cualitativo' });
         const userId = licencia.user.id;
         const { productCode } = licencia;
@@ -3550,6 +3608,79 @@ function construirServidor(licencia) {
             );
           }
 
+          if (accion === 'citas') {
+            const leidas = await cualitativoService.citasDe(userId, productCode, { codigo, entrevista, desde });
+            if (!leidas) return texto(nadaCodificado);
+            if (leidas.noExiste) return texto(`No hay ninguna ${leidas.noExiste}.`);
+            if (leidas.total === 0) return texto(`No hay citas de ${leidas.de}.`);
+            const cuerpo = leidas.citas
+              .map((c) => `${c.entrevista} ¶${c.parrafo} · ${c.codigos.join(' + ')}${N}«${c.texto}»`)
+              .join(`${N}${N}`);
+            const sigue = leidas.siguiente
+              ? `SIGUE: pide "desde": ${leidas.siguiente} para leer el resto.`
+              : 'No hay más.';
+            return texto(`Citas de ${leidas.de}: ${leidas.total}.${N}${N}${cuerpo}${N}${N}${sigue}`);
+          }
+
+          if (accion === 'buscar') {
+            const hallado = await cualitativoService.buscar(userId, productCode, busca);
+            if (!hallado) return texto('Todavía no hay entrevistas subidas.');
+            if (hallado.corto) return texto('Busca al menos tres letras.');
+            if (hallado.hallazgos.length === 0) {
+              return texto(`«${hallado.buscado}» no aparece en ninguna transcripción.`);
+            }
+            return texto(
+              `«${hallado.buscado}» aparece en ${hallado.hallazgos.length} párrafos:${N}${N}` +
+                hallado.hallazgos.map((h) => `${h.entrevista} ¶${h.parrafo} · ${h.texto}`).join(N) +
+                `${N}${N}Para codificar alguno, copia el fragmento tal cual en "codificar".`,
+            );
+          }
+
+          if (accion === 'atributos') {
+            const puesta = await cualitativoService.atributos(userId, productCode, entrevista, atributos);
+            if (!puesta) return texto(noExiste);
+            const pares = Object.entries(puesta.atributos).map(([n, v]) => `${n}: ${v}`);
+            return texto(
+              `${puesta.id} («${puesta.nombre}») queda con ${pares.join('; ')}.${N}` +
+                'Con los mismos atributos en las demás entrevistas, "tablas" añade una tabla comparativa por grupos.',
+            );
+          }
+
+          if (accion === 'memo') {
+            const escrito = await cualitativoService.escribirMemo(userId, productCode, {
+              tipo: tipo ?? 'analisis',
+              sobre,
+              texto: nota,
+            });
+            if (!escrito) return texto('Todavía no hay proyecto: sube las entrevistas antes.');
+            return texto(
+              `Memo ${escrito.memo.id} guardado. Es sobre: ${memosCualitativos.sobreQue(escrito.memo)}. ` +
+                `Van ${escrito.total}. Se pueden leer con "memos" y van en el .qdpx.`,
+            );
+          }
+
+          if (accion === 'memos') {
+            const lista = await cualitativoService.memos(userId, productCode, { tipo, sobre });
+            if (lista.length === 0) {
+              return texto(
+                'No hay memos todavía. Escribe uno con "memo" cuando el usuario decida algo que conviene ' +
+                  'recordar: por qué juntó dos códigos, qué llama la atención de una entrevista, qué falta por revisar.',
+              );
+            }
+            return texto(
+              `Memos (${lista.length}):${N}${N}` +
+                lista
+                  .map((m) => `${m.id} · ${memosCualitativos.sobreQue(m)} · ${m.escritoAt.slice(0, 10)}${N}${m.texto}`)
+                  .join(`${N}${N}`),
+            );
+          }
+
+          if (accion === 'quitar_memo') {
+            const quitado = await cualitativoService.quitarMemo(userId, productCode, memo);
+            if (!quitado) return texto('Todavía no hay proyecto.');
+            return texto(`Quitado el memo ${quitado.id}.`);
+          }
+
           if (accion === 'renombrar') {
             const hecho = await cualitativoService.renombrar(userId, productCode, de, a);
             if (!hecho) return texto('Todavía no hay nada codificado.');
@@ -3582,6 +3713,10 @@ function construirServidor(licencia) {
                 (hechas.coocurrencia ??
                   'Ningún par de códigos comparte una cita, así que no hay tabla de coocurrencia: dilo así ' +
                     'en el capítulo si hace falta.') +
+                (hechas.porGrupos.length > 0
+                  ? `${N}${N}${hechas.porGrupos.map((t) => t.markdown).join(`${N}${N}`)}`
+                  : `${N}${N}Sin atributos de los participantes no hay tabla comparativa. Si el estudio compara ` +
+                    'grupos (docentes y estudiantes, hombres y mujeres), ponlos con "atributos" en cada entrevista.') +
                 avisosDelLibro(hechas.avisos),
             );
           }

@@ -313,3 +313,93 @@ test('sin nada codificado, tablas, red, capítulo y qdpx lo dicen', async () => 
   }
   assert.match(await llamar({ accion: 'capitulo', texto: 'Algo.' }), /Todavía no hay nada codificado/);
 });
+
+// ── Citas, búsqueda, atributos y memos ─────────────────────────────────────
+
+test('la herramienta: «citas» devuelve las citas de un código, no solo cuántas', async () => {
+  await codificarDePrueba();
+  const respuesta = await llamar({ accion: 'citas', codigo: 'falta de apoyo DOCENTE' });
+  assert.match(respuesta, /Citas de el código «Falta de apoyo docente»: 2/);
+  assert.match(respuesta, /E1 ¶2 · Falta de apoyo docente\n«El profesor nunca respondía mis correos»/);
+  assert.match(await llamar({ accion: 'citas', codigo: 'Inventado' }), /No hay ninguna código/);
+});
+
+test('la herramienta: «buscar» encuentra el párrafo y no pide tildes ni mayúsculas', async () => {
+  await codificarDePrueba();
+  const respuesta = await llamar({ accion: 'buscar', busca: 'respondia MIS correos' });
+  assert.match(respuesta, /aparece en 1 párrafos/);
+  assert.match(respuesta, /E1 ¶2/);
+  assert.match(await llamar({ accion: 'buscar', busca: 'jubilación' }), /no aparece/);
+  assert.match(await llamar({ accion: 'buscar', busca: 'de' }), /al menos tres letras/);
+});
+
+test('la herramienta: los atributos de una entrevista dan la tabla comparativa', async () => {
+  empezar();
+  for (const [nombre, rol] of [['ana.txt', 'Estudiante'], ['luis.txt', 'Docente']]) {
+    await servicio.guardar({ userId: 'u1', productCode: TESIS, buffer: txt(ENTREVISTA_1), nombre });
+  }
+  await llamar({ accion: 'atributos', entrevista: 'E1', atributos: { Rol: 'Estudiante' } });
+  const puesta = await llamar({ accion: 'atributos', entrevista: 'E2', atributos: { Rol: 'Docente' } });
+  assert.match(puesta, /E2 .* queda con Rol: Docente/);
+
+  for (const id of ['E1', 'E2']) {
+    await servicio.codificar('u1', TESIS, id, {
+      codigos: [{ nombre: 'Apoyo', definicion: 'x', categoria: 'Barreras' }],
+      citas: [{ parrafo: 2, texto: 'nunca respondía', codigos: ['Apoyo'] }],
+    });
+  }
+  const tablas = await llamar({ accion: 'tablas' });
+  assert.match(tablas, /\*Frecuencia de los códigos según rol\*/);
+  assert.match(tablas, /\| Categoría \| Código \| Docente \| Estudiante \| Total \|/);
+});
+
+test('los memos: se escriben sobre un código, siguen al renombrarlo y salen en el .qdpx', async () => {
+  await codificarDePrueba();
+  assert.match(
+    await llamar({ accion: 'memo', tipo: 'codigo', sobre: 'falta de apoyo docente', nota: 'Aparece en todas.' }),
+    /Memo m1 guardado. Es sobre: Código «Falta de apoyo docente»/,
+  );
+  assert.match(await llamar({ accion: 'memo', tipo: 'analisis', nota: 'Saturación en la E3.' }), /Memo m2/);
+  assert.match(
+    await llamar({ accion: 'memo', tipo: 'codigo', sobre: 'No existe', nota: 'x' }),
+    /No se guardó nada|No hay ningún código/,
+  );
+
+  await llamar({ accion: 'renombrar', de: 'Falta de apoyo docente', a: 'Abandono del asesor' });
+  const memos = await llamar({ accion: 'memos' });
+  assert.match(memos, /Código «Abandono del asesor»/, 'el memo sigue a su código');
+
+  const m = motorFalso();
+  rService.usarMotor(m);
+  try {
+    await llamar({ accion: 'qdpx' });
+    const xml = new AdmZip(m.archivos.get('p1/analisis-cualitativo.qdpx'))
+      .getEntry('project.qde')
+      .getData()
+      .toString('utf8');
+    assert.match(xml, /Memo: Aparece en todas\./);
+    assert.match(xml, /<Description>Memo \(\d{4}-\d{2}-\d{2}\): Saturación en la E3\.<\/Description>/);
+  } finally {
+    rService.usarMotor(null);
+  }
+});
+
+test('el .qdpx lleva los atributos como variables de cada fuente', async () => {
+  await codificarDePrueba();
+  await llamar({ accion: 'atributos', entrevista: 'E1', atributos: { Rol: 'Estudiante', Sexo: 'Mujer' } });
+  const m = motorFalso();
+  rService.usarMotor(m);
+  try {
+    await llamar({ accion: 'qdpx' });
+    const xml = new AdmZip(m.archivos.get('p1/analisis-cualitativo.qdpx'))
+      .getEntry('project.qde')
+      .getData()
+      .toString('utf8');
+    const rol = /<Variable guid="([^"]+)" name="Rol" typeOfVariable="Text"\/>/.exec(xml);
+    assert.ok(rol, 'la variable existe');
+    assert.match(xml, new RegExp(`<VariableRef targetGUID="${rol[1]}"/><TextValue>Estudiante</TextValue>`));
+    assert.match(xml, /<Variable guid="[^"]+" name="Sexo"/);
+  } finally {
+    rService.usarMotor(null);
+  }
+});

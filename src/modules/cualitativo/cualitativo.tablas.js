@@ -164,6 +164,61 @@ function tablaDeCoocurrencia(codificacion) {
 }
 
 /**
+ * Una tabla por cada atributo de los participantes: los códigos en las filas y
+ * los valores del atributo —docente/estudiante, hombre/mujer— en las columnas.
+ *
+ * Es lo que en ATLAS.ti se hace con grupos de documentos, y lo que sostiene las
+ * frases del capítulo del tipo «los docentes insisten en X, los estudiantes
+ * no». Solo se hace la tabla si el atributo está en al menos dos entrevistas y
+ * tiene al menos dos valores distintos: con un solo grupo no hay comparación.
+ */
+function tablasPorAtributo(entrevistas, codificacion) {
+  const conAtributos = (entrevistas ?? []).filter((e) => e.atributos && Object.keys(e.atributos).length > 0);
+  if (conAtributos.length < 2) return [];
+
+  const nombres = [...new Set(conAtributos.flatMap((e) => Object.keys(e.atributos)))];
+  const lista = frecuencias(entrevistas, codificacion).filter((c) => c.citas > 0);
+  const tablas = [];
+
+  for (const atributo of nombres) {
+    const deQuien = conAtributos.filter((e) => e.atributos[atributo]);
+    const valores = [...new Set(deQuien.map((e) => e.atributos[atributo]))].sort((a, b) => a.localeCompare(b, 'es'));
+    if (deQuien.length < 2 || valores.length < 2 || valores.length > MAXIMO_COLUMNAS) continue;
+
+    const filas = lista.map((codigo) => [
+      codigo.categoria ?? 'Sin categoría',
+      codigo.nombre,
+      ...valores.map((valor) => {
+        const suyas = deQuien
+          .filter((e) => e.atributos[atributo] === valor)
+          .reduce((suma, e) => suma + (codigo.porEntrevista[e.id] ?? 0), 0);
+        return String(suyas);
+      }),
+      String(codigo.citas),
+    ]);
+
+    tablas.push({
+      atributo,
+      markdown: tablaMarkdown({
+        titulo: `Frecuencia de los códigos según ${atributo.toLocaleLowerCase('es')}`,
+        cabecera: ['Categoría', 'Código', ...valores, 'Total'],
+        filas,
+        nota:
+          `Citas por grupo. ${valores
+            .map((v) => {
+              const cuantos = deQuien.filter((e) => e.atributos[atributo] === v).length;
+              return `${v}: ${cuantos} ${cuantos === 1 ? 'participante' : 'participantes'}`;
+            })
+            .join('; ')}.` +
+          ' Los números describen este corpus y no se generalizan.',
+      }),
+    });
+  }
+
+  return tablas;
+}
+
+/**
  * Lo que hay que decirle a Claude del libro, o null si está bien.
  *
  * Los dos vicios de la codificación asistida, y los dos se ven en la red: un
@@ -205,6 +260,7 @@ module.exports = {
   MAXIMO_CODIGOS_COMODOS,
   tablaDeFrecuencias,
   tablaDeCoocurrencia,
+  tablasPorAtributo,
   coeficiente,
   MAXIMO_PARES,
   MAXIMO_COLUMNAS,

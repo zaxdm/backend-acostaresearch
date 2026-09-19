@@ -431,7 +431,11 @@ async function leerMaterial(projectId) {
  */
 function rutaCualitativa(projectId, que) {
   if (!SEGURO.test(projectId)) throw new Error('Identificador de proyecto no válido');
-  const nombres = { entrevistas: 'cualitativo-entrevistas.json', codificacion: 'cualitativo-codificacion.json' };
+  const nombres = {
+    entrevistas: 'cualitativo-entrevistas.json',
+    codificacion: 'cualitativo-codificacion.json',
+    memos: 'cualitativo-memos.json',
+  };
   if (!nombres[que]) throw new Error('Archivo cualitativo desconocido');
   return path.join(env.capitulosDir, projectId, nombres[que]);
 }

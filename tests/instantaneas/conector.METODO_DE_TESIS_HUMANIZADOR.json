@@ -718,7 +718,7 @@
   {
     "nombre": "analisis_cualitativo",
     "titulo": "Análisis cualitativo: entrevistas y codificación",
-    "descripcion": "Análisis cualitativo de entrevistas o grupos focales: subir las transcripciones, leerlas y guardar su codificación (libro de códigos y citas). ÚSALA cuando el estudio sea cualitativo o mixto y el usuario tenga transcripciones, o pida codificar, categorizar, hacer un análisis temático o «hacerlo como en ATLAS.ti». Sin argumentos lista las entrevistas subidas y da un ENLACE para subir más: dáselo como enlace que se pulsa y dile que vuelva cuando las haya subido (Word, PDF con texto o .txt, una entrevista por archivo). \"ver\" (con \"entrevista\", p. ej. \"E1\", y \"desde\") devuelve sus párrafos numerados ¶n, por tandas. ANTES DE CODIFICAR, lee sus objetivos y su metodología con \"ver_capitulo\" (si están guardados) para sacar de ahí las categorías y el enfoque; pregúntalos solo si no están. CÓMO SE CODIFICA: de UNA entrevista a la vez. Léela entera, propón al usuario los códigos (nombre, definición y categoría) y las citas de cada uno, y guarda con \"codificar\" SOLO cuando el usuario lo apruebe: nadie codifica a ciegas. Apunta a entre 5 y 12 códigos por entrevista y a no más de 25 o 30 en todo el libro: un código por matiz deja una red ilegible. Reutiliza los códigos que ya están en el libro antes de crear otros parecidos. Cada cita es un fragmento COPIADO TAL CUAL de un párrafo, sin resumirlo ni corregirlo: si el texto no está en ese párrafo, se rechaza la codificación entera y se dice qué cita falló. Cuando un fragmento habla de dos cosas, PONLE LOS DOS CÓDIGOS: si cada cita lleva uno solo no hay coocurrencia y la red sale en puntos sueltos. \"codificar\" REEMPLAZA lo que tenía esa entrevista: para corregir, vuelve a mandarla completa. \"libro\" devuelve el libro de códigos con cuántas citas y entrevistas tiene cada uno. \"renombrar\" cambia el nombre de un código en todas sus citas; si el nombre nuevo ya existe, los junta. \"quitar_codigo\" y \"quitar_entrevista\" solo si el usuario lo pide. CUANDO TODO ESTÉ CODIFICADO: \"tablas\" devuelve la tabla de frecuencias y la de coocurrencia en Markdown, calculadas por el servidor: pégalas TAL CUAL en el capítulo, poniendo solo el número de tabla, y no escribas tú ninguna cifra. \"red\" dibuja con R la red de códigos y la deja como red-de-codigos.png. \"capitulo\" arma el Word de resultados con \"titulo\" y \"texto\" (Markdown: # títulos, las tablas, la figura como **Figura N** / *título* / ![](red-de-codigos.png) / *Nota.* …, y las fuentes con su clave [AR…] si hay): organízalo por categorías u objetivos, ilustra cada código con lo que dijeron los entrevistados —entre comillas, o en bloque con \"> \" si pasa de 40 palabras— indicando de quién y de dónde (E3, ¶12). Antes de armarlo, el servidor busca cada cita en las transcripciones y, si alguna no está, no arma nada y dice cuál. \"qdpx\" da el proyecto para abrirlo ya codificado en ATLAS.ti, NVivo, MAXQDA o QualCoder (este último es gratis). NO inventes citas ni pongas en boca del entrevistado lo que no dijo.",
+    "descripcion": "Análisis cualitativo de entrevistas o grupos focales: subir las transcripciones, leerlas y guardar su codificación (libro de códigos y citas). ÚSALA cuando el estudio sea cualitativo o mixto y el usuario tenga transcripciones, o pida codificar, categorizar, hacer un análisis temático o «hacerlo como en ATLAS.ti». Sin argumentos lista las entrevistas subidas y da un ENLACE para subir más: dáselo como enlace que se pulsa y dile que vuelva cuando las haya subido (Word, PDF con texto o .txt, una entrevista por archivo). \"ver\" (con \"entrevista\", p. ej. \"E1\", y \"desde\") devuelve sus párrafos numerados ¶n, por tandas. ANTES DE CODIFICAR, lee sus objetivos y su metodología con \"ver_capitulo\" (si están guardados) para sacar de ahí las categorías y el enfoque; pregúntalos solo si no están. CÓMO SE CODIFICA: de UNA entrevista a la vez. Léela entera, propón al usuario los códigos (nombre, definición y categoría) y las citas de cada uno, y guarda con \"codificar\" SOLO cuando el usuario lo apruebe: nadie codifica a ciegas. Apunta a entre 5 y 12 códigos por entrevista y a no más de 25 o 30 en todo el libro: un código por matiz deja una red ilegible. Reutiliza los códigos que ya están en el libro antes de crear otros parecidos. Cada cita es un fragmento COPIADO TAL CUAL de un párrafo, sin resumirlo ni corregirlo: si el texto no está en ese párrafo, se rechaza la codificación entera y se dice qué cita falló. Cuando un fragmento habla de dos cosas, PONLE LOS DOS CÓDIGOS: si cada cita lleva uno solo no hay coocurrencia y la red sale en puntos sueltos. \"codificar\" REEMPLAZA lo que tenía esa entrevista: para corregir, vuelve a mandarla completa. \"libro\" devuelve el libro de códigos con cuántas citas y entrevistas tiene cada uno, y \"citas\" (con \"codigo\" o \"entrevista\") las citas mismas, para releerlas al revisar o al redactar. \"buscar\" (con \"busca\") encuentra una palabra en todas las transcripciones. \"atributos\" guarda los datos del participante de una entrevista (rol, sexo, años); con ellos, \"tablas\" añade una tabla comparativa por grupos, que es lo que sostiene frases como «los docentes insisten en X». \"memo\" anota lo que el usuario decide y por qué —por qué juntó dos códigos, qué le llama la atención de una entrevista—, \"memos\" los lee y \"quitar_memo\" borra uno; van también en el .qdpx. \"renombrar\" cambia el nombre de un código en todas sus citas; si el nombre nuevo ya existe, los junta. \"quitar_codigo\" y \"quitar_entrevista\" solo si el usuario lo pide. CUANDO TODO ESTÉ CODIFICADO: \"tablas\" devuelve la tabla de frecuencias y la de coocurrencia en Markdown, calculadas por el servidor: pégalas TAL CUAL en el capítulo, poniendo solo el número de tabla, y no escribas tú ninguna cifra. \"red\" dibuja con R la red de códigos y la deja como red-de-codigos.png. \"capitulo\" arma el Word de resultados con \"titulo\" y \"texto\" (Markdown: # títulos, las tablas, la figura como **Figura N** / *título* / ![](red-de-codigos.png) / *Nota.* …, y las fuentes con su clave [AR…] si hay): organízalo por categorías u objetivos, ilustra cada código con lo que dijeron los entrevistados —entre comillas, o en bloque con \"> \" si pasa de 40 palabras— indicando de quién y de dónde (E3, ¶12). Antes de armarlo, el servidor busca cada cita en las transcripciones y, si alguna no está, no arma nada y dice cuál. \"qdpx\" da el proyecto para abrirlo ya codificado en ATLAS.ti, NVivo, MAXQDA o QualCoder (este último es gratis). NO inventes citas ni pongas en boca del entrevistado lo que no dijo.",
     "esquema": {
       "type": "object",
       "properties": {
@@ -731,6 +731,12 @@
             "renombrar",
             "quitar_codigo",
             "quitar_entrevista",
+            "citas",
+            "buscar",
+            "atributos",
+            "memo",
+            "memos",
+            "quitar_memo",
             "tablas",
             "red",
             "capitulo",
@@ -805,7 +811,39 @@
         },
         "codigo": {
           "type": "string",
-          "description": "Con \"quitar_codigo\": el nombre del código."
+          "description": "El nombre del código: con \"quitar_codigo\", y con \"citas\" para leer las suyas."
+        },
+        "busca": {
+          "type": "string",
+          "description": "Con \"buscar\": la palabra o frase que se busca en todas las transcripciones."
+        },
+        "atributos": {
+          "type": "object",
+          "description": "Con \"atributos\": los datos del participante de esa entrevista, para comparar grupos después. Por ejemplo {\"Rol\": \"Docente\", \"Sexo\": \"Mujer\", \"Años de experiencia\": \"Más de 10\"}. Usa los mismos nombres de atributo en todas las entrevistas.",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "tipo": {
+          "type": "string",
+          "enum": [
+            "codigo",
+            "entrevista",
+            "analisis"
+          ],
+          "description": "Con \"memo\" y \"memos\": sobre qué es la nota."
+        },
+        "sobre": {
+          "type": "string",
+          "description": "Con \"memo\" y \"memos\": el nombre del código o el número de la entrevista."
+        },
+        "nota": {
+          "type": "string",
+          "description": "Con \"memo\": lo que se anota."
+        },
+        "memo": {
+          "type": "string",
+          "description": "Con \"quitar_memo\": el número del memo, \"m3\"."
         },
         "de": {
           "type": "string",

@@ -78,7 +78,14 @@ function textoPlano(parrafos) {
  * - `titulo`: el nombre del proyecto, el tema de la tesis.
  * - `ahora`: la fecha que se pone en todo; se pasa en las pruebas.
  */
-function armar({ entrevistas, codificacion, titulo = 'Análisis cualitativo', autor = 'Tesista', ahora = new Date() }) {
+function armar({
+  entrevistas,
+  codificacion,
+  memos = [],
+  titulo = 'Análisis cualitativo',
+  autor = 'Tesista',
+  ahora = new Date(),
+}) {
   const fecha = ahora.toISOString().replace(/\.\d{3}Z$/, 'Z');
   const usuario = guid();
   const quien = `creatingUser="${usuario}" creationDateTime="${fecha}"`;
@@ -93,10 +100,22 @@ function armar({ entrevistas, codificacion, titulo = 'Análisis cualitativo', au
     porCategoria.get(categoria).push(codigo);
   }
 
-  const codigoXml = (codigo, color, sangria) =>
-    `${sangria}<Code guid="${guidDe.get(codigo.nombre)}" name="${escapar(codigo.nombre)}" isCodable="true" color="${color}">` +
-    (codigo.definicion ? `<Description>${escapar(codigo.definicion)}</Description>` : '') +
-    '</Code>';
+  /** La definición del código y, debajo, los memos que el investigador escribió sobre él. */
+  const descripcionDe = (codigo) => {
+    const suyos = memos
+      .filter((m) => m.tipo === 'codigo' && m.sobre === codigo.nombre)
+      .map((m) => `Memo: ${m.texto}`);
+    return [codigo.definicion, ...suyos].filter(Boolean).join('\n\n');
+  };
+
+  const codigoXml = (codigo, color, sangria) => {
+    const descripcion = descripcionDe(codigo);
+    return (
+      `${sangria}<Code guid="${guidDe.get(codigo.nombre)}" name="${escapar(codigo.nombre)}" isCodable="true" color="${color}">` +
+      (descripcion ? `<Description>${escapar(descripcion)}</Description>` : '') +
+      '</Code>'
+    );
+  };
 
   const libro = [];
   let i = 0;
@@ -113,6 +132,11 @@ function armar({ entrevistas, codificacion, titulo = 'Análisis cualitativo', au
       '      </Code>',
     );
   }
+
+  // Los atributos de los participantes viajan como variables de cada fuente:
+  // es lo que ATLAS.ti enseña como grupos y lo que NVivo llama clasificaciones.
+  const variables = [...new Set(entrevistas.flatMap((e) => Object.keys(e.atributos ?? {})))];
+  const guidDeVariable = new Map(variables.map((v) => [v, guid()]));
 
   // Las fuentes, cada una con sus citas.
   const zip = new AdmZip();
@@ -140,10 +164,24 @@ function armar({ entrevistas, codificacion, titulo = 'Análisis cualitativo', au
       );
     });
 
+    // El orden de los hijos lo fija el esquema: primero la descripción —donde
+    // van los memos de la entrevista—, luego las citas y al final los atributos.
+    const suyosMemos = memos
+      .filter((m) => m.tipo === 'entrevista' && m.sobre === entrevista.id)
+      .map((m) => `Memo: ${m.texto}`)
+      .join('\n\n');
+    const valores = Object.entries(entrevista.atributos ?? {}).map(
+      ([nombre, valor]) =>
+        `      <VariableValue><VariableRef targetGUID="${guidDeVariable.get(nombre)}"/>` +
+        `<TextValue>${escapar(valor)}</TextValue></VariableValue>`,
+    );
+
     fuentes.push(
       `    <TextSource guid="${id}" name="${escapar(nombreDeFuente(entrevista))}" ` +
         `plainTextPath="internal://${id}.txt" ${quien}>`,
+      ...(suyosMemos ? [`      <Description>${escapar(suyosMemos)}</Description>`] : []),
       ...selecciones,
+      ...valores,
       '    </TextSource>',
     );
   }
@@ -160,9 +198,31 @@ function armar({ entrevistas, codificacion, titulo = 'Análisis cualitativo', au
     ...libro,
     '    </Codes>',
     '  </CodeBook>',
+    ...(variables.length > 0
+      ? [
+          '  <Variables>',
+          ...variables.map(
+            (v) =>
+              `    <Variable guid="${guidDeVariable.get(v)}" name="${escapar(v)}" typeOfVariable="Text"/>`,
+          ),
+          '  </Variables>',
+        ]
+      : []),
     '  <Sources>',
     ...fuentes,
     '  </Sources>',
+    // Los memos del análisis entero: en la descripción del proyecto, que es lo
+    // único que abren igual todos los programas.
+    ...(memos.some((m) => m.tipo === 'analisis')
+      ? [
+          `  <Description>${escapar(
+            memos
+              .filter((m) => m.tipo === 'analisis')
+              .map((m) => `Memo (${m.escritoAt?.slice(0, 10) ?? ''}): ${m.texto}`)
+              .join('\n\n'),
+          )}</Description>`,
+        ]
+      : []),
     '</Project>',
     '',
   ].join('\n');

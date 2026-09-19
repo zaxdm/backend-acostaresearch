@@ -20,6 +20,7 @@ const tablasCualitativas = require('./cualitativo.tablas');
 const redDeCodigos = require('./cualitativo.red');
 const citasDelCapitulo = require('./cualitativo.citas');
 const exportar = require('./cualitativo.qdpx');
+const cuaderno = require('./cualitativo.memos');
 
 const MAXIMO_ENTREVISTAS = 40;
 /** Lo que devuelve «ver» de una vez, en caracteres. */
@@ -44,6 +45,7 @@ function fichas(entrevistas, codificacion) {
     parrafos: e.parrafos.length,
     caracteres: e.parrafos.reduce((s, p) => s + p.length, 0),
     citas: porEntrevista[e.id] ?? 0,
+    atributos: e.atributos ?? null,
   }));
 }
 
@@ -181,6 +183,128 @@ function codificar(userId, productCode, entrevista, envio) {
   });
 }
 
+/**
+ * Las citas de un código o de una entrevista, con su párrafo y su texto.
+ *
+ * Sin esto Claude sabe cuántas citas tiene un código pero no cuáles, que es
+ * justo lo que hace falta al revisar la codificación y al redactar.
+ */
+async function citasDe(userId, productCode, { codigo, entrevista, desde = 1 } = {}) {
+  const proyecto = await projectRepository.buscar(userId, productCode);
+  if (!proyecto) return null;
+  const { entrevistas, codificacion } = await cargar(proyecto.id);
+  const todas = codificacion?.citas ?? [];
+
+  let elegidas = todas;
+  let de = null;
+  if (codigo) {
+    const cual = (codificacion?.codigos ?? []).find((c) => reglas.claveDe(c.nombre) === reglas.claveDe(codigo));
+    if (!cual) return { noExiste: `código «${String(codigo).trim()}»` };
+    de = `el código «${cual.nombre}»`;
+    elegidas = elegidas.filter((c) => c.codigos.includes(cual.nombre));
+  }
+  if (entrevista) {
+    const id = idDe(entrevista);
+    if (!entrevistas.some((e) => e.id === id)) return { noExiste: `entrevista ${String(entrevista).trim()}` };
+    de = de ? `${de} en ${id}` : `la entrevista ${id}`;
+    elegidas = elegidas.filter((c) => c.entrevista === id);
+  }
+
+  const primera = Math.min(Math.max(1, Number(desde) || 1), Math.max(1, elegidas.length));
+  const tanda = [];
+  let caracteres = 0;
+  for (let i = primera - 1; i < elegidas.length; i += 1) {
+    const cita = elegidas[i];
+    if (tanda.length > 0 && caracteres + cita.texto.length > POR_TANDA) break;
+    tanda.push(cita);
+    caracteres += cita.texto.length;
+  }
+
+  return {
+    de: de ?? 'todo el análisis',
+    total: elegidas.length,
+    citas: tanda,
+    siguiente: primera - 1 + tanda.length < elegidas.length ? primera + tanda.length : null,
+  };
+}
+
+/** Los párrafos donde aparece un texto, en todas las entrevistas. Como el buscador de ATLAS.ti. */
+async function buscar(userId, productCode, texto, { maximo = 40 } = {}) {
+  const proyecto = await projectRepository.buscar(userId, productCode);
+  if (!proyecto) return null;
+  const buscado = reglas.claveDe(texto);
+  if (buscado.length < 3) return { buscado: String(texto ?? '').trim(), hallazgos: [], corto: true };
+
+  const { entrevistas } = await cargar(proyecto.id);
+  const hallazgos = [];
+  for (const entrevista of entrevistas) {
+    entrevista.parrafos.forEach((parrafo, i) => {
+      if (hallazgos.length < maximo && reglas.claveDe(parrafo).includes(buscado)) {
+        hallazgos.push({ entrevista: entrevista.id, parrafo: i + 1, texto: parrafo });
+      }
+    });
+  }
+  return { buscado: String(texto).trim(), hallazgos, corto: false };
+}
+
+/**
+ * Los atributos de una entrevista —carrera, sexo, cargo…—, para comparar
+ * grupos después. Son los «grupos de documentos» de ATLAS.ti.
+ */
+function atributos(userId, productCode, entrevista, valores) {
+  return enSerie(clave(userId, productCode), async () => {
+    const proyecto = await projectRepository.buscar(userId, productCode);
+    if (!proyecto) return null;
+    const id = idDe(entrevista);
+    const { entrevistas } = await cargar(proyecto.id);
+    const cual = entrevistas.find((e) => e.id === id);
+    if (!cual) return null;
+
+    const limpios = {};
+    for (const [nombre, valor] of Object.entries(valores ?? {})) {
+      const n = String(nombre).replace(/\s+/g, ' ').trim().slice(0, 40);
+      const v = String(valor ?? '').replace(/\s+/g, ' ').trim().slice(0, 60);
+      if (n && v) limpios[n] = v;
+    }
+    cual.atributos = { ...(cual.atributos ?? {}), ...limpios };
+    await almacen.guardarCualitativo(proyecto.id, 'entrevistas', entrevistas);
+    return { id: cual.id, nombre: cual.nombre, atributos: cual.atributos };
+  });
+}
+
+// ── Memos ──────────────────────────────────────────────────────────────────
+
+async function memos(userId, productCode, filtro = {}) {
+  const proyecto = await projectRepository.buscar(userId, productCode);
+  if (!proyecto) return [];
+  const guardados = (await almacen.leerCualitativo(proyecto.id, 'memos')) ?? [];
+  return cuaderno.filtrar(guardados, filtro);
+}
+
+/** Escribe un memo. Null si no hay proyecto; lanza `CodificacionNoValida` si no cuadra. */
+function escribirMemo(userId, productCode, datos) {
+  return enSerie(clave(userId, productCode), async () => {
+    const proyecto = await projectRepository.buscar(userId, productCode);
+    if (!proyecto) return null;
+    const { entrevistas, codificacion } = await cargar(proyecto.id);
+    const guardados = (await almacen.leerCualitativo(proyecto.id, 'memos')) ?? [];
+    const hecho = cuaderno.escribir(guardados, datos, { codificacion, entrevistas });
+    await almacen.guardarCualitativo(proyecto.id, 'memos', hecho.memos);
+    return { memo: hecho.memo, total: hecho.memos.length };
+  });
+}
+
+function quitarMemo(userId, productCode, id) {
+  return enSerie(clave(userId, productCode), async () => {
+    const proyecto = await projectRepository.buscar(userId, productCode);
+    if (!proyecto) return null;
+    const guardados = (await almacen.leerCualitativo(proyecto.id, 'memos')) ?? [];
+    const hecho = cuaderno.quitar(guardados, id);
+    await almacen.guardarCualitativo(proyecto.id, 'memos', hecho.memos.length > 0 ? hecho.memos : null);
+    return hecho.memo;
+  });
+}
+
 /** El libro de códigos con sus cuentas y la lista de entrevistas. */
 async function libro(userId, productCode) {
   const proyecto = await projectRepository.buscar(userId, productCode);
@@ -194,22 +318,31 @@ async function libro(userId, productCode) {
 }
 
 /** Cambia la codificación guardada con una de las reglas de `cualitativo.codificacion`. */
-function cambiarLibro(userId, productCode, cambio) {
+function cambiarLibro(userId, productCode, cambio, conMemos = null) {
   return enSerie(clave(userId, productCode), async () => {
     const proyecto = await projectRepository.buscar(userId, productCode);
     if (!proyecto) return null;
     const { codificacion } = await cargar(proyecto.id);
     const hecho = cambio(codificacion);
     await almacen.guardarCualitativo(proyecto.id, 'codificacion', hecho.codificacion);
+    // Un memo sobre un código que cambió de nombre tiene que seguir encontrándolo.
+    if (conMemos) {
+      const memosGuardados = await almacen.leerCualitativo(proyecto.id, 'memos');
+      if (memosGuardados?.length) {
+        await almacen.guardarCualitativo(proyecto.id, 'memos', conMemos(memosGuardados, hecho));
+      }
+    }
     return hecho;
   });
 }
 
 const renombrar = (userId, productCode, de, a) =>
-  cambiarLibro(userId, productCode, (c) => reglas.renombrar(c, de, a));
+  cambiarLibro(userId, productCode, (c) => reglas.renombrar(c, de, a), (memos, hecho) =>
+    cuaderno.renombrarCodigo(memos, de, hecho.nombre));
 
 const quitarCodigo = (userId, productCode, nombre) =>
-  cambiarLibro(userId, productCode, (c) => reglas.quitarCodigo(c, nombre));
+  cambiarLibro(userId, productCode, (c) => reglas.quitarCodigo(c, nombre), (memos, hecho) =>
+    cuaderno.soltar(memos, { tipo: 'codigo', sobre: hecho.nombre }));
 
 /** Quita una entrevista y sus citas. Devuelve su ficha, o null si no existía. */
 function quitarEntrevista(userId, productCode, entrevista) {
@@ -225,6 +358,11 @@ function quitarEntrevista(userId, productCode, entrevista) {
     await almacen.guardarCualitativo(proyecto.id, 'entrevistas', resto.length > 0 ? resto : null);
     if (codificacion) {
       await almacen.guardarCualitativo(proyecto.id, 'codificacion', reglas.sinEntrevista(codificacion, id));
+    }
+    // Sus memos no se borran: quedan como memos del análisis, diciendo de dónde venían.
+    const memosGuardados = await almacen.leerCualitativo(proyecto.id, 'memos');
+    if (memosGuardados?.length) {
+      await almacen.guardarCualitativo(proyecto.id, 'memos', cuaderno.soltar(memosGuardados, { tipo: 'entrevista', sobre: id }));
     }
     return { id, nombre: quitada.nombre, citas: reglas.resumen(codificacion).porEntrevista[id] ?? 0 };
   });
@@ -272,6 +410,7 @@ async function tablas(userId, productCode) {
   return {
     frecuencias: tablasCualitativas.tablaDeFrecuencias(hay.entrevistas, hay.codificacion),
     coocurrencia: tablasCualitativas.tablaDeCoocurrencia(hay.codificacion),
+    porGrupos: tablasCualitativas.tablasPorAtributo(hay.entrevistas, hay.codificacion),
     pares: tablasCualitativas.coocurrencias(hay.codificacion).length,
     avisos: tablasCualitativas.avisos(hay.codificacion),
   };
@@ -356,6 +495,7 @@ async function qdpx(userId, productCode) {
   const buffer = exportar.armar({
     entrevistas: hay.entrevistas,
     codificacion: hay.codificacion,
+    memos: (await almacen.leerCualitativo(hay.proyecto.id, 'memos')) ?? [],
     titulo: hay.proyecto.tema || 'Análisis cualitativo',
   });
   await m.guardarArchivo(hay.proyecto.id, exportar.NOMBRE, buffer);
@@ -368,6 +508,12 @@ async function qdpx(userId, productCode) {
 }
 
 module.exports = {
+  citasDe,
+  buscar,
+  atributos,
+  memos,
+  escribirMemo,
+  quitarMemo,
   tablas,
   red,
   capitulo,

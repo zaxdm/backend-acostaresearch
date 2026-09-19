@@ -186,7 +186,11 @@ async function libro(userId, productCode) {
   const proyecto = await projectRepository.buscar(userId, productCode);
   if (!proyecto) return { entrevistas: [], resumen: reglas.resumen(null) };
   const { entrevistas, codificacion } = await cargar(proyecto.id);
-  return { entrevistas: fichas(entrevistas, codificacion), resumen: reglas.resumen(codificacion) };
+  return {
+    entrevistas: fichas(entrevistas, codificacion),
+    resumen: reglas.resumen(codificacion),
+    avisos: tablasCualitativas.avisos(codificacion),
+  };
 }
 
 /** Cambia la codificación guardada con una de las reglas de `cualitativo.codificacion`. */
@@ -269,6 +273,7 @@ async function tablas(userId, productCode) {
     frecuencias: tablasCualitativas.tablaDeFrecuencias(hay.entrevistas, hay.codificacion),
     coocurrencia: tablasCualitativas.tablaDeCoocurrencia(hay.codificacion),
     pares: tablasCualitativas.coocurrencias(hay.codificacion).length,
+    avisos: tablasCualitativas.avisos(hay.codificacion),
   };
 }
 
@@ -291,7 +296,12 @@ async function red(userId, productCode) {
   if (!figura) return { ...datos, error: String(hecho.salida ?? '').slice(-800) || hecho.resultado };
 
   await m.guardarArchivo(hay.proyecto.id, redDeCodigos.FIGURA, figura);
-  return { ...datos, archivo: redDeCodigos.FIGURA, error: null };
+  return {
+    ...datos,
+    archivo: redDeCodigos.FIGURA,
+    error: null,
+    avisos: tablasCualitativas.avisos(hay.codificacion),
+  };
 }
 
 /**

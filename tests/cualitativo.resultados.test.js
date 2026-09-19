@@ -192,3 +192,36 @@ test('Word: la cita en bloque sale sangrada entera y sin el «>»', async () => 
   const parrafo = xml.slice(xml.lastIndexOf('<w:p>', xml.indexOf('El profesor nunca')), xml.indexOf('El profesor nunca'));
   assert.match(parrafo, /<w:ind w:left="720"/);
 });
+
+// ── Avisos ─────────────────────────────────────────────────────────────────
+
+test('avisos: sin citas con dos códigos se avisa que la red saldrá en puntos sueltos', () => {
+  const codigos = Array.from({ length: 6 }, (_, i) => ({ nombre: `C${i}`, categoria: null }));
+  const citas = Array.from({ length: 12 }, (_, i) => ({ entrevista: 'E1', codigos: [`C${i % 6}`] }));
+  const dichos = tablas.avisos({ codigos, citas });
+  assert.equal(dichos.length, 1);
+  assert.match(dichos[0], /Solo 0 de 12 citas llevan más de un código/);
+  assert.match(dichos[0], /puntos sueltos/);
+});
+
+test('avisos: un libro con demasiados códigos pide juntarlos', () => {
+  const codigos = Array.from({ length: 34 }, (_, i) => ({ nombre: `C${i}`, categoria: null }));
+  const citas = codigos.map((c, i) => ({ entrevista: 'E1', codigos: [c.nombre, `C${(i + 1) % 34}`] }));
+  const dichos = tablas.avisos({ codigos, citas });
+  assert.equal(dichos.length, 1, 'aquí sí hay coocurrencia, así que solo sobra el tamaño');
+  assert.match(dichos[0], /34 códigos/);
+  assert.match(dichos[0], /"renombrar"/);
+});
+
+test('avisos: un libro sano no dice nada', () => {
+  assert.equal(tablas.avisos(codificado()), null);
+});
+
+test('red: se cuentan los códigos que no coocurren con ninguno', () => {
+  const codificacion = codificado();
+  codificacion.codigos.push({ nombre: 'Aislado', definicion: 'x', categoria: null });
+  codificacion.citas.push({ entrevista: 'E2', parrafo: 1, inicio: 0, fin: 5, texto: 'P: Tr', codigos: ['Aislado'] });
+  // «Falta de tiempo» ya estaba suelto: es el único código de su entrevista.
+  assert.equal(red.datos(ENTREVISTAS, codificado()).sueltos, 1);
+  assert.equal(red.datos(ENTREVISTAS, codificacion).sueltos, 2);
+});

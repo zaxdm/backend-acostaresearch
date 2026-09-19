@@ -3380,7 +3380,9 @@ function construirServidor(licencia) {
           'más de 25 o 30 en todo el libro: un código por matiz deja una red ilegible. Reutiliza los ' +
           'códigos que ya están en el libro antes de crear otros parecidos. Cada cita es un fragmento COPIADO TAL CUAL de un párrafo, sin ' +
           'resumirlo ni corregirlo: si el texto no está en ese párrafo, se rechaza la codificación ' +
-          'entera y se dice qué cita falló. Una cita puede llevar varios códigos. "codificar" REEMPLAZA ' +
+          'entera y se dice qué cita falló. Cuando un fragmento habla de dos cosas, PONLE LOS DOS ' +
+          'CÓDIGOS: si cada cita lleva uno solo no hay coocurrencia y la red sale en puntos sueltos. ' +
+          '"codificar" REEMPLAZA ' +
           'lo que tenía esa entrevista: para corregir, vuelve a mandarla completa. ' +
           '"libro" devuelve el libro de códigos con cuántas citas y entrevistas tiene cada uno. ' +
           '"renombrar" cambia el nombre de un código en todas sus citas; si el nombre nuevo ya existe, ' +
@@ -3486,6 +3488,15 @@ function construirServidor(licencia) {
         const userId = licencia.user.id;
         const { productCode } = licencia;
         const noExiste = 'No hay ninguna entrevista con ese número. Llama sin argumentos para ver la lista.';
+        const nadaCodificado =
+          'Todavía no hay nada codificado: codifica las entrevistas con "codificar" antes.';
+        /** Lo que el servidor ve mal en el libro, para que Claude lo arregle con el usuario. */
+        const avisosDelLibro = (avisos) =>
+          avisos ? `${N}${N}REVISA ESTO:${N}${avisos.map((a) => `- ${a}`).join(N)}` : '';
+        const descarga = (archivo, textoDelEnlace) => {
+          const { url, minutos } = rEnlaces.enlaceDeDescarga({ userId, productCode, archivo });
+          return enlaceClic({ texto: textoDelEnlace, url, minutos });
+        };
 
         try {
           if (accion === 'ver') {
@@ -3515,7 +3526,7 @@ function construirServidor(licencia) {
           }
 
           if (accion === 'libro') {
-            const { entrevistas, resumen } = await cualitativoService.libro(userId, productCode);
+            const { entrevistas, resumen, avisos } = await cualitativoService.libro(userId, productCode);
             if (resumen.codigos.length === 0) {
               return texto('El libro de códigos está vacío: todavía no se codificó ninguna entrevista.');
             }
@@ -3534,7 +3545,8 @@ function construirServidor(licencia) {
             );
             return texto(
               `Libro de códigos: ${resumen.codigos.length} códigos, ${resumen.citas} citas.${N}${N}` +
-                `${bloques.join(`${N}${N}`)}${N}${N}Entrevistas:${N}${entrevistas.map(lineaDeEntrevista).join(N)}`,
+                `${bloques.join(`${N}${N}`)}${N}${N}Entrevistas:${N}${entrevistas.map(lineaDeEntrevista).join(N)}` +
+                avisosDelLibro(avisos),
             );
           }
 
@@ -3559,12 +3571,6 @@ function construirServidor(licencia) {
             );
           }
 
-          const nadaCodificado =
-            'Todavía no hay nada codificado: codifica las entrevistas con "codificar" antes.';
-          const descarga = (archivo, textoDelEnlace) => {
-            const { url, minutos } = rEnlaces.enlaceDeDescarga({ userId, productCode, archivo });
-            return enlaceClic({ texto: textoDelEnlace, url, minutos });
-          };
 
           if (accion === 'tablas') {
             const hechas = await cualitativoService.tablas(userId, productCode);
@@ -3575,7 +3581,8 @@ function construirServidor(licencia) {
                 `${N}${N}${hechas.frecuencias}${N}${N}` +
                 (hechas.coocurrencia ??
                   'Ningún par de códigos comparte una cita, así que no hay tabla de coocurrencia: dilo así ' +
-                    'en el capítulo si hace falta.'),
+                    'en el capítulo si hace falta.') +
+                avisosDelLibro(hechas.avisos),
             );
           }
 
@@ -3592,7 +3599,8 @@ function construirServidor(licencia) {
                 `**Figura N**${N}*Red de coocurrencia de los códigos*${N}![](${dibujada.archivo})${N}` +
                 '*Nota.* El tamaño de cada código indica su número de citas; el grosor de cada línea, las ' +
                 'citas que comparten dos códigos; el color, su categoría. Elaborado en R.' +
-                `${N}${N}Si el usuario quiere verla ya: ${descarga(dibujada.archivo, 'Haz clic aquí para ver la red de códigos')}`,
+                `${N}${N}Si el usuario quiere verla ya: ${descarga(dibujada.archivo, 'Haz clic aquí para ver la red de códigos')}` +
+                avisosDelLibro(dibujada.avisos),
             );
           }
 

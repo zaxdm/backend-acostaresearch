@@ -27,6 +27,9 @@ const AL_FINAL = String.fromCharCode(65535);
 
 /** Cuántas filas de coocurrencia van en la tabla: más no se leen en una página. */
 const MAXIMO_PARES = 20;
+/** A partir de aquí el libro ya no se lee de un vistazo ni cabe en una red. */
+const MAXIMO_CODIGOS_COMODOS = 30;
+
 /** Hasta cuántas entrevistas van como columnas en la tabla de frecuencias. */
 const MAXIMO_COLUMNAS = 8;
 
@@ -160,9 +163,46 @@ function tablaDeCoocurrencia(codificacion) {
   });
 }
 
+/**
+ * Lo que hay que decirle a Claude del libro, o null si está bien.
+ *
+ * Los dos vicios de la codificación asistida, y los dos se ven en la red: un
+ * código por cada matiz, y una sola etiqueta por cita. Sin citas con dos
+ * códigos no hay coocurrencia, y la red queda en puntos sueltos.
+ */
+function avisos(codificacion) {
+  const libro = codificacion ?? { codigos: [], citas: [] };
+  const dichos = [];
+
+  if (libro.codigos.length > MAXIMO_CODIGOS_COMODOS) {
+    const sueltos = libro.codigos.filter(
+      (c) => libro.citas.filter((cita) => cita.codigos.includes(c.nombre)).length === 1,
+    ).length;
+    dichos.push(
+      `El libro tiene ${libro.codigos.length} códigos, y por encima de ${MAXIMO_CODIGOS_COMODOS} ni la tabla ni la red se leen` +
+        (sueltos > 0 ? `; ${sueltos} tienen una sola cita` : '') +
+        '. Proponle al usuario juntar los que dicen lo mismo con "renombrar".',
+    );
+  }
+
+  const conVarios = libro.citas.filter((c) => c.codigos.length > 1).length;
+  if (libro.citas.length >= 10 && conVarios < libro.citas.length / 5) {
+    dichos.push(
+      `Solo ${conVarios} de ${libro.citas.length} citas llevan más de un código, así que casi no hay ` +
+        'coocurrencia y la red sale en puntos sueltos. Cuando un fragmento habla de dos cosas —el asesor ' +
+        'que no responde Y la ayuda que busca fuera—, ponle los dos códigos. Revísalo con el usuario y ' +
+        'vuelve a codificar las entrevistas que haga falta.',
+    );
+  }
+
+  return dichos.length > 0 ? dichos : null;
+}
+
 module.exports = {
   frecuencias,
   coocurrencias,
+  avisos,
+  MAXIMO_CODIGOS_COMODOS,
   tablaDeFrecuencias,
   tablaDeCoocurrencia,
   coeficiente,

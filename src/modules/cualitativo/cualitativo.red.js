@@ -44,12 +44,15 @@ function datos(entrevistas, codificacion) {
   ].join('\n');
   const enlaces = ['a,b,n', ...pares.map((p) => [valor(p.a), valor(p.b), p.n].join(','))].join('\n');
 
+  const conLazo = new Set(pares.flatMap((p) => [p.a, p.b]));
   return {
     nodos: `${nodos}\n`,
     enlaces: `${enlaces}\n`,
     codigos: elegidos.length,
     omitidos: todos.length - elegidos.length,
     lazos: pares.length,
+    // Un código que no coocurre con ninguno es un punto suelto en la red.
+    sueltos: elegidos.filter((c) => !conLazo.has(c.nombre)).length,
   };
 }
 
@@ -64,6 +67,8 @@ nodos <- utils::read.csv("${NODOS}", fileEncoding = "UTF-8", stringsAsFactors = 
                          colClasses = c("character", "character", "numeric"))
 enlaces <- utils::read.csv("${ENLACES}", fileEncoding = "UTF-8", stringsAsFactors = FALSE,
                            colClasses = c("character", "character", "numeric"))
+# Un nombre largo en una sola línea tapa a sus vecinos: se parte en dos o tres.
+enDosLineas <- function(x) vapply(x, function(t) paste(strwrap(t, width = 22), collapse = intToUtf8(10)), "")
 # Los cortes de la leyenda, en números enteros: no hay media cita.
 enteros <- function(l) unique(pmax(1, round(pretty(l))))
 g <- graph_from_data_frame(enlaces, vertices = nodos, directed = FALSE)
@@ -83,8 +88,10 @@ figura <- ggplot() +
   geom_segment(data = lineas, aes(x = x, y = y, xend = xend, yend = yend, linewidth = n),
                colour = "grey60", alpha = 0.7) +
   geom_point(data = puntos, aes(x = x, y = y, size = citas, colour = categoria)) +
-  geom_text_repel(data = puntos, aes(x = x, y = y, label = nombre), size = 3.2,
-                  max.overlaps = Inf, box.padding = 0.4, seed = 2024) +
+  geom_text_repel(data = puntos, aes(x = x, y = y, label = enDosLineas(nombre)), size = 3,
+                  lineheight = 0.95, max.overlaps = Inf, box.padding = 0.6, point.padding = 0.3,
+                  min.segment.length = 0, segment.colour = "grey75", segment.size = 0.3,
+                  force = 3, max.time = 2, seed = 2024) +
   scale_linewidth(range = c(0.3, 2.5), name = "Coocurrencias", breaks = enteros) +
   scale_size(range = c(3, 12), name = "Citas", breaks = enteros) +
   scale_x_continuous(expand = expansion(mult = 0.12)) +
@@ -93,11 +100,13 @@ figura <- ggplot() +
   theme_void(base_size = 11) +
   theme(legend.position = "right", plot.background = element_rect(fill = "white", colour = NA))
 if (requireNamespace("ragg", quietly = TRUE)) {
-  ggsave("${FIGURA}", figura, width = 9, height = 6.5, dpi = 200, device = ragg::agg_png, bg = "white")
+  ggsave("${FIGURA}", figura, width = 10, height = 7.5, dpi = 200, device = ragg::agg_png, bg = "white")
 } else {
-  ggsave("${FIGURA}", figura, width = 9, height = 6.5, dpi = 200, bg = "white")
+  ggsave("${FIGURA}", figura, width = 10, height = 7.5, dpi = 200, bg = "white")
 }
-cat("Red de codigos:", vcount(g), "codigos,", ecount(g), "lazos\\n")
+# Un código sin ningún lazo: se cuenta para avisar cuando casi todos lo están.
+sueltos <- sum(degree(g) == 0)
+cat("Red de codigos:", vcount(g), "codigos,", ecount(g), "lazos,", sueltos, "sueltos\\n")
 `.trim();
 
 module.exports = { datos, GUION, NODOS, ENLACES, FIGURA, MAXIMO_NODOS };

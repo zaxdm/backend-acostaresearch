@@ -135,7 +135,7 @@ const aproximadasSchema = z.object({
 
 const semanticaSchema = z.object({
   ecuacion,
-  pregunta: z.string().trim().min(3, 'Escribe tu pregunta.').max(800),
+  pregunta: z.string().trim().min(2, 'Escribe tu pregunta.').max(800),
 });
 
 // ── Búsquedas guardadas ────────────────────────────────────────────────────

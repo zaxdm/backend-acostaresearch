@@ -6,6 +6,7 @@ const env = require('../../config/env');
 const logger = require('../../config/logger');
 const servicio = require('./scopus.service');
 const { generarConsulta } = require('./scopus.consulta');
+const { resumir } = require('./scopus.resumen');
 
 /**
  * La cookie que ata el intercambio con Elsevier al navegador que lo empezó.
@@ -96,6 +97,17 @@ const scopusController = {
 
   generarConsulta: asyncHandler(async (req, res) => {
     return ok(res, await generarConsulta(req.body.tema));
+  }),
+
+  resumir: asyncHandler(async (req, res) => {
+    return ok(
+      res,
+      await resumir({
+        pregunta: req.body.pregunta,
+        fuentes: req.body.fuentes,
+        anteriores: req.body.anteriores ?? [],
+      }),
+    );
   }),
 
   importar: asyncHandler(async (req, res) => {

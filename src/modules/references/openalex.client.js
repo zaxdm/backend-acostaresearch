@@ -422,6 +422,34 @@ async function referenciasDe(dois) {
   return obras;
 }
 
+/**
+ * Los resúmenes de una lista de DOI, en una sola consulta por lote.
+ *
+ * Para el resumen con IA del buscador de Scopus: con nuestra clave Scopus no
+ * da el resumen, y OpenAlex sí, en abierto. Solo dos campos, para no traerse
+ * la obra entera de cada una. Devuelve un `Map` de DOI en minúsculas a su
+ * resumen; los que OpenAlex no conoce, o conoce sin resumen, no están.
+ */
+async function resumenesPorDoi(dois) {
+  const limpios = [...new Set(dois.map(limpiarDoi).filter(Boolean))];
+  const resumenes = new Map();
+
+  for (const lote of enLotes(limpios, POR_FILTRO)) {
+    const resultados = await consultar({
+      filter: `doi:${lote.join('|')}`,
+      select: 'doi,abstract_inverted_index',
+      'per-page': String(POR_FILTRO),
+    });
+    for (const w of resultados) {
+      const doi = limpiarDoi(w.doi);
+      const resumen = resumenDelIndice(w.abstract_inverted_index);
+      if (doi && resumen) resumenes.set(doi.toLowerCase(), resumen);
+    }
+  }
+
+  return resumenes;
+}
+
 /** Las fichas de una lista de identificadores de OpenAlex. */
 async function porIds(ids) {
   const fichas = [];
@@ -468,6 +496,7 @@ module.exports = {
   porDoi,
   referenciasDe,
   porIds,
+  resumenesPorDoi,
   citanA,
   limpiarDoi,
   nombreApa,

@@ -129,16 +129,17 @@ const scopusBuscarLimiter = build({
 });
 
 /**
- * El generador de consultas con IA del buscador de Scopus.
+ * La IA del buscador de Scopus: el generador de consultas y el resumen con
+ * citas, con sus preguntas de seguimiento.
  *
- * Cada uso es una llamada a Gemini, que se paga. Quince cada diez minutos por
- * persona: sobra para ir afinando la descripción del tema, y corta a quien lo
- * use de traductor.
+ * Cada uso es una llamada a Gemini, que se paga. Veinte cada diez minutos por
+ * persona, entre las dos cosas: sobra para afinar el tema, buscar, leer el
+ * resumen y hacer unas cuantas preguntas, y corta a quien lo use de chat.
  */
 const scopusIaLimiter = build({
   windowMs: 10 * 60 * 1000,
-  max: 15,
-  message: 'Has usado el generador con IA muchas veces seguidas. Espera unos minutos.',
+  max: 20,
+  message: 'Has usado la IA del buscador muchas veces seguidas. Espera unos minutos.',
   keyGenerator: porUsuario,
 });
 

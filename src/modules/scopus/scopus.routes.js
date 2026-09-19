@@ -8,7 +8,13 @@ const {
   scopusConectarLimiter,
   scopusIaLimiter,
 } = require('../../middlewares/rateLimit');
-const { buscarSchema, consultaSchema, importarSchema, vueltaSchema } = require('./scopus.schema');
+const {
+  buscarSchema,
+  consultaSchema,
+  importarSchema,
+  resumirSchema,
+  vueltaSchema,
+} = require('./scopus.schema');
 const scopusController = require('./scopus.controller');
 
 const router = Router();
@@ -73,6 +79,16 @@ router.post(
   scopusIaLimiter,
   validate({ body: consultaSchema }),
   scopusController.generarConsulta,
+);
+/**
+ * El resumen con citas de los artículos de la página: lo que hace la «IA de
+ * Scopus». Mismo límite que el generador, porque los dos gastan Gemini.
+ */
+router.post(
+  '/resumir',
+  scopusIaLimiter,
+  validate({ body: resumirSchema }),
+  scopusController.resumir,
 );
 router.post(
   '/importar',

@@ -74,4 +74,38 @@ const vueltaSchema = z
   })
   .passthrough();
 
-module.exports = { buscarSchema, consultaSchema, importarSchema, vueltaSchema };
+/**
+ * Lo que manda la web para el resumen con IA: la pregunta y los artículos de
+ * la página, con los datos que ya tiene en pantalla.
+ *
+ * Se aceptan del navegador y no se vuelven a pedir a Scopus: el resumen solo
+ * lo ve quien lo pide y no se guarda, así que alguien que mande datos falsos
+ * solo se engaña a sí mismo, y repetir la búsqueda gastaría cuota de Elsevier
+ * para nada. Con techo en todo, eso sí: esto acaba en una llamada que se paga.
+ */
+const fuenteParaResumir = z.object({
+  eid: z.string().trim().max(64),
+  doi: z.string().trim().max(200).nullable().optional(),
+  titulo: z.string().trim().min(1).max(500),
+  anio: z.coerce.number().int().min(1800).max(2100).nullable().optional(),
+});
+
+const resumirSchema = z.object({
+  pregunta: z
+    .string({ required_error: 'Escribe qué quieres saber.' })
+    .trim()
+    .min(3, 'Escribe qué quieres saber.')
+    .max(800, 'Acorta un poco la pregunta.'),
+  fuentes: z.array(fuenteParaResumir).min(1, 'No hay artículos que resumir.').max(10),
+  anteriores: z
+    .array(
+      z.object({
+        pregunta: z.string().trim().max(800),
+        respuesta: z.string().trim().max(3000),
+      }),
+    )
+    .max(3)
+    .optional(),
+});
+
+module.exports = { buscarSchema, consultaSchema, importarSchema, resumirSchema, vueltaSchema };

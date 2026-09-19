@@ -44,6 +44,8 @@ const ERROR_CODES = Object.freeze({
   ASSISTANT_UNAVAILABLE: 'ASSISTANT_UNAVAILABLE',
   // Lo mismo para R: que no se pueda analizar no es que la web esté caída.
   R_UNAVAILABLE: 'R_UNAVAILABLE',
+  // Y para el catálogo abierto: que OpenAlex no conteste no tapa la web.
+  CATALOG_UNAVAILABLE: 'CATALOG_UNAVAILABLE',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
 });
 

@@ -521,6 +521,109 @@ async function citanA(ids, { desdeAnio = null, cuantas = 10 } = {}) {
   return resultados.filter((w) => w.title).map(comoFicha);
 }
 
+/** Lo más que se trae para un mapa. Cinco páginas de doscientas. */
+const TOPE_DEL_MAPA = 1000;
+
+/**
+ * Por debajo de esta puntuación, la palabra clave es un «quizá» del
+ * clasificador. Comprobado el 19-sep-2026 con «digital marketing small
+ * business»: lo de 0,4 para arriba es del tema (Digital marketing 0,64, Small
+ * business 0,56); lo de abajo es la disciplina de fondo (Computer science 0,14,
+ * Sociology 0,10) y salía en casi todos los artículos, en el centro del mapa.
+ */
+const PUNTUACION_MINIMA = 0.4;
+
+/**
+ * Las diecinueve disciplinas raíz de OpenAlex (el nivel 0 de sus conceptos).
+ * Con la puntuación que tengan, son el campo entero y no un tema: en un mapa de
+ * marketing, «Business» sale en el 92 % de los artículos y tapa todo lo demás.
+ */
+const DISCIPLINAS_RAIZ = new Set(
+  [
+    'Art', 'Biology', 'Business', 'Chemistry', 'Computer science', 'Economics', 'Engineering',
+    'Environmental science', 'Geography', 'Geology', 'History', 'Materials science', 'Mathematics',
+    'Medicine', 'Philosophy', 'Physics', 'Political science', 'Psychology', 'Sociology',
+  ].map((d) => d.toLowerCase()),
+);
+
+/**
+ * Una palabra clave de OpenAlex, lista para el mapa, o null si no sirve.
+ *
+ * El clasificador desambigua mal a menudo y lo dice entre paréntesis:
+ * «Resilience (materials science)» en un artículo de empresas, «Promotion
+ * (chess)» en uno de marketing. La palabra sí es del artículo; el paréntesis
+ * no. Se quita y queda «Resilience», que es lo que diría su autor.
+ */
+function palabraDelMapa(k) {
+  if (!k?.display_name || (k.score ?? 0) < PUNTUACION_MINIMA) return null;
+  if (DISCIPLINAS_RAIZ.has(k.display_name.toLowerCase())) return null;
+  return k.display_name.replace(/\s*\([^)]*\)\s*$/, '').trim() || null;
+}
+
+/**
+ * Las obras de un tema con sus palabras clave, para el mapa de coocurrencia.
+ *
+ * Doscientas por página —el máximo de OpenAlex— y por cursor, que es la única
+ * paginación que no se degrada pasadas las primeras. Solo cuatro campos: con
+ * `select`, mil obras son unos cientos de kilobytes, sin él traerían los
+ * resúmenes enteros.
+ *
+ * Busca en título y resumen, no en el texto completo: para un mapa del campo
+ * sobran los artículos que solo mencionan el tema de pasada, y son los que más
+ * ensucian el mapa con palabras que no son del tema.
+ *
+ * Devuelve `{ obras, total, caida }`. `caida` solo si la PRIMERA página no
+ * llegó; si falla una posterior, se hace el mapa con lo que ya hay.
+ */
+async function obrasParaMapa({ tema, desdeAnio = null, hastaAnio = null, idioma = null, cuantas = 500 }) {
+  const quiero = Math.min(Math.max(cuantas, 1), TOPE_DEL_MAPA);
+  const filtros = [`title_and_abstract.search:${tema.replace(/,/g, ' ')}`];
+  if (desdeAnio) filtros.push(`from_publication_date:${desdeAnio}-01-01`);
+  if (hastaAnio) filtros.push(`to_publication_date:${hastaAnio}-12-31`);
+  if (idioma) filtros.push(`language:${idioma}`);
+
+  const obras = [];
+  let total = 0;
+  let cursor = '*';
+
+  while (cursor && obras.length < quiero) {
+    const url = new URL(BASE);
+    url.searchParams.set('filter', filtros.join(','));
+    url.searchParams.set('select', 'id,publication_year,cited_by_count,keywords');
+    url.searchParams.set('sort', 'cited_by_count:desc');
+    url.searchParams.set('per_page', String(Math.min(200, quiero - obras.length)));
+    url.searchParams.set('cursor', cursor);
+    firmar(url);
+
+    const res = await fetch(url, { signal: AbortSignal.timeout(TIEMPO_LIMITE_MS) }).catch((error) => {
+      logger.warn({ err: error, tema }, 'OpenAlex no respondió al pedir obras para un mapa');
+      return null;
+    });
+
+    if (!res || !res.ok) {
+      if (res) avisarRechazo(res, { tema }, 'OpenAlex rechazó las obras para un mapa');
+      if (obras.length === 0) return { obras: [], total: 0, caida: true };
+      break;
+    }
+
+    const datos = await res.json().catch(() => null);
+    const pagina = datos?.results ?? [];
+    total = datos?.meta?.count ?? total;
+
+    for (const w of pagina) {
+      obras.push({
+        terminos: (w.keywords ?? []).map(palabraDelMapa).filter(Boolean),
+        anio: w.publication_year ?? null,
+        citas: w.cited_by_count ?? 0,
+      });
+    }
+
+    cursor = pagina.length > 0 ? datos?.meta?.next_cursor ?? null : null;
+  }
+
+  return { obras, total, caida: false };
+}
+
 /** «https://openalex.org/W123» → «W123». El filtro quiere el corto. */
 const soloElId = (id) => String(id).replace(/^https?:\/\/openalex\.org\//i, '');
 
@@ -532,6 +635,7 @@ module.exports = {
   resumenesPorDoi,
   agrupar,
   citanA,
+  obrasParaMapa,
   limpiarDoi,
   nombreApa,
   resumenDelIndice,

@@ -159,6 +159,21 @@ const scopusCuentasLimiter = build({
 });
 
 /**
+ * Los mapas de coocurrencia para VOSviewer.
+ *
+ * Un mapa desde OpenAlex son hasta cinco páginas de doscientas obras contra el
+ * presupuesto diario de la casa. Quince cada diez minutos por persona: da para
+ * afinar el umbral, los sinónimos y lo excluido varias veces, y corta a quien
+ * lo use para recorrer OpenAlex entero.
+ */
+const mapasLimiter = build({
+  windowMs: 10 * 60 * 1000,
+  max: 15,
+  message: 'Has creado muchos mapas seguidos. Espera unos minutos.',
+  keyGenerator: porUsuario,
+});
+
+/**
  * Conectar y desconectar Scopus.
  *
  * Aparte del de buscar y más holgado, por lo mismo que en Zotero: conectar no
@@ -274,6 +289,7 @@ module.exports = {
   scopusConectarLimiter,
   scopusIaLimiter,
   scopusCuentasLimiter,
+  mapasLimiter,
   asistenteLimiter,
   reclamoLimiter,
   mcpLimiter,

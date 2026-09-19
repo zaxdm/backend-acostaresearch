@@ -16,6 +16,7 @@ const projectRoutes = require('./modules/projects/project.routes');
 const trialRoutes = require('./modules/trials/trial.routes');
 const zoteroRoutes = require('./modules/zotero/biblioteca.routes');
 const scopusRoutes = require('./modules/scopus/scopus.routes');
+const mapasRoutes = require('./modules/mapas/mapas.routes');
 const asistenteRoutes = require('./modules/asistente/asistente.routes');
 const reclamoRoutes = require('./modules/reclamos/reclamo.routes');
 const rRoutes = require('./modules/r/r.routes');
@@ -64,6 +65,8 @@ router.use('/mi-zotero', zoteroRoutes);
 // fuentes acaban en el mismo sitio que su export y que su Zotero, y solo las
 // ve él. Apagado salvo que el .env lo encienda: ver SCOPUS_API_ENABLED.
 router.use('/mi-scopus', scopusRoutes);
+// Los mapas de coocurrencia para VOSviewer, desde OpenAlex o desde sus fuentes.
+router.use('/mis-mapas', mapasRoutes);
 // El chat de la web. Público: está para quien todavía no tiene cuenta.
 router.use('/asistente', asistenteRoutes);
 // El Libro de Reclamaciones. Presentar una hoja es público; responderla, del

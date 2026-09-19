@@ -144,10 +144,10 @@ const ESQUEMA_MIS_FUENTES = fromJsonSchema({
     },
     origen: {
       type: 'string',
-      enum: ['todas', 'zotero', 'subidas'],
+      enum: ['todas', 'zotero', 'mendeley', 'subidas'],
       description:
-        '«zotero» para ver solo lo que trajo de su Zotero; «subidas», lo que subió de un ' +
-        'export o guardó por DOI. Por omisión, todas.',
+        '«zotero» para ver solo lo que trajo de su Zotero; «mendeley», lo de su Mendeley; ' +
+        '«subidas», lo que subió de un export o guardó por DOI. Por omisión, todas.',
     },
   },
   additionalProperties: false,
@@ -1953,12 +1953,12 @@ function construirServidor(licencia) {
         title: 'Buscar fuentes en la biblioteca, su Zotero incluido',
         description:
           'Busca referencias reales y verificadas en DOS bibliotecas a la vez: la de Acosta | ' +
-          'IA & Research y LA DEL PROPIO TESISTA, que incluye la colección de SU ZOTERO que ' +
-          'conectó desde su perfil en la web, sus exports de Scopus, Web of Science o SciELO y ' +
-          'lo que guardó por DOI. ' +
-          'SI TE PIDE CITAR DE SU ZOTERO, ES AQUÍ: sus fuentes de Zotero ya están dentro y ' +
-          'salen marcadas «de tu Zotero». No busques otro conector de Zotero ni le digas que ' +
-          'no tienes acceso. Para ver su lista entera, sin tema, usa "mis_fuentes". ' +
+          'IA & Research y LA DEL PROPIO TESISTA, que incluye la colección de SU ZOTERO y la ' +
+          'carpeta de SU MENDELEY que conectó desde su perfil en la web, sus exports de Scopus, ' +
+          'Web of Science o SciELO y lo que guardó por DOI. ' +
+          'SI TE PIDE CITAR DE SU ZOTERO O DE SU MENDELEY, ES AQUÍ: esas fuentes ya están dentro ' +
+          'y salen marcadas «de tu Zotero» o «de tu Mendeley». No busques otro conector ni le ' +
+          'digas que no tienes acceso. Para ver su lista entera, sin tema, usa "mis_fuentes". ' +
           'ÚSALA SIEMPRE que haga falta citar: antecedentes, marco teórico, metodología o ' +
           'discusión. NO cites de memoria: los datos bibliográficos que no salen de aquí ' +
           'suelen tener el año o el DOI equivocados, y eso lo comprueba un jurado en segundos. ' +
@@ -2037,7 +2037,7 @@ function construirServidor(licencia) {
                 'estudiado es un hallazgo que va en la justificación, no un problema que se ' +
                 'tape citando de memoria.\n\n' +
                 'Y dile que puede traer SUS PROPIAS fuentes desde su perfil en la web: ' +
-                'conectando su Zotero en «Tu Zotero», o subiendo su export de Scopus, Web of ' +
+                'conectando su Zotero o su Mendeley en «Tus herramientas», o subiendo su export de Scopus, Web of ' +
                 'Science o SciELO en «Método de tesis → Mis fuentes». Desde ese momento estas ' +
                 'búsquedas también leen de ahí. Si ya las trajo, "mis_fuentes" le enseña qué hay.',
             );
@@ -2087,7 +2087,9 @@ function construirServidor(licencia) {
           lineas.push(
             f.deZotero
               ? '   [de tu Zotero]'
-              : f.propia
+              : f.deMendeley
+                ? '   [de tu Mendeley]'
+                : f.propia
                 ? '   [de tu biblioteca]'
                 : '   [biblioteca de Acosta · curada]',
           );
@@ -2109,11 +2111,13 @@ function construirServidor(licencia) {
          * que el modelo usa para narrar el conjunto.
          */
         const deSuZotero = fuentes.filter((f) => f.deZotero).length;
-        const subidas = fuentes.filter((f) => f.propia && !f.deZotero).length;
-        const deLaCasa = fuentes.length - deSuZotero - subidas;
+        const deSuMendeley = fuentes.filter((f) => f.deMendeley).length;
+        const subidas = fuentes.filter((f) => f.propia && !f.deZotero && !f.deMendeley).length;
+        const deLaCasa = fuentes.length - deSuZotero - deSuMendeley - subidas;
 
         const partes = [
           deSuZotero > 0 ? `${deSuZotero} de su Zotero` : null,
+          deSuMendeley > 0 ? `${deSuMendeley} de su Mendeley` : null,
           subidas > 0 ? `${subidas} que subió él` : null,
           deLaCasa > 0 ? `${deLaCasa} de la biblioteca de Acosta` : null,
         ].filter(Boolean);
@@ -2128,7 +2132,7 @@ function construirServidor(licencia) {
         return texto(
           `Fuentes sobre «${tema}» (${procedencia}):\n\n${fichas.join('\n\n')}\n\n` +
             'RESPETA LA PROCEDENCIA DE CADA UNA, que va marcada bajo su ficha. Las que dicen ' +
-            '«de tu Zotero» o «de tu biblioteca» las eligió el tesista: son suyas y NO están revisadas ' +
+            '«de tu Zotero», «de tu Mendeley» o «de tu biblioteca» las eligió el tesista: son suyas y NO están revisadas ' +
             'por Acosta, así que no se las presentes como si lo estuvieran. Las que dicen ' +
             '«biblioteca de Acosta» sí pasaron por su criterio, y eso es justo lo que las ' +
             'distingue.\n\n' +
@@ -2434,15 +2438,15 @@ function construirServidor(licencia) {
   server.registerTool(
     'mis_fuentes',
     {
-      title: 'Su biblioteca, su Zotero incluido',
+      title: 'Su biblioteca, su Zotero y su Mendeley incluidos',
       description:
-        'Enseña la biblioteca PROPIA del tesista: la colección de SU ZOTERO que conectó ' +
-        'desde su perfil en la web, lo que subió de Scopus, Web of Science o SciELO, y lo ' +
-        'que guardó por DOI. Dice cuántas tiene, de qué colección de Zotero vienen y cuándo ' +
-        'se actualizaron, y las lista por páginas con la clave de cada una para citarla. ' +
-        'ÚSALA cuando pregunte por SU ZOTERO, su colección o su carpeta, o por «mis ' +
-        'fuentes», «mi biblioteca», «qué tengo». SÍ TIENES ACCESO a lo que trajo de Zotero: ' +
-        'es por aquí, no por otro conector. ' +
+        'Enseña la biblioteca PROPIA del tesista: la colección de SU ZOTERO y la carpeta de ' +
+        'SU MENDELEY que conectó desde su perfil en la web, lo que subió de Scopus, Web of ' +
+        'Science o SciELO, y lo que guardó por DOI. Dice cuántas tiene, de dónde vienen y ' +
+        'cuándo se actualizaron, y las lista por páginas con la clave de cada una para citarla. ' +
+        'ÚSALA cuando pregunte por SU ZOTERO, SU MENDELEY, su colección o su carpeta, o por ' +
+        '«mis fuentes», «mi biblioteca», «qué tengo». SÍ TIENES ACCESO a lo que trajo de ' +
+        'Zotero y de Mendeley: es por aquí, no por otro conector. ' +
         (env.zoteroEnabled
           ? 'Para las de un tema concreto no pases páginas: usa "buscar_fuentes", que busca ' +
             'dentro de estas. '
@@ -2456,6 +2460,7 @@ function construirServidor(licencia) {
 
       const b = await propiasService.biblioteca(licencia.userId, { pagina, origen });
       const zotero = b.zotero;
+      const mendeley = b.mendeley;
       const fecha = (valor) =>
         new Date(valor).toLocaleDateString('es-PE', {
           day: 'numeric',
@@ -2485,6 +2490,25 @@ function construirServidor(licencia) {
             'desde «Tu Zotero» en su perfil puede volver a conectarlo o pulsar «Actualizar ahora».',
         );
       }
+      if (mendeley?.trayendo) {
+        avisos.push(
+          'Su Mendeley se está trayendo AHORA MISMO: puede que falten fuentes. Que vuelva a ' +
+            'pedirlo en un par de minutos.',
+        );
+      }
+      if (mendeley && !mendeley.coleccion) {
+        avisos.push(
+          'Tiene Mendeley conectado pero NO HA ELEGIDO QUÉ TRAER: que entre en su perfil de la ' +
+            'web, en «Tu Mendeley», y elija una carpeta o toda su biblioteca. Hasta entonces no ' +
+            'se importa nada de ahí.',
+        );
+      }
+      if (mendeley?.error) {
+        avisos.push(
+          `La última vez que se intentó traer su Mendeley falló: «${mendeley.error}». Díselo; ` +
+            'desde «Tu Mendeley» en su perfil puede volver a conectarlo o pulsar «Actualizar ahora».',
+        );
+      }
 
       if (b.total === 0) {
         return texto(
@@ -2494,7 +2518,8 @@ function construirServidor(licencia) {
             (avisos.length > 0
               ? avisos.join(N)
               : 'Díselo tal cual y cuéntale cómo traerlas desde su perfil en la web: conectando ' +
-                'su Zotero en «Tu Zotero» —elige una colección y se actualiza sola cada noche— o ' +
+                'su Zotero o su Mendeley en «Tus herramientas» —elige una colección o carpeta y ' +
+                'se actualiza sola cada noche— o ' +
                 'subiendo su export de Scopus, Web of Science o SciELO en «Mis fuentes».') +
             (env.zoteroEnabled
               ? `${N}${N}Mientras tanto, "buscar_fuentes" sigue buscando en la biblioteca de Acosta.`
@@ -2512,6 +2537,15 @@ function construirServidor(licencia) {
             (zotero ? '' : ' Ya no tiene Zotero conectado: se quedaron las que había traído.'),
         );
       }
+      if (b.deMendeley > 0) {
+        const deDonde = mendeley?.coleccion ? ` —de «${mendeley.coleccion}»` : '';
+        const alDia = mendeley?.ultima ? `, al día del ${fecha(mendeley.ultima)}` : '';
+        const cierre = deDonde ? '—' : '';
+        resumen.push(
+          `· ${b.deMendeley} de su Mendeley${deDonde}${alDia}${cierre}.` +
+            (mendeley ? '' : ' Ya no tiene Mendeley conectado: se quedaron las que había traído.'),
+        );
+      }
       if (b.subidas > 0) {
         resumen.push(
           `· ${b.subidas} que subió él: de un export de Scopus, Web of Science o SciELO, o por DOI.`,
@@ -2521,7 +2555,9 @@ function construirServidor(licencia) {
       const filtro =
         b.origen === 'zotero'
           ? ' (solo las de Zotero)'
-          : b.origen === 'subidas'
+          : b.origen === 'mendeley'
+            ? ' (solo las de Mendeley)'
+            : b.origen === 'subidas'
             ? ' (solo las subidas)'
             : '';
 
@@ -2534,9 +2570,12 @@ function construirServidor(licencia) {
         );
       }
 
-      // La marca de origen solo si hay de las dos: en una biblioteca que es toda
-      // de Zotero, repetir «Zotero» cuarenta veces no dice nada.
-      const mezcladas = b.origen === 'todas' && b.deZotero > 0 && b.subidas > 0;
+      // La marca de origen solo si hay de más de una procedencia: en una
+      // biblioteca que es toda de Zotero, repetir «Zotero» cuarenta veces no
+      // dice nada.
+      const mezcladas =
+        b.origen === 'todas' && [b.deZotero, b.deMendeley, b.subidas].filter((n) => n > 0).length > 1;
+      const MARCAS = { ZOTERO: '   · Zotero', MENDELEY: '   · Mendeley' };
       const recortar = (valor, largo) => {
         const limpio = String(valor ?? '').trim();
         return limpio.length > largo ? `${limpio.slice(0, largo - 1)}…` : limpio;
@@ -2544,7 +2583,7 @@ function construirServidor(licencia) {
 
       const lista = b.fuentes.map((f, i) => {
         const autores = recortar(f.authors, 90) || '(Autor no consignado)';
-        const marca = mezcladas ? (f.origin === 'ZOTERO' ? '   · Zotero' : '   · subida') : '';
+        const marca = mezcladas ? (MARCAS[f.origin] ?? '   · subida') : '';
         const titulo = recortar(f.title, 180);
         return `${b.desde + i}. [${f.ref}]  ${autores} (${f.year ?? 's. f.'}). ${titulo}${marca}`;
       });
@@ -2568,8 +2607,9 @@ function construirServidor(licencia) {
             ? 'Para las que traten de un tema concreto, "buscar_fuentes" busca dentro de estas ' +
               'y te da el resumen de cada una. '
             : '') +
-          'Si falta una que tiene en Zotero, puede que no esté en la colección elegida o que no ' +
-          'se haya actualizado aún: en su perfil, «Tu Zotero» → «Actualizar ahora».',
+          'Si falta una que tiene en Zotero o en Mendeley, puede que no esté en la colección o ' +
+          'carpeta elegida o que no se haya actualizado aún: en su perfil, «Tu Zotero» o «Tu ' +
+          'Mendeley» → «Actualizar ahora».',
       );
     },
   );
@@ -3332,10 +3372,13 @@ function construirServidor(licencia) {
           'entrevista por archivo). ' +
           '"ver" (con "entrevista", p. ej. "E1", y "desde") devuelve sus párrafos numerados ¶n, por ' +
           'tandas. ' +
+          'ANTES DE CODIFICAR, lee sus objetivos y su metodología con "ver_capitulo" (si están ' +
+          'guardados) para sacar de ahí las categorías y el enfoque; pregúntalos solo si no están. ' +
           'CÓMO SE CODIFICA: de UNA entrevista a la vez. Léela entera, propón al usuario los códigos ' +
           '(nombre, definición y categoría) y las citas de cada uno, y guarda con "codificar" SOLO cuando ' +
-          'él lo apruebe: nadie codifica a ciegas. Reutiliza los códigos que ya están en el libro antes ' +
-          'de crear otros parecidos. Cada cita es un fragmento COPIADO TAL CUAL de un párrafo, sin ' +
+          'el usuario lo apruebe: nadie codifica a ciegas. Apunta a entre 5 y 12 códigos por entrevista y a no ' +
+          'más de 25 o 30 en todo el libro: un código por matiz deja una red ilegible. Reutiliza los ' +
+          'códigos que ya están en el libro antes de crear otros parecidos. Cada cita es un fragmento COPIADO TAL CUAL de un párrafo, sin ' +
           'resumirlo ni corregirlo: si el texto no está en ese párrafo, se rechaza la codificación ' +
           'entera y se dice qué cita falló. Una cita puede llevar varios códigos. "codificar" REEMPLAZA ' +
           'lo que tenía esa entrevista: para corregir, vuelve a mandarla completa. ' +

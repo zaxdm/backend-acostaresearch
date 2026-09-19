@@ -702,6 +702,62 @@ function licenseRenewed({ firstName, planName, expiresAt, via }) {
 }
 
 /**
+ * Al dueño de una cuenta: el administrador le cambió el correo.
+ *
+ * Sale a los dos correos con un texto distinto. El nuevo necesita saber que ya
+ * entra con él; el viejo, que desde aquí ya no le llega nada, y a quién
+ * escribir si no lo pidió.
+ */
+function emailChangedByAdmin({ firstName, anterior, nuevo, paraElNuevo }) {
+  const acceso = `${appUrl()}/auth/login`;
+  const titulo = 'Cambiamos el correo de tu cuenta';
+
+  const cuerpoTexto = paraElNuevo
+    ? [
+        `Desde ahora entras a Acosta Research con ${nuevo}, y aquí te llegarán los códigos y los avisos.`,
+        '',
+        'Tu contraseña, tus accesos y tu tesis siguen igual. Si entrabas con Google, vuelve a pulsar «Continuar con Google» con esta cuenta y se enlaza sola.',
+        '',
+        `Entrar: ${acceso}`,
+      ]
+    : [
+        `El correo de tu cuenta de Acosta Research ahora es ${nuevo}. Desde ahora ya no te llegarán avisos a ${anterior}.`,
+        '',
+        'Si no lo pediste tú, responde a este mensaje o escríbenos por WhatsApp cuanto antes.',
+      ];
+
+  const cuerpoHtml = paraElNuevo
+    ? `<p style="margin:0 0 18px;font-size:15px;line-height:1.6">Hola ${escapar(firstName)}:
+         desde ahora entras a Acosta Research con <strong>${escapar(nuevo)}</strong>, y aquí te
+         llegarán los códigos y los avisos.</p>
+
+       <p style="margin:0 0 22px;font-size:14px;line-height:1.6;color:#4b5563">
+         Tu contraseña, tus accesos y tu tesis siguen igual. Si entrabas con Google, vuelve a
+         pulsar «Continuar con Google» con esta cuenta y se enlaza sola.
+       </p>
+
+       <p style="margin:0;font-size:14px">
+         <a href="${acceso}" style="color:#1a56db">Entrar a mi cuenta</a>
+       </p>`
+    : `<p style="margin:0 0 18px;font-size:15px;line-height:1.6">Hola ${escapar(firstName)}:
+         el correo de tu cuenta de Acosta Research ahora es <strong>${escapar(nuevo)}</strong>.
+         Desde ahora ya no te llegarán avisos a ${escapar(anterior)}.</p>
+
+       <p style="margin:0;padding:14px 16px;background:#fdf3e3;border-radius:10px;
+                 font-size:14px;line-height:1.6;color:#96590d">
+         Si no lo pediste tú, responde a este mensaje o escríbenos por WhatsApp cuanto antes.
+       </p>`;
+
+  return {
+    subject: `${titulo} · Acosta Research`,
+    text: [`Hola ${firstName}:`, '', ...cuerpoTexto].join('\n'),
+    html: layout(titulo, cuerpoHtml, {
+      preheader: paraElNuevo ? `Ahora entras con ${escapar(nuevo)}.` : `Tu cuenta ahora usa ${escapar(nuevo)}.`,
+    }),
+  };
+}
+
+/**
  * Al comprador: su licencia pasó a otro producto.
  *
  * NO se le pide que regenere la URL, y es a propósito.
@@ -1221,6 +1277,7 @@ module.exports = {
   licenseReady,
   licenseRenewed,
   licenseProductChanged,
+  emailChangedByAdmin,
   // Este no sale de una compra, sino del aviso diario de caducidades.
   licenseExpiring,
   wordsReady,

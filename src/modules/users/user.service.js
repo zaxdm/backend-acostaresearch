@@ -12,7 +12,11 @@ const {
 const prisma = require('../../lib/prisma');
 const { sendMail } = require('../../lib/mailer');
 const { avisarAlAdmin } = require('../../lib/notify');
-const { passwordChangeCode, adminAccountCreated } = require('../../lib/emailTemplates');
+const {
+  passwordChangeCode,
+  adminAccountCreated,
+  emailChangedByAdmin,
+} = require('../../lib/emailTemplates');
 const tokenRepository = require('../auth/token.repository');
 const projectStorage = require('../projects/project.storage');
 const { hashPassword } = require('../../shared/utils/password');
@@ -89,6 +93,63 @@ const userService = {
     const user = await userRepository.update(userId, { firstName, lastName });
     logger.info({ userId }, 'Datos de la cuenta actualizados');
     return user;
+  },
+
+  /**
+   * El administrador cambia el correo de una cuenta: con el que entra y al que
+   * le llegan los códigos. Es para quien compró con un correo mal escrito o
+   * perdió el acceso a su bandeja y nos lo pide por WhatsApp.
+   *
+   * El correo nuevo queda verificado: lo pone el administrador después de
+   * hablar con el dueño, y pedirle un código a una bandeja que quizá todavía no
+   * revisa solo lo dejaría sin entrar.
+   *
+   * Se desvincula Google. «Continuar con Google» busca primero por la cuenta de
+   * Google ya enlazada, así que sin esto la cuenta vieja seguiría entrando; la
+   * próxima vez que entre con Google con el correo nuevo, se enlaza sola.
+   *
+   * Las sesiones abiertas siguen: el correo no es la llave, y echarle en mitad
+   * de su tesis por un cambio que pidió él no le sirve de nada.
+   *
+   * Avisa a los dos correos. Al nuevo, para que sepa con qué entrar; al viejo,
+   * porque si el cambio no lo pidió su dueño, es por donde se va a enterar.
+   */
+  async cambiarCorreoPorAdmin({ userId, email, adminId }) {
+    const usuario = await userRepository.findById(userId);
+    if (!usuario) throw new NotFoundError('No encontramos la cuenta de esta licencia.');
+
+    const anterior = usuario.email;
+    if (anterior === email) return { anterior, email };
+
+    const ocupado = await userRepository.findByEmail(email);
+    if (ocupado) throw new ConflictError('Ya hay otra cuenta con ese correo.');
+
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: userId },
+        data: { email, googleId: null, emailVerifiedAt: usuario.emailVerifiedAt ?? new Date() },
+      }),
+      // Un registro a medias con el correo nuevo chocaría con esta cuenta al
+      // verificarse: ese correo ya tiene dueño.
+      prisma.pendingRegistration.deleteMany({ where: { email } }),
+    ]);
+
+    logger.warn({ userId, anterior, email, porAdmin: adminId }, 'Correo de la cuenta cambiado por un administrador');
+
+    const nombre = usuario.firstName || 'Hola';
+    for (const [destino, paraElNuevo] of [
+      [email, true],
+      [anterior, false],
+    ]) {
+      const mensaje = emailChangedByAdmin({ firstName: nombre, anterior, nuevo: email, paraElNuevo });
+      // Que no salga el aviso no deshace el cambio: ya está hecho y el
+      // administrador lo está viendo. Se anota y sigue.
+      sendMail({ to: destino, ...mensaje }).catch((error) =>
+        logger.error({ err: error, userId, destino }, 'No salió el aviso del cambio de correo'),
+      );
+    }
+
+    return { anterior, email };
   },
 
   /**

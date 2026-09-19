@@ -115,11 +115,35 @@ const listQuerySchema = z.object({
 });
 
 /** Encender o apagar que esa licencia pueda abrir varias tesis. */
+/**
+ * El correo nuevo del dueño de una licencia, cambiado desde el panel.
+ *
+ * Con la misma revisión de erratas que el registro: a ese correo le llegarán
+ * los códigos y el acceso, y un `gamil.com` lo dejaría fuera de su cuenta.
+ */
+const cambiarCorreoSchema = z.object({
+  email: z
+    .string({ required_error: 'Escribe el correo nuevo.' })
+    .trim()
+    .toLowerCase()
+    .email('El correo no tiene un formato válido.')
+    .max(255)
+    .superRefine((valor, ctx) => {
+      const { problema, sugerencia } = revisarCorreo(valor);
+      if (!problema) return;
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: sugerencia ? `${problema} ¿Quisiste decir ${sugerencia}?` : problema,
+      });
+    }),
+});
+
 const variasTesisSchema = z.object({
   activar: z.boolean({ required_error: 'Dime si lo activo o lo quito.' }),
 });
 
 module.exports = {
+  cambiarCorreoSchema,
   variasTesisSchema,
   generateCodesSchema,
   checkEmailsSchema,

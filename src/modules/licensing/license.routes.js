@@ -15,6 +15,7 @@ const {
   revokeSchema,
   changeProductSchema,
   variasTesisSchema,
+  cambiarCorreoSchema,
   idParamSchema,
   listQuerySchema,
 } = require('./license.schema');
@@ -101,6 +102,15 @@ router.post(
   '/:id/varias-tesis',
   validate({ params: idParamSchema, body: variasTesisSchema }),
   licenseController.variasTesis,
+);
+
+// Cambiar el correo de la cuenta dueña de la licencia: con el que entra y al que
+// le llegan los códigos. Cuelga de la licencia porque es lo que tiene la ficha
+// del acceso; lo que cambia es la cuenta, no la licencia, y la URL sigue igual.
+router.post(
+  '/:id/email',
+  validate({ params: idParamSchema, body: cambiarCorreoSchema }),
+  licenseController.cambiarCorreo,
 );
 
 router.post(

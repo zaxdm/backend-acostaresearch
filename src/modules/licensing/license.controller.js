@@ -4,6 +4,7 @@ const asyncHandler = require('../../shared/http/asyncHandler');
 const { ok, created, noContent } = require('../../shared/http/apiResponse');
 const { addDays } = require('../../shared/utils/tokens');
 const licenseService = require('./license.service');
+const userService = require('../users/user.service');
 const { ValidationError } = require('../../shared/errors/AppError');
 const { ROLES } = require('../../config/constants');
 const { revisarCorreos } = require('../../shared/utils/correo');
@@ -191,6 +192,25 @@ const licenseController = {
         message: license.variasTesis
           ? 'Listo: ya puede abrir varias tesis de este método desde su perfil.'
           : 'Permiso quitado: ya no puede abrir más tesis. Las que tenga se conservan.',
+      },
+    );
+  }),
+
+  cambiarCorreo: asyncHandler(async (req, res) => {
+    const { anterior, email } = await userService.cambiarCorreoPorAdmin({
+      userId: await licenseService.duenoDe(req.params.id),
+      email: req.body.email,
+      adminId: req.user.id,
+    });
+
+    return ok(
+      res,
+      { email, anterior },
+      {
+        message:
+          anterior === email
+            ? 'Ese ya era su correo: no cambió nada.'
+            : `Listo: ahora entra con ${email}. Le avisamos en los dos correos.`,
       },
     );
   }),

@@ -1149,6 +1149,13 @@ const licenseService = {
     return actualizada;
   },
 
+  /** De qué cuenta es la licencia. Para tocar la cuenta desde la ficha del acceso. */
+  async duenoDe(id) {
+    const licencia = await licenseRepository.findById(id);
+    if (!licencia) throw new NotFoundError('No encontramos esa licencia.');
+    return licencia.userId;
+  },
+
   listAll(filtros) {
     return licenseRepository.listAll(filtros);
   },

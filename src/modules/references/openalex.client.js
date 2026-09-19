@@ -561,12 +561,58 @@ function palabraDelMapa(k) {
 }
 
 /**
- * Las obras de un tema con sus palabras clave, para el mapa de coocurrencia.
+ * Qué campos de OpenAlex hacen falta para cada parte del mapa.
+ *
+ * Se piden solo los que usa el análisis: las referencias de mil obras son
+ * cuarenta mil identificadores, y los resúmenes, megas de texto. Un mapa de
+ * coautoría no necesita ninguna de las dos cosas.
+ */
+const CAMPOS_DEL_MAPA = {
+  palabras: 'keywords',
+  autores: 'authorships',
+  fuente: 'primary_location',
+  referencias: 'referenced_works',
+  texto: 'abstract_inverted_index',
+};
+
+function seleccion(campos) {
+  const base = ['id', 'doi', 'title', 'publication_year', 'cited_by_count'];
+  return [...base, ...campos.map((c) => CAMPOS_DEL_MAPA[c]).filter(Boolean)].join(',');
+}
+
+const unicos = (lista) => [...new Set(lista.filter(Boolean))];
+
+/**
+ * Una obra de OpenAlex, en la forma que usan los mapas.
+ *
+ * Lo que no se pidió llega vacío, no ausente: así cada análisis lee siempre
+ * los mismos campos sin preguntar si están.
+ */
+function obraDelMapa(w) {
+  const autorias = w.authorships ?? [];
+  return {
+    id: soloElId(w.id),
+    doi: limpiarDoi(w.doi),
+    titulo: w.title ?? '',
+    anio: w.publication_year ?? null,
+    citas: w.cited_by_count ?? 0,
+    palabras: (w.keywords ?? []).map(palabraDelMapa).filter(Boolean),
+    autores: unicos(autorias.map((a) => nombreApa(a?.author?.display_name, a?.countries))),
+    nAutores: autorias.length,
+    instituciones: unicos(autorias.flatMap((a) => (a?.institutions ?? []).map((i) => i?.display_name))),
+    paises: unicos(autorias.flatMap((a) => a?.countries ?? [])),
+    fuente: w.primary_location?.source?.display_name ?? null,
+    referencias: (w.referenced_works ?? []).map(soloElId),
+    resumen: w.abstract_inverted_index ? resumenDelIndice(w.abstract_inverted_index) : null,
+  };
+}
+
+/**
+ * Las obras de un tema, para un mapa.
  *
  * Doscientas por página —el máximo de OpenAlex— y por cursor, que es la única
- * paginación que no se degrada pasadas las primeras. Solo cuatro campos: con
- * `select`, mil obras son unos cientos de kilobytes, sin él traerían los
- * resúmenes enteros.
+ * paginación que no se degrada pasadas las primeras. Las más citadas primero:
+ * con un tope de mil, son las que definen el campo.
  *
  * Busca en título y resumen, no en el texto completo: para un mapa del campo
  * sobran los artículos que solo mencionan el tema de pasada, y son los que más
@@ -575,7 +621,14 @@ function palabraDelMapa(k) {
  * Devuelve `{ obras, total, caida }`. `caida` solo si la PRIMERA página no
  * llegó; si falla una posterior, se hace el mapa con lo que ya hay.
  */
-async function obrasParaMapa({ tema, desdeAnio = null, hastaAnio = null, idioma = null, cuantas = 500 }) {
+async function obrasParaMapa({
+  tema,
+  desdeAnio = null,
+  hastaAnio = null,
+  idioma = null,
+  cuantas = 500,
+  campos = ['palabras'],
+}) {
   const quiero = Math.min(Math.max(cuantas, 1), TOPE_DEL_MAPA);
   const filtros = [`title_and_abstract.search:${tema.replace(/,/g, ' ')}`];
   if (desdeAnio) filtros.push(`from_publication_date:${desdeAnio}-01-01`);
@@ -589,13 +642,14 @@ async function obrasParaMapa({ tema, desdeAnio = null, hastaAnio = null, idioma 
   while (cursor && obras.length < quiero) {
     const url = new URL(BASE);
     url.searchParams.set('filter', filtros.join(','));
-    url.searchParams.set('select', 'id,publication_year,cited_by_count,keywords');
+    url.searchParams.set('select', seleccion(campos));
     url.searchParams.set('sort', 'cited_by_count:desc');
     url.searchParams.set('per_page', String(Math.min(200, quiero - obras.length)));
     url.searchParams.set('cursor', cursor);
     firmar(url);
 
-    const res = await fetch(url, { signal: AbortSignal.timeout(TIEMPO_LIMITE_MS) }).catch((error) => {
+    // Con referencias y resúmenes una página pesa más: se le da el doble.
+    const res = await fetch(url, { signal: AbortSignal.timeout(TIEMPO_LIMITE_MS * 2) }).catch((error) => {
       logger.warn({ err: error, tema }, 'OpenAlex no respondió al pedir obras para un mapa');
       return null;
     });
@@ -609,20 +663,37 @@ async function obrasParaMapa({ tema, desdeAnio = null, hastaAnio = null, idioma 
     const datos = await res.json().catch(() => null);
     const pagina = datos?.results ?? [];
     total = datos?.meta?.count ?? total;
-
-    for (const w of pagina) {
-      obras.push({
-        terminos: (w.keywords ?? []).map(palabraDelMapa).filter(Boolean),
-        anio: w.publication_year ?? null,
-        citas: w.cited_by_count ?? 0,
-      });
-    }
+    for (const w of pagina) obras.push(obraDelMapa(w));
 
     cursor = pagina.length > 0 ? datos?.meta?.next_cursor ?? null : null;
   }
 
   return { obras, total, caida: false };
 }
+
+/**
+ * Las obras de una lista de DOI o de identificadores, para un mapa.
+ *
+ * Es lo que deja hacer con SUS fuentes los mismos análisis que con una
+ * búsqueda: su export de Scopus trae el DOI, y los autores con su afiliación,
+ * la revista y las referencias llegan de aquí. En lotes de cincuenta, una
+ * petición por lote.
+ */
+async function obrasPorLotes(campo, valores, campos) {
+  const obras = [];
+  for (const lote of enLotes(unicos(valores), POR_FILTRO)) {
+    const resultados = await consultar({
+      filter: `${campo}:${lote.join('|')}`,
+      select: seleccion(campos),
+      'per-page': String(POR_FILTRO),
+    });
+    for (const w of resultados) obras.push(obraDelMapa(w));
+  }
+  return obras;
+}
+
+const obrasPorDoi = (dois, campos) => obrasPorLotes('doi', dois.map(limpiarDoi).filter(Boolean), campos);
+const obrasPorIds = (ids, campos) => obrasPorLotes('ids.openalex', ids.map(soloElId), campos);
 
 /** «https://openalex.org/W123» → «W123». El filtro quiere el corto. */
 const soloElId = (id) => String(id).replace(/^https?:\/\/openalex\.org\//i, '');
@@ -636,6 +707,8 @@ module.exports = {
   agrupar,
   citanA,
   obrasParaMapa,
+  obrasPorDoi,
+  obrasPorIds,
   limpiarDoi,
   nombreApa,
   resumenDelIndice,

@@ -45,6 +45,7 @@
     "adm-zip": "^0.6.1",
     "argon2": "^0.41.1",
     "citeproc": "2.4.63",
+    "compromise": "14.17.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "docx": "^9.7.1",

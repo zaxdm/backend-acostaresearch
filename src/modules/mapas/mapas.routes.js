@@ -4,7 +4,7 @@ const { Router } = require('express');
 const authenticate = require('../../middlewares/authenticate');
 const validate = require('../../middlewares/validate');
 const { mapasLimiter } = require('../../middlewares/rateLimit');
-const { coocurrenciaSchema } = require('./mapas.schema');
+const { mapaSchema } = require('./mapas.schema');
 const mapasController = require('./mapas.controller');
 
 const router = Router();
@@ -18,11 +18,12 @@ const router = Router();
  */
 router.use(authenticate);
 
-router.post(
-  '/coocurrencia',
-  mapasLimiter,
-  validate({ body: coocurrenciaSchema }),
-  mapasController.coocurrencia,
-);
+/**
+ * Un mapa de cualquiera de los análisis de VOSviewer. `/coocurrencia` es el
+ * nombre con el que nació, cuando solo había ese: se deja para la web que ya
+ * está publicada, que manda sin `analisis` y recibe una coocurrencia.
+ */
+router.post('/mapa', mapasLimiter, validate({ body: mapaSchema }), mapasController.mapa);
+router.post('/coocurrencia', mapasLimiter, validate({ body: mapaSchema }), mapasController.coocurrencia);
 
 module.exports = router;

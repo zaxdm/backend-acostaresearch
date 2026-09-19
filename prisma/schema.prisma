@@ -444,7 +444,12 @@ model Payment {
   /// Lo entregado al confirmar el cobro. Solo uno de los dos, según el plan.
   wordPackId String?   @unique @db.Char(36)
   wordPack   WordPack? @relation(fields: [wordPackId], references: [id])
-  licenseId  String?   @unique @db.Char(36)
+  /// SIN `@unique`, a propósito: una licencia la paga su compra y después
+  /// cada renovación, que alarga la misma licencia en vez de emitir otra. Con
+  /// `@unique` la segunda chocaba contra la primera y ninguna renovación se
+  /// podía cobrar (el 19-sep-2026 un Yape de renovación daba «El registro ya
+  /// existe» al aprobarlo).
+  licenseId  String?   @db.Char(36)
   license    License?  @relation(fields: [licenseId], references: [id])
 
   /// Descuento aplicado, si el comprador usó un código promocional.
@@ -481,6 +486,7 @@ model Payment {
   paidAt    DateTime?
 
   @@unique([provider, providerOrderId])
+  @@index([licenseId])
   @@index([userId, createdAt])
   @@index([status, createdAt])
   @@map("payments")
@@ -631,8 +637,9 @@ model License {
   alerts   LicenseAlert[]
   sessions McpSession[]
   counter  LicenseCounter?
-  /// Cobro que la originó, si se compró por la web en vez de canjear un código.
-  payment  Payment?
+  /// Los cobros que la pagaron: la compra y cada renovación. Vacío si se
+  /// canjeó con un código.
+  payments Payment[]
 
   @@index([userId, status])
   @@map("licenses")
@@ -1157,10 +1164,10 @@ model Tutorial {
 model Guia {
   id String @id @default(uuid()) @db.Char(36)
 
-  orden       Int     @default(1)
-  titulo      String  @db.VarChar(160)
+  orden       Int    @default(1)
+  titulo      String @db.VarChar(160)
   /// Qué trae, en una o dos frases.
-  descripcion String  @default("") @db.VarChar(600)
+  descripcion String @default("") @db.VarChar(600)
 
   /// Cómo se llamaba el archivo subido y cuánto pesa. Vacío = sin PDF todavía.
   archivoNombre String @default("") @db.VarChar(200)
@@ -1486,16 +1493,16 @@ model ScopusBusqueda {
   userId String @db.Char(36)
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  tipo   ScopusBusquedaTipo @default(BUSQUEDA)
-  titulo String             @db.VarChar(200)
+  tipo     ScopusBusquedaTipo @default(BUSQUEDA)
+  titulo   String             @db.VarChar(200)
   /// La ecuación completa que se mandó, filtros incluidos.
-  ecuacion String @db.Text
+  ecuacion String             @db.Text
   /// El estado del buscador, tal como lo da la web. Con techo en el esquema.
   estado   Json
   /// Las preguntas y los resúmenes del copiloto. Nulo en las búsquedas normales.
   hilo     Json?
   /// Cuántos resultados dio, para enseñarlo en la lista.
-  total    Int    @default(0)
+  total    Int                @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

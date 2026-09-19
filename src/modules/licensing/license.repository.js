@@ -196,7 +196,7 @@ const licenseRepository = {
         tokenHint: true,
         callsTotal: true,
         user: { select: { email: true } },
-        payment: { select: { id: true, status: true, amountCents: true } },
+        payments: { select: { id: true, status: true, amountCents: true } },
       },
     });
   },

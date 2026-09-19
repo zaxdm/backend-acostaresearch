@@ -1249,7 +1249,7 @@ const licenseService = {
         token: licencia.tokenHint,
         consultas: licencia.callsTotal,
         titular: licencia.user?.email,
-        cobroSoltado: licencia.payment?.id ?? null,
+        cobrosSoltados: licencia.payments.map((pago) => pago.id),
         borradaPor: adminId,
       },
       'Licencia borrada desde el panel',

@@ -1361,6 +1361,13 @@ async function quitarPlantilla(userId, productCode) {
 }
 
 /**
+ * Cuántas veces puede empezar de cero cada tesis. Es para cuando le cambian el
+ * tema, no para ir probando: sin tope, vaciar y volver a empezar sirve para
+ * escribir varias tesis con una sola licencia.
+ */
+const MAX_REINICIOS = 3;
+
+/**
  * Empezar de cero: el proyecto vuelve al comienzo.
  *
  * Se vacía, no se borra. Sin fila el panel no enseña el método —así distingue
@@ -1375,15 +1382,30 @@ async function quitarPlantilla(userId, productCode) {
  * La licencia no se toca, ni la conexión con Zotero: lo que se borra es el
  * trabajo, no el acceso.
  */
-async function reiniciarProyecto(userId, productCode) {
+async function reiniciarProyecto(userId, productCode, { esAdmin = false } = {}) {
   const proyecto = await projectRepository.buscar(userId, productCode);
-  if (!proyecto) return false;
+  if (!proyecto) return { error: 'sin-proyecto' };
 
-  await almacen.borrarProyecto(proyecto.id);
-  await projectRepository.reiniciar(proyecto.id);
+  // El tope es por tesis y no se repone. El administrador no lo tiene: prueba
+  // el método de arriba abajo una y otra vez.
+  if (!esAdmin && !(await projectRepository.apartarReinicio(proyecto.id, MAX_REINICIOS))) {
+    return { error: 'sin-reinicios' };
+  }
 
-  logger.warn({ userId, productCode, projectId: proyecto.id }, 'Proyecto reiniciado por su dueño');
-  return true;
+  try {
+    await almacen.borrarProyecto(proyecto.id);
+    await projectRepository.reiniciar(proyecto.id);
+  } catch (err) {
+    if (!esAdmin) await projectRepository.devolverReinicio(proyecto.id);
+    throw err;
+  }
+
+  const usados = esAdmin ? proyecto.reinicios ?? 0 : (proyecto.reinicios ?? 0) + 1;
+  logger.warn(
+    { userId, productCode, projectId: proyecto.id, reinicios: usados },
+    'Proyecto reiniciado por su dueño',
+  );
+  return { restantes: esAdmin ? null : Math.max(0, MAX_REINICIOS - usados) };
 }
 
 /**
@@ -2034,6 +2056,7 @@ function proyectoEnBlanco(productCode) {
     idiomaCitas: null,
     plantillaAt: null,
     plantillaNombre: null,
+    reinicios: 0,
     updatedAt: null,
     stages: [],
   };
@@ -2134,6 +2157,8 @@ async function deUsuario(userId, { esAdmin = false } = {}) {
         siguiente: faseParaRetomar(fases, proyecto.retomarEn, (e) => e.estado),
         /** Si `siguiente` la eligió él y no la regla: el panel ofrece volver a la automática. */
         retomarElegido: retomarVigente(fases, proyecto.retomarEn),
+        /** Cuántas veces más puede empezar de cero; null = sin tope (administrador). */
+        reiniciosRestantes: esAdmin ? null : Math.max(0, MAX_REINICIOS - (proyecto.reinicios ?? 0)),
       };
     }),
   );

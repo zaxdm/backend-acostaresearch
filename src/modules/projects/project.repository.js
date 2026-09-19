@@ -21,6 +21,7 @@ const proyectoSelect = {
   nombre: true,
   activadaAt: true,
   consejos: true,
+  reinicios: true,
   createdAt: true,
   updatedAt: true,
 };
@@ -277,6 +278,27 @@ function reiniciar(projectId) {
 }
 
 /**
+ * Aparta uno de sus reinicios, si le queda: suma uno solo mientras no haya
+ * llegado a `tope`, en la misma sentencia, para que dos pulsaciones a la vez no
+ * se cuelen las dos por el último. Verdadero si lo apartó.
+ */
+async function apartarReinicio(projectId, tope) {
+  const { count } = await prisma.project.updateMany({
+    where: { id: projectId, reinicios: { lt: tope } },
+    data: { reinicios: { increment: 1 } },
+  });
+  return count > 0;
+}
+
+/** Devuelve el reinicio apartado cuando el borrado falló: no se gastó. */
+function devolverReinicio(projectId) {
+  return prisma.project.updateMany({
+    where: { id: projectId, reinicios: { gt: 0 } },
+    data: { reinicios: { decrement: 1 } },
+  });
+}
+
+/**
  * Por qué fase quiere retomar. Nula vuelve a la de siempre.
  *
  * Va aparte de `asegurar` porque allí un nulo significa «no lo toques», y aquí
@@ -322,6 +344,8 @@ async function nombresDeProducto(codigos) {
 }
 
 module.exports = {
+  apartarReinicio,
+  devolverReinicio,
   buscar,
   asegurar,
   crearTesis,

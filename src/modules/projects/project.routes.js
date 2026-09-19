@@ -671,15 +671,23 @@ router.delete(
       throw new ValidationError(datos.error.issues[0]?.message ?? 'Escribe «eliminar» para confirmar.');
     }
 
-    const reiniciado = await projectService.reiniciarProyecto(req.user.id, req.params.productCode);
-    if (!reiniciado) {
+    const resultado = await projectService.reiniciarProyecto(req.user.id, req.params.productCode, {
+      esAdmin: req.user.role === ROLES.ADMIN,
+    });
+    if (resultado.error === 'sin-proyecto') {
       return res.status(404).json({
         success: false,
         message: 'No hay ningún proyecto de este método que borrar.',
       });
     }
+    if (resultado.error === 'sin-reinicios') {
+      throw new ForbiddenError(
+        'Ya usaste las tres veces que puedes empezar de cero esta tesis. Si de verdad te cambiaron ' +
+          'el tema, escríbenos y lo vemos contigo.',
+      );
+    }
 
-    return ok(res, { reiniciado }, {
+    return ok(res, { reiniciado: true, restantes: resultado.restantes }, {
       message: 'Tu proyecto volvió al comienzo. La próxima vez que trabajes con Claude empezará de cero.',
     });
   }),

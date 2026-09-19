@@ -1150,6 +1150,30 @@ model Tutorial {
   @@map("tutorials")
 }
 
+/// Las guías en PDF de la página de guías (instalación del conector y demás).
+/// El archivo vive en disco, en GUIAS_DIR, como `<id>.pdf`; aquí solo su ficha.
+model Guia {
+  id String @id @default(uuid()) @db.Char(36)
+
+  orden       Int     @default(1)
+  titulo      String  @db.VarChar(160)
+  /// Qué trae, en una o dos frases.
+  descripcion String  @default("") @db.VarChar(600)
+
+  /// Cómo se llamaba el archivo subido y cuánto pesa. Vacío = sin PDF todavía.
+  archivoNombre String @default("") @db.VarChar(200)
+  bytes         Int    @default(0)
+
+  /// Apagada se queda fuera de la página pública pero no se pierde.
+  active Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orden])
+  @@map("guias")
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // El proyecto del tesista
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1239,6 +1263,11 @@ model Project {
   /// { "fuentes": "2026-09-14T…", "analisis": "…" }. Sirve para no repetir el
   /// mismo cada conversación. Ver `project.consejos`.
   consejos Json?
+
+  /// Cuántas veces su dueño lo devolvió al comienzo con «empezar de cero».
+  /// Tiene un tope (ver `projects/project.service`), y vive en la fila porque
+  /// reiniciar vacía el proyecto pero no lo borra: así no se pone a cero solo.
+  reinicios Int @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

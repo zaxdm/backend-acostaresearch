@@ -13,7 +13,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const pasos = [];
-const estado = { proyecto: null, discoRompe: false, cuentaProyectos: [] };
+const estado = { proyecto: null, discoRompe: false, cuentaProyectos: [], reinicios: 0 };
 
 const sustituir = (ruta, exports) => {
   const id = require.resolve(ruta);
@@ -24,6 +24,14 @@ sustituir('../src/modules/projects/project.repository', {
   buscar: async () => estado.proyecto,
   reiniciar: async (projectId) => {
     pasos.push(`base:${projectId}`);
+  },
+  apartarReinicio: async (_projectId, tope) => {
+    if (estado.reinicios >= tope) return false;
+    estado.reinicios += 1;
+    return true;
+  },
+  devolverReinicio: async () => {
+    estado.reinicios -= 1;
   },
 });
 
@@ -81,6 +89,7 @@ function empezar(cambios = {}) {
   pasos.length = 0;
   estado.discoRompe = false;
   estado.cuentaProyectos = [];
+  estado.reinicios = cambios.reinicios ?? 0;
   estado.proyecto = { id: 'p1', productCode: 'METODO_9_SKILLS', stages: [], ...cambios };
 }
 
@@ -102,15 +111,38 @@ test('sin proyecto no hay nada que borrar, y no se toca nada', async () => {
   empezar();
   estado.proyecto = null;
 
-  assert.equal(await projectService.reiniciarProyecto('u1', 'METODO_9_SKILLS'), false);
+  assert.deepEqual(await projectService.reiniciarProyecto('u1', 'METODO_9_SKILLS'), {
+    error: 'sin-proyecto',
+  });
   assert.deepEqual(pasos, []);
 });
 
 test('se vacía el disco y después se reinicia en la base, sin borrar el proyecto', async () => {
   empezar();
 
-  assert.equal(await projectService.reiniciarProyecto('u1', 'METODO_9_SKILLS'), true);
+  assert.deepEqual(await projectService.reiniciarProyecto('u1', 'METODO_9_SKILLS'), { restantes: 2 });
   assert.deepEqual(pasos, ['disco:p1', 'base:p1']);
+});
+
+test('cada tesis puede empezar de cero tres veces, y la cuarta no toca nada', async () => {
+  empezar({ reinicios: 2 });
+  assert.deepEqual(await projectService.reiniciarProyecto('u1', 'METODO_9_SKILLS'), { restantes: 0 });
+
+  empezar({ reinicios: 3 });
+  assert.deepEqual(await projectService.reiniciarProyecto('u1', 'METODO_9_SKILLS'), {
+    error: 'sin-reinicios',
+  });
+  assert.deepEqual(pasos, [], 'sin reinicios no se borra nada');
+});
+
+test('el administrador no tiene tope ni gasta reinicios', async () => {
+  empezar({ reinicios: 3 });
+  assert.deepEqual(
+    await projectService.reiniciarProyecto('u1', 'METODO_9_SKILLS', { esAdmin: true }),
+    { restantes: null },
+  );
+  assert.deepEqual(pasos, ['disco:p1', 'base:p1']);
+  assert.equal(estado.reinicios, 3);
 });
 
 test('si el disco falla, se avisa y la base no se toca', async () => {
@@ -121,6 +153,7 @@ test('si el disco falla, se avisa y la base no se toca', async () => {
 
   await assert.rejects(projectService.reiniciarProyecto('u1', 'METODO_9_SKILLS'), /disco/);
   assert.deepEqual(pasos, []);
+  assert.equal(estado.reinicios, 0, 'un borrado que falló no gasta un reinicio');
 });
 
 // ── La cuenta ───────────────────────────────────────────────────────────────

@@ -11,6 +11,7 @@ const skillRoutes = require('./modules/skills/skill.routes');
 const referenceRoutes = require('./modules/references/reference.routes');
 const propiasRoutes = require('./modules/references/propias.routes');
 const tutorialRoutes = require('./modules/tutorials/tutorial.routes');
+const guiaRoutes = require('./modules/guias/guia.routes');
 const projectRoutes = require('./modules/projects/project.routes');
 const trialRoutes = require('./modules/trials/trial.routes');
 const zoteroRoutes = require('./modules/zotero/biblioteca.routes');
@@ -53,6 +54,7 @@ router.use('/skills', skillRoutes);
 router.use('/mis-fuentes', propiasRoutes);
 router.use('/referencias', referenceRoutes);
 router.use('/tutoriales', tutorialRoutes);
+router.use('/guias', guiaRoutes);
 router.use('/proyectos', projectRoutes);
 router.use('/pruebas', trialRoutes);
 // El Zotero de cada comprador. Aparte de /referencias, que es el corpus de la

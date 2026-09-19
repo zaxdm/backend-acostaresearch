@@ -418,7 +418,30 @@ async function leerMaterial(projectId) {
   return leerJson(rutaDeMaterial(projectId));
 }
 
+// ── El análisis cualitativo ────────────────────────────────────────────────
+
+/**
+ * Las entrevistas ya en texto y su codificación. Ver `cualitativo.service`.
+ *
+ * Dos archivos y no uno: las entrevistas se escriben al subir y la codificación
+ * cada vez que Claude guarda una, y así ninguna de las dos reescribe el texto
+ * entero de la otra.
+ */
+function rutaCualitativa(projectId, que) {
+  if (!SEGURO.test(projectId)) throw new Error('Identificador de proyecto no válido');
+  const nombres = { entrevistas: 'cualitativo-entrevistas.json', codificacion: 'cualitativo-codificacion.json' };
+  if (!nombres[que]) throw new Error('Archivo cualitativo desconocido');
+  return path.join(env.capitulosDir, projectId, nombres[que]);
+}
+
+/** Null lo borra. */
+const guardarCualitativo = (projectId, que, valor) => escribirJson(rutaCualitativa(projectId, que), valor);
+
+const leerCualitativo = (projectId, que) => leerJson(rutaCualitativa(projectId, que));
+
 module.exports = {
+  guardarCualitativo,
+  leerCualitativo,
   guardarMaterial,
   leerMaterial,
   guardarDocumento,

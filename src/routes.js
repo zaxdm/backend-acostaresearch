@@ -20,6 +20,7 @@ const mapasRoutes = require('./modules/mapas/mapas.routes');
 const asistenteRoutes = require('./modules/asistente/asistente.routes');
 const reclamoRoutes = require('./modules/reclamos/reclamo.routes');
 const rRoutes = require('./modules/r/r.routes');
+const cualitativoRoutes = require('./modules/cualitativo/cualitativo.routes');
 
 const comprobarBase = require('./lib/comprobarBase');
 
@@ -75,5 +76,8 @@ router.use('/reclamos', reclamoRoutes);
 // R en la conversación: subir la matriz y bajar lo que produce el análisis,
 // desde los enlaces que da Claude. Sin sesión: el enlace firmado es la llave.
 router.use('/r', rRoutes);
+// El análisis cualitativo: subir las entrevistas desde el enlace que da Claude.
+// Sin sesión, como las de R.
+router.use('/cualitativo', cualitativoRoutes);
 
 module.exports = router;

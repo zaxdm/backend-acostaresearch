@@ -286,7 +286,7 @@ test('el esquema de TODAS las herramientas es uno que el servidor de verdad acep
   }
 });
 
-test('siguen registradas las mismas 25 herramientas', () => {
+test('siguen registradas las mismas 26 herramientas', () => {
   // 17 desde que existe «enlace_del_word»: el Word lo arma el servidor, en la
   // norma del proyecto, y Claude da el enlace en vez de fabricarlo él.
   // 18 desde «mis_fuentes»: ver su biblioteca y su Zotero sin tener un tema.
@@ -298,7 +298,8 @@ test('siguen registradas las mismas 25 herramientas', () => {
   // 25 desde «estructura_de_la_tesis»: los capítulos que numera su facultad.
   //    Es la única que NO tienen todos los productos: solo la tesis tiene
   //    reglamento de capítulos (ver la prueba del informe, más abajo).
-  assert.equal(registradas.size, 25);
+  // 26 desde «analisis_cualitativo»: entrevistas codificadas y comprobadas.
+  assert.equal(registradas.size, 26);
   for (const nombre of [
     'listar_capitulos',
     'mi_proyecto',
@@ -314,6 +315,7 @@ test('siguen registradas las mismas 25 herramientas', () => {
     'humanizar_mi_documento',
     'subir_mi_documento',
     'estructura_de_la_tesis',
+    'analisis_cualitativo',
   ]) {
     assert.ok(registradas.has(nombre), `falta ${nombre}`);
   }

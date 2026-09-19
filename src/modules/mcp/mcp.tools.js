@@ -18,6 +18,9 @@ const subidaMaterial = require('../projects/project.subida-material');
 const subidaDocumento = require('../projects/project.subida-documento');
 const { enlaceClic } = require('../../shared/utils/enlaceClic');
 const materialService = require('../projects/material.service');
+const cualitativoService = require('../cualitativo/cualitativo.service');
+const subidaEntrevistas = require('../cualitativo/cualitativo.enlaces');
+const { CodificacionNoValida } = require('../cualitativo/cualitativo.codificacion');
 const consejos = require('../projects/project.consejos');
 const normas = require('../projects/project.normas');
 const etapas = require('../projects/project.etapas');
@@ -3297,6 +3300,217 @@ function construirServidor(licencia) {
             `${enlaceClic({ texto: 'Haz clic aquí para subir el material de tu curso', url, minutos })}${N}${N}` +
             'Word (.docx) o texto, hasta cinco archivos; uno con el mismo nombre ' +
             'reemplaza al anterior. Si lo tiene en PDF o en foto, que lo adjunte en este chat.',
+        );
+      },
+    );
+  }
+
+  // ── El análisis cualitativo ──────────────────────────────────────────────
+  //
+  // Las entrevistas o grupos focales del tesista, subidos por un enlace y
+  // partidos en párrafos. Claude las lee, propone los códigos y, cuando el
+  // tesista los aprueba, los guarda; el servidor comprueba que cada cita esté
+  // letra por letra en la transcripción. Es la base de las tablas, la red de
+  // códigos, el capítulo y el .qdpx para ATLAS.ti.
+  if (['tesis', 'articulo', 'informe'].includes(perfil.tipo)) {
+    const lineaDeEntrevista = (e) =>
+      `${e.id} · «${e.nombre}» · ${e.parrafos} párrafos · ` +
+      (e.citas > 0 ? `${e.citas} citas codificadas` : 'sin codificar');
+
+    server.registerTool(
+      'analisis_cualitativo',
+      {
+        title: 'Análisis cualitativo: entrevistas y codificación',
+        description:
+          'Análisis cualitativo de entrevistas o grupos focales: subir las transcripciones, leerlas y ' +
+          'guardar su codificación (libro de códigos y citas). ÚSALA cuando el estudio sea cualitativo ' +
+          'o mixto y el usuario tenga transcripciones, o pida codificar, categorizar, hacer un análisis ' +
+          'temático o «hacerlo como en ATLAS.ti». ' +
+          'Sin argumentos lista las entrevistas subidas y da un ENLACE para subir más: dáselo como ' +
+          'enlace que se pulsa y dile que vuelva cuando las haya subido (Word, PDF con texto o .txt, una ' +
+          'entrevista por archivo). ' +
+          '"ver" (con "entrevista", p. ej. "E1", y "desde") devuelve sus párrafos numerados ¶n, por ' +
+          'tandas. ' +
+          'CÓMO SE CODIFICA: de UNA entrevista a la vez. Léela entera, propón al usuario los códigos ' +
+          '(nombre, definición y categoría) y las citas de cada uno, y guarda con "codificar" SOLO cuando ' +
+          'él lo apruebe: nadie codifica a ciegas. Reutiliza los códigos que ya están en el libro antes ' +
+          'de crear otros parecidos. Cada cita es un fragmento COPIADO TAL CUAL de un párrafo, sin ' +
+          'resumirlo ni corregirlo: si el texto no está en ese párrafo, se rechaza la codificación ' +
+          'entera y se dice qué cita falló. Una cita puede llevar varios códigos. "codificar" REEMPLAZA ' +
+          'lo que tenía esa entrevista: para corregir, vuelve a mandarla completa. ' +
+          '"libro" devuelve el libro de códigos con cuántas citas y entrevistas tiene cada uno. ' +
+          '"renombrar" cambia el nombre de un código en todas sus citas; si el nombre nuevo ya existe, ' +
+          'los junta. "quitar_codigo" y "quitar_entrevista" solo si el usuario lo pide. ' +
+          'NO inventes citas ni pongas en boca del entrevistado lo que no dijo.',
+        inputSchema: fromJsonSchema({
+          type: 'object',
+          properties: {
+            accion: {
+              type: 'string',
+              enum: ['ver', 'codificar', 'libro', 'renombrar', 'quitar_codigo', 'quitar_entrevista'],
+              description: 'Qué hacer. Sin acción: la lista de entrevistas y el enlace para subir.',
+            },
+            entrevista: {
+              type: 'string',
+              description: 'La entrevista, por su número de la lista: "E1", "E2"…',
+            },
+            desde: {
+              type: 'integer',
+              minimum: 1,
+              description: 'Con "ver": el párrafo desde el que leer. La respuesta dice por cuál seguir.',
+            },
+            codigos: {
+              type: 'array',
+              description:
+                'Con "codificar": los códigos nuevos de esta entrevista, o los que cambian de definición o ' +
+                'categoría. Los que ya están en el libro y no cambian no hace falta repetirlos.',
+              items: {
+                type: 'object',
+                properties: {
+                  nombre: { type: 'string', description: 'Corto y claro: «Falta de apoyo docente».' },
+                  definicion: {
+                    type: 'string',
+                    description: 'Cuándo se aplica. Obligatoria en un código nuevo.',
+                  },
+                  categoria: { type: 'string', description: 'La categoría que lo agrupa, si la tiene.' },
+                },
+                required: ['nombre'],
+                additionalProperties: false,
+              },
+            },
+            citas: {
+              type: 'array',
+              description: 'Con "codificar": TODAS las citas de la entrevista, con sus códigos.',
+              items: {
+                type: 'object',
+                properties: {
+                  parrafo: { type: 'integer', minimum: 1, description: 'El número ¶ del párrafo.' },
+                  texto: { type: 'string', description: 'El fragmento, copiado tal cual del párrafo.' },
+                  codigos: {
+                    type: 'array',
+                    items: { type: 'string' },
+                    description: 'Los nombres de sus códigos, tal como están en el libro o en "codigos".',
+                  },
+                },
+                required: ['parrafo', 'texto', 'codigos'],
+                additionalProperties: false,
+              },
+            },
+            codigo: { type: 'string', description: 'Con "quitar_codigo": el nombre del código.' },
+            de: { type: 'string', description: 'Con "renombrar": el nombre actual.' },
+            a: { type: 'string', description: 'Con "renombrar": el nombre nuevo, o el del código con que se junta.' },
+          },
+          additionalProperties: false,
+        }),
+      },
+      async ({ accion, entrevista, desde, codigos, citas, codigo, de, a }) => {
+        await licenseService.recordUsage({ licenseId: licencia.id, tool: 'analisis_cualitativo' });
+        const userId = licencia.user.id;
+        const { productCode } = licencia;
+        const noExiste = 'No hay ninguna entrevista con ese número. Llama sin argumentos para ver la lista.';
+
+        try {
+          if (accion === 'ver') {
+            const leida = await cualitativoService.ver(userId, productCode, entrevista, { desde });
+            if (!leida) return texto(noExiste);
+            const cuerpo = leida.parrafos.map((p) => `¶${p.numero} ${p.texto}`).join(N);
+            const sigue = leida.siguiente
+              ? `SIGUE: pide "desde": ${leida.siguiente} para leer el resto.`
+              : 'Es el final de la entrevista.';
+            return texto(`${leida.id} · «${leida.nombre}» · ${leida.total} párrafos${N}${N}${cuerpo}${N}${N}${sigue}`);
+          }
+
+          if (accion === 'codificar') {
+            // Sin «citas» borraría la codificación de la entrevista: nunca por un olvido.
+            if (!Array.isArray(citas) || citas.length === 0) {
+              return texto('Con "codificar" manda "citas": todas las de la entrevista. No se guardó nada.');
+            }
+            const hecho = await cualitativoService.codificar(userId, productCode, entrevista, { codigos, citas });
+            if (!hecho) return texto(noExiste);
+            const nuevos = hecho.nuevos.length > 0 ? ` Códigos nuevos: ${hecho.nuevos.join('; ')}.` : '';
+            return texto(
+              `Guardada la codificación de ${hecho.entrevista.id} («${hecho.entrevista.nombre}»): ` +
+                `${hecho.citas.length} citas, todas comprobadas contra la transcripción.${nuevos}${N}` +
+                `El libro tiene ${hecho.resumen.codigos.length} códigos y ${hecho.resumen.citas} citas en total. ` +
+                'Sigue con la próxima entrevista sin codificar, o usa "libro" para revisarlo con el usuario.',
+            );
+          }
+
+          if (accion === 'libro') {
+            const { entrevistas, resumen } = await cualitativoService.libro(userId, productCode);
+            if (resumen.codigos.length === 0) {
+              return texto('El libro de códigos está vacío: todavía no se codificó ninguna entrevista.');
+            }
+            const porCategoria = new Map();
+            for (const c of resumen.codigos) {
+              const cat = c.categoria ?? 'Sin categoría';
+              if (!porCategoria.has(cat)) porCategoria.set(cat, []);
+              porCategoria.get(cat).push(c);
+            }
+            const bloques = [...porCategoria].map(
+              ([cat, lista]) =>
+                `${cat}${N}` +
+                lista
+                  .map((c) => `- ${c.nombre} (${c.citas} citas, ${c.entrevistas} entrevistas): ${c.definicion}`)
+                  .join(N),
+            );
+            return texto(
+              `Libro de códigos: ${resumen.codigos.length} códigos, ${resumen.citas} citas.${N}${N}` +
+                `${bloques.join(`${N}${N}`)}${N}${N}Entrevistas:${N}${entrevistas.map(lineaDeEntrevista).join(N)}`,
+            );
+          }
+
+          if (accion === 'renombrar') {
+            const hecho = await cualitativoService.renombrar(userId, productCode, de, a);
+            if (!hecho) return texto('Todavía no hay nada codificado.');
+            return texto(
+              hecho.junto
+                ? `«${de}» se juntó con «${hecho.nombre}»: sus citas ahora llevan ese código.`
+                : `El código ahora se llama «${hecho.nombre}», en todas sus citas.`,
+            );
+          }
+
+          if (accion === 'quitar_codigo') {
+            const hecho = await cualitativoService.quitarCodigo(userId, productCode, codigo);
+            if (!hecho) return texto('Todavía no hay nada codificado.');
+            return texto(
+              `Quitado el código «${hecho.nombre}».` +
+                (hecho.citasQuitadas > 0
+                  ? ` ${hecho.citasQuitadas} citas se quedaron sin código y se quitaron también.`
+                  : ''),
+            );
+          }
+
+          if (accion === 'quitar_entrevista') {
+            const quitada = await cualitativoService.quitarEntrevista(userId, productCode, entrevista);
+            if (!quitada) return texto(noExiste);
+            return texto(
+              `Quitada ${quitada.id} («${quitada.nombre}»)` +
+                (quitada.citas > 0 ? `, con sus ${quitada.citas} citas.` : '.'),
+            );
+          }
+        } catch (error) {
+          if (error instanceof CodificacionNoValida) {
+            return texto(
+              `No se guardó nada: ${error.errores.length === 1 ? 'hay un problema' : `hay ${error.errores.length} problemas`}.${N}` +
+                `${error.errores.map((e) => `- ${e}`).join(N)}${N}${N}` +
+                'Corrígelos y vuelve a mandar la entrevista completa.',
+            );
+          }
+          throw error;
+        }
+
+        const lista = await cualitativoService.lista(userId, productCode);
+        const { url, minutos } = subidaEntrevistas.enlace({ userId, productCode });
+        const subidas =
+          lista.length > 0
+            ? `Entrevistas subidas:${N}${lista.map(lineaDeEntrevista).join(N)}${N}${N}Léelas con "ver".`
+            : 'Todavía no ha subido ninguna entrevista.';
+        return texto(
+          `${subidas}${N}${N}Enlace para subir entrevistas o grupos focales:${N}` +
+            `${enlaceClic({ texto: 'Haz clic aquí para subir tus entrevistas', url, minutos })}${N}${N}` +
+            'Word, PDF con texto o .txt; una entrevista por archivo y hasta ' +
+            `${cualitativoService.MAXIMO_ENTREVISTAS}. Una con el mismo nombre de archivo reemplaza a la anterior.`,
         );
       },
     );

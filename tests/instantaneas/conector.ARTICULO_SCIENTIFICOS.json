@@ -674,6 +674,106 @@
     }
   },
   {
+    "nombre": "analisis_cualitativo",
+    "titulo": "Análisis cualitativo: entrevistas y codificación",
+    "descripcion": "Análisis cualitativo de entrevistas o grupos focales: subir las transcripciones, leerlas y guardar su codificación (libro de códigos y citas). ÚSALA cuando el estudio sea cualitativo o mixto y el usuario tenga transcripciones, o pida codificar, categorizar, hacer un análisis temático o «hacerlo como en ATLAS.ti». Sin argumentos lista las entrevistas subidas y da un ENLACE para subir más: dáselo como enlace que se pulsa y dile que vuelva cuando las haya subido (Word, PDF con texto o .txt, una entrevista por archivo). \"ver\" (con \"entrevista\", p. ej. \"E1\", y \"desde\") devuelve sus párrafos numerados ¶n, por tandas. CÓMO SE CODIFICA: de UNA entrevista a la vez. Léela entera, propón al usuario los códigos (nombre, definición y categoría) y las citas de cada uno, y guarda con \"codificar\" SOLO cuando él lo apruebe: nadie codifica a ciegas. Reutiliza los códigos que ya están en el libro antes de crear otros parecidos. Cada cita es un fragmento COPIADO TAL CUAL de un párrafo, sin resumirlo ni corregirlo: si el texto no está en ese párrafo, se rechaza la codificación entera y se dice qué cita falló. Una cita puede llevar varios códigos. \"codificar\" REEMPLAZA lo que tenía esa entrevista: para corregir, vuelve a mandarla completa. \"libro\" devuelve el libro de códigos con cuántas citas y entrevistas tiene cada uno. \"renombrar\" cambia el nombre de un código en todas sus citas; si el nombre nuevo ya existe, los junta. \"quitar_codigo\" y \"quitar_entrevista\" solo si el usuario lo pide. NO inventes citas ni pongas en boca del entrevistado lo que no dijo.",
+    "esquema": {
+      "type": "object",
+      "properties": {
+        "accion": {
+          "type": "string",
+          "enum": [
+            "ver",
+            "codificar",
+            "libro",
+            "renombrar",
+            "quitar_codigo",
+            "quitar_entrevista"
+          ],
+          "description": "Qué hacer. Sin acción: la lista de entrevistas y el enlace para subir."
+        },
+        "entrevista": {
+          "type": "string",
+          "description": "La entrevista, por su número de la lista: \"E1\", \"E2\"…"
+        },
+        "desde": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Con \"ver\": el párrafo desde el que leer. La respuesta dice por cuál seguir."
+        },
+        "codigos": {
+          "type": "array",
+          "description": "Con \"codificar\": los códigos nuevos de esta entrevista, o los que cambian de definición o categoría. Los que ya están en el libro y no cambian no hace falta repetirlos.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "nombre": {
+                "type": "string",
+                "description": "Corto y claro: «Falta de apoyo docente»."
+              },
+              "definicion": {
+                "type": "string",
+                "description": "Cuándo se aplica. Obligatoria en un código nuevo."
+              },
+              "categoria": {
+                "type": "string",
+                "description": "La categoría que lo agrupa, si la tiene."
+              }
+            },
+            "required": [
+              "nombre"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "citas": {
+          "type": "array",
+          "description": "Con \"codificar\": TODAS las citas de la entrevista, con sus códigos.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "parrafo": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "El número ¶ del párrafo."
+              },
+              "texto": {
+                "type": "string",
+                "description": "El fragmento, copiado tal cual del párrafo."
+              },
+              "codigos": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Los nombres de sus códigos, tal como están en el libro o en \"codigos\"."
+              }
+            },
+            "required": [
+              "parrafo",
+              "texto",
+              "codigos"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "codigo": {
+          "type": "string",
+          "description": "Con \"quitar_codigo\": el nombre del código."
+        },
+        "de": {
+          "type": "string",
+          "description": "Con \"renombrar\": el nombre actual."
+        },
+        "a": {
+          "type": "string",
+          "description": "Con \"renombrar\": el nombre nuevo, o el del código con que se junta."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
     "nombre": "enlace_del_word",
     "titulo": "Enlace para descargar la tesis en Word",
     "descripcion": "Da un enlace para descargar la tesis en Word, armada por el servidor con todo lo guardado: portada, índice, capítulos en orden, y las citas y las referencias ya escritas en la norma del proyecto —en notas al pie si la norma lo pide, y enlazadas a Zotero si el tesista lo conectó—. ÚSALA cuando pida su Word, su documento o descargar, y después de guardar un capítulo. NUNCA ARMES TÚ EL WORD NI ESCRIBAS TÚ LA BIBLIOGRAFÍA: el tuyo no llevaría la norma ni los campos de Zotero, y podría no coincidir con las fichas. Si el tesista SUBIÓ su propio documento, el enlace es el de ese documento con las citas y los párrafos humanizados puestos. El enlace caduca a la media hora; si ya pasó, pide otro.",

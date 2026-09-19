@@ -133,3 +133,20 @@ test('imagen y .doc antiguo: se rechazan diciendo qué hacer', async () => {
   await assert.rejects(leer(Buffer.from('d0cf11e0a1b11ae10000', 'hex')), /\.doc antiguo/);
   await assert.rejects(leer(Buffer.alloc(0)), /vacío/);
 });
+
+test('juntarLineas: un punto al borde de un renglón lleno no corta el párrafo', () => {
+  const lleno = 'Participante: Mi asesor sabe mucho del tema técnico, pero de metodología casi nada.';
+  const lineas = [
+    'Entrevistador: ¿Cómo ha sido la relación con tu asesor de tesis durante el proceso?',
+    lleno,
+    'Cuando le pregunté cómo redactar los objetivos me dijo que eso lo viera con el otro,',
+    'y el metodólogo me dijo que eso era cosa del asesor. Me mandaban de un lado a otro.',
+    'Así estuve casi todo el semestre pasado sin saber a quién hacerle caso de verdad ya.',
+    'Al final.',
+    'Otra idea que empieza aquí mismo.',
+  ];
+  const parrafos = juntarLineas(lineas);
+  assert.equal(parrafos.length, 3);
+  assert.match(parrafos[1], /casi nada\. Cuando le pregunté/);
+  assert.equal(parrafos[2], 'Otra idea que empieza aquí mismo.');
+});

@@ -790,16 +790,21 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
    * las herramientas que reparten enlaces pasan por aquí para no tener que
    * acordarse de ello una por una. El porqué, en `mcp.cliente` y `enlaceClic`.
    *
-   * Y a ChatGPT se le da ACORTADO. Conseguimos que entregue la dirección entera
-   * y pulsable, pero no que la copie: la reescribe, y en 400 caracteres al azar
-   * se equivoca en uno. Ocho no se le tuercen. Ver `enlaceCorto.service`.
+   * Y SE ACORTA SIEMPRE, sea cual sea el asistente. Al principio esto era solo
+   * para ChatGPT, que entrega la dirección entera pero no la copia: la reescribe
+   * y en 400 caracteres al azar se equivoca en uno. Se dejó a Claude con el
+   * enlace largo porque allí el Markdown funciona, y funciona… hasta que el
+   * modelo decide reescribir la línea en vez de copiarla. El 20-sep-2026 le
+   * pasó dos veces en la misma conversación: al tesista le llegaron dos enlaces
+   * con un carácter cambiado y dos veces «llegó incompleto o alterado».
+   *
+   * Ocho caracteres no se le tuercen a nadie, y el que menos escribe el modelo
+   * es el que menos puede estropear. Ver `enlaceCorto.service`.
    *
    * Si acortar falla, `acortar` devuelve el enlace largo: una dirección fea es
    * mucho mejor que quedarse sin darle ninguna.
    */
   const darEnlace = async (args) => {
-    if (cliente !== 'chatgpt') return enlaceClic({ ...args, cliente });
-
     const url = await enlaceCorto.acortar({
       destino: args.url,
       // Los dos tienen que vencer a la vez: un código vivo que lleve a un token
@@ -3944,11 +3949,8 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
 
       if (!resultado) {
         return texto(
-          'Todavía no hay ningún capítulo de la tesis guardado, así que no hay Word que ' +
-            'descargar. OJO: la propuesta de tema, el cuestionario y la bitácora del trabajo ' +
-            'de campo se guardan en el proyecto, pero no son capítulos del documento: el Word ' +
-            'empieza en el Capítulo I. Si ya redactasteis uno, guárdalo con "guardar_capitulo"; ' +
-            'si no, no le prometas un Word todavía y NO se lo armes tú.',
+          'Todavía no hay ningún capítulo guardado, así que no hay Word que descargar. ' +
+            'Guarda primero lo redactado con "guardar_capitulo".',
         );
       }
 

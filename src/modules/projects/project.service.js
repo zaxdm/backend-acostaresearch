@@ -753,17 +753,47 @@ async function armarWord(userId, productCode) {
     ...esquemaDeCapitulos.capitulosDelDocumento({ esquema: proyecto.esquema, catalogo, conTexto }).capitulos,
   ];
 
-  const capitulos = [];
-  for (const capitulo of enOrden) {
-    // Un capítulo puede salir de varias fases —«Resultados y discusión»—, y se
-    // pegan en su orden, separadas como dos bloques de texto.
-    const partes = [];
-    for (const clave of capitulo.partes) {
-      if (!conTexto.has(clave)) continue;
-      const texto = await almacen.leer(proyecto.id, clave);
-      if (texto && texto.trim() !== '') partes.push(texto.trim());
+  /** Lee el texto de cada capítulo y descarta los que no tienen ninguno. */
+  const conSuTexto = async (lista) => {
+    const escritos = [];
+    for (const capitulo of lista) {
+      // Un capítulo puede salir de varias fases —«Resultados y discusión»—, y se
+      // pegan en su orden, separadas como dos bloques de texto.
+      const partes = [];
+      for (const clave of capitulo.partes) {
+        if (!conTexto.has(clave)) continue;
+        const texto = await almacen.leer(proyecto.id, clave);
+        if (texto && texto.trim() !== '') partes.push(texto.trim());
+      }
+      if (partes.length > 0) escritos.push({ titulo: capitulo.titulo, texto: partes.join('\n\n') });
     }
-    if (partes.length > 0) capitulos.push({ titulo: capitulo.titulo, texto: partes.join('\n\n') });
+    return escritos;
+  };
+
+  let capitulos = await conSuTexto(enOrden);
+
+  /**
+   * Y si aún no hay ningún capítulo, lo que sí se haya trabajado.
+   *
+   * La propuesta de tema no es un capítulo de la tesis, pero es lo que el
+   * tesista lleva al asesor: es LA entrega de la Fase 1. Dejarla fuera del Word
+   * sin más lo mandaba a un callejón —el asistente pedía el enlace una y otra
+   * vez y el servidor contestaba que no hay nada que descargar, con 400
+   * palabras guardadas—, así que mientras no exista el Capítulo I el documento
+   * es lo que hay: su propuesta, su cuestionario o su bitácora.
+   *
+   * En cuanto guarde un capítulo de verdad, estas desaparecen del Word y la
+   * tesis empieza por el Capítulo I, que es lo que se busca.
+   */
+  if (capitulos.length === 0) {
+    capitulos = await conSuTexto(
+      esquemaDeCapitulos.capitulosDelDocumento({
+        esquema: proyecto.esquema,
+        catalogo,
+        conTexto,
+        incluirFasesDeTrabajo: true,
+      }).capitulos,
+    );
   }
 
   if (capitulos.length === 0) return null;
@@ -2047,20 +2077,7 @@ async function enlaceDelWord(userId, productCode) {
   const proyecto = await projectRepository.buscar(userId, productCode);
   if (!proyecto) return null;
 
-  /**
-   * Y palabras DE LAS QUE SE IMPRIMEN.
-   *
-   * Contando todas, a quien solo había cerrado la Fase 1 se le daba un enlace
-   * que al abrirlo devolvía «todavía no hay ningún capítulo escrito»: el Word
-   * no lleva la propuesta de tema ni el cuestionario (ver `project.esquema`).
-   * Mejor decírselo aquí, en el chat, que después de hacerle clic.
-   */
-  const nombradas = new Set((proyecto.esquema?.capitulos ?? []).flatMap((c) => c.de ?? []));
-  const seImprime = (code) => !esquemaDeCapitulos.FASES_DE_TRABAJO.has(code) || nombradas.has(code);
-
-  const palabras = (proyecto.stages ?? [])
-    .filter((e) => seImprime(e.skillCode))
-    .reduce((suma, e) => suma + (e.palabras ?? 0), 0);
+  const palabras = (proyecto.stages ?? []).reduce((suma, e) => suma + (e.palabras ?? 0), 0);
   if (palabras === 0) return null;
 
   return { ...descarga.enlace({ userId, productCode }), norma: normaDelProyecto(proyecto) };

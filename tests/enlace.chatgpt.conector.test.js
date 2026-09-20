@@ -91,21 +91,30 @@ test('desde ChatGPT sale el enlace CORTO, suelto y sin Markdown', async () => {
   assert.equal(acortados[0].minutos, 30);
 });
 
-test('desde Claude sigue saliendo el enlace largo que se pulsa, y no se acorta', async () => {
+test('desde Claude el enlace se pulsa en Markdown, y también va CORTO', async () => {
+  // Claude enseña bien el Markdown, pero tampoco copia: el 20-sep-2026
+  // reescribió dos enlaces con un carácter cambiado y el tesista leyó las dos
+  // veces «llegó incompleto o alterado». Lo que no se escribe no se estropea.
   const texto = await llamar('subir_mi_documento', { cliente: clienteDe('Claude-User') });
 
-  assert.ok(texto.includes(`](${URL_FALSA})`), 'a Claude se le da el enlace hecho');
+  assert.ok(texto.includes('](https://'), 'a Claude se le sigue dando el enlace hecho');
+  assert.match(texto, /\]\(\S+\/s\/K7M2QX9P\)/, 'y lo que lleva dentro es el corto');
+  assert.ok(!texto.includes(URL_FALSA), 'el token de 400 caracteres no pasa por el chat');
   assert.match(texto, /NO escribas la dirección/);
-  assert.equal(acortados.length, 0, 'a Claude no se le acorta: allí el Markdown funciona');
+
+  assert.equal(acortados.length, 1);
+  assert.equal(acortados[0].destino, URL_FALSA);
+  assert.equal(acortados[0].minutos, 30);
 });
 
-test('sin decir con quién se habla, el conector se comporta como antes', async () => {
+test('sin decir con quién se habla, el enlace se acorta igual', async () => {
   acortados.length = 0;
   registradas = new Map();
   construirServidor(LICENCIA);
   const { manejador } = registradas.get('subir_mi_documento');
   const texto = (await manejador({})).content.map((c) => c.text).join('\n');
 
-  assert.ok(texto.includes(`](${URL_FALSA})`));
-  assert.equal(acortados.length, 0);
+  assert.match(texto, /\]\(\S+\/s\/K7M2QX9P\)/);
+  assert.ok(!texto.includes(URL_FALSA));
+  assert.equal(acortados.length, 1);
 });

@@ -42,6 +42,10 @@ sustituir('../src/modules/projects/project.storage', {
   leer: async () => null,
   fechaDeAnalisis: async () => null,
 });
+// El acortador, sin base de datos: todos los enlaces del conector pasan por él.
+sustituir('../src/modules/enlaces/enlaceCorto.service', {
+  acortar: async ({ destino }) => destino,
+});
 
 const rutaMcp = require.resolve('@modelcontextprotocol/server');
 const mcpReal = require('@modelcontextprotocol/server');

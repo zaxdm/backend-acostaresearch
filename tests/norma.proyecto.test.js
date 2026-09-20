@@ -41,7 +41,11 @@ const BRAUN = {
   ownerUserId: null,
 };
 
-const estado = { proyecto: null, cuenta: null, cslRompe: false };
+const CATALOGO_POR_DEFECTO = [
+  { code: 'marco-teorico', displayName: '3 · Capítulo II · Marco teórico' },
+];
+
+const estado = { proyecto: null, cuenta: null, cslRompe: false, catalogo: CATALOGO_POR_DEFECTO };
 
 const sustituir = (ruta, exports) => {
   const id = require.resolve(ruta);
@@ -71,7 +75,7 @@ sustituir('../src/modules/projects/project.storage', {
 });
 
 sustituir('../src/modules/skills/skill.service', {
-  listCatalog: async () => [{ code: 'marco-teorico', displayName: '3 · Capítulo II · Marco teórico' }],
+  listCatalog: async () => estado.catalogo,
   findByCode: async () => null,
 });
 
@@ -99,6 +103,7 @@ const { guardarAvanceSchema } = require('../src/modules/projects/project.schema'
 function empezar(cambios = {}) {
   estado.cuenta = null;
   estado.cslRompe = false;
+  estado.catalogo = CATALOGO_POR_DEFECTO;
   estado.proyecto = {
     id: 'p1',
     productCode: 'METODO_9_SKILLS',
@@ -215,16 +220,34 @@ test('el enlace del Word existe solo si hay algo escrito', async () => {
   assert.equal(await projectService.enlaceDelWord('u1', 'METODO_9_SKILLS'), null);
 });
 
-test('con solo la propuesta de tema guardada, no hay Word que enlazar', async () => {
-  // La Fase 1 escribe, pero lo que escribe no es un capítulo de la tesis. Dar
-  // el enlace igual llevaba a un 404 después del clic: se dice antes.
+test('con solo la propuesta de tema, el Word es la propuesta y el enlace existe', async () => {
+  // Mientras no haya Capítulo I, lo que hay es lo que se descarga: la Fase 1
+  // entrega la propuesta para el asesor, y quedarse sin ella dejaba al tesista
+  // pidiendo el enlace una y otra vez con 400 palabras ya guardadas.
   empezar({ stages: [{ skillCode: 'tema-y-delimitacion', estado: 'LISTO', palabras: 320 }] });
-  assert.equal(await projectService.enlaceDelWord('u1', 'METODO_9_SKILLS'), null);
+  estado.catalogo = [
+    { code: 'tema-y-delimitacion', displayName: '1 · Tema y delimitación' },
+    ...CATALOGO_POR_DEFECTO,
+  ];
 
-  // Salvo que el reglamento de su facultad la pida como capítulo.
-  empezar({
-    stages: [{ skillCode: 'tema-y-delimitacion', estado: 'LISTO', palabras: 320 }],
-    esquema: { capitulos: [{ titulo: 'CAPÍTULO PRELIMINAR', de: ['tema-y-delimitacion'] }] },
-  });
   assert.ok(await projectService.enlaceDelWord('u1', 'METODO_9_SKILLS'));
+  const word = await projectService.armarWord('u1', 'METODO_9_SKILLS');
+  assert.ok(xmlDe(word.buffer).includes('Tema y delimitación'));
+});
+
+test('en cuanto hay un capítulo de verdad, la propuesta sale del Word', async () => {
+  empezar({
+    stages: [
+      { skillCode: 'tema-y-delimitacion', estado: 'LISTO', palabras: 320 },
+      { skillCode: 'marco-teorico', estado: 'EN_CURSO', palabras: 40 },
+    ],
+  });
+  estado.catalogo = [
+    { code: 'tema-y-delimitacion', displayName: '1 · Tema y delimitación' },
+    ...CATALOGO_POR_DEFECTO,
+  ];
+
+  const doc = xmlDe((await projectService.armarWord('u1', 'METODO_9_SKILLS')).buffer);
+  assert.ok(doc.includes('Capítulo II · Marco teórico'));
+  assert.ok(!doc.includes('Tema y delimitación'), 'la tesis no empieza por la propuesta');
 });

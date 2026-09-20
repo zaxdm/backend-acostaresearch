@@ -61,8 +61,19 @@ async function acortar({ destino, minutos, base }) {
       await prisma.enlaceCorto.create({ data: { codigo, destino, expiresAt } });
       return `${String(base).replace(/\/$/, '')}/s/${codigo}`;
     } catch (error) {
-      // P2002: ese código ya existía. Cualquier otra cosa no es cosa nuestra.
-      if (error?.code !== 'P2002') throw error;
+      // P2002: ese código ya existía, se prueba otro.
+      if (error?.code === 'P2002') continue;
+      /**
+       * Y cualquier otro fallo tampoco puede dejar al tesista sin enlace.
+       *
+       * Desde que se acorta para todos los asistentes, esto está en el camino
+       * de TODOS los enlaces de la plataforma: subir el formato, descargar el
+       * Word, subir las entrevistas. Que una tabla no responda no puede
+       * significar que nadie pueda descargar nada; se anota y se sigue con la
+       * dirección larga, que funciona igual.
+       */
+      logger.error({ err: error }, 'No se pudo acortar un enlace: se da el largo');
+      return destino;
     }
   }
 

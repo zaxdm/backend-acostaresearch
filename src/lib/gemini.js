@@ -145,71 +145,29 @@ async function generarConRespaldo({ modelos, ...opciones }) {
 }
 
 /**
- * Los vectores que ya se pidieron una vez, para no volver a pagarlos.
- *
- * El vector de un artículo no cambia: mismo título y mismo resumen dan el
- * mismo vector siempre. Y el tope del plan gratuito de Gemini se cuenta por
- * TEXTO, no por petición —cien al minuto—, así que cada artículo que se
- * recuerda es uno que no se gasta. Importa cuando alguien mira un tema, vuelve
- * y prueba el siguiente: los temas hermanos comparten literatura, y la segunda
- * búsqueda se ordena sin pedir casi nada.
- *
- * Vive en el proceso y se pierde al reiniciar, que es justo lo que hace falta:
- * no es un dato del tesista, es el resultado de una cuenta.
- */
-const MEMORIA_MAXIMA = 1500;
-const memoria = new Map();
-
-const claveDelVector = (modelo, tarea, texto) => `${modelo}\u0000${tarea}\u0000${texto}`;
-
-/** Guarda el vector y, de paso, deja al final el que se acaba de usar. */
-function recordarVector(clave, vector) {
-  memoria.delete(clave);
-  memoria.set(clave, vector);
-  // Los primeros del Map son los que llevan más tiempo sin usarse.
-  while (memoria.size > MEMORIA_MAXIMA) memoria.delete(memoria.keys().next().value);
-}
-
-/**
  * Los vectores de unos textos, para comparar su significado.
  *
  * Los usa la búsqueda semántica de Scopus: la pregunta va con la tarea
  * `RETRIEVAL_QUERY` y los artículos con `RETRIEVAL_DOCUMENT`, que es como
  * Google entrena el modelo para que se encuentren. De cien en cien, que es lo
  * que admite `batchEmbedContents`; 768 dimensiones, que para ordenar sobran.
- *
- * Solo se piden los que no se recuerdan de antes, y se devuelven en el orden
- * en que llegaron: quien llama compara por posición.
  */
 async function embeber(
   textos,
   { tarea = 'RETRIEVAL_DOCUMENT', modelo = env.GEMINI_EMBEDDING_MODEL, fetchImpl = fetch } = {},
 ) {
-  const recortados = textos.map((texto) => String(texto).slice(0, 8000));
-  const vectores = new Array(recortados.length);
-  const pendientes = [];
+  const vectores = [];
 
-  recortados.forEach((texto, posicion) => {
-    const clave = claveDelVector(modelo, tarea, texto);
-    const guardado = memoria.get(clave);
-    if (guardado) {
-      vectores[posicion] = guardado;
-      recordarVector(clave, guardado);
-    } else {
-      pendientes.push({ texto, posicion });
-    }
-  });
-
-  for (let i = 0; i < pendientes.length; i += 100) {
-    const lote = pendientes.slice(i, i + 100);
+  for (let i = 0; i < textos.length; i += 100) {
+    const lote = textos.slice(i, i + 100);
     const url = `${BASE}/models/${encodeURIComponent(modelo)}:batchEmbedContents`;
     const respuesta = await fetchImpl(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY ?? '' },
       body: JSON.stringify({
-        requests: lote.map(({ texto }) => ({
+        requests: lote.map((texto) => ({
           model: `models/${modelo}`,
-          content: { parts: [{ text: texto }] },
+          content: { parts: [{ text: String(texto).slice(0, 8000) }] },
           taskType: tarea,
           outputDimensionality: 768,
         })),
@@ -223,18 +181,10 @@ async function embeber(
         status: respuesta.status,
       });
     }
-
-    lote.forEach(({ texto, posicion }, n) => {
-      const vector = cuerpo.embeddings[n]?.values ?? [];
-      vectores[posicion] = vector;
-      if (vector.length > 0) recordarVector(claveDelVector(modelo, tarea, texto), vector);
-    });
+    vectores.push(...cuerpo.embeddings.map((e) => e.values ?? []));
   }
 
   return vectores;
 }
 
-/** Vaciar lo recordado. Para las pruebas: cada una empieza sin memoria. */
-const olvidarVectores = () => memoria.clear();
-
-module.exports = { generar, generarConRespaldo, embeber, olvidarVectores, GeminiError };
+module.exports = { generar, generarConRespaldo, embeber, GeminiError };

@@ -7,7 +7,6 @@ const {
   scopusBuscarLimiter,
   scopusConectarLimiter,
   scopusIaLimiter,
-  scopusSemanticaLimiter,
   scopusCuentasLimiter,
 } = require('../../middlewares/rateLimit');
 const {
@@ -130,13 +129,8 @@ router.post(
   scopusController.cuentasAproximadas,
 );
 
-/**
- * Los más cercanos a la pregunta, por significado. Gasta Gemini y Scopus.
- *
- * Con su propio límite y no el de la IA: cada tarjeta de tema que el tesista
- * mira se busca ordenada así, y gastaba el cupo del resumen y del copiloto.
- */
-router.post('/semantica', scopusSemanticaLimiter, validate({ body: semanticaSchema }), scopusController.semantica);
+/** Los más cercanos a la pregunta, por significado. Gasta Gemini y Scopus. */
+router.post('/semantica', scopusIaLimiter, validate({ body: semanticaSchema }), scopusController.semantica);
 
 /** Las búsquedas guardadas y las conversaciones del copiloto: la columna de la izquierda. */
 router.get('/guardadas', scopusController.guardadas);

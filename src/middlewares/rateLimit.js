@@ -14,23 +14,6 @@ const { ipCliente } = require('../shared/utils/ipCliente');
  */
 const porUsuario = (req) => (req.user?.id ? `usuario:${req.user.id}` : ipCliente(req));
 
-/**
- * Cuánto falta para poder volver a intentarlo, dicho en cristiano.
- *
- * «Espera unos minutos» no le sirve a nadie: con un cubo de diez minutos, el
- * que espera uno vuelve a chocar y el que espera diez esperó de más sin saber
- * si el problema era otro. La hora de reinicio la lleva el propio limitador,
- * así que se dice el número.
- */
-function cuantoFalta(reinicio) {
-  const faltan = reinicio instanceof Date ? reinicio.getTime() - Date.now() : NaN;
-  if (!Number.isFinite(faltan) || faltan <= 0) return 'Vuelve a intentarlo en un momento.';
-  if (faltan < 60_000) return `Vuelve a intentarlo en ${Math.ceil(faltan / 1000)} segundos.`;
-
-  const minutos = Math.ceil(faltan / 60_000);
-  return `Vuelve a intentarlo en ${minutos} ${minutos === 1 ? 'minuto' : 'minutos'}.`;
-}
-
 function build({ windowMs, max, message, keyGenerator = ipCliente }) {
   return rateLimit({
     windowMs,
@@ -41,13 +24,10 @@ function build({ windowMs, max, message, keyGenerator = ipCliente }) {
     keyGenerator,
     // En desarrollo estorba más de lo que protege.
     skip: () => env.isDevelopment,
-    handler: (req, res) =>
+    handler: (_req, res) =>
       res.status(429).json({
         success: false,
-        error: {
-          code: ERROR_CODES.TOO_MANY_REQUESTS,
-          message: `${message} ${cuantoFalta(req.rateLimit?.resetTime)}`,
-        },
+        error: { code: ERROR_CODES.TOO_MANY_REQUESTS, message },
       }),
   });
 }
@@ -56,7 +36,7 @@ function build({ windowMs, max, message, keyGenerator = ipCliente }) {
 const globalLimiter = build({
   windowMs: 15 * 60 * 1000,
   max: 300,
-  message: 'Demasiadas peticiones.',
+  message: 'Demasiadas peticiones. Inténtalo de nuevo en unos minutos.',
 });
 
 /**
@@ -70,28 +50,28 @@ const globalLimiter = build({
 const authLimiter = build({
   windowMs: 15 * 60 * 1000,
   max: 30,
-  message: 'Demasiados intentos.',
+  message: 'Demasiados intentos. Espera unos minutos antes de volver a intentarlo.',
 });
 
 /** Límite para reenvío de correos, que además cuesta dinero. */
 const emailLimiter = build({
   windowMs: 60 * 60 * 1000,
   max: 5,
-  message: 'Has solicitado demasiados correos.',
+  message: 'Has solicitado demasiados correos. Inténtalo más tarde.',
 });
 
 /** Cada reescritura es una llamada de pago: se frena el abuso por ráfagas. */
 const rewriteLimiter = build({
   windowMs: 60 * 1000,
   max: 5,
-  message: 'Estás enviando reescrituras demasiado rápido.',
+  message: 'Estás enviando reescrituras demasiado rápido. Espera un momento.',
 });
 
 /** Abrir órdenes de pago es barato para nosotros, pero ensucia la pasarela. */
 const paymentLimiter = build({
   windowMs: 10 * 60 * 1000,
   max: 15,
-  message: 'Has abierto demasiados pagos seguidos.',
+  message: 'Has abierto demasiados pagos seguidos. Espera unos minutos.',
 });
 
 /**
@@ -107,7 +87,7 @@ const paymentLimiter = build({
 const zoteroSyncLimiter = build({
   windowMs: 10 * 60 * 1000,
   max: 6,
-  message: 'Has pedido tu biblioteca varias veces seguidas.',
+  message: 'Has pedido tu biblioteca varias veces seguidas. Espera unos minutos.',
   keyGenerator: porUsuario,
 });
 
@@ -123,7 +103,7 @@ const zoteroSyncLimiter = build({
 const zoteroConectarLimiter = build({
   windowMs: 10 * 60 * 1000,
   max: 30,
-  message: 'Has intentado conectar Zotero muchas veces seguidas.',
+  message: 'Has intentado conectar Zotero muchas veces seguidas. Espera unos minutos.',
   keyGenerator: porUsuario,
 });
 
@@ -136,14 +116,14 @@ const zoteroConectarLimiter = build({
 const mendeleySyncLimiter = build({
   windowMs: 10 * 60 * 1000,
   max: 6,
-  message: 'Has pedido tu biblioteca de Mendeley varias veces seguidas.',
+  message: 'Has pedido tu biblioteca de Mendeley varias veces seguidas. Espera unos minutos.',
   keyGenerator: porUsuario,
 });
 
 const mendeleyConectarLimiter = build({
   windowMs: 10 * 60 * 1000,
   max: 30,
-  message: 'Has intentado conectar Mendeley muchas veces seguidas.',
+  message: 'Has intentado conectar Mendeley muchas veces seguidas. Espera unos minutos.',
   keyGenerator: porUsuario,
 });
 
@@ -164,7 +144,7 @@ const mendeleyConectarLimiter = build({
 const scopusBuscarLimiter = build({
   windowMs: 10 * 60 * 1000,
   max: 30,
-  message: 'Has buscado en Scopus muchas veces seguidas.',
+  message: 'Has buscado en Scopus muchas veces seguidas. Espera unos minutos.',
   keyGenerator: porUsuario,
 });
 
@@ -179,27 +159,7 @@ const scopusBuscarLimiter = build({
 const scopusIaLimiter = build({
   windowMs: 10 * 60 * 1000,
   max: 20,
-  message: 'Has usado la IA del buscador muchas veces seguidas.',
-  keyGenerator: porUsuario,
-});
-
-/**
- * Ordenar por significado, que es otra cosa y por eso tiene su propio cubo.
- *
- * Compartía los veinte de arriba, y desde que el copiloto propone tarjetas de
- * temas cada una se busca ordenada por significado: mirar cuatro temas son
- * cuatro, más la propuesta, más un resumen por búsqueda. El tesista se quedaba
- * sin poder pedir el resumen de lo que acababa de encontrar por haber mirado
- * sus propios temas, que es justo lo que le pedimos que haga.
- *
- * Y no gasta lo mismo: esto son vectores del plan gratuito de Gemini —con su
- * propio tope por minuto, que ya avisa aparte— y no texto generado, que es lo
- * que se paga. Cuarenta cada diez minutos por persona.
- */
-const scopusSemanticaLimiter = build({
-  windowMs: 10 * 60 * 1000,
-  max: 40,
-  message: 'Has ordenado por significado muchas veces seguidas.',
+  message: 'Has usado la IA del buscador muchas veces seguidas. Espera unos minutos.',
   keyGenerator: porUsuario,
 });
 
@@ -214,7 +174,7 @@ const scopusSemanticaLimiter = build({
 const scopusCuentasLimiter = build({
   windowMs: 10 * 60 * 1000,
   max: 40,
-  message: 'Has pedido los números de los filtros muchas veces seguidas.',
+  message: 'Has pedido los números de los filtros muchas veces seguidas. Espera unos minutos.',
   keyGenerator: porUsuario,
 });
 
@@ -229,7 +189,7 @@ const scopusCuentasLimiter = build({
 const mapasLimiter = build({
   windowMs: 10 * 60 * 1000,
   max: 15,
-  message: 'Has creado muchos mapas seguidos.',
+  message: 'Has creado muchos mapas seguidos. Espera unos minutos.',
   keyGenerator: porUsuario,
 });
 
@@ -241,7 +201,7 @@ const mapasLimiter = build({
 const mapasUmbralLimiter = build({
   windowMs: 10 * 60 * 1000,
   max: 90,
-  message: 'Has cambiado el umbral muchas veces seguidas.',
+  message: 'Has cambiado el umbral muchas veces seguidas. Espera unos minutos.',
   keyGenerator: porUsuario,
 });
 
@@ -255,7 +215,7 @@ const mapasUmbralLimiter = build({
 const scopusConectarLimiter = build({
   windowMs: 10 * 60 * 1000,
   max: 30,
-  message: 'Has intentado conectar Scopus muchas veces seguidas.',
+  message: 'Has intentado conectar Scopus muchas veces seguidas. Espera unos minutos.',
   keyGenerator: porUsuario,
 });
 
@@ -270,7 +230,7 @@ const scopusConectarLimiter = build({
 const trialClaimLimiter = build({
   windowMs: 10 * 60 * 1000,
   max: 60,
-  message: 'Se han pedido demasiados conectores desde esta conexión.',
+  message: 'Se han pedido demasiados conectores desde esta conexión. Espera unos minutos.',
 });
 
 /**
@@ -283,7 +243,7 @@ const trialClaimLimiter = build({
 const asistenteLimiter = build({
   windowMs: 10 * 60 * 1000,
   max: 40,
-  message: 'Estás escribiendo muy rápido. Si tienes prisa, escríbenos por WhatsApp.',
+  message: 'Estás escribiendo muy rápido. Espera unos minutos o escríbenos por WhatsApp.',
 });
 
 /**
@@ -376,7 +336,6 @@ const mcpFallosLimiter = rateLimit({
 });
 
 module.exports = {
-  cuantoFalta,
   mcpFallosLimiter,
   globalLimiter,
   authLimiter,
@@ -391,7 +350,6 @@ module.exports = {
   scopusBuscarLimiter,
   scopusConectarLimiter,
   scopusIaLimiter,
-  scopusSemanticaLimiter,
   scopusCuentasLimiter,
   mapasLimiter,
   mapasUmbralLimiter,

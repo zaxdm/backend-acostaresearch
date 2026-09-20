@@ -3,6 +3,7 @@
 const asyncHandler = require('../../shared/http/asyncHandler');
 const { ok, created } = require('../../shared/http/apiResponse');
 const asesorService = require('./asesor.service');
+const { catalogos } = require('./asesor.catalogo');
 
 const asesorController = {
   // ── Público ────────────────────────────────────────────────────────────
@@ -35,6 +36,40 @@ const asesorController = {
   }),
 
   // ── Administrador ──────────────────────────────────────────────────────
+
+  /**
+   * Las listas con las que se pinta el formulario de alta.
+   *
+   * Vienen del servidor, como las del formulario público: así abrir un área
+   * nueva es tocar `asesor.catalogo` y no dos repositorios.
+   */
+  catalogos: asyncHandler(async (_req, res) => {
+    return ok(res, { catalogos: catalogos() });
+  }),
+
+  /** El alta a mano: nace aprobado y con su enlace. Ver el servicio. */
+  darDeAlta: asyncHandler(async (req, res) => {
+    const asesor = await asesorService.darDeAlta(req.body, req.user.id);
+    return created(
+      res,
+      { asesor },
+      `${asesor.nombre} ya está en el directorio. Cópiale su enlace y mándaselo.`,
+    );
+  }),
+
+  editarFicha: asyncHandler(async (req, res) => {
+    const asesor = await asesorService.editarFicha(req.params.id, req.body);
+    return ok(res, { asesor }, { message: `Ficha de ${asesor.nombre} guardada.` });
+  }),
+
+  rehacerEnlace: asyncHandler(async (req, res) => {
+    const asesor = await asesorService.rehacerEnlace(req.params.id);
+    return ok(
+      res,
+      { asesor },
+      { message: 'Enlace nuevo. El anterior ya no vale: vuelve a mandárselo.' },
+    );
+  }),
 
   listar: asyncHandler(async (_req, res) => {
     return ok(res, { asesores: await asesorService.listar() });

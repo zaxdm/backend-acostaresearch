@@ -106,6 +106,18 @@ const postulacionBodySchema = z
     }
   });
 
+/**
+ * El alta a mano, desde el panel.
+ *
+ * Son los mismos campos que la postulación y no una versión recortada: lo que
+ * se pide en la ficha es lo que decide una elección en el directorio, y un
+ * asesor dado de alta con media ficha sale con media tarjeta. `aceptaReglas`
+ * sigue estando porque sigue haciendo falta: aquí significa que el
+ * administrador confirma que las aceptó, y queda guardado para el día que haya
+ * que recordárselo.
+ */
+const altaSchema = postulacionBodySchema;
+
 const slugParamSchema = z.object({
   slug: z
     .string()
@@ -125,6 +137,8 @@ const revisionSchema = z.object({
     message: 'Elige si queda pendiente, aprobada o rechazada.',
   }),
   notas: z.string().trim().max(2000).optional().default(''),
+  /** Sacarlo o devolverlo al directorio sin tocar su estado. */
+  visible: z.boolean().optional(),
 });
 
 const convocatoriaSchema = z.object({
@@ -147,6 +161,7 @@ const convocatoriaCambioSchema = z
 
 module.exports = {
   postulacionBodySchema,
+  altaSchema,
   slugParamSchema,
   idParamSchema,
   revisionSchema,

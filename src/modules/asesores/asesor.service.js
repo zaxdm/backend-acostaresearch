@@ -168,6 +168,112 @@ async function postular(slug, datos) {
   return salida(asesor);
 }
 
+/** Lo que se escribe de una ficha, venga de una postulación o de un alta. */
+const camposDeLaFicha = (datos) => ({
+  nombre: datos.nombre,
+  tipoDocumento: datos.tipoDocumento,
+  numeroDocumento: datos.numeroDocumento,
+  email: datos.email,
+  telefono: datos.telefono,
+  grado: datos.grado,
+  gradoUniversidad: datos.gradoUniversidad,
+  gradoAnio: datos.gradoAnio,
+  registroSunedu: datos.registroSunedu,
+  enlaceCv: datos.enlaceCv,
+  areas: guardarLista(datos.areas, AREAS),
+  metodos: guardarLista(datos.metodos, METODOS),
+  especialidad: datos.especialidad,
+  universidades: datos.universidades,
+  anosExperiencia: datos.anosExperiencia,
+  presentacion: datos.presentacion,
+  aceptaReglas: datos.aceptaReglas,
+});
+
+/** Un correo, una ficha. El choque se cuenta en palabras, no en códigos. */
+function siEsCorreoRepetido(error) {
+  if (error?.code === 'P2002') {
+    return new ConflictError('Ya hay una ficha con ese correo.');
+  }
+  return error;
+}
+
+/**
+ * Dar de alta a un asesor a mano, desde el panel.
+ *
+ * POR QUÉ NACE APROBADO
+ * ---------------------
+ * Porque no se postuló: se le llamó. El estado PENDIENTE existe para lo que
+ * llega solo y hay que comprobar; una ficha que escribe el propio
+ * administrador, de alguien a quien ya conoce, no tiene a quién esperar. Que
+ * pasara por «pendiente» para que él mismo se la aprobara acto seguido sería un
+ * trámite consigo mismo.
+ *
+ * Y nace con su enlace, que es lo único que hay que mandarle después.
+ */
+async function darDeAlta(datos, adminId) {
+  let asesor;
+  try {
+    asesor = await prisma.asesor.create({
+      data: {
+        ...camposDeLaFicha(datos),
+        // Sin convocatoria: no vino por ninguna.
+        convocatoriaId: null,
+        estado: 'APROBADO',
+        visible: true,
+        token: crypto.randomBytes(24).toString('hex'),
+        revisadoAt: new Date(),
+        revisadoPorId: adminId ?? null,
+      },
+      select: asesorSelect,
+    });
+  } catch (error) {
+    throw siEsCorreoRepetido(error);
+  }
+  return salida(asesor);
+}
+
+/** Corregir sus datos. Lo que sale en su tarjeta se escribe aquí. */
+async function editarFicha(id, datos) {
+  const existe = await prisma.asesor.findUnique({ where: { id }, select: { id: true } });
+  if (!existe) throw new NotFoundError('Esa ficha no existe.');
+
+  try {
+    const asesor = await prisma.asesor.update({
+      where: { id },
+      data: camposDeLaFicha(datos),
+      select: asesorSelect,
+    });
+    return salida(asesor);
+  } catch (error) {
+    throw siEsCorreoRepetido(error);
+  }
+}
+
+/**
+ * Rehacer su enlace.
+ *
+ * Su enlace es su llave: no hay contraseña detrás. Si se le escapa —lo reenvía,
+ * lo pega donde no debe—, esto es lo que lo apaga. El viejo deja de valer en
+ * cuanto se hace el nuevo, así que hay que volver a mandárselo.
+ */
+async function rehacerEnlace(id) {
+  const existe = await prisma.asesor.findUnique({
+    where: { id },
+    select: { id: true, estado: true },
+  });
+  if (!existe) throw new NotFoundError('Esa ficha no existe.');
+  if (existe.estado !== 'APROBADO') {
+    throw new ConflictError('Solo los asesores aprobados tienen enlace.');
+  }
+
+  const asesor = await prisma.asesor.update({
+    where: { id },
+    data: { token: crypto.randomBytes(24).toString('hex') },
+    select: asesorSelect,
+  });
+  return salida(asesor);
+}
+
 /** Todas las fichas, la más nueva primero. */
 async function listar() {
   const filas = await prisma.asesor.findMany({
@@ -184,7 +290,7 @@ async function listar() {
  * comprueba mañana, y obligar a rechazar para poder revisar otra vez haría que
  * nadie rechazara nunca.
  */
-async function revisar(id, { estado, notas }, adminId) {
+async function revisar(id, { estado, notas, visible }, adminId) {
   const existe = await prisma.asesor.findUnique({ where: { id }, select: { id: true, token: true } });
   if (!existe) throw new NotFoundError('Esa ficha no existe.');
 
@@ -199,8 +305,9 @@ async function revisar(id, { estado, notas }, adminId) {
       // Aprobarlo es darle la llave. Si ya tenía una, se respeta: rehacerla a
       // cada aprobación dejaría muerto el enlace que ya le mandaste.
       token: estado === 'APROBADO' && !existe.token ? crypto.randomBytes(24).toString('hex') : undefined,
-      // Y vuelve al directorio, por si se le había apagado.
-      visible: estado === 'APROBADO' ? true : undefined,
+      // Y vuelve al directorio, por si se le había apagado. Si el panel manda
+      // uno explícito, manda ese: es lo que permite sacarlo sin rechazarlo.
+      visible: visible ?? (estado === 'APROBADO' ? true : undefined),
     },
     select: asesorSelect,
   });
@@ -239,6 +346,9 @@ async function cambiarConvocatoria(id, cambios) {
 }
 
 module.exports = {
+  darDeAlta,
+  editarFicha,
+  rehacerEnlace,
   verConvocatoria,
   convocatoriaPublica,
   postular,

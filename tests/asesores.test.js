@@ -81,9 +81,14 @@ sustituir('../src/lib/prisma', {
       return fila ? { ...fila } : null;
     },
     findMany: async () => [...estado.asesores.values()].reverse().map((a) => ({ ...a })),
+    // `undefined` es «no toques este campo», como en Prisma. Con Object.assign
+    // se escribiría undefined encima y una prueba como la del enlace que no se
+    // rehace mediría lo contrario de lo que pasa en producción.
     update: async ({ where, data }) => {
       const fila = estado.asesores.get(where.id);
-      Object.assign(fila, data);
+      for (const [clave, valor] of Object.entries(data)) {
+        if (valor !== undefined) fila[clave] = valor;
+      }
       return { ...fila };
     },
     groupBy: async () => {
@@ -260,6 +265,90 @@ test('aprobar sella la revisión y volver a pendiente la borra', async () => {
   const devuelta = await asesorService.revisar(ficha.id, { estado: 'PENDIENTE', notas: '' }, 'admin-1');
   assert.equal(devuelta.revisadoAt, null);
   assert.equal(devuelta.notas, null);
+});
+
+// ── El alta a mano ──────────────────────────────────────────────────────────
+
+test('el alta desde el panel nace aprobada, con enlace y sin convocatoria', async () => {
+  empezar();
+  const asesor = await asesorService.darDeAlta(validar(), 'admin-1');
+
+  assert.equal(asesor.estado, 'APROBADO');
+  assert.equal(asesor.convocatoriaId, null, 'no vino por ninguna convocatoria');
+  assert.equal(asesor.visible, true);
+  assert.ok(asesor.revisadoAt instanceof Date);
+  assert.match(asesor.token, /^[a-f0-9]{48}$/);
+  assert.ok(asesor.enlacePanel.endsWith(`/asesor/${asesor.token}`));
+});
+
+test('dos altas con el mismo correo no pasan', async () => {
+  empezar();
+  await asesorService.darDeAlta(validar(), 'admin-1');
+  await assert.rejects(
+    () => asesorService.darDeAlta(validar({ nombre: 'Otra Persona' }), 'admin-1'),
+    /ya hay una ficha con ese correo/i,
+  );
+});
+
+test('editar la ficha cambia lo que sale en su tarjeta', async () => {
+  empezar();
+  const asesor = await asesorService.darDeAlta(validar(), 'admin-1');
+
+  const guardada = await asesorService.editarFicha(
+    asesor.id,
+    validar({ especialidad: 'Salud pública', areas: ['SALUD'], anosExperiencia: 11 }),
+  );
+  assert.equal(guardada.especialidad, 'Salud pública');
+  assert.deepEqual(guardada.areas, ['Salud']);
+  assert.equal(guardada.anosExperiencia, 11);
+  // Y sigue siendo el mismo, con su mismo enlace.
+  assert.equal(guardada.id, asesor.id);
+  assert.equal(guardada.token, asesor.token);
+});
+
+test('rehacer el enlace apaga el anterior', async () => {
+  empezar();
+  const asesor = await asesorService.darDeAlta(validar(), 'admin-1');
+  const rehecho = await asesorService.rehacerEnlace(asesor.id);
+
+  assert.notEqual(rehecho.token, asesor.token);
+  assert.ok(rehecho.enlacePanel.endsWith(`/asesor/${rehecho.token}`));
+});
+
+test('a quien no está aprobado no se le rehace ningún enlace', async () => {
+  empezar();
+  const convocatoria = await asesorService.crearConvocatoria({ nombre: 'Piloto' }, 'admin-1');
+  const ficha = await asesorService.postular(convocatoria.slug, validar());
+
+  await assert.rejects(() => asesorService.rehacerEnlace(ficha.id), /aprobados tienen enlace/i);
+});
+
+test('se le puede sacar del directorio sin rechazarlo', async () => {
+  empezar();
+  const asesor = await asesorService.darDeAlta(validar(), 'admin-1');
+
+  const apagado = await asesorService.revisar(
+    asesor.id,
+    { estado: 'APROBADO', notas: 'Está lleno hasta octubre.', visible: false },
+    'admin-1',
+  );
+  assert.equal(apagado.visible, false);
+  assert.equal(apagado.estado, 'APROBADO', 'sigue siendo asesor, solo que no sale');
+});
+
+test('aprobar a quien ya tenía enlace no se lo cambia', async () => {
+  empezar();
+  const convocatoria = await asesorService.crearConvocatoria({ nombre: 'Piloto' }, 'admin-1');
+  const ficha = await asesorService.postular(convocatoria.slug, validar());
+
+  const aprobado = await asesorService.revisar(ficha.id, { estado: 'APROBADO', notas: '' }, 'admin-1');
+  assert.ok(aprobado.token, 'al aprobarlo se le da su llave');
+
+  // Devolverlo a pendiente y volver a aprobarlo no puede dejar muerto el
+  // enlace que ya se le mandó.
+  await asesorService.revisar(ficha.id, { estado: 'PENDIENTE', notas: '' }, 'admin-1');
+  const otraVez = await asesorService.revisar(ficha.id, { estado: 'APROBADO', notas: '' }, 'admin-1');
+  assert.equal(otraVez.token, aprobado.token);
 });
 
 test('el panel ve cuántas fichas lleva cada convocatoria y cuántas esperan', async () => {

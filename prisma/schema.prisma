@@ -1857,8 +1857,12 @@ enum AsesorDocumento {
 model Asesor {
   id String @id @default(uuid()) @db.Char(36)
 
-  convocatoriaId String       @db.Char(36)
-  convocatoria   Convocatoria @relation(fields: [convocatoriaId], references: [id], onDelete: Cascade)
+  /// Por qué convocatoria entró. NULO = lo dio de alta el administrador a
+  /// mano, que es como entran los del piloto: no se postularon a nada, se les
+  /// llamó. Obligarles a colgar de una convocatoria inventada sería escribir en
+  /// la base una historia que no ocurrió.
+  convocatoriaId String?       @db.Char(36)
+  convocatoria   Convocatoria? @relation(fields: [convocatoriaId], references: [id], onDelete: Cascade)
 
   // ── Quién es ──────────────────────────────────────────────────────────
   nombre          String          @db.VarChar(160)

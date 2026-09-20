@@ -8,6 +8,7 @@ const { asesorLimiter } = require('../../middlewares/rateLimit');
 const { ROLES } = require('../../config/constants');
 const {
   postulacionBodySchema,
+  altaSchema,
   slugParamSchema,
   idParamSchema,
   revisionSchema,
@@ -51,7 +52,28 @@ router.patch(
   asesorController.cambiarConvocatoria,
 );
 
+router.get('/catalogos', asesorController.catalogos);
 router.get('/', asesorController.listar);
+
+/*
+ * El alta a mano. Los asesores del piloto no se postulan: se les llama, y esto
+ * es por donde entran. Nace aprobado y con su enlace —ver el servicio—, así que
+ * lo único que queda después es mandárselo.
+ */
+router.post('/', validate({ body: altaSchema }), asesorController.darDeAlta);
+
+router.patch(
+  '/:id/ficha',
+  validate({ params: idParamSchema, body: altaSchema }),
+  asesorController.editarFicha,
+);
+
+/** Su enlace es su llave: esto lo apaga y hace otro si se le escapa. */
+router.post(
+  '/:id/enlace',
+  validate({ params: idParamSchema }),
+  asesorController.rehacerEnlace,
+);
 router.patch(
   '/:id',
   validate({ params: idParamSchema, body: revisionSchema }),

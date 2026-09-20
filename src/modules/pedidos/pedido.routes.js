@@ -12,6 +12,7 @@ const env = require('../../config/env');
 const { ValidationError, NotFoundError } = require('../../shared/errors/AppError');
 const { enBeta } = require('./beta');
 const { catalogos: catalogosDelPedido } = require('./pedido.catalogo');
+const conversacion = require('./conversacion.service');
 const {
   pedidoQuerySchema,
   codigoParamSchema,
@@ -19,6 +20,9 @@ const {
   idParamSchema,
   tokenParamSchema,
   entregaSchema,
+  mensajeQuerySchema,
+  aceptarSchema,
+  mensajeParamSchema,
   rechazoSchema,
   disponibilidadSchema,
   reasignarSchema,
@@ -47,6 +51,15 @@ function nombreSubido(req) {
   } catch {
     return '';
   }
+}
+
+/** El texto del mensaje, que viaja en la query porque el cuerpo es el Word. */
+function textoDelMensaje(req) {
+  const datos = mensajeQuerySchema.safeParse(req.query);
+  if (!datos.success) {
+    throw new ValidationError(datos.error.issues[0]?.message ?? 'Escribe tu mensaje.');
+  }
+  return datos.data.texto;
 }
 
 /** Baja un archivo de disco con su nombre, sin tragarse un 404 de verdad. */
@@ -135,11 +148,55 @@ router.patch(
 
 router.post(
   '/asesor/:token/:id/aceptar',
-  validate({ params: tokenParamSchema.merge(idParamSchema) }),
+  validate({ params: tokenParamSchema.merge(idParamSchema), body: aceptarSchema }),
   asyncHandler(async (req, res) => {
-    const encargo = await pedidoService.aceptar(req.params.token, req.params.id);
+    const encargo = await pedidoService.aceptar(
+      req.params.token,
+      req.params.id,
+      req.body.saludo,
+    );
     return ok(res, { encargo }, { message: 'Aceptado. Ya puedes abrir el documento.' });
   }),
+);
+
+// ── La conversación, por el lado del asesor ────────────────────────────────
+
+router.get(
+  '/asesor/:token/:id/mensajes',
+  validate({ params: tokenParamSchema.merge(idParamSchema) }),
+  asyncHandler(async (req, res) =>
+    ok(res, await conversacion.comoAsesor.ver(req.params.token, req.params.id)),
+  ),
+);
+
+router.post(
+  '/asesor/:token/:id/mensajes',
+  validate({ params: tokenParamSchema.merge(idParamSchema) }),
+  documento,
+  asyncHandler(async (req, res) => {
+    const mensaje = await conversacion.comoAsesor.escribir(req.params.token, req.params.id, {
+      texto: textoDelMensaje(req),
+      archivo: req.body,
+      nombreArchivo: nombreSubido(req),
+    });
+    return created(res, { mensaje }, 'Enviado.');
+  }),
+);
+
+router.get(
+  '/asesor/:token/:id/mensajes/:mensajeId/documento',
+  validate({ params: tokenParamSchema.merge(idParamSchema).merge(mensajeParamSchema) }),
+  asyncHandler(async (req, res, next) =>
+    enviarArchivo(
+      res,
+      next,
+      await conversacion.comoAsesor.adjunto(
+        req.params.token,
+        req.params.id,
+        req.params.mensajeId,
+      ),
+    ),
+  ),
 );
 
 router.post(
@@ -257,6 +314,41 @@ router.get(
   validate({ params: codigoParamSchema }),
   asyncHandler(async (req, res) =>
     ok(res, { pedido: await pedidoService.seguimiento(req.params.codigo) }),
+  ),
+);
+
+// ── La conversación, por el lado del tesista ───────────────────────────────
+
+router.get(
+  '/:codigo/mensajes',
+  validate({ params: codigoParamSchema }),
+  asyncHandler(async (req, res) => ok(res, await conversacion.comoTesista.ver(req.params.codigo))),
+);
+
+router.post(
+  '/:codigo/mensajes',
+  pedidoLimiter,
+  validate({ params: codigoParamSchema }),
+  documento,
+  asyncHandler(async (req, res) => {
+    const mensaje = await conversacion.comoTesista.escribir(req.params.codigo, {
+      texto: textoDelMensaje(req),
+      archivo: req.body,
+      nombreArchivo: nombreSubido(req),
+    });
+    return created(res, { mensaje }, 'Enviado.');
+  }),
+);
+
+router.get(
+  '/:codigo/mensajes/:mensajeId/documento',
+  validate({ params: codigoParamSchema.merge(mensajeParamSchema) }),
+  asyncHandler(async (req, res, next) =>
+    enviarArchivo(
+      res,
+      next,
+      await conversacion.comoTesista.adjunto(req.params.codigo, req.params.mensajeId),
+    ),
   ),
 );
 

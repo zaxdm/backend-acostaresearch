@@ -2055,6 +2055,9 @@ model Pedido {
   /// Lo que dijo el tesista al recibir sus observaciones. Ver `Resena`.
   resena Resena?
 
+  /// Lo que se han dicho el tesista y su asesor. Ver `Mensaje`.
+  mensajes Mensaje[]
+
   @@index([estado])
   @@index([asesorId])
   @@map("pedidos")
@@ -2093,4 +2096,55 @@ model Resena {
 
   @@index([asesorId])
   @@map("resenas")
+}
+
+/// Quién escribió un mensaje.
+enum MensajeDe {
+  TESISTA
+  ASESOR
+}
+
+/// La conversación de un encargo.
+///
+/// POR QUÉ EXISTE
+/// --------------
+/// Porque sin ella esto era un buzón: el tesista dejaba un archivo, el asesor
+/// devolvía un enlace y entre medias no se hablaban. Quien entrega su tesis a
+/// un desconocido y pasa días sin saber nada no está tranquilo, está esperando
+/// a ver qué pasa; y el asesor que tiene una duda sobre el capítulo no tenía
+/// dónde preguntarla salvo saliéndose a WhatsApp, que es justo donde se pierde
+/// el rastro de todo.
+///
+/// EL ADJUNTO ES LO QUE CIERRA EL CICLO
+/// ------------------------------------
+/// Con las observaciones en la mano, el tesista corrige y vuelve a mandar su
+/// documento POR AQUÍ, en un mensaje. Sin eso, una revisión terminaba y nadie
+/// comprobaba nunca si lo observado se levantó, que es la mitad del trabajo de
+/// un asesor de verdad.
+///
+/// SE LEE CUANDO LO LEE EL OTRO
+/// ----------------------------
+/// `leidoAt` lo sella quien lo recibe al abrir la conversación, no quien lo
+/// escribe. Es lo que permite decir «tienes 2 sin leer» sin mentir.
+model Mensaje {
+  id String @id @default(uuid()) @db.Char(36)
+
+  pedidoId String @db.Char(36)
+  pedido   Pedido @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+
+  de    MensajeDe
+  texto String    @db.Text
+
+  /// La versión corregida, o cualquier documento que acompañe al mensaje.
+  /// Vacío = mensaje solo de texto, que es lo normal.
+  archivoNombre String @default("") @db.VarChar(200)
+  bytes         Int    @default(0)
+
+  /// Cuándo lo leyó el otro lado. Nulo = todavía no.
+  leidoAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([pedidoId])
+  @@map("mensajes")
 }

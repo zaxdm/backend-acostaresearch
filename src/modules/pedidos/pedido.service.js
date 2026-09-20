@@ -1,8 +1,6 @@
 'use strict';
 
 const crypto = require('node:crypto');
-const fs = require('node:fs/promises');
-const path = require('node:path');
 
 const env = require('../../config/env');
 const prisma = require('../../lib/prisma');
@@ -14,7 +12,14 @@ const {
 } = require('../../shared/errors/AppError');
 const puerta = require('../convocatorias/convocatoria.service');
 const { CAPITULOS, NIVELES, AREAS, METODOS, nombreDe, catalogos } = require('./pedido.catalogo');
+const {
+  comprobarDocx,
+  nombreLimpio,
+  guardar,
+  rutaDelPedido,
+} = require('./documento');
 const { GRADOS, nombresDe } = require('../asesores/asesor.catalogo');
+const { sinLeerPorPedido, escribir: escribirMensaje } = require('./conversacion.service');
 
 /**
  * Los encargos de revisión.
@@ -58,43 +63,6 @@ function generarCodigo() {
 
 /** Cuántas reseñas hacen falta para que una media signifique algo. */
 const RESENAS_PARA_NOTA = 3;
-
-const rutaDe = (id) => path.join(env.pedidosDir, `${id}.docx`);
-
-/**
- * Que lo subido sea un .docx de verdad.
- *
- * Un .docx es un zip, así que empieza por «PK». El .doc de Word 97 empieza por
- * otra cosa y se distingue aquí para poder decírselo: «no es un Word» sería
- * falso y dejaría al tesista sin saber qué hacer, cuando la salida es
- * guardarlo otra vez con el formato de ahora.
- */
-function comprobarDocx(archivo, nombre) {
-  if (!Buffer.isBuffer(archivo) || archivo.length === 0) {
-    throw new ValidationError('Falta el documento. Adjunta tu archivo de Word.');
-  }
-  if (archivo.length > env.PEDIDO_MAX_BYTES) {
-    const megas = Math.floor(env.PEDIDO_MAX_BYTES / (1024 * 1024));
-    throw new ValidationError(`El documento pasa de ${megas} MB.`);
-  }
-
-  const firma = archivo.subarray(0, 4);
-  if (firma.toString('hex') === 'd0cf11e0') {
-    throw new ValidationError(
-      'Ese archivo es un Word antiguo (.doc). Ábrelo y guárdalo como .docx, y vuelve a subirlo.',
-    );
-  }
-  if (firma.subarray(0, 2).toString('latin1') !== 'PK') {
-    throw new ValidationError('Ese archivo no es un documento de Word (.docx).');
-  }
-  if (!/\.docx$/i.test(String(nombre ?? ''))) {
-    throw new ValidationError('Sube tu trabajo en Word (.docx).');
-  }
-}
-
-/** Sin carpetas y recortado a lo que cabe en la columna. */
-const nombreLimpio = (nombre) =>
-  path.basename(String(nombre ?? '').trim() || 'documento.docx').slice(0, 200);
 
 /** «Esteban Zait Dioses Muñoz» → «ED», para la tarjeta del directorio. */
 function iniciales(nombre) {
@@ -443,8 +411,7 @@ async function registrar(datos, archivo, nombreArchivo) {
   if (!pedido) throw new ConflictError('No se pudo registrar tu pedido. Inténtalo otra vez.');
 
   try {
-    await fs.mkdir(env.pedidosDir, { recursive: true });
-    await fs.writeFile(rutaDe(pedido.id), archivo);
+    await guardar(rutaDelPedido(pedido.id), archivo);
   } catch (error) {
     await prisma.pedido.delete({ where: { id: pedido.id } }).catch(() => {});
     throw error;
@@ -493,7 +460,12 @@ async function misPedidos(email) {
     orderBy: { createdAt: 'desc' },
     select: pedidoSelect,
   });
-  return filas.map(salidaSeguimiento);
+
+  const sinLeer = await sinLeerPorPedido(filas.map((fila) => fila.id), 'TESISTA');
+  return filas.map((fila) => ({
+    ...salidaSeguimiento(fila),
+    sinLeer: sinLeer.get(fila.id) ?? 0,
+  }));
 }
 
 /** El estado de un pedido, por su código. Sin sesión: el código es la llave. */
@@ -502,7 +474,9 @@ async function seguimiento(codigo) {
   if (!pedido || pedido.estado === 'CANCELADO') {
     throw new NotFoundError('No encontramos ningún pedido con ese código.');
   }
-  return salidaSeguimiento(pedido);
+
+  const sinLeer = await sinLeerPorPedido([pedido.id], 'TESISTA');
+  return { ...salidaSeguimiento(pedido), sinLeer: sinLeer.get(pedido.id) ?? 0 };
 }
 
 /**
@@ -591,6 +565,7 @@ async function panelDelAsesor(token) {
 
   const estadisticas = await estadisticasDe([asesor.id]);
   const suyas = estadisticas.get(asesor.id) ?? {};
+  const sinLeer = await sinLeerPorPedido(filas.map((fila) => fila.id), 'ASESOR');
 
   return {
     asesor: {
@@ -603,7 +578,10 @@ async function panelDelAsesor(token) {
       resenas: suyas.resenas ?? 0,
       nota: (suyas.resenas ?? 0) >= RESENAS_PARA_NOTA ? suyas.nota : null,
     },
-    encargos: filas.map(salidaParaAsesor),
+    encargos: filas.map((fila) => ({
+      ...salidaParaAsesor(fila),
+      sinLeer: sinLeer.get(fila.id) ?? 0,
+    })),
   };
 }
 
@@ -622,7 +600,7 @@ async function encargoSuyo(asesorId, pedidoId) {
 }
 
 /** Decir que sí. Es el momento en que se le abre el documento. */
-async function aceptar(token, pedidoId) {
+async function aceptar(token, pedidoId, saludo = '') {
   const asesor = await asesorPorToken(token);
   const pedido = await encargoSuyo(asesor.id, pedidoId);
   if (pedido.estado !== 'ESPERANDO') {
@@ -634,6 +612,15 @@ async function aceptar(token, pedidoId) {
     data: { estado: 'EN_REVISION', aceptadoAt: new Date() },
     select: pedidoSelect,
   });
+
+  // El saludo, si lo escribió. Es lo que convierte «aceptado» en alguien que
+  // te habla: un estado que cambia solo no tranquiliza a nadie.
+  if (saludo) {
+    await escribirMensaje({ id: guardado.id, estado: guardado.estado }, 'ASESOR', {
+      texto: saludo,
+    });
+  }
+
   return salidaParaAsesor(guardado);
 }
 
@@ -706,7 +693,7 @@ async function documentoParaAsesor(token, pedidoId) {
   }
   if (pedido.bytes === 0) throw new NotFoundError('Ese pedido no tiene documento.');
 
-  return { ruta: rutaDe(pedido.id), nombre: `${pedido.codigo}-${pedido.archivoNombre}` };
+  return { ruta: rutaDelPedido(pedido.id), nombre: `${pedido.codigo}-${pedido.archivoNombre}` };
 }
 
 // ── El panel de la casa ─────────────────────────────────────────────────────
@@ -746,7 +733,7 @@ async function paraDescargar(id) {
   });
   if (!pedido || pedido.bytes === 0) throw new NotFoundError('Ese pedido no tiene documento.');
 
-  return { ruta: rutaDe(pedido.id), nombre: `${pedido.codigo}-${pedido.archivoNombre}` };
+  return { ruta: rutaDelPedido(pedido.id), nombre: `${pedido.codigo}-${pedido.archivoNombre}` };
 }
 
 module.exports = {

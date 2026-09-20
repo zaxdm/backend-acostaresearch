@@ -70,6 +70,7 @@ const estado = {
   pedidos: new Map(),
   asesores: new Map(),
   resenas: new Map(),
+  mensajes: new Map(),
   avisos: [],
 };
 
@@ -187,6 +188,49 @@ sustituir('../src/lib/prisma', {
       return {};
     },
   },
+  mensaje: {
+    create: async ({ data }) => {
+      const fila = {
+        id: `m-${estado.mensajes.size + 1}`,
+        archivoNombre: '',
+        bytes: 0,
+        leidoAt: null,
+        createdAt: new Date(),
+        ...data,
+      };
+      estado.mensajes.set(fila.id, fila);
+      return { ...fila };
+    },
+    findUnique: async ({ where }) => {
+      const fila = estado.mensajes.get(where.id);
+      return fila ? { ...fila } : null;
+    },
+    findMany: async ({ where }) =>
+      [...estado.mensajes.values()].filter((m) => m.pedidoId === where.pedidoId),
+    updateMany: async ({ where, data }) => {
+      let tocados = 0;
+      for (const fila of estado.mensajes.values()) {
+        if (fila.pedidoId !== where.pedidoId || fila.de !== where.de) continue;
+        if (where.leidoAt === null && fila.leidoAt !== null) continue;
+        Object.assign(fila, data);
+        tocados += 1;
+      }
+      return { count: tocados };
+    },
+    groupBy: async ({ where }) => {
+      const cuenta = new Map();
+      for (const fila of estado.mensajes.values()) {
+        if (!where.pedidoId.in.includes(fila.pedidoId)) continue;
+        if (fila.de !== where.de || fila.leidoAt !== null) continue;
+        cuenta.set(fila.pedidoId, (cuenta.get(fila.pedidoId) ?? 0) + 1);
+      }
+      return [...cuenta].map(([pedidoId, total]) => ({ pedidoId, _count: { _all: total } }));
+    },
+    delete: async ({ where }) => {
+      estado.mensajes.delete(where.id);
+      return {};
+    },
+  },
   resena: {
     create: async ({ data }) => {
       if ([...estado.resenas.values()].some((r) => r.pedidoId === data.pedidoId)) {
@@ -230,6 +274,7 @@ sustituir('../src/config/logger', {
 });
 
 const puerta = require('../src/modules/convocatorias/convocatoria.service');
+const conversacion = require('../src/modules/pedidos/conversacion.service');
 const { enBeta } = require('../src/modules/pedidos/beta');
 const pedidoService = require('../src/modules/pedidos/pedido.service');
 const { pedidoQuerySchema } = require('../src/modules/pedidos/pedido.schema');
@@ -245,6 +290,7 @@ function empezar() {
   estado.pedidos.clear();
   estado.asesores.clear();
   estado.resenas.clear();
+  estado.mensajes.clear();
   estado.avisos.length = 0;
 }
 
@@ -475,6 +521,100 @@ test('solo se entrega lo que se está revisando', async () => {
     () => pedidoService.entregar(asesor.token, pedido.id, 'https://docs.google.com/abc'),
     /Solo se entrega/i,
   );
+});
+
+// ── La conversación ────────────────────────────────────────────────────────
+
+test('no se puede hablar hasta que el asesor acepta', async () => {
+  const { pedido } = await conEncargo();
+
+  await assert.rejects(
+    () => conversacion.comoTesista.escribir(pedido.codigo, { texto: '¿Lo viste?' }),
+    /cuando el asesor acepta/i,
+  );
+  const vista = await conversacion.comoTesista.ver(pedido.codigo);
+  assert.equal(vista.abierta, false);
+  assert.equal(vista.mensajes.length, 0);
+});
+
+test('aceptar con saludo abre la conversación con su primer mensaje', async () => {
+  const { asesor, pedido } = await conEncargo();
+  await pedidoService.aceptar(asesor.token, pedido.id, 'Me lo quedo, te escribo el jueves.');
+
+  const vista = await conversacion.comoTesista.ver(pedido.codigo);
+  assert.equal(vista.abierta, true);
+  assert.equal(vista.mensajes.length, 1);
+  assert.equal(vista.mensajes[0].de, 'ASESOR');
+  assert.match(vista.mensajes[0].texto, /te escribo el jueves/i);
+});
+
+test('y sin saludo se acepta igual, sin mensajes', async () => {
+  const { asesor, pedido } = await conEncargo();
+  await pedidoService.aceptar(asesor.token, pedido.id);
+  assert.equal((await conversacion.comoTesista.ver(pedido.codigo)).mensajes.length, 0);
+});
+
+test('lo sin leer lo cuenta quien lo recibe, y se apaga al mirarlo', async () => {
+  const { asesor, pedido } = await conEncargo();
+  await pedidoService.aceptar(asesor.token, pedido.id);
+  await conversacion.comoAsesor.escribir(asesor.token, pedido.id, { texto: 'Una duda del cap. III.' });
+
+  // El tesista lo tiene sin leer, el asesor no: lo escribió él.
+  assert.equal((await pedidoService.seguimiento(pedido.codigo)).sinLeer, 1);
+  assert.equal((await pedidoService.panelDelAsesor(asesor.token)).encargos[0].sinLeer, 0);
+
+  // Abrir la conversación es leerla.
+  await conversacion.comoTesista.ver(pedido.codigo);
+  assert.equal((await pedidoService.seguimiento(pedido.codigo)).sinLeer, 0);
+});
+
+test('el tesista adjunta su versión corregida y el asesor la puede bajar', async () => {
+  const { asesor, pedido } = await conEncargo();
+  await pedidoService.aceptar(asesor.token, pedido.id);
+  await pedidoService.entregar(asesor.token, pedido.id, 'https://docs.google.com/abc');
+
+  const mensaje = await conversacion.comoTesista.escribir(pedido.codigo, {
+    texto: 'Ya levanté las observaciones 1 a 7.',
+    archivo: DOCX,
+    nombreArchivo: 'tesis-corregida.docx',
+  });
+  assert.equal(mensaje.archivoNombre, 'tesis-corregida.docx');
+  assert.equal(mensaje.bytes, DOCX.length);
+
+  // Después de entregar se sigue hablando: es cuando el tesista corrige.
+  const archivo = await conversacion.comoAsesor.adjunto(asesor.token, pedido.id, mensaje.id);
+  assert.ok(fs.existsSync(archivo.ruta));
+});
+
+test('lo adjuntado tiene que ser un .docx', async () => {
+  const { asesor, pedido } = await conEncargo();
+  await pedidoService.aceptar(asesor.token, pedido.id);
+
+  await assert.rejects(
+    () =>
+      conversacion.comoTesista.escribir(pedido.codigo, {
+        texto: 'Aquí va',
+        archivo: Buffer.from('%PDF-1.7'),
+        nombreArchivo: 'tesis.pdf',
+      }),
+    /no es un documento de Word/i,
+  );
+});
+
+test('el asesor no lee la conversación de un encargo que no es suyo', async () => {
+  const { asesor, pedido } = await conEncargo();
+  await pedidoService.aceptar(asesor.token, pedido.id);
+  const otro = asesorEn(ID.dos, { nombre: 'Otro Asesor', token: 'tokotro000000000000' });
+
+  await assert.rejects(
+    () => conversacion.comoAsesor.ver(otro.token, pedido.id),
+    /no es tuyo/i,
+  );
+});
+
+test('un código que no existe no abre ninguna conversación', async () => {
+  empezar();
+  await assert.rejects(() => conversacion.comoTesista.ver('noexiste'), /No encontramos/i);
 });
 
 // ── La nota ────────────────────────────────────────────────────────────────

@@ -108,6 +108,27 @@ const tokenParamSchema = z.object({
 const entregaSchema = z.object({ enlaceObservaciones: enlaceDeObservaciones });
 
 /**
+ * Un mensaje de la conversación.
+ *
+ * El texto viaja en la query porque el cuerpo es el documento adjunto en
+ * crudo, igual que el capítulo. Obligatorio aunque haya archivo: un Word
+ * suelto, sin una línea que diga qué es, obliga al otro a abrirlo para
+ * enterarse.
+ */
+const mensajeQuerySchema = z.object({
+  texto: texto(1, 2000, 'Escribe tu mensaje.'),
+});
+
+/** Al aceptar se puede saludar. Opcional: hay quien solo acepta. */
+const aceptarSchema = z.object({
+  saludo: z.string().trim().max(2000).optional().default(''),
+});
+
+const mensajeParamSchema = z.object({
+  mensajeId: z.string().uuid('Ese mensaje no existe.'),
+});
+
+/**
  * El motivo del rechazo.
  *
  * Obligatorio y corto. Al tesista le llega, y no es lo mismo «ahora no tengo
@@ -142,6 +163,9 @@ module.exports = {
   idParamSchema,
   tokenParamSchema,
   entregaSchema,
+  mensajeQuerySchema,
+  aceptarSchema,
+  mensajeParamSchema,
   rechazoSchema,
   disponibilidadSchema,
   reasignarSchema,

@@ -769,8 +769,17 @@ function avisoDeCrossref(origen, filtrosSinAplicar = []) {
  * dentro de las herramientas y no hay forma de que una petición acabe
  * respondiendo con los datos de otro comprador.
  */
-function construirServidor(licencia) {
+function construirServidor(licencia, { cliente = 'otro' } = {}) {
   const server = new McpServer({ name: NOMBRE_SERVIDOR, version: VERSION_SERVIDOR });
+
+  /**
+   * Los enlaces, en la forma que entienda el asistente con el que se habla.
+   *
+   * Un enlace en Markdown se pulsa limpio en claude.ai y ChatGPT lo rompe. Todas
+   * las herramientas que reparten enlaces pasan por aquí para no tener que
+   * acordarse de ello una por una. El porqué, en `mcp.cliente` y `enlaceClic`.
+   */
+  const darEnlace = (args) => enlaceClic({ ...args, cliente });
 
   /**
    * Cómo se llama lo que está escribiendo este comprador.
@@ -2788,7 +2797,7 @@ function construirServidor(licencia) {
 
       const ficha = await documentoService.fichaDe(userId, productCode);
       const { url, minutos } = subidaDocumento.enlace({ userId, productCode });
-      const enlace = enlaceClic({ texto: 'Haz clic aquí para subir tu documento', url, minutos });
+      const enlace = darEnlace({ texto: 'Haz clic aquí para subir tu documento', url, minutos });
 
       const hayUno = ficha
         ? `Ahora mismo en el servidor está «${ficha.nombre}», subido el ${fechaCorta(ficha.subidoAt)}, ` +
@@ -3208,7 +3217,7 @@ function construirServidor(licencia) {
         return texto(
           `Todavía no ha subido ningún formato: su Word sale con el formato por defecto.${N}${N}` +
             `Si ${dioElFormato} le dio un formato o plantilla, dale este enlace para subirlo:${N}` +
-            `${enlaceClic({ texto: 'Haz clic aquí para subir tu formato', url, minutos })}${N}${N}` +
+            `${darEnlace({ texto: 'Haz clic aquí para subir tu formato', url, minutos })}${N}${N}` +
             'Dile que suba el .docx que le dieron, sin cambiarle nada y con su ' +
             'portada si la trae, y que vuelva aquí cuando lo haya subido. Solo se guarda el ' +
             'formato: el texto que traiga el documento no se conserva.',
@@ -3252,7 +3261,7 @@ function construirServidor(licencia) {
             : ' OJO: se subió antes de que se tomaran los márgenes, el encabezado, el pie y la ' +
               'portada; pídele que lo vuelva a subir con el enlace de abajo.') +
           `${N}${N}Si quiere cambiarlo por otro, este enlace sirve:${N}` +
-          enlaceClic({ texto: 'Haz clic aquí para cambiar tu formato', url, minutos }) +
+          darEnlace({ texto: 'Haz clic aquí para cambiar tu formato', url, minutos }) +
           `${N}${N}Si la portada salió mal, llama con "usarNuestraPortada". Para ver cómo quedó, ` +
           'dale su Word con "enlace_del_word".',
       );
@@ -3339,7 +3348,7 @@ function construirServidor(licencia) {
 
         return texto(
           `${subido}${N}${N}Enlace para subir la consigna, la rúbrica o el índice:${N}` +
-            `${enlaceClic({ texto: 'Haz clic aquí para subir el material de tu curso', url, minutos })}${N}${N}` +
+            `${darEnlace({ texto: 'Haz clic aquí para subir el material de tu curso', url, minutos })}${N}${N}` +
             'Word (.docx) o texto, hasta cinco archivos; uno con el mismo nombre ' +
             'reemplaza al anterior. Si lo tiene en PDF o en foto, que lo adjunte en este chat.',
         );
@@ -3553,7 +3562,7 @@ function construirServidor(licencia) {
           avisos ? `${N}${N}REVISA ESTO:${N}${avisos.map((a) => `- ${a}`).join(N)}` : '';
         const descarga = (archivo, textoDelEnlace) => {
           const { url, minutos } = rEnlaces.enlaceDeDescarga({ userId, productCode, archivo });
-          return enlaceClic({ texto: textoDelEnlace, url, minutos });
+          return darEnlace({ texto: textoDelEnlace, url, minutos });
         };
 
         try {
@@ -3830,7 +3839,7 @@ function construirServidor(licencia) {
             : 'Todavía no ha subido ninguna entrevista.';
         return texto(
           `${subidas}${N}${N}Enlace para subir entrevistas o grupos focales:${N}` +
-            `${enlaceClic({ texto: 'Haz clic aquí para subir tus entrevistas', url, minutos })}${N}${N}` +
+            `${darEnlace({ texto: 'Haz clic aquí para subir tus entrevistas', url, minutos })}${N}${N}` +
             'Word, PDF con texto o .txt; una entrevista por archivo y hasta ' +
             `${cualitativoService.MAXIMO_ENTREVISTAS}. Una con el mismo nombre de archivo reemplaza a la anterior.`,
         );
@@ -3871,7 +3880,7 @@ function construirServidor(licencia) {
         const { norma } = subido;
         return texto(
           `Enlace para descargar SU DOCUMENTO con lo humanizado, las citas y la lista de referencias:${N}` +
-            enlaceClic({ texto: 'Haz clic aquí para descargar tu documento', url: subido.url, minutos: subido.minutos }) +
+            darEnlace({ texto: 'Haz clic aquí para descargar tu documento', url: subido.url, minutos: subido.minutos }) +
             `${N}${N}` +
             (norma.familia === 'notas'
               ? `OJO: la norma del proyecto es ${norma.nombre}, de notas al pie, y en un documento ` +
@@ -3887,7 +3896,7 @@ function construirServidor(licencia) {
             'lista de referencias. NO le prepares tú otro documento.' +
             (resultado
               ? `${N}${N}Aparte, la tesis armada con los capítulos del método:${N}` +
-                enlaceClic({ texto: 'Haz clic aquí para descargar la tesis del método', url: resultado.url })
+                darEnlace({ texto: 'Haz clic aquí para descargar la tesis del método', url: resultado.url })
               : ''),
         );
       }
@@ -3902,7 +3911,7 @@ function construirServidor(licencia) {
       const { url, minutos, norma } = resultado;
       return texto(
         `Enlace para descargar la tesis en Word:${N}` +
-          `${enlaceClic({ texto: 'Haz clic aquí para descargar tu Word', url, minutos })}${N}${N}` +
+          `${darEnlace({ texto: 'Haz clic aquí para descargar tu Word', url, minutos })}${N}${N}` +
           `Las citas y las referencias salen en ${norma.nombre}` +
           (norma.elegida ? `.${N}${N}` : `, que es la de por defecto: nadie ha elegido otra.${N}${N}`) +
           (norma.elegida

@@ -7,6 +7,7 @@ const { mcpLimiter, mcpFallosLimiter } = require('../../middlewares/rateLimit');
 const { ERROR_CODES } = require('../../config/constants');
 const licenseService = require('../licensing/license.service');
 const { filtro } = require('./mcp.acceso');
+const { clienteDe } = require('./mcp.cliente');
 const { construirServidor } = require('./mcp.tools');
 
 /**
@@ -63,7 +64,10 @@ router.post('/:token', mcpFallosLimiter, descartarSinBase, mcpLimiter, async (re
   });
 
   try {
-    const server = construirServidor(licencia);
+    // La cabecera dice si es ChatGPT, que necesita los enlaces de otra forma.
+    // Viaja en TODAS las peticiones; `clientInfo` del `initialize` no, porque
+    // aquí cada llamada es un servidor nuevo.
+    const server = construirServidor(licencia, { cliente: clienteDe(req.get('user-agent')) });
     await server.connect(transport);
     await transport.handleRequest(req, res, req.body);
   } catch (error) {

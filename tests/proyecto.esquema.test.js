@@ -169,3 +169,83 @@ test('el esquema se le cuenta al asistente con las fases de cada capítulo', () 
   assert.match(texto, /CAPÍTULO III: HIPÓTESIS {2}\(clave: propio-capitulo-iii-hipotesis\)/);
   assert.equal(esquema.comoTexto(null, CATALOGO), null);
 });
+
+// ── Las fases que no son capítulo ───────────────────────────────────────────
+
+/**
+ * El catálogo completo del método, con las tres fases que se trabajan pero no
+ * se imprimen. Es el caso que destapó esto: un tesista que acababa de cerrar la
+ * Fase 1 abría su tesis y se encontraba, de primer capítulo y en el índice, la
+ * tabla de la propuesta que era para llevarle al asesor.
+ */
+const CON_FASES_DE_TRABAJO = [
+  { code: 'tema-y-delimitacion', displayName: '1 · Tema y delimitación' },
+  ...CATALOGO,
+  { code: 'instrumento-investigacion', displayName: '5 · Instrumento de recolección' },
+  { code: 'recoleccion-datos', displayName: '6 · Trabajo de campo' },
+];
+
+test('la propuesta de tema, el instrumento y la bitácora no son capítulos del Word', () => {
+  const { capitulos } = esquema.capitulosDelDocumento({
+    esquema: null,
+    catalogo: CON_FASES_DE_TRABAJO,
+    conTexto: new Set(CON_FASES_DE_TRABAJO.map((s) => s.code)),
+  });
+
+  assert.deepEqual(
+    capitulos.map((c) => c.partes[0]),
+    CATALOGO.map((s) => s.code),
+  );
+});
+
+test('las fases de trabajo tampoco salen al final como sobrantes', () => {
+  // La regla de «lo que no se nombra sale igual» es para los capítulos que
+  // alguien escribió, no para el cuestionario: colarlo detrás de la Discusión
+  // sería el mismo problema, dos páginas más abajo.
+  const parcial = normalizar([{ titulo: 'CAPÍTULO ÚNICO', de: ['metodologia'] }]);
+  const { capitulos, sobrantes } = esquema.capitulosDelDocumento({
+    esquema: parcial,
+    catalogo: CON_FASES_DE_TRABAJO,
+    conTexto: new Set(['metodologia', 'tema-y-delimitacion', 'instrumento-investigacion']),
+  });
+
+  assert.deepEqual(capitulos.map((c) => c.titulo), ['CAPÍTULO ÚNICO']);
+  assert.deepEqual(sobrantes, []);
+});
+
+test('si el reglamento de su facultad SÍ pide el instrumento, sale', () => {
+  const conAnexo = normalizar(
+    [
+      { titulo: 'CAPÍTULO III: METODOLOGÍA', de: ['metodologia'] },
+      { titulo: 'ANEXO 1: INSTRUMENTO', de: ['instrumento-investigacion'] },
+    ],
+    { catalogo: CON_FASES_DE_TRABAJO },
+  );
+  const { capitulos } = esquema.capitulosDelDocumento({
+    esquema: conAnexo,
+    catalogo: CON_FASES_DE_TRABAJO,
+    conTexto: new Set(['metodologia', 'instrumento-investigacion']),
+  });
+
+  assert.deepEqual(
+    capitulos.map((c) => c.titulo),
+    ['CAPÍTULO III: METODOLOGÍA', 'ANEXO 1: INSTRUMENTO'],
+  );
+});
+
+test('lo que recorre lo escrito sí ve las fases de trabajo', () => {
+  // El .bib y el repaso de evidencia las piden con `incluirFasesDeTrabajo`: el
+  // cuestionario cita la escala que adaptó, y esa fuente tiene que llegar a la
+  // bibliografía aunque el cuestionario no se imprima.
+  const { capitulos } = esquema.capitulosDelDocumento({
+    esquema: null,
+    catalogo: CON_FASES_DE_TRABAJO,
+    conTexto: new Set(CON_FASES_DE_TRABAJO.map((s) => s.code)),
+    incluirFasesDeTrabajo: true,
+  });
+
+  assert.deepEqual(
+    capitulos.map((c) => c.partes[0]),
+    CON_FASES_DE_TRABAJO.map((s) => s.code),
+  );
+});

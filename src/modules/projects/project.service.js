@@ -959,7 +959,20 @@ function conSeccionesAparte(productCode, catalogo, { esquema = null, conTexto = 
    * devuelve el catálogo tal cual, que es lo que había.
    */
   const nombreDeFase = new Map(catalogo.map((s) => [s.code, s.displayName]));
-  const { capitulos } = esquemaDeCapitulos.capitulosDelDocumento({ esquema, catalogo, conTexto });
+  /**
+   * Con las fases de trabajo dentro, aunque no se impriman.
+   *
+   * El cuestionario y la propuesta de tema no salen en el Word, pero sí llevan
+   * citas. Dejarlas fuera de aquí le quitaría al .bib las fuentes de la escala
+   * que adaptó, y el repaso de evidencia de su cuestionario devolvería «no hay
+   * nada escrito» sobre un texto que sí existe.
+   */
+  const { capitulos } = esquemaDeCapitulos.capitulosDelDocumento({
+    esquema,
+    catalogo,
+    conTexto,
+    incluirFasesDeTrabajo: true,
+  });
   const delDocumento = capitulos.flatMap((capitulo) =>
     capitulo.partes.map((code) => ({
       code,
@@ -2034,7 +2047,20 @@ async function enlaceDelWord(userId, productCode) {
   const proyecto = await projectRepository.buscar(userId, productCode);
   if (!proyecto) return null;
 
-  const palabras = (proyecto.stages ?? []).reduce((suma, e) => suma + (e.palabras ?? 0), 0);
+  /**
+   * Y palabras DE LAS QUE SE IMPRIMEN.
+   *
+   * Contando todas, a quien solo había cerrado la Fase 1 se le daba un enlace
+   * que al abrirlo devolvía «todavía no hay ningún capítulo escrito»: el Word
+   * no lleva la propuesta de tema ni el cuestionario (ver `project.esquema`).
+   * Mejor decírselo aquí, en el chat, que después de hacerle clic.
+   */
+  const nombradas = new Set((proyecto.esquema?.capitulos ?? []).flatMap((c) => c.de ?? []));
+  const seImprime = (code) => !esquemaDeCapitulos.FASES_DE_TRABAJO.has(code) || nombradas.has(code);
+
+  const palabras = (proyecto.stages ?? [])
+    .filter((e) => seImprime(e.skillCode))
+    .reduce((suma, e) => suma + (e.palabras ?? 0), 0);
   if (palabras === 0) return null;
 
   return { ...descarga.enlace({ userId, productCode }), norma: normaDelProyecto(proyecto) };

@@ -3944,8 +3944,11 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
 
       if (!resultado) {
         return texto(
-          'Todavía no hay ningún capítulo guardado, así que no hay Word que descargar. ' +
-            'Guarda primero lo redactado con "guardar_capitulo".',
+          'Todavía no hay ningún capítulo de la tesis guardado, así que no hay Word que ' +
+            'descargar. OJO: la propuesta de tema, el cuestionario y la bitácora del trabajo ' +
+            'de campo se guardan en el proyecto, pero no son capítulos del documento: el Word ' +
+            'empieza en el Capítulo I. Si ya redactasteis uno, guárdalo con "guardar_capitulo"; ' +
+            'si no, no le prometas un Word todavía y NO se lo armes tú.',
         );
       }
 

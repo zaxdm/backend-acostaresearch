@@ -51,6 +51,33 @@ const { z } = require('zod');
 /** Con qué empieza la clave de un capítulo que no es del método. */
 const PREFIJO_PROPIO = 'propio-';
 
+/**
+ * Las fases que se trabajan pero no son capítulo de la tesis.
+ *
+ * El método tiene fases que producen texto sin que ese texto sea una parte del
+ * documento: la propuesta de tema que se lleva al asesor, el cuestionario y la
+ * bitácora del trabajo de campo. Ninguna tesis empieza con un capítulo
+ * «Tema y delimitación», y ninguna lleva «Trabajo de campo» entre la
+ * metodología y los resultados.
+ *
+ * Hasta aquí entraban igual, porque el Word se armaba con TODA fase que
+ * tuviera texto guardado: al tesista que cerraba la Fase 1 se le abría la
+ * tesis con la tabla de su propuesta, encabezado y índice incluidos. Las
+ * skills del informe ya lo dicen en su sitio («esta fase no escribe texto del
+ * informe, así que no usa guardar_capitulo»); las de tesis guardan igual, así
+ * que la regla se pone aquí, que es donde vale para lo que YA está guardado.
+ *
+ * Lo guardado no se toca: sigue en el proyecto, se lee con `ver_capitulo`, y
+ * cuenta para el repaso de evidencia y para el .bib. Lo único que cambia es
+ * que no se imprime como capítulo. Si el reglamento de una facultad SÍ lo pide
+ * como capítulo, su esquema lo nombra y entonces sale (ver `capitulosDelDocumento`).
+ */
+const FASES_DE_TRABAJO = new Set([
+  'tema-y-delimitacion',
+  'instrumento-investigacion',
+  'recoleccion-datos',
+]);
+
 /** Un reglamento con más de esto no es un reglamento, es un error del modelo. */
 const MAXIMO_CAPITULOS = 24;
 /** Fundir más de cuatro fases en un capítulo no lo pide ningún reglamento. */
@@ -181,9 +208,24 @@ function reconciliar(capitulos, anterior, conTexto) {
  *
  * `partes` son las claves de donde sale el texto, en orden. Un capítulo propio
  * tiene una sola parte: él mismo.
+ *
+ * Las fases de trabajo (`FASES_DE_TRABAJO`) quedan fuera, salvo que el esquema
+ * de su facultad las nombre: ahí manda el reglamento. Con
+ * `incluirFasesDeTrabajo` entran igual, que es lo que necesita todo lo que
+ * recorre lo ESCRITO y no lo impreso: el .bib, el repaso de evidencia y la
+ * auditoría, que sí tienen que mirar el cuestionario.
  */
-function capitulosDelDocumento({ esquema, catalogo = [], conTexto = new Set() }) {
-  const delCatalogo = catalogo.map((s) => ({ titulo: s.displayName, partes: [s.code] }));
+function capitulosDelDocumento({
+  esquema,
+  catalogo = [],
+  conTexto = new Set(),
+  incluirFasesDeTrabajo = false,
+}) {
+  const imprimible = (code) => incluirFasesDeTrabajo || !FASES_DE_TRABAJO.has(code);
+
+  const delCatalogo = catalogo
+    .filter((s) => imprimible(s.code))
+    .map((s) => ({ titulo: s.displayName, partes: [s.code] }));
   if (!tieneEsquema(esquema)) return { capitulos: delCatalogo, sobrantes: [] };
 
   const nombradas = new Set(esquema.capitulos.flatMap((c) => c.de ?? []));
@@ -195,7 +237,9 @@ function capitulosDelDocumento({ esquema, catalogo = [], conTexto = new Set() })
     ...(c.clave ? { propio: true } : {}),
   }));
 
-  const sobrantes = catalogo.filter((s) => !nombradas.has(s.code) && conTexto.has(s.code));
+  const sobrantes = catalogo.filter(
+    (s) => !nombradas.has(s.code) && conTexto.has(s.code) && imprimible(s.code),
+  );
   return {
     capitulos: [...capitulos, ...sobrantes.map((s) => ({ titulo: s.displayName, partes: [s.code] }))],
     sobrantes,
@@ -241,6 +285,7 @@ module.exports = {
   normalizar,
   tieneEsquema,
   capitulosDelDocumento,
+  FASES_DE_TRABAJO,
   capituloPropio,
   comoTexto,
   claveDe,

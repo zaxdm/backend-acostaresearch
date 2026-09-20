@@ -214,3 +214,17 @@ test('el enlace del Word existe solo si hay algo escrito', async () => {
   empezar({ stages: [{ skillCode: 'marco-teorico', estado: 'PENDIENTE', palabras: 0 }] });
   assert.equal(await projectService.enlaceDelWord('u1', 'METODO_9_SKILLS'), null);
 });
+
+test('con solo la propuesta de tema guardada, no hay Word que enlazar', async () => {
+  // La Fase 1 escribe, pero lo que escribe no es un capítulo de la tesis. Dar
+  // el enlace igual llevaba a un 404 después del clic: se dice antes.
+  empezar({ stages: [{ skillCode: 'tema-y-delimitacion', estado: 'LISTO', palabras: 320 }] });
+  assert.equal(await projectService.enlaceDelWord('u1', 'METODO_9_SKILLS'), null);
+
+  // Salvo que el reglamento de su facultad la pida como capítulo.
+  empezar({
+    stages: [{ skillCode: 'tema-y-delimitacion', estado: 'LISTO', palabras: 320 }],
+    esquema: { capitulos: [{ titulo: 'CAPÍTULO PRELIMINAR', de: ['tema-y-delimitacion'] }] },
+  });
+  assert.ok(await projectService.enlaceDelWord('u1', 'METODO_9_SKILLS'));
+});

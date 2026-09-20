@@ -7,7 +7,8 @@
  * Lo que tiene que ser cierto:
  *
  *   · de un Word se lee el texto en orden, con los títulos y el índice marcados;
- *   · un PDF o una foto se rechazan con un mensaje que manda al chat;
+ *   · de un PDF se leen sus párrafos y de un Excel una línea por fila;
+ *   · una foto o un PDF escaneado se rechazan con un mensaje que manda al chat;
  *   · se guardan hasta cinco, el mismo nombre reemplaza, y se leen por partes;
  *   · el enlace es suyo y no vale como enlace del formato;
  *   · la herramienta solo existe en el conector del informe.
@@ -16,6 +17,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { Document, Packer, Paragraph, HeadingLevel } = require('docx');
+
+const { pdfCon, excelCon } = require('./ayudas/archivos');
 
 const sustituir = (ruta, exports) => {
   const id = require.resolve(ruta);
@@ -91,7 +94,7 @@ function empezar() {
 // ── Leer ───────────────────────────────────────────────────────────────────
 
 test('de un Word se lee el texto en orden, con los títulos marcados y sin líneas vacías', async () => {
-  const texto = material.textoDe(await wordDeIndice());
+  const texto = await material.textoDe(await wordDeIndice());
   assert.deepEqual(texto.split('\n'), [
     '[Título 1] Estructura del informe',
     '1. Introducción',
@@ -99,20 +102,75 @@ test('de un Word se lee el texto en orden, con los títulos marcados y sin líne
   ]);
 });
 
-test('un PDF, una foto o un .doc antiguo se rechazan con un mensaje que manda al chat', () => {
-  assert.throws(() => material.textoDe(Buffer.from('%PDF-1.7 ...')), (e) => e instanceof material.MaterialNoValido && /chat de tu asistente/.test(e.message));
-  assert.throws(() => material.textoDe(Buffer.from('89504e470d0a1a0a00000000', 'hex')), /chat de tu asistente/);
-  assert.throws(() => material.textoDe(Buffer.from('ffd8ffe000104a4649460001', 'hex')), /chat de tu asistente/);
-  assert.throws(() => material.textoDe(Buffer.from('d0cf11e0a1b11ae100000000', 'hex')), /\.doc antiguo/);
+test('de un PDF con texto salen sus párrafos: así llegan los términos de referencia', async () => {
+  const texto = await material.textoDe(
+    pdfCon([
+      'TÉRMINOS DE REFERENCIA',
+      'El consultor entregará un diagnóstico del área de logística de la',
+      'empresa, con recomendaciones priorizadas.',
+      '',
+      'Plazo: 30 días calendario desde la firma del contrato.',
+      '1',
+    ]),
+  );
+
+  assert.match(texto, /TÉRMINOS DE REFERENCIA/);
+  // Los dos renglones de la misma frase vuelven a ser un párrafo.
+  assert.match(texto, /diagnóstico del área de logística de la empresa, con recomendaciones priorizadas\./);
+  // El número de página suelto no es texto de nadie.
+  assert.equal(/^1$/m.test(texto), false);
 });
 
-test('el texto plano se acepta tal cual; uno vacío, no', () => {
-  assert.equal(material.textoDe(Buffer.from('Consigna:\r\n1. Introducción\r\n')), 'Consigna:\n1. Introducción');
-  assert.throws(() => material.textoDe(Buffer.from('   \n ')), /no tiene texto/);
+test('un PDF escaneado, una foto o un .doc antiguo se rechazan diciendo qué hacer', async () => {
+  await assert.rejects(
+    () => material.textoDe(pdfCon([])),
+    (e) => e instanceof material.MaterialNoValido && /escaneado/.test(e.message),
+  );
+  await assert.rejects(() => material.textoDe(Buffer.from('89504e470d0a1a0a00000000', 'hex')), /chat de tu asistente/);
+  await assert.rejects(() => material.textoDe(Buffer.from('ffd8ffe000104a4649460001', 'hex')), /chat de tu asistente/);
+  await assert.rejects(() => material.textoDe(Buffer.from('d0cf11e0a1b11ae100000000', 'hex')), /antiguo de Office/);
 });
 
-test('lo que pasa de 60.000 caracteres se recorta y se avisa', () => {
-  const largo = material.textoDe(Buffer.from('a'.repeat(70_000)));
+test('de un Excel sale una línea por fila, con su hoja delante y en el orden de las pestañas', async () => {
+  const texto = await material.textoDe(
+    excelCon([
+      {
+        nombre: 'Rúbrica',
+        filas: [
+          ['Criterio', 'Peso', 'Descripción'],
+          [],
+          ['Redacción & estilo', 20, 'Claridad y ortografía'],
+          [null, null, 'Sin criterio: solo una nota suelta'],
+        ],
+      },
+      { nombre: 'Entrega', filas: [['Fecha', '30/09/2026']] },
+    ]),
+  );
+
+  assert.deepEqual(texto.split('\n'), [
+    '[Hoja] Rúbrica',
+    'Criterio | Peso | Descripción',
+    'Redacción & estilo | 20 | Claridad y ortografía',
+    'Sin criterio: solo una nota suelta',
+    '[Hoja] Entrega',
+    'Fecha | 30/09/2026',
+  ]);
+});
+
+test('un Excel sin nada escrito se rechaza', async () => {
+  await assert.rejects(
+    () => material.textoDe(excelCon([{ nombre: 'Hoja1', filas: [[], []] }])),
+    (e) => e instanceof material.MaterialNoValido && /nada escrito/.test(e.message),
+  );
+});
+
+test('el texto plano se acepta tal cual; uno vacío, no', async () => {
+  assert.equal(await material.textoDe(Buffer.from('Consigna:\r\n1. Introducción\r\n')), 'Consigna:\n1. Introducción');
+  await assert.rejects(() => material.textoDe(Buffer.from('   \n ')), /no tiene texto/);
+});
+
+test('lo que pasa de 60.000 caracteres se recorta y se avisa', async () => {
+  const largo = await material.textoDe(Buffer.from('a'.repeat(70_000)));
   assert.ok(largo.length < 60_200);
   assert.match(largo, /no se guardó/);
 });
@@ -200,6 +258,7 @@ test('material_del_curso solo existe en el conector del informe', () => {
   assert.ok(informe.has('material_del_curso'));
   assert.match(informe.get('material_del_curso').description, /ENLACE/);
   assert.match(informe.get('material_del_curso').description, /adjunte/);
+  assert.match(informe.get('material_del_curso').description, /PDF, Excel/);
 
   assert.equal(herramientas(TESIS).has('material_del_curso'), false);
   assert.equal(herramientas('ARTICULO_SCIENTIFICOS').has('material_del_curso'), false);

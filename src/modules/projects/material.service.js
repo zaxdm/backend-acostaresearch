@@ -29,7 +29,7 @@ async function proyectoConLicencia(userId, productCode) {
 function guardar({ userId, productCode, buffer, nombre }) {
   return enSerie(clave(userId, productCode), async () => {
     // Primero se lee: un archivo que no sirve no tiene por qué crear el proyecto.
-    const texto = material.textoDe(buffer);
+    const texto = await material.textoDe(buffer);
 
     const proyecto = await proyectoConLicencia(userId, productCode);
     if (!proyecto) return null;

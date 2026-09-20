@@ -3313,15 +3313,18 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
           'dio el docente; en uno de empresa, los términos de referencia, el correo del pedido, la ' +
           'plantilla de informes o los documentos que entregó la empresa. Subidos para que los leas. ' +
           'Sin argumentos lista lo que ya subió y da un ENLACE para subir más: dáselo como enlace que se pulsa y dile ' +
-          'que vuelva cuando lo haya subido. Acepta Word (.docx) o texto, hasta cinco archivos. ' +
+          'que vuelva cuando lo haya subido. Acepta Word (.docx), PDF, Excel (.xlsx) y texto, hasta ' +
+          'cinco archivos. ' +
           'Con "ver" (el número de la lista) devuelve su texto, por partes con "parte"; las líneas ' +
           '[Título N] e [Índice] son los títulos y el índice del documento: el esquema COPIA esa ' +
-          'numeración, no la inventa. ' +
+          'numeración, no la inventa. En un Excel, [Hoja] abre cada hoja y cada fila viene con sus ' +
+          'celdas separadas por " | ": así llega casi siempre la rúbrica. ' +
           'ÚSALA cuando diga que tiene la consigna, la rúbrica, los términos de referencia, un índice ' +
           'o una plantilla con puntos numerados, y antes de revisar el informe con la rúbrica o con ' +
-          'los términos. ' +
-          'Si lo tiene en PDF o en foto, el enlace no lo lee: que lo adjunte en este chat con el ' +
-          'clip y lo lees tú. NO inventes nada que no esté en el material.',
+          'los términos. OFRÉCELE el enlace en cuanto le preguntes por lo que le pidieron, sin ' +
+          'esperar a que él diga que tiene el archivo. ' +
+          'Lo único que el enlace no lee es una foto o un PDF escaneado: eso que lo adjunte en este ' +
+          'chat con el clip y lo lees tú. NO inventes nada que no esté en el material.',
         inputSchema: fromJsonSchema({
           type: 'object',
           properties: {
@@ -3370,17 +3373,25 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
 
         const lista = await materialService.lista(userId, productCode);
         const { url, minutos } = subidaMaterial.enlace({ userId, productCode });
+        const deEmpresa = await projectService.esInformeDeEmpresa(userId, productCode);
         const subido =
           lista.length > 0
             ? `Material subido:${N}${lista.map((m) => `${m.numero}. ${m.nombre}`).join(N)}${N}${N}` +
               'Léelo con "ver" y su número.'
             : 'Todavía no ha subido material.';
 
+        const queSube = deEmpresa
+          ? 'los términos de referencia, el correo del pedido o la plantilla de la empresa'
+          : 'la consigna, la rúbrica o el índice';
+        const rotulo = deEmpresa
+          ? 'Haz clic aquí para subir el material del encargo'
+          : 'Haz clic aquí para subir el material de tu curso';
+
         return texto(
-          `${subido}${N}${N}Enlace para subir la consigna, la rúbrica o el índice:${N}` +
-            `${await darEnlace({ texto: 'Haz clic aquí para subir el material de tu curso', url, minutos })}${N}${N}` +
-            'Word (.docx) o texto, hasta cinco archivos; uno con el mismo nombre ' +
-            'reemplaza al anterior. Si lo tiene en PDF o en foto, que lo adjunte en este chat.',
+          `${subido}${N}${N}Enlace para subir ${queSube}:${N}` +
+            `${await darEnlace({ texto: rotulo, url, minutos })}${N}${N}` +
+            'Word (.docx), PDF, Excel (.xlsx) o texto, hasta cinco archivos; uno con el mismo nombre ' +
+            'reemplaza al anterior. Solo una foto o un PDF escaneado hay que adjuntarlos en este chat.',
         );
       },
     );

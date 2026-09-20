@@ -19,45 +19,7 @@ const { Document, Packer, Paragraph } = require('docx');
 const { leer, juntarLineas, partirLargo, EntrevistaNoValida, PARRAFO_MAXIMO } = require(
   '../src/modules/cualitativo/cualitativo.lectura',
 );
-
-/** Un PDF mínimo, a mano, con una línea de texto por elemento de `lineas` (una página cada `porPagina`). */
-function pdfCon(lineas, { porPagina = 40 } = {}) {
-  const paginas = [];
-  for (let i = 0; i < lineas.length; i += porPagina) paginas.push(lineas.slice(i, i + porPagina));
-  if (paginas.length === 0) paginas.push([]);
-
-  const objetos = [];
-  const agregar = (cuerpo) => objetos.push(cuerpo) && objetos.length;
-  const catalogo = agregar(null);
-  const arbol = agregar(null);
-  const fuente = agregar('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
-  const hijos = [];
-  for (const pagina of paginas) {
-    const escapar = (s) => s.replace(/[\\()]/g, (c) => `\\${c}`);
-    const flujo = ['BT', '/F1 11 Tf', '14 TL', '50 780 Td', ...pagina.map((l) => `(${escapar(l)}) Tj T*`), 'ET'].join('\n');
-    const contenido = agregar(`<< /Length ${Buffer.byteLength(flujo, 'latin1')} >>\nstream\n${flujo}\nendstream`);
-    hijos.push(
-      agregar(
-        `<< /Type /Page /Parent ${arbol} 0 R /MediaBox [0 0 595 842] ` +
-          `/Resources << /Font << /F1 ${fuente} 0 R >> >> /Contents ${contenido} 0 R >>`,
-      ),
-    );
-  }
-  objetos[catalogo - 1] = `<< /Type /Catalog /Pages ${arbol} 0 R >>`;
-  objetos[arbol - 1] = `<< /Type /Pages /Kids [${hijos.map((h) => `${h} 0 R`).join(' ')}] /Count ${hijos.length} >>`;
-
-  let salida = '%PDF-1.4\n';
-  const posiciones = [];
-  objetos.forEach((cuerpo, i) => {
-    posiciones.push(Buffer.byteLength(salida, 'latin1'));
-    salida += `${i + 1} 0 obj\n${cuerpo}\nendobj\n`;
-  });
-  const xref = Buffer.byteLength(salida, 'latin1');
-  salida += `xref\n0 ${objetos.length + 1}\n0000000000 65535 f \n`;
-  for (const p of posiciones) salida += `${String(p).padStart(10, '0')} 00000 n \n`;
-  salida += `trailer\n<< /Size ${objetos.length + 1} /Root ${catalogo} 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
-  return Buffer.from(salida, 'latin1');
-}
+const { pdfCon } = require('./ayudas/archivos');
 
 test('Word: un párrafo por párrafo, sin los vacíos', async () => {
   const doc = new Document({

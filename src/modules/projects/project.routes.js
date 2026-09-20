@@ -276,7 +276,8 @@ function recibirMaterial(req, res, next) {
     if (error?.type === 'entity.too.large') {
       return next(
         new ValidationError(
-          `Ese archivo pasa de ${MAXIMO_MATERIAL / 1024 / 1024} MB. Sube solo la consigna, la rúbrica o el índice.`,
+          `Ese archivo pasa de ${MAXIMO_MATERIAL / 1024 / 1024} MB. Sube solo lo que te pidieron: la ` +
+            'consigna, la rúbrica, el índice o los términos de referencia.',
         ),
       );
     }

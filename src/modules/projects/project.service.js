@@ -2143,12 +2143,32 @@ async function deUsuario(userId, { esAdmin = false } = {}) {
       const catalogo = await skillService.listCatalog(proyecto.productCode);
       const porCapitulo = new Map(proyecto.stages.map((e) => [e.skillCode, e]));
 
+      /**
+       * Qué fases van dentro del Word y cuáles no.
+       *
+       * Sin esto, el panel decía «1 · Tema y delimitación — En curso · 413
+       * palabras» mientras el conector contestaba que no hay ningún capítulo
+       * guardado. Las dos cosas eran ciertas —esas palabras son de una fase de
+       * trabajo, no de un capítulo—, pero leídas juntas parecen un fallo del
+       * servidor. Se dice cuál es cuál y se acabó la contradicción aparente.
+       */
+      const nombradas = new Set(
+        (proyecto.esquema?.capitulos ?? []).flatMap((c) => c.de ?? []),
+      );
+
       const etapas = catalogo.map((skill) => {
         const etapa = porCapitulo.get(skill.code);
         return {
           code: skill.code,
           displayName: skill.displayName,
           apoyo: esApoyo(skill.displayName),
+          /**
+           * Falso = se trabaja aquí, pero su texto no sale en el documento: la
+           * propuesta de tema, el cuestionario y la bitácora de campo. Salvo
+           * que el esquema de su facultad las pida como capítulo.
+           */
+          enDocumento:
+            !esquemaDeCapitulos.FASES_DE_TRABAJO.has(skill.code) || nombradas.has(skill.code),
           estado: etapa?.estado ?? 'PENDIENTE',
           resumen: etapa?.resumen ?? null,
           palabras: etapa?.palabras ?? 0,

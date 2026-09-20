@@ -17,6 +17,17 @@ const subidaFormato = require('../projects/project.subida-formato');
 const subidaMaterial = require('../projects/project.subida-material');
 const subidaDocumento = require('../projects/project.subida-documento');
 const { enlaceClic } = require('../../shared/utils/enlaceClic');
+const enlaceCorto = require('../enlaces/enlaceCorto.service');
+
+/**
+ * Lo que dura un enlace del conector cuando quien lo pide no dice otra cosa.
+ *
+ * Todos los enlaces firmados de este backend duran media hora —subida de
+ * documento, de formato, de material, de entrevistas, descarga— y hay una
+ * llamada que no pasa sus minutos porque no los enseña al tesista. Al acortar
+ * sí hacen falta: el código tiene que vencer a la vez que el token.
+ */
+const MINUTOS_POR_DEFECTO = 30;
 const materialService = require('../projects/material.service');
 const cualitativoService = require('../cualitativo/cualitativo.service');
 const subidaEntrevistas = require('../cualitativo/cualitativo.enlaces');
@@ -778,8 +789,27 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
    * Un enlace en Markdown se pulsa limpio en claude.ai y ChatGPT lo rompe. Todas
    * las herramientas que reparten enlaces pasan por aquí para no tener que
    * acordarse de ello una por una. El porqué, en `mcp.cliente` y `enlaceClic`.
+   *
+   * Y a ChatGPT se le da ACORTADO. Conseguimos que entregue la dirección entera
+   * y pulsable, pero no que la copie: la reescribe, y en 400 caracteres al azar
+   * se equivoca en uno. Ocho no se le tuercen. Ver `enlaceCorto.service`.
+   *
+   * Si acortar falla, `acortar` devuelve el enlace largo: una dirección fea es
+   * mucho mejor que quedarse sin darle ninguna.
    */
-  const darEnlace = (args) => enlaceClic({ ...args, cliente });
+  const darEnlace = async (args) => {
+    if (cliente !== 'chatgpt') return enlaceClic({ ...args, cliente });
+
+    const url = await enlaceCorto.acortar({
+      destino: args.url,
+      // Los dos tienen que vencer a la vez: un código vivo que lleve a un token
+      // muerto le diría «llegó incompleto» a quien solo llegó tarde.
+      minutos: args.minutos ?? MINUTOS_POR_DEFECTO,
+      base: env.apiPublicUrl,
+    });
+
+    return enlaceClic({ ...args, url, cliente });
+  };
 
   /**
    * Cómo se llama lo que está escribiendo este comprador.
@@ -2797,7 +2827,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
 
       const ficha = await documentoService.fichaDe(userId, productCode);
       const { url, minutos } = subidaDocumento.enlace({ userId, productCode });
-      const enlace = darEnlace({ texto: 'Haz clic aquí para subir tu documento', url, minutos });
+      const enlace = await darEnlace({ texto: 'Haz clic aquí para subir tu documento', url, minutos });
 
       const hayUno = ficha
         ? `Ahora mismo en el servidor está «${ficha.nombre}», subido el ${fechaCorta(ficha.subidoAt)}, ` +
@@ -3217,7 +3247,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         return texto(
           `Todavía no ha subido ningún formato: su Word sale con el formato por defecto.${N}${N}` +
             `Si ${dioElFormato} le dio un formato o plantilla, dale este enlace para subirlo:${N}` +
-            `${darEnlace({ texto: 'Haz clic aquí para subir tu formato', url, minutos })}${N}${N}` +
+            `${await darEnlace({ texto: 'Haz clic aquí para subir tu formato', url, minutos })}${N}${N}` +
             'Dile que suba el .docx que le dieron, sin cambiarle nada y con su ' +
             'portada si la trae, y que vuelva aquí cuando lo haya subido. Solo se guarda el ' +
             'formato: el texto que traiga el documento no se conserva.',
@@ -3261,7 +3291,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
             : ' OJO: se subió antes de que se tomaran los márgenes, el encabezado, el pie y la ' +
               'portada; pídele que lo vuelva a subir con el enlace de abajo.') +
           `${N}${N}Si quiere cambiarlo por otro, este enlace sirve:${N}` +
-          darEnlace({ texto: 'Haz clic aquí para cambiar tu formato', url, minutos }) +
+          await darEnlace({ texto: 'Haz clic aquí para cambiar tu formato', url, minutos }) +
           `${N}${N}Si la portada salió mal, llama con "usarNuestraPortada". Para ver cómo quedó, ` +
           'dale su Word con "enlace_del_word".',
       );
@@ -3348,7 +3378,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
 
         return texto(
           `${subido}${N}${N}Enlace para subir la consigna, la rúbrica o el índice:${N}` +
-            `${darEnlace({ texto: 'Haz clic aquí para subir el material de tu curso', url, minutos })}${N}${N}` +
+            `${await darEnlace({ texto: 'Haz clic aquí para subir el material de tu curso', url, minutos })}${N}${N}` +
             'Word (.docx) o texto, hasta cinco archivos; uno con el mismo nombre ' +
             'reemplaza al anterior. Si lo tiene en PDF o en foto, que lo adjunte en este chat.',
         );
@@ -3560,9 +3590,9 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         /** Lo que el servidor ve mal en el libro, para que Claude lo arregle con el usuario. */
         const avisosDelLibro = (avisos) =>
           avisos ? `${N}${N}REVISA ESTO:${N}${avisos.map((a) => `- ${a}`).join(N)}` : '';
-        const descarga = (archivo, textoDelEnlace) => {
+        const descarga = async (archivo, textoDelEnlace) => {
           const { url, minutos } = rEnlaces.enlaceDeDescarga({ userId, productCode, archivo });
-          return darEnlace({ texto: textoDelEnlace, url, minutos });
+          return await darEnlace({ texto: textoDelEnlace, url, minutos });
         };
 
         try {
@@ -3743,7 +3773,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
                 `**Figura N**${N}*Red de coocurrencia de los códigos*${N}![](${dibujada.archivo})${N}` +
                 '*Nota.* El tamaño de cada código indica su número de citas; el grosor de cada línea, las ' +
                 'citas que comparten dos códigos; el color, su categoría. Elaborado en R.' +
-                `${N}${N}Si el usuario quiere verla ya: ${descarga(dibujada.archivo, 'Haz clic aquí para ver la red de códigos')}` +
+                `${N}${N}Si el usuario quiere verla ya: ${await descarga(dibujada.archivo, 'Haz clic aquí para ver la red de códigos')}` +
                 avisosDelLibro(dibujada.avisos),
             );
           }
@@ -3839,7 +3869,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
             : 'Todavía no ha subido ninguna entrevista.';
         return texto(
           `${subidas}${N}${N}Enlace para subir entrevistas o grupos focales:${N}` +
-            `${darEnlace({ texto: 'Haz clic aquí para subir tus entrevistas', url, minutos })}${N}${N}` +
+            `${await darEnlace({ texto: 'Haz clic aquí para subir tus entrevistas', url, minutos })}${N}${N}` +
             'Word, PDF con texto o .txt; una entrevista por archivo y hasta ' +
             `${cualitativoService.MAXIMO_ENTREVISTAS}. Una con el mismo nombre de archivo reemplaza a la anterior.`,
         );
@@ -3880,7 +3910,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         const { norma } = subido;
         return texto(
           `Enlace para descargar SU DOCUMENTO con lo humanizado, las citas y la lista de referencias:${N}` +
-            darEnlace({ texto: 'Haz clic aquí para descargar tu documento', url: subido.url, minutos: subido.minutos }) +
+            await darEnlace({ texto: 'Haz clic aquí para descargar tu documento', url: subido.url, minutos: subido.minutos }) +
             `${N}${N}` +
             (norma.familia === 'notas'
               ? `OJO: la norma del proyecto es ${norma.nombre}, de notas al pie, y en un documento ` +
@@ -3896,7 +3926,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
             'lista de referencias. NO le prepares tú otro documento.' +
             (resultado
               ? `${N}${N}Aparte, la tesis armada con los capítulos del método:${N}` +
-                darEnlace({ texto: 'Haz clic aquí para descargar la tesis del método', url: resultado.url })
+                await darEnlace({ texto: 'Haz clic aquí para descargar la tesis del método', url: resultado.url })
               : ''),
         );
       }
@@ -3911,7 +3941,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
       const { url, minutos, norma } = resultado;
       return texto(
         `Enlace para descargar la tesis en Word:${N}` +
-          `${darEnlace({ texto: 'Haz clic aquí para descargar tu Word', url, minutos })}${N}${N}` +
+          `${await darEnlace({ texto: 'Haz clic aquí para descargar tu Word', url, minutos })}${N}${N}` +
           `Las citas y las referencias salen en ${norma.nombre}` +
           (norma.elegida ? `.${N}${N}` : `, que es la de por defecto: nadie ha elegido otra.${N}${N}`) +
           (norma.elegida

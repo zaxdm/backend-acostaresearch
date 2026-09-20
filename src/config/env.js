@@ -436,6 +436,13 @@ const env = Object.freeze({
     .filter(Boolean),
   // El refresh token solo viaja a las rutas que lo necesitan.
   refreshCookiePath: `${raw.API_PREFIX}/auth`,
+  // De dónde cuelgan los enlaces cortos, `/s/<código>`.
+  //
+  // Se saca de MCP_PUBLIC_URL en vez de pedir una variable nueva: esa ya apunta
+  // a esta misma API y está puesta en todos los entornos, y el `.env` del
+  // servidor no se toca en los despliegues. Si mañana el conector se sirviera
+  // desde otro dominio, esto es lo primero que habría que separar.
+  apiPublicUrl: raw.MCP_PUBLIC_URL.replace(/\/mcp\/?$/, ''),
   // Hace falta host y contraseña: con uno solo, el envío fallaría en cada intento.
   smtpEnabled: Boolean(raw.SMTP_HOST && raw.SMTP_PASS),
   // Con la simulación encendida el conector funciona sin clave. La doble

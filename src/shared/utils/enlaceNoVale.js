@@ -23,9 +23,18 @@ const vencido = (error) => error?.name === 'TokenExpiredError';
  * El mensaje para el estudiante. `para` completa la frase: «Este enlace para
  * subir tu formato venció…». Sin `para`, «Este enlace venció…».
  */
-function mensajeEnlaceNoVale(error, { para = '', minutos = 30 } = {}) {
+function mensajeEnlaceNoVale(error, opciones = {}) {
+  return textoEnlaceNoVale(vencido(error), opciones);
+}
+
+/**
+ * El mismo texto cuando no hay ningún error de `jsonwebtoken` que mirar, sino
+ * una fila de la base: el enlace corto que existió y se pasó de hora, o el que
+ * no está. Ver `enlaceCorto.service`.
+ */
+function textoEnlaceNoVale(haVencido, { para = '', minutos = 30 } = {}) {
   const enlace = para ? `Este enlace para ${para}` : 'Este enlace';
-  if (vencido(error)) {
+  if (haVencido) {
     return (
       `${enlace} venció: dura ${minutos} minutos. Vuelve a tu conversación y pide uno nuevo; ` +
       'no reutilices uno anterior.'
@@ -37,4 +46,4 @@ function mensajeEnlaceNoVale(error, { para = '', minutos = 30 } = {}) {
   );
 }
 
-module.exports = { mensajeEnlaceNoVale, vencido };
+module.exports = { mensajeEnlaceNoVale, textoEnlaceNoVale, vencido };

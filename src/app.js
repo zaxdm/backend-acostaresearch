@@ -11,6 +11,7 @@ const env = require('./config/env');
 const logger = require('./config/logger');
 const routes = require('./routes');
 const mcpRouter = require('./modules/mcp/mcp.router');
+const enlacesCortosRouter = require('./modules/enlaces/enlaceCorto.routes');
 const { globalLimiter } = require('./middlewares/rateLimit');
 const { ocultarSecretosEnUrl, ocultarConsulta, ocultarParams } = require('./shared/utils/ocultar');
 const { ForbiddenError } = require('./shared/errors/AppError');
@@ -84,6 +85,13 @@ function createApp() {
   );
 
   app.use(globalLimiter);
+
+  // Los enlaces cortos del conector, `/s/<código>`.
+  //
+  // Detrás del límite global: son ocho caracteres y sin freno se podrían
+  // sondear a ciegas. Y sin el prefijo de la API, porque el asistente tiene que
+  // reproducir esta dirección en la conversación y cada carácter cuenta.
+  app.use('/s', enlacesCortosRouter);
 
   // La guía de instalación, servida desde aquí.
   //

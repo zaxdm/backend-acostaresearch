@@ -62,18 +62,18 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  refreshTokens RefreshToken[]
-  rewrites      Rewrite[]
-  wordPacks     WordPack[]
-  payments      Payment[]
-  licenses      License[]
+  refreshTokens   RefreshToken[]
+  rewrites        Rewrite[]
+  wordPacks       WordPack[]
+  payments        Payment[]
+  licenses        License[]
   /// Las fuentes que subió de su propio export de Scopus. Se van con la cuenta.
-  references    Reference[]
-  accountCodes  AccountCode[]
+  references      Reference[]
+  accountCodes    AccountCode[]
   /// Su tesis, y su artículo si también lo compró. Ver `Project`.
-  projects      Project[]
+  projects        Project[]
   /// Su Zotero, si lo conectó. Como mucho uno. Ver `ZoteroAccount`.
-  zoteroAccount ZoteroAccount?
+  zoteroAccount   ZoteroAccount?
   /// Su Mendeley, si lo conectó. Como mucho uno. Ver `MendeleyAccount`.
   mendeleyAccount MendeleyAccount?
 
@@ -1706,4 +1706,45 @@ model Reclamo {
 
   @@index([respondidoAt])
   @@map("reclamos")
+}
+
+/// Un enlace corto para los que reparte el conector.
+///
+/// POR QUÉ EXISTE
+/// --------------
+/// Los enlaces de subida y descarga llevan un JWT de unos 400 caracteres, y el
+/// asistente tiene que reproducirlo en la conversación. El 20-sep-2026 se
+/// comprobó que ChatGPT NO lo copia: lo vuelve a escribir, y en 400 caracteres
+/// al azar se equivoca en uno. Dos enlaces del mismo hilo traían identificadores
+/// de usuario distintos —`…abfd9` y `…abfd4`— cuando ese dato no puede cambiar,
+/// y la página contestaba «llegó incompleto o alterado» con el enlace aún
+/// dentro de sus 30 minutos.
+///
+/// No hay instrucción que arregle eso: la única salida es que no haya nada
+/// largo que copiar. Ocho caracteres los reproduce cualquier modelo sin fallar.
+///
+/// QUÉ GUARDA
+/// ----------
+/// El destino entero, con su token dentro. Así sirve para los nueve enlaces del
+/// conector sin saber de qué tipo es cada uno. El token de aquí vale lo mismo
+/// que el de la URL —media hora y un solo uso previsto—, así que esto no
+/// guarda nada que no viajara ya por el chat.
+///
+/// LAS FILAS CADUCADAS NO SE BORRAN AL VENCER
+/// ------------------------------------------
+/// Se quedan para poder distinguir «venció» de «llegó incompleto», que es la
+/// diferencia que el tesista necesita leer. Ver `enlaceNoVale`.
+model EnlaceCorto {
+  /// Ocho caracteres de un alfabeto sin parecidos (nada de 0/O ni 1/I/l).
+  codigo String @id @db.VarChar(16)
+
+  /// El enlace largo al que se redirige, con su JWT.
+  destino String @db.VarChar(2000)
+
+  /// La misma media hora que el token que lleva dentro.
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
+  @@map("enlaces_cortos")
 }

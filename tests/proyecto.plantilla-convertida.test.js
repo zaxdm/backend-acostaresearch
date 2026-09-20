@@ -374,3 +374,56 @@ test('el apellido para el pie sale del nombre completo', () => {
   assert.equal(partesDePlantilla.autorCorto('Juan Pérez'), 'Pérez, J.');
   assert.equal(partesDePlantilla.autorCorto('María Pérez Gómez'), 'Pérez, M.');
 });
+
+test('el título del capítulo sale centrado y con aire si su «Título 1» no lo dice', async () => {
+  // El «Título 1» de una plantilla convertida desde PDF es el genérico de Word:
+  // trae negrita y una sangría del PDF, y ni una palabra sobre alineación ni
+  // espaciado. El tesista abría su tesis y veía el capítulo pegado al
+  // encabezado y a la izquierda, con su reglamento pidiéndolo centrado.
+  const buffer = plantillaConvertida();
+  const salida = await armar({
+    tema: 'Motivación y rendimiento',
+    nombre: 'Alguien',
+    estilos: plantilla.conFormatoDelCuerpo(plantilla.extraerEstilos(buffer), buffer),
+    pagina: plantilla.extraerPagina(buffer),
+    capitulos: [{ titulo: 'Capítulo I', texto: 'Un párrafo del tesista.' }],
+  });
+
+  const documento = new AdmZip(salida).getEntry('word/document.xml').getData().toString('utf8');
+  // El párrafo del título, no el campo del índice, que también nombra Heading1.
+  const elTitulo = documento.match(
+    /<w:p><w:pPr><w:pStyle w:val="Heading1"\/>(?:(?!<\/w:p>)[\s\S])*<\/w:p>/,
+  )[0];
+
+  assert.match(elTitulo, /<w:jc w:val="center"\/>/, 'centrado, que es lo que pide un reglamento');
+  assert.match(elTitulo, /w:before="480"/, 'y con aire encima, no pegado al encabezado');
+});
+
+test('si su «Título 1» SÍ dice cómo se alinea, manda su facultad', async () => {
+  // Una plantilla hecha en Word de verdad: lo que diga, se respeta. Aquí, a la
+  // izquierda y con su propio espaciado.
+  const buffer = plantillaConvertida();
+  const suyos = plantilla
+    .extraerEstilos(buffer)
+    .replace(
+      '<w:pPr><w:ind w:left="1134"/><w:outlineLvl w:val="0"/></w:pPr>',
+      '<w:pPr><w:jc w:val="left"/><w:spacing w:before="120"/><w:outlineLvl w:val="0"/></w:pPr>',
+    );
+
+  const salida = await armar({
+    tema: 'Motivación y rendimiento',
+    nombre: 'Alguien',
+    estilos: plantilla.conFormatoDelCuerpo(suyos, buffer),
+    pagina: plantilla.extraerPagina(buffer),
+    capitulos: [{ titulo: 'Capítulo I', texto: 'Un párrafo del tesista.' }],
+  });
+
+  const documento = new AdmZip(salida).getEntry('word/document.xml').getData().toString('utf8');
+  // El párrafo del título, no el campo del índice, que también nombra Heading1.
+  const elTitulo = documento.match(
+    /<w:p><w:pPr><w:pStyle w:val="Heading1"\/>(?:(?!<\/w:p>)[\s\S])*<\/w:p>/,
+  )[0];
+
+  assert.doesNotMatch(elTitulo, /<w:jc /, 'no se le pisa la alineación');
+  assert.doesNotMatch(elTitulo, /w:before="480"/, 'ni el espaciado');
+});

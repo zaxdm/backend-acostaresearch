@@ -639,13 +639,29 @@ function figuraApa(lineas, contexto) {
 function comoParrafos(texto, contexto = {}) {
   const parrafos = [];
 
+  /**
+   * El título menos hondo del capítulo es su primer nivel, sea cual sea.
+   *
+   * Las once skills del método escriben `## 1.1 Planteamiento del problema`
+   * como primer subtítulo del capítulo, nunca `#`. Contando las almohadillas a
+   * pelo, ese «1.1» caía en Título 3 —negrita cursiva, que es el nivel 3 de
+   * APA—, así que el tesista veía en cursiva lo que su facultad pide en
+   * negrita, y colgando un escalón más abajo en el índice.
+   *
+   * Se mira lo que hay escrito y el más alto se coloca en Título 2, el primer
+   * nivel por debajo del título del capítulo. La jerarquía interna no se toca:
+   * un texto con `##` y `###` sigue saliendo en dos niveles distintos.
+   */
+  const niveles = [...texto.matchAll(/^(#{1,4})\s+\S/gm)].map((m) => m[1].length);
+  const masAlto = niveles.length > 0 ? Math.min(...niveles) : 1;
+
   for (const bruto of texto.split(/\n{2,}/)) {
     const bloque = bruto.trim();
     if (bloque === '') continue;
 
     const encabezado = bloque.match(/^(#{1,4})\s+(.*)$/);
     if (encabezado) {
-      const nivel = encabezado[1].length;
+      const nivel = Math.min(3, encabezado[1].length - masAlto + 1);
       // Una cita en un título no se pone como nota ni como campo: se deja su
       // texto, que es lo único que cabe en un encabezado.
       const titulo = encabezado[2]
@@ -1010,8 +1026,29 @@ async function armar({
     // de las tablas (ver `anchosDeColumna`).
     anchoUtil: anchoDelCuerpo(pagina),
   };
-  // El espaciado de los títulos de capítulo: con plantilla, el de su estilo.
-  const espacioDeTitulo = plantilla ? {} : { spacing: { after: 240 } };
+  /**
+   * El aspecto del título de capítulo: lo que la plantilla no diga, lo ponemos.
+   *
+   * Con plantilla se le dejaba TODO a su «Título 1», y eso da por hecho que el
+   * archivo que subió trae estilos de verdad. Las plantillas convertidas desde
+   * un PDF no los traen: sus títulos van con formato directo y el «Título 1»
+   * que queda en la hoja de estilos es el genérico de Word, a la izquierda y
+   * sin aire. El tesista abría su tesis y veía el capítulo pegado al
+   * encabezado y alineado a la izquierda, con su reglamento pidiéndolo
+   * centrado.
+   *
+   * Así que se mira qué dice su estilo y solo se rellena lo que falta. Si su
+   * facultad centra, manda ella; si no dice nada, centrado y con aire encima,
+   * que es como lo pide cualquier reglamento de tesis y lo que ya hacía
+   * nuestro formato por defecto.
+   */
+  const suTitulo1 = plantilla ? loQueDiceElEstilo(estilos, 'Heading1') : null;
+  const espacioDeTitulo = !plantilla
+    ? { spacing: { after: 240 } }
+    : {
+        ...(suTitulo1?.alineacion ? {} : { alignment: AlignmentType.CENTER }),
+        ...(suTitulo1?.espaciado ? {} : { spacing: { before: 480, after: 240 } }),
+      };
 
   const cuerpo = [
     // La portada de su facultad, si la plantilla la trae con marcas: aquí va un
@@ -1223,6 +1260,26 @@ function ajustarEstilos(buffer, { quitarRepetidos = false } = {}) {
   if (despues === antes) return buffer;
   zip.updateFile('word/styles.xml', Buffer.from(despues, 'utf8'));
   return zip.toBuffer();
+}
+
+/**
+ * Qué dice de verdad la plantilla sobre uno de sus estilos.
+ *
+ * Solo si lo dice: un `<w:style>` que existe pero no define ni alineación ni
+ * espaciado no está diciendo nada, y es exactamente lo que deja una plantilla
+ * convertida desde PDF. Sirve para completar sin pisar: lo que su facultad
+ * escribió manda siempre.
+ */
+function loQueDiceElEstilo(estilos, id) {
+  const bloque = new RegExp(`<w:style\\b[^>]*w:styleId="${id}"[^>]*>([\\s\\S]*?)</w:style>`, 'i').exec(
+    estilos ?? '',
+  );
+  if (!bloque) return null;
+
+  return {
+    alineacion: /<w:jc\b/.test(bloque[1]),
+    espaciado: /<w:spacing\b/.test(bloque[1]),
+  };
 }
 
 /**

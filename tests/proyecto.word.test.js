@@ -109,3 +109,32 @@ test('sin tema, el archivo sigue teniendo un nombre usable', () => {
 test('un tema hecho solo de signos no deja el archivo sin nombre', () => {
   assert.match(nombreDeArchivo('¿¡...!?'), /^tesis-\d{4}-\d{2}-\d{2}\.docx$/);
 });
+
+// ── Los niveles de los títulos ──────────────────────────────────────────────
+
+/** El estilo de párrafo que le tocó a cada elemento, en orden. */
+const estilosDe = (parrafos) =>
+  parrafos.map((p) => JSON.stringify(p).match(/"Heading\d"/)?.[0]?.replaceAll('"', '') ?? null);
+
+test('el subtítulo más alto del capítulo es Título 2, aunque venga con dos almohadillas', () => {
+  // Las once skills del método escriben «## 1.1 …» como primer subtítulo. Con
+  // el conteo a pelo caía en Título 3, que es negrita CURSIVA, y el tesista
+  // veía en cursiva lo que su facultad pide en negrita.
+  const parrafos = comoParrafos(
+    '## 1.1 Planteamiento del problema\n\nEl problema es este.\n\n### 1.1.1 Ámbito local\n\nY aquí el detalle.',
+  );
+
+  assert.deepEqual(estilosDe(parrafos), ['Heading2', null, 'Heading3', null]);
+});
+
+test('un capítulo escrito con una sola almohadilla también empieza en Título 2', () => {
+  const parrafos = comoParrafos('# Antecedentes\n\nTexto.\n\n## Internacionales\n\nMás texto.');
+
+  assert.deepEqual(estilosDe(parrafos), ['Heading2', null, 'Heading3', null]);
+});
+
+test('el cuarto nivel no se cuela más abajo de Título 4', () => {
+  const parrafos = comoParrafos('## Uno\n\n### Dos\n\n#### Tres\n\nTexto.');
+
+  assert.deepEqual(estilosDe(parrafos), ['Heading2', 'Heading3', 'Heading4', null]);
+});

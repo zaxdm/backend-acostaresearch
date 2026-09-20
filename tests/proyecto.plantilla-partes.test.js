@@ -295,8 +295,8 @@ test('si la numeración de la plantilla ya dice «Capítulo», el título no lo 
   );
   assert.equal(
     tituloDelCapitulo('2 · Capítulo I · Problema y objetivos'),
-    'Capítulo I · Problema y objetivos',
-    'sin esa numeración, se queda',
+    'Capítulo I: Problema y objetivos',
+    'sin esa numeración, el capítulo se queda, con sus dos puntos',
   );
   assert.equal(tituloDelCapitulo('Humanizador académico', { sinCapitulo: true }), 'Humanizador académico');
 });

@@ -253,6 +253,6 @@ test('en cuanto hay un capítulo de verdad, la propuesta sale del Word', async (
   ];
 
   const doc = xmlDe((await projectService.armarWord('u1', 'METODO_9_SKILLS')).buffer);
-  assert.ok(doc.includes('Capítulo II · Marco teórico'));
+  assert.ok(doc.includes('Capítulo II: Marco teórico'));
   assert.ok(!doc.includes('Tema y delimitación'), 'la tesis no empieza por la propuesta');
 });

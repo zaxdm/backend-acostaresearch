@@ -118,10 +118,10 @@ async function titulosDelWord() {
 test('sin estructura propia, el Word sale con los capítulos del método', async () => {
   empezar();
   assert.deepEqual(await titulosDelWord(), [
-    'Capítulo I · Problema y objetivos',
-    'Capítulo III · Metodología',
-    'Capítulo IV · Resultados',
-    'Capítulo V · Discusión',
+    'Capítulo I: Problema y objetivos',
+    'Capítulo III: Metodología',
+    'Capítulo IV: Resultados',
+    'Capítulo V: Discusión',
   ]);
 });
 
@@ -203,10 +203,10 @@ test('quitar la estructura devuelve el Word al método, sin tocar el texto', asy
   );
 
   assert.deepEqual(await titulosDelWord(), [
-    'Capítulo I · Problema y objetivos',
-    'Capítulo III · Metodología',
-    'Capítulo IV · Resultados',
-    'Capítulo V · Discusión',
+    'Capítulo I: Problema y objetivos',
+    'Capítulo III: Metodología',
+    'Capítulo IV: Resultados',
+    'Capítulo V: Discusión',
   ]);
 });
 

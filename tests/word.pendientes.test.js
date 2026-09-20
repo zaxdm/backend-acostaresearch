@@ -106,3 +106,33 @@ test('la palabra «pendiente» en una frase no es un pendiente', async () => {
   assert.doesNotMatch(comentarios, /<w:comment /);
   assert.ok(textos(cuerpo).some((t) => t.includes('sigue pendiente en la facultad')));
 });
+
+test('«[FALTA FUENTE]» sale en amarillo, dentro de la frase', async () => {
+  // Es la marca más frecuente del método con diferencia, y salía como texto
+  // normal: el mismo color que la tesis, en medio de un párrafo. El tesista se
+  // la llevaba impresa al jurado sin haberla visto.
+  const { cuerpo, comentarios } = await wordDe(
+    'En las Américas la proporción alcanza el 97 % [FALTA FUENTE]. Y sigue.',
+  );
+
+  const marca = cuerpo.match(
+    /<w:r>(?:(?!<\/w:r>)[\s\S])*FALTA FUENTE(?:(?!<\/w:r>)[\s\S])*<\/w:r>/,
+  )[0];
+  assert.match(marca, /<w:highlight w:val="yellow"\/>/);
+  // Corta como es, se queda en el párrafo: no hay nada que explicar al margen.
+  assert.ok(!comentarios.includes('Pendiente: '), 'no se saca al margen: ya es corta');
+});
+
+test('«[DATO PENDIENTE: …]» deja su explicación al margen y su marca amarilla', async () => {
+  const { cuerpo, comentarios } = await wordDe(
+    'No hay institución definida. [DATO PENDIENTE: observaciones de campo, a completar antes de la sustentación]',
+  );
+
+  const marca = cuerpo.match(
+    /<w:r>(?:(?!<\/w:r>)[\s\S])*DATO PENDIENTE(?:(?!<\/w:r>)[\s\S])*<\/w:r>/,
+  )[0];
+  assert.match(marca, /<w:highlight w:val="yellow"\/>/);
+  assert.match(marca, /\[DATO PENDIENTE\]/, 'en el cuerpo, la marca corta');
+  assert.match(comentarios, /Pendiente: observaciones de campo/, 'la explicación, al margen');
+  assert.ok(!cuerpo.includes('observaciones de campo'), 'y no dentro del párrafo');
+});

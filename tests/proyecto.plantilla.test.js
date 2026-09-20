@@ -177,12 +177,14 @@ test('el título «Índice» no entra en el índice', async () => {
 
 test('el título del capítulo sale sin el número del método', async () => {
   const { tituloDelCapitulo } = require('../src/modules/projects/project.docx');
-  assert.equal(tituloDelCapitulo('2 · Capítulo I · Problema y objetivos'), 'Capítulo I · Problema y objetivos');
+  // El punto medio es como nombramos las fases en el panel; en el documento,
+  // dos puntos, que es como titula un capítulo cualquier reglamento.
+  assert.equal(tituloDelCapitulo('2 · Capítulo I · Problema y objetivos'), 'Capítulo I: Problema y objetivos');
   assert.equal(tituloDelCapitulo('Fase 3B — Mapeo bibliométrico'), 'Mapeo bibliométrico');
   assert.equal(tituloDelCapitulo('Humanizador académico'), 'Humanizador académico');
 
   const { doc } = await armarDePrueba({ conPlantilla: true });
-  assert.ok(doc.includes('Capítulo I · Problema y objetivos'));
+  assert.ok(doc.includes('Capítulo I: Problema y objetivos'));
   assert.ok(!doc.includes('2 · Capítulo I'));
 });
 

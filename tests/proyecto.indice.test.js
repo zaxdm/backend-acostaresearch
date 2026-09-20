@@ -43,7 +43,7 @@ test('el índice trae una entrada por título, con enlace y número de página',
 
   assert.deepEqual(
     entradas.map((e) => e.texto),
-    ['Capítulo I · Problema', 'Realidad problemática', 'Formulación del problema', 'Capítulo II · Marco teórico', 'Antecedentes'],
+    ['Capítulo I: Problema', 'Realidad problemática', 'Formulación del problema', 'Capítulo II: Marco teórico', 'Antecedentes'],
   );
   // Portada en la 1, índice en la 2: el primer capítulo empieza en la 3.
   assert.equal(entradas[0].numero, 3);

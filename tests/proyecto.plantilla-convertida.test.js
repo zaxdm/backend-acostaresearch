@@ -427,3 +427,22 @@ test('si su «Título 1» SÍ dice cómo se alinea, manda su facultad', async ()
   assert.doesNotMatch(elTitulo, /<w:jc /, 'no se le pisa la alineación');
   assert.doesNotMatch(elTitulo, /w:before="480"/, 'ni el espaciado');
 });
+
+test('si en la plantilla no se ve sangría de primera línea, se pone la de APA', () => {
+  // Un conversor de PDF deja la sangría en espacios o en un tabulador dentro
+  // del texto, no como sangría, así que aquí se lee cero. Cero es lo que no se
+  // pudo leer, y el tesista veía su tesis con todos los párrafos pegados al
+  // margen mientras el modelo de su facultad los sangra.
+  const buffer = plantillaConvertida();
+  const zip = new AdmZip(buffer);
+  const documento = zip
+    .getEntry('word/document.xml')
+    .getData()
+    .toString('utf8')
+    .replaceAll('<w:ind w:left="1419" w:right="373" w:firstLine="707"/>', '<w:ind w:left="1419" w:right="373"/>');
+  zip.updateFile('word/document.xml', Buffer.from(documento));
+  const sinSangria = zip.toBuffer();
+
+  const estilos = plantilla.conFormatoDelCuerpo(plantilla.extraerEstilos(sinSangria), sinSangria);
+  assert.match(estiloDe(estilos, 'CuerpoTesis'), /<w:ind[^/]*w:firstLine="720"/);
+});

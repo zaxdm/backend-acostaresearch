@@ -317,6 +317,9 @@ function restarSangria(estilo, izquierda, derecha) {
 /** El estilo del texto de la tesis en nuestro Word, cuando hay plantilla de la que sacarlo. */
 const ESTILO_CUERPO = 'CuerpoTesis';
 
+/** La sangría de primera línea de APA, en twips: 1,27 cm, media pulgada. */
+const PRIMERA_LINEA = 720;
+
 function conFormatoDeCuerpo(estilo, cuerpo, conversion) {
   const pPr = {};
   if (cuerpo.linea) {
@@ -327,10 +330,22 @@ function conFormatoDeCuerpo(estilo, cuerpo, conversion) {
   }
   const izquierda = cuerpo.izquierda - (conversion?.izquierda ?? 0);
   const derecha = cuerpo.derecha - (conversion?.derecha ?? 0);
+  /**
+   * Y si en la plantilla no se ve sangría de primera línea, la nuestra.
+   *
+   * La sangría se mide sobre los párrafos del archivo, y una plantilla
+   * convertida desde PDF no la trae como sangría: el conversor la deja en
+   * espacios o en un tabulador dentro del texto, así que aquí se lee cero y el
+   * tesista veía su tesis con todos los párrafos pegados al margen mientras el
+   * modelo de su facultad los sangra. Cero es lo que no se pudo leer, no una
+   * decisión de nadie, y se rellena con el valor de nuestro formato, que es el
+   * de APA y el que piden los reglamentos.
+   */
+  const primeraLinea = cuerpo.primeraLinea > 0 ? cuerpo.primeraLinea : PRIMERA_LINEA;
   const ind = [
     izquierda > 0 ? `w:left="${izquierda}"` : '',
     derecha > 0 ? `w:right="${derecha}"` : '',
-    cuerpo.primeraLinea > 0 ? `w:firstLine="${cuerpo.primeraLinea}"` : '',
+    `w:firstLine="${primeraLinea}"`,
   ].filter(Boolean);
   if (ind.length > 0) pPr.ind = `<w:ind ${ind.join(' ')}/>`;
   if (cuerpo.alineacion) pPr.jc = `<w:jc w:val="${cuerpo.alineacion}"/>`;

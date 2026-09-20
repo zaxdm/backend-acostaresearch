@@ -91,12 +91,24 @@ function conCampo(tramos, clave, zotero) {
 // ── Los pendientes ─────────────────────────────────────────────────────────
 
 /**
- * Lo que las skills dejan marcado para completar: «[PENDIENTE — el año]».
+ * Lo que las skills dejan marcado en el texto para que el tesista lo complete.
  *
- * Se admite con guion, con raya o con dos puntos, y sin nada detrás, que es
- * como aparece en el método. El texto de dentro no puede llevar corchetes.
+ * Son cuatro familias y todas significan «esto todavía no está»: la afirmación
+ * sin respaldo —«[FALTA FUENTE]», que es la más frecuente con diferencia—, el
+ * dato que falta, lo que hay que confirmar y el pendiente con su explicación.
+ *
+ * Hasta aquí solo se resaltaba «[PENDIENTE]»; las demás salían en el Word como
+ * texto normal, del mismo color que la tesis, y se le colaban al tesista en
+ * medio de un párrafo. Una marca que no se ve no avisa de nada.
+ *
+ * Se admite guion, raya o dos puntos detrás, y nada detrás, que es como
+ * aparecen en el método. El texto de dentro no puede llevar corchetes.
  */
-const PENDIENTE_RE = /\[\s*PENDIENTE\s*(?:[—–:-]\s*)?([^\]]*)\]/gi;
+const MARCA_RE =
+  /\[\s*(FALTA\s+FUENTE|FALTAN\s+FUENTES|SIN\s+FUENTE|DATO\s+PENDIENTE|PENDIENTE|POR\s+CONFIRMAR|VERIFICAR)\s*(?:[—–:-]\s*)?([^\]]*)\]/gi;
+
+/** ¿Esta marca lleva una explicación que estorba dentro del párrafo? */
+const vaAlMargen = (rotulo) => /PENDIENTE|CONFIRMAR|VERIFICAR/i.test(rotulo);
 
 /** Quién firma los comentarios del margen. */
 const AUTOR_DE_COMENTARIOS = { author: 'Acosta | IA & Research', initials: 'AR' };
@@ -117,12 +129,17 @@ const AUTOR_DE_COMENTARIOS = { author: 'Acosta | IA & Research', initials: 'AR' 
  * un pendiente que se puede pasar por alto no sirve de nada: la marca corta se
  * ve siempre, y la explicación queda al lado.
  */
-function comoComentario(detalle, contexto) {
+function comoComentario(rotulo, detalle, contexto) {
   const comentarios = contexto?.comentarios;
+  const marca = `[${rotulo.replace(/\s+/g, ' ').toUpperCase()}]`;
   const texto = String(detalle ?? '').trim();
   // Sin registro donde anotarlo —una llamada suelta, o las pruebas de una
   // función sola— el pendiente se queda como estaba: texto y nada más.
-  if (!comentarios) return [new TextRun({ text: `[PENDIENTE${texto ? ` — ${texto}` : ''}]`, highlight: 'yellow' })];
+  if (!comentarios) {
+    return [
+      new TextRun({ text: texto ? `${marca.slice(0, -1)} — ${texto}]` : marca, highlight: 'yellow' }),
+    ];
+  }
 
   const id = comentarios.length;
   comentarios.push({
@@ -134,22 +151,34 @@ function comoComentario(detalle, contexto) {
 
   return [
     new CommentRangeStart(id),
-    new TextRun({ text: '[PENDIENTE]', highlight: 'yellow' }),
+    new TextRun({ text: marca, highlight: 'yellow' }),
     new CommentRangeEnd(id),
     new TextRun({ children: [new CommentReference(id)] }),
   ];
 }
 
-/** El texto con énfasis y con los pendientes sacados al margen. */
+/**
+ * El texto con énfasis y con las marcas del método resaltadas.
+ *
+ * Las que llevan explicación se van al margen como comentario de Word y dejan
+ * la marca corta en el párrafo; las que ya son cortas —«[FALTA FUENTE]»— se
+ * quedan donde están, en amarillo. En los dos casos se ven a simple vista, que
+ * es de lo que se trata: el tesista no puede entregar con una de estas dentro
+ * sin haberla visto.
+ */
 function conEnfasisYPendientes(texto, contexto) {
-  if (!PENDIENTE_RE.test(texto)) return conEnfasis(texto);
-  PENDIENTE_RE.lastIndex = 0;
+  if (!MARCA_RE.test(texto)) return conEnfasis(texto);
+  MARCA_RE.lastIndex = 0;
 
   const hijos = [];
   let desde = 0;
-  for (const m of texto.matchAll(PENDIENTE_RE)) {
+  for (const m of texto.matchAll(MARCA_RE)) {
     if (m.index > desde) hijos.push(...conEnfasis(texto.slice(desde, m.index)));
-    hijos.push(...comoComentario(m[1], contexto));
+    hijos.push(
+      ...(vaAlMargen(m[1])
+        ? comoComentario(m[1], m[2], contexto)
+        : [new TextRun({ text: m[0], highlight: 'yellow' })]),
+    );
     desde = m.index + m[0].length;
   }
   if (desde < texto.length) hijos.push(...conEnfasis(texto.slice(desde)));
@@ -676,6 +705,16 @@ function comoParrafos(texto, contexto = {}) {
               : nivel === 2
                 ? HeadingLevel.HEADING_3
                 : HeadingLevel.HEADING_4,
+          /**
+           * Un subtítulo no lleva sangría de primera línea. Nunca.
+           *
+           * Se decía a medias: como el párrafo la lleva y el título no la
+           * quitaba, un «Introducción» heredado de la plantilla salía movido a
+           * la derecha y el párrafo de debajo pegado al margen, justo al revés
+           * de como se lee una tesis. Se dice aquí y deja de depender de qué
+           * traiga la hoja de estilos que subió.
+           */
+          indent: { firstLine: 0 },
           // Con plantilla, el espaciado del título es el de su estilo.
           ...(contexto.plantilla ? {} : { spacing: { before: 240, after: 120 } }),
         }),
@@ -1081,6 +1120,8 @@ async function armar({
         text: tituloDelCapitulo(capitulo.titulo, { sinCapitulo: numeraCapitulos }),
         heading: HeadingLevel.HEADING_1,
         pageBreakBefore: true,
+        // Como los subtítulos: el título de un capítulo no se sangra.
+        indent: { firstLine: 0 },
         ...espacioDeTitulo,
       }),
       ...comoParrafos(capitulo.texto, contexto),
@@ -1094,6 +1135,7 @@ async function armar({
         text: lista.titulo,
         heading: HeadingLevel.HEADING_1,
         pageBreakBefore: true,
+        indent: { firstLine: 0 },
         ...espacioDeTitulo,
       }),
       ...lista.parrafos,
@@ -1298,6 +1340,18 @@ function tituloDelCapitulo(titulo, { sinCapitulo = false } = {}) {
   // «Capítulo I · Problema y objetivos» → «Problema y objetivos», cuando el
   // número del capítulo ya lo pone la numeración de la plantilla.
   if (sinCapitulo) limpio = limpio.replace(/^cap[ií]tulo\s+[IVXLCDM\d]+\s*[·:.—–-]\s*/i, '').trim();
+
+  /**
+   * Y el punto medio del catálogo, dos puntos.
+   *
+   * «Capítulo I · Problema y objetivos» es como se nombra una fase en nuestro
+   * panel; ninguna tesis titula así un capítulo. La misma línea con dos puntos
+   * ya se lee como el índice de cualquier reglamento. Solo el separador que va
+   * detrás del número: un «·» dentro del nombre del capítulo se queda, porque
+   * ese lo escribió alguien.
+   */
+  limpio = limpio.replace(/^(cap[ií]tulo\s+[IVXLCDM\d]+)\s*·\s*/i, '$1: ');
+
   return limpio || original;
 }
 

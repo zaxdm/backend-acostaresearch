@@ -3948,9 +3948,22 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
       }
 
       if (!resultado) {
+        /**
+         * Y se le dice POR QUÉ, o vuelve a llamar.
+         *
+         * Con el mensaje corto de antes, un asistente al que su skill le manda
+         * entregar el Word al cerrar la Fase 1 pidió el enlace seis veces
+         * seguidas: leía «no hay nada guardado», sabía que acababa de guardar
+         * 400 palabras, y lo intentaba otra vez.
+         */
         return texto(
-          'Todavía no hay ningún capítulo guardado, así que no hay Word que descargar. ' +
-            'Guarda primero lo redactado con "guardar_capitulo".',
+          `${SU_OBRA.toUpperCase()} NO TIENE NINGÚN CAPÍTULO TODAVÍA, así que no hay Word que ` +
+            'descargar, y volver a llamar a esta herramienta dará lo mismo: NO INSISTAS. ' +
+            'La propuesta de tema, el cuestionario y la bitácora del trabajo de campo se ' +
+            'guardan en su proyecto, pero no son capítulos del documento: el Word empieza en ' +
+            'el Capítulo I. Díselo así de claro, enséñale en el chat lo que habéis trabajado, ' +
+            'y NO le armes tú un documento. Cuando guardes un capítulo con "guardar_capitulo", ' +
+            'el Word existe.',
         );
       }
 

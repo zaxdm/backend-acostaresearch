@@ -770,32 +770,20 @@ async function armarWord(userId, productCode) {
     return escritos;
   };
 
-  let capitulos = await conSuTexto(enOrden);
+  const capitulos = await conSuTexto(enOrden);
 
   /**
-   * Y si aún no hay ningún capítulo, lo que sí se haya trabajado.
+   * Sin capítulos no hay documento, aunque haya cosas trabajadas.
    *
-   * La propuesta de tema no es un capítulo de la tesis, pero es lo que el
-   * tesista lleva al asesor: es LA entrega de la Fase 1. Dejarla fuera del Word
-   * sin más lo mandaba a un callejón —el asistente pedía el enlace una y otra
-   * vez y el servidor contestaba que no hay nada que descargar, con 400
-   * palabras guardadas—, así que mientras no exista el Capítulo I el documento
-   * es lo que hay: su propuesta, su cuestionario o su bitácora.
+   * Se probó lo contrario —mientras no existiera el Capítulo I, armar el Word
+   * con lo que hubiera— y salía una tesis cuyo primer título era «Tema y
+   * delimitación»: el nombre de una fase del método encabezando un documento
+   * académico, y en el índice. Los nombres de las fases sirven para hablar con
+   * el tesista, no para titular su tesis.
    *
-   * En cuanto guarde un capítulo de verdad, estas desaparecen del Word y la
-   * tesis empieza por el Capítulo I, que es lo que se busca.
+   * Lo que produce la Fase 1 se le enseña en el chat y queda guardado en su
+   * proyecto; el Word empieza cuando empieza la tesis.
    */
-  if (capitulos.length === 0) {
-    capitulos = await conSuTexto(
-      esquemaDeCapitulos.capitulosDelDocumento({
-        esquema: proyecto.esquema,
-        catalogo,
-        conTexto,
-        incluirFasesDeTrabajo: true,
-      }).capitulos,
-    );
-  }
-
   if (capitulos.length === 0) return null;
 
   const figuras = await figurasDeLaSesion(proyecto.id, capitulos);
@@ -2077,7 +2065,20 @@ async function enlaceDelWord(userId, productCode) {
   const proyecto = await projectRepository.buscar(userId, productCode);
   if (!proyecto) return null;
 
-  const palabras = (proyecto.stages ?? []).reduce((suma, e) => suma + (e.palabras ?? 0), 0);
+  /**
+   * Y palabras DE LAS QUE SE IMPRIMEN.
+   *
+   * Contando todas, a quien solo había cerrado la Fase 1 se le daba un enlace
+   * que al abrirlo decía «todavía no hay ningún capítulo escrito»: el Word no
+   * lleva la propuesta de tema ni el cuestionario (ver `armarWord`). Mejor
+   * decírselo en el chat que después del clic.
+   */
+  const nombradas = new Set((proyecto.esquema?.capitulos ?? []).flatMap((c) => c.de ?? []));
+  const seImprime = (code) => !esquemaDeCapitulos.FASES_DE_TRABAJO.has(code) || nombradas.has(code);
+
+  const palabras = (proyecto.stages ?? [])
+    .filter((e) => seImprime(e.skillCode))
+    .reduce((suma, e) => suma + (e.palabras ?? 0), 0);
   if (palabras === 0) return null;
 
   return { ...descarga.enlace({ userId, productCode }), norma: normaDelProyecto(proyecto) };

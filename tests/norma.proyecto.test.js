@@ -220,19 +220,24 @@ test('el enlace del Word existe solo si hay algo escrito', async () => {
   assert.equal(await projectService.enlaceDelWord('u1', 'METODO_9_SKILLS'), null);
 });
 
-test('con solo la propuesta de tema, el Word es la propuesta y el enlace existe', async () => {
-  // Mientras no haya Capítulo I, lo que hay es lo que se descarga: la Fase 1
-  // entrega la propuesta para el asesor, y quedarse sin ella dejaba al tesista
-  // pidiendo el enlace una y otra vez con 400 palabras ya guardadas.
+test('con solo la propuesta de tema no hay Word, y no se da un enlace que falle', async () => {
+  // El nombre de una fase del método no puede encabezar el documento. Antes de
+  // esto, al tesista que cerraba la Fase 1 se le armaba una tesis cuyo primer
+  // título era «Tema y delimitación», índice incluido.
   empezar({ stages: [{ skillCode: 'tema-y-delimitacion', estado: 'LISTO', palabras: 320 }] });
   estado.catalogo = [
     { code: 'tema-y-delimitacion', displayName: '1 · Tema y delimitación' },
     ...CATALOGO_POR_DEFECTO,
   ];
 
+  assert.equal(await projectService.armarWord('u1', 'METODO_9_SKILLS'), null);
+  assert.equal(await projectService.enlaceDelWord('u1', 'METODO_9_SKILLS'), null);
+
+  // Salvo que el reglamento de su facultad la pida como capítulo.
+  estado.proyecto.esquema = {
+    capitulos: [{ titulo: 'CAPÍTULO PRELIMINAR', de: ['tema-y-delimitacion'] }],
+  };
   assert.ok(await projectService.enlaceDelWord('u1', 'METODO_9_SKILLS'));
-  const word = await projectService.armarWord('u1', 'METODO_9_SKILLS');
-  assert.ok(xmlDe(word.buffer).includes('Tema y delimitación'));
 });
 
 test('en cuanto hay un capítulo de verdad, la propuesta sale del Word', async () => {

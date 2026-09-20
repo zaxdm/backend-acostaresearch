@@ -139,12 +139,17 @@ function altoDeTabla(tabla, metricas, ancho) {
 const nivelDe = (bloque) => NIVEL_DE_TITULO[primero(bloque, /^<w:p\b[^>]*>\s*<w:pPr>\s*<w:pStyle w:val="([^"]+)"/)] ?? 0;
 
 /**
- * El rótulo de una tabla o de una figura: «Tabla 1», «Figura 2a».
+ * El rótulo de una tabla o de una figura: «Tabla 1», «Figura 2a», «Tabla 1.1».
+ *
+ * La numeración por capítulo es una de las dos que ofrece el método, y sin el
+ * punto no se reconocía: el tesista que elegía «Tabla 1.1» se quedaba sin
+ * índice de tablas y sin los números de página, porque sus rótulos no eran
+ * rótulos para nadie.
  *
  * Es el párrafo entero, no una parte: «la Tabla 1 muestra…» es texto del
  * capítulo y no puede acabar en el índice de tablas.
  */
-const ROTULO_RE = /^(?:Tabla|Figura)\s+\d+[A-Za-z]?$/i;
+const ROTULO_RE = /^(?:Tabla|Figura)\s+\d+(?:\.\d+)*[A-Za-z]?$/i;
 
 function entrada(titulo, ancho, inicioDelCampo = '') {
   return (

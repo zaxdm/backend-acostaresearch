@@ -136,3 +136,12 @@ test('«[DATO PENDIENTE: …]» deja su explicación al margen y su marca amaril
   assert.match(comentarios, /Pendiente: observaciones de campo/, 'la explicación, al margen');
   assert.ok(!cuerpo.includes('observaciones de campo'), 'y no dentro del párrafo');
 });
+
+test('«[A DEFINIR EN CAP III]» también se ve: es lo que la matriz deja abierto', async () => {
+  // La matriz de consistencia sale con estas en la columna de metodología,
+  // porque el tipo, el diseño y el análisis se deciden en el Capítulo III.
+  const { cuerpo } = await wordDe('Tipo: [A DEFINIR EN CAP III]. Nivel: descriptivo.');
+
+  const marca = cuerpo.match(/<w:r>(?:(?!<\/w:r>)[\s\S])*A DEFINIR(?:(?!<\/w:r>)[\s\S])*<\/w:r>/)[0];
+  assert.match(marca, /<w:highlight w:val="yellow"\/>/);
+});

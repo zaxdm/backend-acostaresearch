@@ -225,3 +225,28 @@ test('las hojas de los dos índices corren la numeración del cuerpo', async () 
   const conListas = await numeroDelCapitulo(CON_TABLA_Y_FIGURA);
   assert.equal(conListas, sinNada + 2, `sin listas: ${sinNada}, con listas: ${conListas}`);
 });
+
+test('la numeración por capítulo también entra en los índices', async () => {
+  // «Tabla 1.1» es una de las dos numeraciones que ofrece el método, y sin el
+  // punto no se reconocía como rótulo: quien la elegía se quedaba sin índice de
+  // tablas y sin números de página, sin que nada se lo dijera.
+  const { cuerpo } = await wordDe([
+    {
+      titulo: 'Capítulo I',
+      texto: [
+        '**Tabla 1.1**',
+        '*Matriz de consistencia*',
+        '| Problema | Objetivo |',
+        '|---|---|',
+        '| PG | OG |',
+        '',
+        '**Figura 1.2**',
+        '*Modelo del estudio*',
+        '[Insertar aquí la Figura 1.2: modelo.png]',
+      ].join('\n'),
+    },
+  ]);
+
+  assert.deepEqual(entradasDe(cuerpo, 'Índice de tablas'), ['Tabla 1.1. Matriz de consistencia']);
+  assert.deepEqual(entradasDe(cuerpo, 'Índice de figuras'), ['Figura 1.2. Modelo del estudio']);
+});

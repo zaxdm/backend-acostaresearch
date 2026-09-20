@@ -105,7 +105,7 @@ function conCampo(tramos, clave, zotero) {
  * aparecen en el método. El texto de dentro no puede llevar corchetes.
  */
 const MARCA_RE =
-  /\[\s*(FALTA\s+FUENTE|FALTAN\s+FUENTES|SIN\s+FUENTE|DATO\s+PENDIENTE|PENDIENTE|POR\s+CONFIRMAR|VERIFICAR)\s*(?:[—–:-]\s*)?([^\]]*)\]/gi;
+  /\[\s*(FALTA\s+FUENTE|FALTAN\s+FUENTES|SIN\s+FUENTE|DATO\s+PENDIENTE|PENDIENTE|POR\s+CONFIRMAR|VERIFICAR|A\s+DEFINIR|POR\s+DEFINIR)\s*(?:[—–:-]\s*)?([^\]]*)\]/gi;
 
 /** ¿Esta marca lleva una explicación que estorba dentro del párrafo? */
 const vaAlMargen = (rotulo) => /PENDIENTE|CONFIRMAR|VERIFICAR/i.test(rotulo);
@@ -488,7 +488,7 @@ function tablaApa({ antes, cabecera, filas, despues }, contexto) {
 // ── Figuras ────────────────────────────────────────────────────────────────
 
 /** «**Figura 2**», la primera línea del rótulo de una figura. */
-const FIGURA_RE = /^[*_]*\s*Figura\s+\d+[A-Za-z]?\s*[*_]*$/i;
+const FIGURA_RE = /^[*_]*\s*Figura\s+\d+(?:\.\d+)*[A-Za-z]?\s*[*_]*$/i;
 /**
  * El hueco de la imagen: «[Insertar aquí la Figura 2: grafico.png]», o la
  * imagen en Markdown, «![](figura2.png)», que es como la escribe el informe de

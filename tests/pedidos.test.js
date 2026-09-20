@@ -52,6 +52,7 @@ sustituir('../src/config/env', {
   APP_URL: 'https://acostaresearch.com',
   pedidosDir: CARPETA,
   PEDIDO_MAX_BYTES: 25 * 1024 * 1024,
+  BETA_REVISION_EMAILS: 'Zix@Gmail.com, otra@correo.com',
 });
 
 const estado = {
@@ -151,6 +152,7 @@ sustituir('../src/lib/prisma', {
     findMany: async ({ where }) =>
       [...estado.pedidos.values()]
         .filter((p) => (where?.asesorId ? p.asesorId === where.asesorId : true))
+        .filter((p) => (where?.email ? p.email === where.email : true))
         .filter((p) => (where?.estado?.not ? p.estado !== where.estado.not : true))
         .reverse()
         .map(conRelaciones),
@@ -209,6 +211,7 @@ sustituir('../src/lib/prisma', {
 sustituir('../src/lib/notify', { avisarAlAdmin: (aviso) => estado.avisos.push(aviso) });
 
 const puerta = require('../src/modules/convocatorias/convocatoria.service');
+const { enBeta } = require('../src/modules/pedidos/beta');
 const pedidoService = require('../src/modules/pedidos/pedido.service');
 const { pedidoQuerySchema } = require('../src/modules/pedidos/pedido.schema');
 
@@ -593,6 +596,63 @@ test('un pedido cancelado deja de existir para su código', async () => {
   const { pedido } = await conEncargo();
   await pedidoService.cambiar(pedido.id, { estado: 'CANCELADO' });
   await assert.rejects(() => pedidoService.seguimiento(pedido.codigo), /No encontramos/i);
+});
+
+// ── Desde su panel ─────────────────────────────────────────────────────────
+
+test('la lista de la prueba no distingue mayúsculas ni espacios', () => {
+  assert.equal(enBeta('zix@gmail.com'), true);
+  assert.equal(enBeta('  ZIX@GMAIL.COM  '), true);
+  assert.equal(enBeta('cualquiera@correo.com'), false);
+  assert.equal(enBeta(''), false);
+  assert.equal(enBeta(null), false);
+});
+
+test('desde su panel se manda sin enlace de convocatoria', async () => {
+  empezar();
+  const asesor = asesorEn(ID.uno);
+
+  const pedido = await pedidoService.crearDesdeSuPanel(
+    validar({ asesorId: asesor.id }),
+    DOCX,
+    'tesis.docx',
+  );
+  assert.equal(pedido.estado, 'ESPERANDO');
+  assert.equal(pedido.asesorId, asesor.id);
+});
+
+test('ve sus revisiones por su correo, y solo las suyas', async () => {
+  empezar();
+  const asesor = asesorEn(ID.uno);
+  const mia = await pedidoService.crearDesdeSuPanel(
+    validar({ asesorId: asesor.id, email: 'zix@gmail.com' }),
+    DOCX,
+    'tesis.docx',
+  );
+  await pedidoService.crearDesdeSuPanel(
+    validar({ asesorId: asesor.id, email: 'otro@correo.com' }),
+    DOCX,
+    'otra.docx',
+  );
+
+  const suyas = await pedidoService.misPedidos('ZIX@GMAIL.COM');
+  assert.equal(suyas.length, 1, 'el correo se compara en minúsculas');
+  assert.equal(suyas[0].codigo, mia.codigo);
+  // Y trae lo del seguimiento: a quién espera, sin las notas de la casa.
+  assert.equal(suyas[0].asesor.nombre, 'Rosa Quispe Mamani');
+});
+
+test('un pedido cancelado desaparece también de su panel', async () => {
+  empezar();
+  const asesor = asesorEn(ID.uno);
+  const pedido = await pedidoService.crearDesdeSuPanel(
+    validar({ asesorId: asesor.id, email: 'zix@gmail.com' }),
+    DOCX,
+    'tesis.docx',
+  );
+  await pedidoService.cambiar(pedido.id, { estado: 'CANCELADO' });
+
+  assert.equal((await pedidoService.misPedidos('zix@gmail.com')).length, 0);
 });
 
 // ── El formulario ──────────────────────────────────────────────────────────

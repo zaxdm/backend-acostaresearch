@@ -9,7 +9,9 @@ const { ok, created } = require('../../shared/http/apiResponse');
 const { pedidoLimiter } = require('../../middlewares/rateLimit');
 const { ROLES } = require('../../config/constants');
 const env = require('../../config/env');
-const { ValidationError } = require('../../shared/errors/AppError');
+const { ValidationError, NotFoundError } = require('../../shared/errors/AppError');
+const { enBeta } = require('./beta');
+const { catalogos: catalogosDelPedido } = require('./pedido.catalogo');
 const {
   pedidoQuerySchema,
   codigoParamSchema,
@@ -179,6 +181,72 @@ router.get(
       await pedidoService.documentoParaAsesor(req.params.token, req.params.id),
     ),
   ),
+);
+
+// ── Desde su panel, con su cuenta ──────────────────────────────────────────
+//
+// Van ANTES de `/:codigo`, que es un comodín de un segmento y se los tragaría.
+// Llevan sesión pero no rol de administrador: es el comprador mirando lo suyo.
+//
+// Y llevan `enBeta`, que es lo que mantiene esto invisible para los demás
+// mientras se prueba. Ver `modules/pedidos/beta`.
+
+/**
+ * Si lo ve y, si lo ve, sus revisiones.
+ *
+ * Contesta 200 con `beta: false` a quien no está en la lista, en vez de 403: no
+ * es que no tenga permiso para algo, es que para él eso no existe. Su panel lee
+ * ese falso y no pinta nada.
+ */
+router.get(
+  '/mis-revisiones',
+  authenticate,
+  asyncHandler(async (req, res) => {
+    if (!enBeta(req.user.email)) return ok(res, { beta: false, pedidos: [], catalogos: null });
+    // Los catálogos viajan aquí y no se piden aparte: su panel no tiene enlace
+    // de convocatoria del que sacarlos, y sin ellos los desplegables del
+    // formulario saldrían vacíos.
+    return ok(res, {
+      beta: true,
+      pedidos: await pedidoService.misPedidos(req.user.email),
+      catalogos: catalogosDelPedido(),
+    });
+  }),
+);
+
+/** El directorio, sin enlace de convocatoria: ya entró con su cuenta. */
+router.get(
+  '/mis-revisiones/asesores',
+  authenticate,
+  asyncHandler(async (req, res) => {
+    if (!enBeta(req.user.email)) throw new NotFoundError('No encontramos esa página.');
+    return ok(res, { asesores: await pedidoService.directorioDelPanel() });
+  }),
+);
+
+router.post(
+  '/mis-revisiones',
+  authenticate,
+  pedidoLimiter,
+  documento,
+  asyncHandler(async (req, res) => {
+    if (!enBeta(req.user.email)) throw new NotFoundError('No encontramos esa página.');
+
+    const datos = pedidoQuerySchema.safeParse(req.query);
+    if (!datos.success) {
+      throw new ValidationError(datos.error.issues[0]?.message ?? 'Revisa los datos del formulario.');
+    }
+
+    // El correo es el de su cuenta y no el que venga en la petición: es la
+    // llave con la que después encuentra lo suyo, y mandar en nombre de otro
+    // no puede depender de lo que escriba el navegador.
+    const pedido = await pedidoService.crearDesdeSuPanel(
+      { ...datos.data, email: req.user.email },
+      req.body,
+      nombreSubido(req),
+    );
+    return created(res, { codigo: pedido.codigo }, 'Se lo mandamos a tu asesor.');
+  }),
 );
 
 // ── El seguimiento del tesista ─────────────────────────────────────────────

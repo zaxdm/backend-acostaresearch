@@ -170,6 +170,10 @@ const schema = z.object({
   // Techo del documento. Una tesis con figuras incrustadas ronda los 10 MB; 25
   // deja margen sin abrir la puerta a que alguien use esto de alojamiento.
   PEDIDO_MAX_BYTES: z.coerce.number().int().positive().default(25 * 1024 * 1024),
+  // Quién ve la revisión con asesor dentro de su panel. Una lista de correos
+  // separados por coma. Vacía = no la ve nadie, que es lo que tiene que pasar
+  // donde no se haya encendido a propósito. Ver `modules/pedidos/beta`.
+  BETA_REVISION_EMAILS: z.string().default(''),
 
   // ── Guía de instalación ─────────────────────────────────────────────────
   // Dónde está el PDF que se le enlaza al comprador, y con qué dirección se le

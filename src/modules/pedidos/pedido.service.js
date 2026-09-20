@@ -392,6 +392,22 @@ async function crear(slug, datos, archivo, nombreArchivo) {
     throw new ConflictError('Ahora mismo no estamos recibiendo trabajos por este enlace.');
   }
 
+  return registrar(datos, archivo, nombreArchivo);
+}
+
+/**
+ * Lo mismo, pero para quien ya tiene cuenta y está en la prueba.
+ *
+ * Sin enlace de convocatoria: esa puerta existe para el que llega de fuera y
+ * hay que dejar pasar o no. Quien entró con su cuenta y está en la lista ya
+ * pasó esa puerta el día que compró.
+ */
+async function crearDesdeSuPanel(datos, archivo, nombreArchivo) {
+  return registrar(datos, archivo, nombreArchivo);
+}
+
+/** El registro en sí, que es igual venga de donde venga. */
+async function registrar(datos, archivo, nombreArchivo) {
   const asesor = await asesorElegible(datos.asesorId);
   comprobarDocx(archivo, nombreArchivo);
 
@@ -446,6 +462,38 @@ async function crear(slug, datos, archivo, nombreArchivo) {
   });
 
   return salida(pedido);
+}
+
+/**
+ * El directorio para quien entra con su cuenta.
+ *
+ * Sin slug, por lo mismo que `crearDesdeSuPanel`: ya pasó la puerta.
+ */
+async function directorioDelPanel() {
+  const filas = await prisma.asesor.findMany({
+    where: { estado: 'APROBADO', visible: true },
+    orderBy: [{ anosExperiencia: 'desc' }, { createdAt: 'asc' }],
+    select: asesorPublicoSelect,
+  });
+
+  const estadisticas = await estadisticasDe(filas.map((fila) => fila.id));
+  return filas.map((fila) => asesorPublico(fila, estadisticas.get(fila.id)));
+}
+
+/**
+ * Sus revisiones, las que mandó con el correo de su cuenta.
+ *
+ * Es lo que le ahorra el código: quien entró a su panel no tiene por qué
+ * acordarse de ocho letras para ver en qué va lo suyo. El código sigue
+ * existiendo, para quien mandó sin cuenta.
+ */
+async function misPedidos(email) {
+  const filas = await prisma.pedido.findMany({
+    where: { email: String(email).trim().toLowerCase(), estado: { not: 'CANCELADO' } },
+    orderBy: { createdAt: 'desc' },
+    select: pedidoSelect,
+  });
+  return filas.map(salidaSeguimiento);
 }
 
 /** El estado de un pedido, por su código. Sin sesión: el código es la llave. */
@@ -706,7 +754,10 @@ module.exports = {
   convocatoriaPublica,
   directorio,
   directorioParaPedido,
+  directorioDelPanel,
+  misPedidos,
   crear,
+  crearDesdeSuPanel,
   seguimiento,
   reasignar,
   resenar,

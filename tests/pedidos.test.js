@@ -48,12 +48,22 @@ const ID = {
 
 const CARPETA = fs.mkdtempSync(path.join(os.tmpdir(), 'pedidos-'));
 
-sustituir('../src/config/env', {
+/**
+ * El entorno de las pruebas.
+ *
+ * Se guarda la referencia para poder mover `AVISOS_REVISION` a mitad de una
+ * prueba: el interruptor se lee cada vez que se avisa, no al cargar, y eso es
+ * justo lo que hay que comprobar.
+ */
+const ENTORNO = {
   APP_URL: 'https://acostaresearch.com',
   pedidosDir: CARPETA,
   PEDIDO_MAX_BYTES: 25 * 1024 * 1024,
   BETA_REVISION_EMAILS: 'Zix@Gmail.com, otra@correo.com',
-});
+  AVISOS_REVISION: true,
+};
+
+sustituir('../src/config/env', ENTORNO);
 
 const estado = {
   convocatorias: new Map(),
@@ -210,6 +220,15 @@ sustituir('../src/lib/prisma', {
 
 sustituir('../src/lib/notify', { avisarAlAdmin: (aviso) => estado.avisos.push(aviso) });
 
+// El log se calla: lo monta pino con el entorno de verdad, y aquí el entorno
+// está sustituido por el de arriba, que solo trae lo que estas pruebas usan.
+sustituir('../src/config/logger', {
+  info: () => {},
+  warn: () => {},
+  error: () => {},
+  debug: () => {},
+});
+
 const puerta = require('../src/modules/convocatorias/convocatoria.service');
 const { enBeta } = require('../src/modules/pedidos/beta');
 const pedidoService = require('../src/modules/pedidos/pedido.service');
@@ -221,6 +240,7 @@ const DOCX = Buffer.concat([Buffer.from('PK\x03\x04'), Buffer.alloc(64, 7)]);
 const DOC_ANTIGUO = Buffer.concat([Buffer.from('d0cf11e0', 'hex'), Buffer.alloc(64, 7)]);
 
 function empezar() {
+  ENTORNO.AVISOS_REVISION = true;
   estado.convocatorias.clear();
   estado.pedidos.clear();
   estado.asesores.clear();
@@ -580,6 +600,26 @@ test('el aviso al móvil no lleva el correo ni el nombre del tesista', async () 
   assert.ok(!aviso.includes('luis@correo.com'), 'sin el correo');
   assert.ok(!aviso.includes('Ramírez'), 'sin el nombre del tesista');
   assert.ok(aviso.includes(pedido.codigo), 'con el código');
+});
+
+test('con los avisos del piloto apagados no suena el móvil', async () => {
+  empezar();
+  ENTORNO.AVISOS_REVISION = false;
+
+  const { slug } = await abrirPuerta();
+  const asesor = asesorEn(ID.uno);
+  const pedido = await pedidoService.crear(
+    slug,
+    validar({ asesorId: asesor.id }),
+    DOCX,
+    'tesis.docx',
+  );
+  await pedidoService.aceptar(asesor.token, pedido.id);
+  await pedidoService.entregar(asesor.token, pedido.id, 'https://docs.google.com/abc');
+
+  assert.equal(estado.avisos.length, 0, 'ni el encargo ni la entrega avisan');
+  // Y el pedido existe igual: callar el aviso no puede cambiar lo que pasa.
+  assert.equal((await pedidoService.seguimiento(pedido.codigo)).estado, 'ENTREGADO');
 });
 
 test('el seguimiento sí dice a quién está esperando, pero no las notas internas', async () => {

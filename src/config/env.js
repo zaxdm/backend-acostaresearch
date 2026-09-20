@@ -174,6 +174,11 @@ const schema = z.object({
   // separados por coma. Vacía = no la ve nadie, que es lo que tiene que pasar
   // donde no se haya encendido a propósito. Ver `modules/pedidos/beta`.
   BETA_REVISION_EMAILS: z.string().default(''),
+  // ¿Avisan al móvil las cosas del piloto de revisión? Apagado mientras se
+  // prueba: las pruebas de uno mismo no son noticias, y un tópico lleno de
+  // avisos que no hay que atender enseña a no mirarlos. Se enciende poniendo
+  // `true` aquí y reiniciando, sin desplegar nada.
+  AVISOS_REVISION: booleanish.default('false'),
 
   // ── Guía de instalación ─────────────────────────────────────────────────
   // Dónde está el PDF que se le enlaza al comprador, y con qué dirección se le

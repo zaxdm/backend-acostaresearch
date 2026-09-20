@@ -4,7 +4,7 @@ const crypto = require('node:crypto');
 
 const env = require('../../config/env');
 const prisma = require('../../lib/prisma');
-const { avisarAlAdmin } = require('../../lib/notify');
+const { avisarDelPiloto } = require('../pedidos/beta');
 const { NotFoundError, ConflictError } = require('../../shared/errors/AppError');
 const puerta = require('../convocatorias/convocatoria.service');
 const {
@@ -158,7 +158,7 @@ async function postular(slug, datos) {
   // servidor de avisos conteste. Y va sin correo ni documento, como el resto
   // de avisos: lo justo para decidir si merece la pena mirarlo ahora.
   const areasDichas = nombresDe(asesor.areas, AREAS).join(', ') || 'sin área';
-  avisarAlAdmin({
+  avisarDelPiloto({
     titulo: 'Nueva ficha de asesor',
     mensaje: `${asesor.nombre.split(/\s+/)[0]} · ${GRADOS[asesor.grado] ?? asesor.grado} · ${areasDichas}`,
     etiquetas: ['mortar_board'],

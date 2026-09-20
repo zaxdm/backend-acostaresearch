@@ -1,9 +1,11 @@
 'use strict';
 
 const env = require('../../config/env');
+const logger = require('../../config/logger');
+const { avisarAlAdmin } = require('../../lib/notify');
 
 /**
- * Quién ve lo que todavía no existe para los demás.
+ * Los interruptores del piloto: quién lo ve y si avisa.
  *
  * POR QUÉ UNA LISTA DE CORREOS
  * ----------------------------
@@ -44,4 +46,28 @@ function enBeta(email) {
   return correosDe(env.BETA_REVISION_EMAILS).includes(String(email).trim().toLowerCase());
 }
 
-module.exports = { correosDe, enBeta };
+/**
+ * Un aviso al móvil, pero solo si el piloto ya avisa.
+ *
+ * POR QUÉ ESTÁ APAGADO MIENTRAS SE PRUEBA
+ * ---------------------------------------
+ * Porque las pruebas de uno mismo no son noticias. Mientras se prueba, cada
+ * ficha y cada encargo los provoca quien está probando, y el tópico se llena de
+ * avisos que nadie tiene que atender: eso enseña a no mirarlos, y el día que
+ * llegue uno de verdad —un Yape esperando, un comprador atascado— se perderá
+ * entre el ruido. Lo que se protege aquí no es el teléfono, es que los avisos
+ * sigan significando algo.
+ *
+ * Callado no es perdido: queda en el log, que es donde se mira cuando alguien
+ * pregunta si algo llegó. Se enciende con `AVISOS_REVISION=true` en el .env y
+ * un reinicio; no hace falta desplegar.
+ */
+function avisarDelPiloto(aviso) {
+  if (!env.AVISOS_REVISION) {
+    logger.info({ aviso }, 'Aviso del piloto de revisión (silenciado)');
+    return;
+  }
+  avisarAlAdmin(aviso);
+}
+
+module.exports = { correosDe, enBeta, avisarDelPiloto };

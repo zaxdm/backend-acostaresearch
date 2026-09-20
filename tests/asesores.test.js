@@ -14,6 +14,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
+// Los avisos del piloto nacen apagados —ver `modules/pedidos/beta`— y aquí se
+// comprueba QUÉ lleva el aviso cuando sale. Que no salga se prueba en
+// `pedidos.test.js`, que es donde vive el interruptor.
+process.env.AVISOS_REVISION = 'true';
+
 const sustituir = (ruta, exports) => {
   const id = require.resolve(ruta);
   require.cache[id] = { id, filename: id, loaded: true, exports };

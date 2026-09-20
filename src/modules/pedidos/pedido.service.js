@@ -6,7 +6,7 @@ const path = require('node:path');
 
 const env = require('../../config/env');
 const prisma = require('../../lib/prisma');
-const { avisarAlAdmin } = require('../../lib/notify');
+const { avisarDelPiloto } = require('./beta');
 const {
   NotFoundError,
   ConflictError,
@@ -452,7 +452,7 @@ async function registrar(datos, archivo, nombreArchivo) {
 
   // Sin `await` y sin datos personales: lo justo para saber que el piloto se
   // está moviendo. Quien tiene que actuar es el asesor, no la casa.
-  avisarAlAdmin({
+  avisarDelPiloto({
     titulo: 'Encargo nuevo en el directorio',
     mensaje: `${nombreDe(CAPITULOS, pedido.capitulo)} · ${pedido.universidad} · esperando a ${
       asesor.nombre.split(/\s+/)[0]
@@ -681,7 +681,7 @@ async function entregar(token, pedidoId, enlaceObservaciones) {
     select: pedidoSelect,
   });
 
-  avisarAlAdmin({
+  avisarDelPiloto({
     titulo: 'Revisión entregada',
     mensaje: `${asesor.nombre.split(/\s+/)[0]} entregó el código ${guardado.codigo}`,
     etiquetas: ['white_check_mark'],

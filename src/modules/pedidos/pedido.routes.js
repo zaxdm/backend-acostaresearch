@@ -15,6 +15,12 @@ const {
   codigoParamSchema,
   slugParamSchema,
   idParamSchema,
+  tokenParamSchema,
+  entregaSchema,
+  rechazoSchema,
+  disponibilidadSchema,
+  reasignarSchema,
+  resenaSchema,
   pedidoPatchSchema,
 } = require('./pedido.schema');
 const { convocatoriaSchema, convocatoriaCambioSchema } = require('../asesores/asesor.schema');
@@ -23,9 +29,13 @@ const pedidoService = require('./pedido.service');
 const router = express.Router();
 
 /**
- * El Word va en crudo con su ficha en la query, como el PDF de las guías: es un
- * solo archivo y `multipart` añadiría una dependencia para obtener lo mismo.
+ * Tres puertas y ninguna con cuenta.
+ *
+ * El tesista entra por el enlace de la convocatoria y vuelve con su código. El
+ * asesor entra por su enlace privado. La casa, con sesión de administrador,
+ * solo para mirar y para parar algo que se torció.
  */
+
 const documento = express.raw({ type: () => true, limit: env.PEDIDO_MAX_BYTES });
 
 /** El nombre con el que se subió va en una cabecera: la query lleva la ficha. */
@@ -37,9 +47,17 @@ function nombreSubido(req) {
   }
 }
 
-// ── Público ────────────────────────────────────────────────────────────────
-// Sin sesión a propósito: el tesista llega desde un enlace de WhatsApp y no se
-// le va a pedir que se registre para dejar su capítulo.
+/** Baja un archivo de disco con su nombre, sin tragarse un 404 de verdad. */
+function enviarArchivo(res, next, { ruta, nombre }) {
+  res.attachment(nombre);
+  res.sendFile(ruta, (error) => {
+    if (error) next(error.status === 404 ? undefined : error);
+  });
+}
+
+// ── El tesista ─────────────────────────────────────────────────────────────
+// Sin sesión: llega desde un enlace de WhatsApp y no se le va a pedir que se
+// registre para elegir asesor y dejar su capítulo.
 
 router.get(
   '/convocatoria/publica',
@@ -53,6 +71,15 @@ router.get(
   validate({ params: slugParamSchema }),
   asyncHandler(async (req, res) =>
     ok(res, { convocatoria: await pedidoService.verConvocatoria(req.params.slug) }),
+  ),
+);
+
+/** El directorio: entre quiénes elige. Lo primero que ve al abrir el enlace. */
+router.get(
+  '/convocatoria/:slug/asesores',
+  validate({ params: slugParamSchema }),
+  asyncHandler(async (req, res) =>
+    ok(res, { asesores: await pedidoService.directorio(req.params.slug) }),
   ),
 );
 
@@ -73,17 +100,90 @@ router.post(
       req.body,
       nombreSubido(req),
     );
-    // Se le devuelve su código y nada más: el resto lo consulta en su
-    // seguimiento, que es donde va a volver a mirar.
     return created(
       res,
       { codigo: pedido.codigo },
-      'Recibimos tu trabajo. Guarda tu código para seguir cómo va.',
+      'Se lo mandamos a tu asesor. Guarda tu código para seguir cómo va.',
     );
   }),
 );
 
-/** El seguimiento. El código es la llave, como los enlaces que da el conector. */
+// ── El asesor, por su enlace privado ───────────────────────────────────────
+// Va antes que `/:codigo` para que «asesor» se lea como lo que es y no como un
+// código de pedido.
+
+router.get(
+  '/asesor/:token',
+  validate({ params: tokenParamSchema }),
+  asyncHandler(async (req, res) => ok(res, await pedidoService.panelDelAsesor(req.params.token))),
+);
+
+/** Apagarse cuando está lleno, sin que nadie tenga que rechazarlo. */
+router.patch(
+  '/asesor/:token',
+  validate({ params: tokenParamSchema, body: disponibilidadSchema }),
+  asyncHandler(async (req, res) => {
+    const panel = await pedidoService.cambiarDisponibilidad(req.params.token, req.body.visible);
+    const message = req.body.visible
+      ? 'Vuelves a salir en el directorio.'
+      : 'Ya no sales en el directorio. No te llegarán encargos nuevos.';
+    return ok(res, panel, { message });
+  }),
+);
+
+router.post(
+  '/asesor/:token/:id/aceptar',
+  validate({ params: tokenParamSchema.merge(idParamSchema) }),
+  asyncHandler(async (req, res) => {
+    const encargo = await pedidoService.aceptar(req.params.token, req.params.id);
+    return ok(res, { encargo }, { message: 'Aceptado. Ya puedes abrir el documento.' });
+  }),
+);
+
+router.post(
+  '/asesor/:token/:id/rechazar',
+  validate({ params: tokenParamSchema.merge(idParamSchema), body: rechazoSchema }),
+  asyncHandler(async (req, res) => {
+    const encargo = await pedidoService.rechazar(req.params.token, req.params.id, req.body.motivo);
+    return ok(res, { encargo }, { message: 'Rechazado. El tesista podrá elegir a otro.' });
+  }),
+);
+
+router.post(
+  '/asesor/:token/:id/entregar',
+  validate({ params: tokenParamSchema.merge(idParamSchema), body: entregaSchema }),
+  asyncHandler(async (req, res) => {
+    const encargo = await pedidoService.entregar(
+      req.params.token,
+      req.params.id,
+      req.body.enlaceObservaciones,
+    );
+    return ok(res, { encargo }, { message: 'Entregado. El tesista ya puede leer tus observaciones.' });
+  }),
+);
+
+/**
+ * El documento del encargo.
+ *
+ * El servicio comprueba que lo haya aceptado: si dependiera de que el botón no
+ * se dibuje, bastaría con adivinar la dirección para leer una tesis sin haberse
+ * comprometido a revisarla.
+ */
+router.get(
+  '/asesor/:token/:id/documento',
+  validate({ params: tokenParamSchema.merge(idParamSchema) }),
+  asyncHandler(async (req, res, next) =>
+    enviarArchivo(
+      res,
+      next,
+      await pedidoService.documentoParaAsesor(req.params.token, req.params.id),
+    ),
+  ),
+);
+
+// ── El seguimiento del tesista ─────────────────────────────────────────────
+// Debajo de todo lo anterior porque `/:codigo` es un comodín de un segmento.
+
 router.get(
   '/:codigo',
   validate({ params: codigoParamSchema }),
@@ -92,7 +192,37 @@ router.get(
   ),
 );
 
-// ── Administración ─────────────────────────────────────────────────────────
+/** Entre quiénes puede elegir si le dijeron que no. Sin el que lo rechazó. */
+router.get(
+  '/:codigo/asesores',
+  validate({ params: codigoParamSchema }),
+  asyncHandler(async (req, res) =>
+    ok(res, { asesores: await pedidoService.directorioParaPedido(req.params.codigo) }),
+  ),
+);
+
+/** Su asesor no pudo: elige otro sin volver a subir el documento. */
+router.post(
+  '/:codigo/asesor',
+  pedidoLimiter,
+  validate({ params: codigoParamSchema, body: reasignarSchema }),
+  asyncHandler(async (req, res) => {
+    const pedido = await pedidoService.reasignar(req.params.codigo, req.body.asesorId);
+    return ok(res, { pedido }, { message: 'Listo, se lo mandamos a tu nuevo asesor.' });
+  }),
+);
+
+router.post(
+  '/:codigo/resena',
+  pedidoLimiter,
+  validate({ params: codigoParamSchema, body: resenaSchema }),
+  asyncHandler(async (req, res) => {
+    const pedido = await pedidoService.resenar(req.params.codigo, req.body);
+    return created(res, { pedido }, 'Gracias. Tu opinión ayuda al siguiente tesista a elegir.');
+  }),
+);
+
+// ── La casa ────────────────────────────────────────────────────────────────
 router.use(authenticate, authorize(ROLES.ADMIN));
 
 router.get(
@@ -131,14 +261,9 @@ router.get(
 router.get(
   '/admin/:id/documento',
   validate({ params: idParamSchema }),
-  asyncHandler(async (req, res, next) => {
-    const { ruta, nombre } = await pedidoService.paraDescargar(req.params.id);
-    res.attachment(nombre);
-    res.sendFile(ruta, (error) => {
-      // Ficha sin archivo en disco: que caiga en el 404 normal y quede en el log.
-      if (error) next(error.status === 404 ? undefined : error);
-    });
-  }),
+  asyncHandler(async (req, res, next) =>
+    enviarArchivo(res, next, await pedidoService.paraDescargar(req.params.id)),
+  ),
 );
 
 router.patch(

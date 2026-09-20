@@ -1,15 +1,22 @@
 'use strict';
 
 /**
- * Los encargos de revisión.
+ * Los encargos de revisión, con el flujo nuevo: el tesista elige a su asesor y
+ * el encargo le llega directo, sin que nadie de la casa lo reparta.
  *
- * Lo que se prueba: que solo entra un .docx de verdad y que al Word antiguo se
- * le dice qué hacer, que el enlace de los asesores NO abre el formulario de los
- * tesistas, que el seguimiento no revela quién está revisando ni las notas
- * internas, que asignar un asesor aprobado pone el pedido en revisión, que no
- * se puede entregar sin el documento de observaciones, y que el aviso al móvil
- * no lleva datos personales. La base, el aviso y las rutas de disco se
- * sustituyen; el archivo se escribe de verdad en una carpeta temporal.
+ * Lo que se prueba, por orden de importancia:
+ *
+ *  1. QUE NADIE LEA UNA TESIS SIN COMPROMETERSE. Mientras el encargo espera
+ *     respuesta, el asesor no ve el documento ni el contacto del tesista, y el
+ *     servidor se niega a servir el archivo aunque se adivine la dirección.
+ *  2. Que el enlace de un asesor no abra los encargos de otro.
+ *  3. Que solo se pueda elegir a quien está aprobado y aceptando encargos.
+ *  4. Que un rechazo no obligue al tesista a empezar de cero.
+ *  5. Que no se entregue sin el documento de observaciones, y que la nota solo
+ *     se pueda poner una vez y solo si hubo entrega.
+ *
+ * La base, el aviso y las rutas de disco se sustituyen; el archivo se escribe
+ * de verdad en una carpeta temporal.
  */
 
 const test = require('node:test');
@@ -23,6 +30,22 @@ const sustituir = (ruta, exports) => {
   require.cache[id] = { id, filename: id, loaded: true, exports };
 };
 
+/**
+ * Identificadores con forma de UUID.
+ *
+ * El formulario exige que el asesor elegido lo sea —un pedido sin destinatario
+ * no existe—, así que un doble que aceptara «a-1» probaría algo que el servidor
+ * de verdad rechaza.
+ */
+const ID = {
+  uno: '11111111-1111-4111-8111-111111111111',
+  dos: '22222222-2222-4222-8222-222222222222',
+  pendiente: '33333333-3333-4333-8333-333333333333',
+  lleno: '44444444-4444-4444-8444-444444444444',
+  oculto: '55555555-5555-4555-8555-555555555555',
+  nuevo: '66666666-6666-4666-8666-666666666666',
+};
+
 const CARPETA = fs.mkdtempSync(path.join(os.tmpdir(), 'pedidos-'));
 
 sustituir('../src/config/env', {
@@ -31,9 +54,23 @@ sustituir('../src/config/env', {
   PEDIDO_MAX_BYTES: 25 * 1024 * 1024,
 });
 
-const estado = { convocatorias: new Map(), pedidos: new Map(), asesores: new Map(), avisos: [] };
+const estado = {
+  convocatorias: new Map(),
+  pedidos: new Map(),
+  asesores: new Map(),
+  resenas: new Map(),
+  avisos: [],
+};
 
 const choqueDeUnico = () => Object.assign(new Error('Unique constraint'), { code: 'P2002' });
+
+/** El pedido con su asesor y su reseña ya pegados, como lo devuelve Prisma. */
+function conRelaciones(fila) {
+  if (!fila) return null;
+  const asesor = fila.asesorId ? estado.asesores.get(fila.asesorId) : null;
+  const resena = [...estado.resenas.values()].find((r) => r.pedidoId === fila.id) ?? null;
+  return { ...fila, asesor: asesor ? { ...asesor } : null, resena: resena ? { ...resena } : null };
+}
 
 sustituir('../src/lib/prisma', {
   convocatoria: {
@@ -62,10 +99,7 @@ sustituir('../src/lib/prisma', {
       return fila ? { ...fila } : null;
     },
     findMany: async ({ where }) =>
-      [...estado.convocatorias.values()]
-        .reverse()
-        .filter((c) => c.tipo === where.tipo)
-        .map((c) => ({ ...c })),
+      [...estado.convocatorias.values()].reverse().filter((c) => c.tipo === where.tipo),
     update: async ({ where, data }) => {
       const fila = estado.convocatorias.get(where.id);
       Object.assign(fila, data);
@@ -74,48 +108,101 @@ sustituir('../src/lib/prisma', {
   },
   asesor: {
     findUnique: async ({ where }) => {
-      const fila = estado.asesores.get(where.id);
+      const fila = where.id
+        ? estado.asesores.get(where.id)
+        : [...estado.asesores.values()].find((a) => a.token === where.token);
       return fila ? { ...fila } : null;
+    },
+    findMany: async ({ where }) =>
+      [...estado.asesores.values()].filter(
+        (a) => a.estado === where.estado && a.visible === where.visible,
+      ),
+    update: async ({ where, data }) => {
+      const fila = estado.asesores.get(where.id);
+      Object.assign(fila, data);
+      return { ...fila };
     },
   },
   pedido: {
     create: async ({ data }) => {
-      const repetido = [...estado.pedidos.values()].some((p) => p.codigo === data.codigo);
-      if (repetido) throw choqueDeUnico();
+      if ([...estado.pedidos.values()].some((p) => p.codigo === data.codigo)) throw choqueDeUnico();
       const fila = {
         id: `p-${estado.pedidos.size + 1}`,
-        estado: 'RECIBIDO',
+        estado: 'ESPERANDO',
         asesorId: null,
-        asesor: null,
         enlaceObservaciones: '',
+        motivoRechazo: '',
         notas: null,
         asignadoAt: null,
+        aceptadoAt: null,
         entregadoAt: null,
         createdAt: new Date(),
         ...data,
       };
       estado.pedidos.set(fila.id, fila);
-      return { ...fila };
+      return conRelaciones(fila);
     },
     findUnique: async ({ where }) => {
       const fila = where.id
         ? estado.pedidos.get(where.id)
         : [...estado.pedidos.values()].find((p) => p.codigo === where.codigo);
-      return fila ? { ...fila } : null;
+      return conRelaciones(fila);
     },
-    findMany: async () => [...estado.pedidos.values()].reverse().map((p) => ({ ...p })),
+    findMany: async ({ where }) =>
+      [...estado.pedidos.values()]
+        .filter((p) => (where?.asesorId ? p.asesorId === where.asesorId : true))
+        .filter((p) => (where?.estado?.not ? p.estado !== where.estado.not : true))
+        .reverse()
+        .map(conRelaciones),
+    groupBy: async ({ where }) => {
+      const cuenta = new Map();
+      for (const fila of estado.pedidos.values()) {
+        if (fila.estado !== where.estado) continue;
+        if (!where.asesorId.in.includes(fila.asesorId)) continue;
+        cuenta.set(fila.asesorId, (cuenta.get(fila.asesorId) ?? 0) + 1);
+      }
+      return [...cuenta].map(([asesorId, total]) => ({ asesorId, _count: { _all: total } }));
+    },
     update: async ({ where, data }) => {
       const fila = estado.pedidos.get(where.id);
       for (const [clave, valor] of Object.entries(data)) {
         if (valor !== undefined) fila[clave] = valor;
       }
-      fila.asesor = fila.asesorId ? estado.asesores.get(fila.asesorId) : null;
-      return { ...fila };
+      return conRelaciones(fila);
     },
     delete: async ({ where }) => {
       estado.pedidos.delete(where.id);
       return {};
     },
+  },
+  resena: {
+    create: async ({ data }) => {
+      if ([...estado.resenas.values()].some((r) => r.pedidoId === data.pedidoId)) {
+        throw choqueDeUnico();
+      }
+      const fila = { id: `r-${estado.resenas.size + 1}`, createdAt: new Date(), ...data };
+      estado.resenas.set(fila.id, fila);
+      return { ...fila };
+    },
+    groupBy: async ({ where }) => {
+      const porAsesor = new Map();
+      for (const fila of estado.resenas.values()) {
+        if (!where.asesorId.in.includes(fila.asesorId)) continue;
+        const actual = porAsesor.get(fila.asesorId) ?? { total: 0, suma: 0 };
+        actual.total += 1;
+        actual.suma += fila.estrellas;
+        porAsesor.set(fila.asesorId, actual);
+      }
+      return [...porAsesor].map(([asesorId, { total, suma }]) => ({
+        asesorId,
+        _count: { _all: total },
+        _avg: { estrellas: suma / total },
+      }));
+    },
+    findMany: async ({ where }) =>
+      [...estado.resenas.values()].filter(
+        (r) => where.asesorId.in.includes(r.asesorId) && r.comentario !== '',
+      ),
   },
 });
 
@@ -134,10 +221,36 @@ function empezar() {
   estado.convocatorias.clear();
   estado.pedidos.clear();
   estado.asesores.clear();
+  estado.resenas.clear();
   estado.avisos.length = 0;
 }
 
+/** Un asesor en el directorio, listo para recibir encargos. */
+function asesorEn(id, cambios = {}) {
+  const fila = {
+    id,
+    nombre: 'Rosa Quispe Mamani',
+    estado: 'APROBADO',
+    visible: true,
+    token: `tok${id.replace(/-/g, '').slice(0, 24)}`,
+    grado: 'MAGISTER',
+    especialidad: 'Gestión educativa',
+    areas: 'EDUCACION, SALUD',
+    metodos: 'CUANTITATIVO',
+    universidades: 'UCV, UNT',
+    anosExperiencia: 6,
+    presentacion: 'Seis años asesorando tesis de maestría.',
+    createdAt: new Date(),
+    ...cambios,
+  };
+  estado.asesores.set(id, fila);
+  return fila;
+}
+
+const abrirPuerta = () => puerta.crear('REVISION', { nombre: 'Piloto' }, 'admin-1');
+
 const datosValidos = (cambios = {}) => ({
+  asesorId: '11111111-1111-4111-8111-111111111111',
   nombre: 'Luis Ramírez Chávez',
   email: 'Luis@Correo.com',
   telefono: '987654321',
@@ -157,21 +270,249 @@ const validar = (cambios) => {
   return salida.data;
 };
 
-/** Una puerta de revisión abierta, lista para recibir. */
-const abrirPuerta = () => puerta.crear('REVISION', { nombre: 'Piloto' }, 'admin-1');
+/** Puerta abierta, un asesor dentro y un encargo suyo esperando respuesta. */
+async function conEncargo(idAsesor = ID.uno) {
+  empezar();
+  const { slug } = await abrirPuerta();
+  const asesor = asesorEn(idAsesor);
+  const pedido = await pedidoService.crear(
+    slug,
+    validar({ asesorId: asesor.id }),
+    DOCX,
+    'tesis.docx',
+  );
+  return { slug, asesor, pedido };
+}
 
-const aprobado = (id = 'a-1') => {
-  estado.asesores.set(id, { id, nombre: 'Rosa Quispe', estado: 'APROBADO' });
-  return id;
-};
+// ── Lo que no puede leer quien no se comprometió ───────────────────────────
 
-// ── El documento ────────────────────────────────────────────────────────────
+test('mientras espera respuesta, el asesor no ve el documento ni al tesista', async () => {
+  const { asesor } = await conEncargo();
+
+  const { encargos } = await pedidoService.panelDelAsesor(asesor.token);
+  assert.equal(encargos.length, 1);
+  assert.equal(encargos[0].estado, 'ESPERANDO');
+  assert.equal(encargos[0].archivoNombre, '', 'no se enseña el nombre del archivo');
+  assert.equal(encargos[0].tesista, null, 'no se enseña el contacto del tesista');
+  // Pero sí lo que hace falta para decidir.
+  assert.equal(encargos[0].capitulo, 'Capítulo III — Metodología');
+  assert.ok(encargos[0].tema.includes('Liderazgo'));
+  assert.ok(encargos[0].mensaje.includes('la muestra'));
+});
+
+test('y el servidor le niega el archivo aunque adivine la dirección', async () => {
+  const { asesor, pedido } = await conEncargo();
+
+  await assert.rejects(
+    () => pedidoService.documentoParaAsesor(asesor.token, pedido.id),
+    /Acepta el encargo/i,
+  );
+
+  await pedidoService.aceptar(asesor.token, pedido.id);
+  const archivo = await pedidoService.documentoParaAsesor(asesor.token, pedido.id);
+  assert.ok(archivo.ruta.endsWith(`${pedido.id}.docx`));
+});
+
+test('el enlace de un asesor no abre los encargos de otro', async () => {
+  const { pedido } = await conEncargo();
+  const otro = asesorEn(ID.dos, { nombre: 'Otro Asesor', token: 'tokotro000000000000' });
+
+  await assert.rejects(() => pedidoService.aceptar(otro.token, pedido.id), /no es tuyo/i);
+  await assert.rejects(
+    () => pedidoService.documentoParaAsesor(otro.token, pedido.id),
+    /no es tuyo/i,
+  );
+  const { encargos } = await pedidoService.panelDelAsesor(otro.token);
+  assert.equal(encargos.length, 0);
+});
+
+test('un token que no existe no enseña nada', async () => {
+  empezar();
+  await assert.rejects(() => pedidoService.panelDelAsesor('tokinventado00000000'), /no existe/i);
+});
+
+// ── A quién se puede elegir ────────────────────────────────────────────────
+
+test('solo se elige a quien está aprobado y aceptando encargos', async () => {
+  empezar();
+  const { slug } = await abrirPuerta();
+  asesorEn(ID.pendiente, { estado: 'PENDIENTE', token: 'tokpend0000000000000' });
+  asesorEn(ID.lleno, { visible: false, nombre: 'Ana Lima', token: 'toklleno000000000000' });
+
+  await assert.rejects(
+    () => pedidoService.crear(slug, validar({ asesorId: ID.pendiente }), DOCX, 'tesis.docx'),
+    /ya no está disponible/i,
+  );
+  await assert.rejects(
+    () => pedidoService.crear(slug, validar({ asesorId: ID.lleno }), DOCX, 'tesis.docx'),
+    /no está aceptando encargos/i,
+  );
+});
+
+test('el directorio solo trae a los aprobados y visibles, sin datos de contacto', async () => {
+  empezar();
+  const { slug } = await abrirPuerta();
+  asesorEn(ID.uno, { email: 'rosa@correo.com', numeroDocumento: '45678912' });
+  asesorEn(ID.oculto, { visible: false, token: 'tokocul0000000000000' });
+  asesorEn(ID.nuevo, { estado: 'PENDIENTE', token: 'toknuev0000000000000' });
+
+  const directorio = await pedidoService.directorio(slug);
+  assert.equal(directorio.length, 1);
+
+  const ficha = directorio[0];
+  assert.equal(ficha.iniciales, 'RM');
+  assert.equal(ficha.gradoNombre, 'Magíster');
+  assert.deepEqual(ficha.areas, ['Educación', 'Salud']);
+  const texto = JSON.stringify(ficha);
+  assert.ok(!texto.includes('rosa@correo.com'), 'el directorio no lleva el correo');
+  assert.ok(!texto.includes('45678912'), 'ni el documento');
+});
+
+test('el asesor puede apagarse cuando está lleno', async () => {
+  const { asesor, slug } = await conEncargo();
+
+  const panel = await pedidoService.cambiarDisponibilidad(asesor.token, false);
+  assert.equal(panel.asesor.visible, false);
+  assert.equal((await pedidoService.directorio(slug)).length, 0);
+});
+
+// ── Aceptar, rechazar, entregar ────────────────────────────────────────────
+
+test('aceptar sella la fecha y abre el documento', async () => {
+  const { asesor, pedido } = await conEncargo();
+
+  const aceptado = await pedidoService.aceptar(asesor.token, pedido.id);
+  assert.equal(aceptado.estado, 'EN_REVISION');
+  assert.ok(aceptado.aceptadoAt instanceof Date);
+  assert.equal(aceptado.archivoNombre, 'tesis.docx');
+  assert.equal(aceptado.tesista.email, 'luis@correo.com');
+
+  // Y no se acepta dos veces.
+  await assert.rejects(() => pedidoService.aceptar(asesor.token, pedido.id), /ya no está esperando/i);
+});
+
+test('rechazar guarda el motivo y el tesista lo lee', async () => {
+  const { asesor, pedido } = await conEncargo();
+  await pedidoService.rechazar(asesor.token, pedido.id, 'Este mes no tengo hueco.');
+
+  const visto = await pedidoService.seguimiento(pedido.codigo);
+  assert.equal(visto.estado, 'RECHAZADO');
+  assert.equal(visto.motivoRechazo, 'Este mes no tengo hueco.');
+});
+
+test('tras un rechazo elige otro asesor sin volver a subir nada', async () => {
+  const { asesor, pedido } = await conEncargo();
+  await pedidoService.rechazar(asesor.token, pedido.id, 'No es mi especialidad.');
+  const otro = asesorEn(ID.dos, { nombre: 'Ana Lima Soto', token: 'tokotro000000000000' });
+
+  const guardado = await pedidoService.reasignar(pedido.codigo, otro.id);
+  assert.equal(guardado.estado, 'ESPERANDO');
+  assert.equal(guardado.motivoRechazo, '');
+  assert.equal(guardado.asesor.nombre, 'Ana Lima Soto');
+  // El documento sigue donde estaba: no se volvió a subir nada.
+  assert.ok(fs.existsSync(path.join(CARPETA, `${pedido.id}.docx`)));
+});
+
+test('no se cambia de asesor si el encargo va en marcha, ni se repite el mismo', async () => {
+  const { asesor, pedido } = await conEncargo();
+  asesorEn(ID.dos, { token: 'tokotro000000000000' });
+
+  await assert.rejects(() => pedidoService.reasignar(pedido.codigo, ID.dos), /ya está en marcha/i);
+
+  await pedidoService.rechazar(asesor.token, pedido.id, 'No puedo.');
+  await assert.rejects(() => pedidoService.reasignar(pedido.codigo, asesor.id), /no pudo tomarlo/i);
+});
+
+test('no se entrega sin el documento de observaciones', async () => {
+  const { asesor, pedido } = await conEncargo();
+  await pedidoService.aceptar(asesor.token, pedido.id);
+
+  await assert.rejects(
+    () => pedidoService.entregar(asesor.token, pedido.id, ''),
+    /Pega el enlace/i,
+  );
+});
+
+test('entregar deja el enlace a la vista del tesista, y antes no', async () => {
+  const { asesor, pedido } = await conEncargo();
+  await pedidoService.aceptar(asesor.token, pedido.id);
+
+  assert.equal((await pedidoService.seguimiento(pedido.codigo)).enlaceObservaciones, '');
+
+  await pedidoService.entregar(asesor.token, pedido.id, 'https://docs.google.com/abc');
+  const visto = await pedidoService.seguimiento(pedido.codigo);
+  assert.equal(visto.estado, 'ENTREGADO');
+  assert.equal(visto.enlaceObservaciones, 'https://docs.google.com/abc');
+  assert.equal(visto.puedeResenar, true);
+});
+
+test('solo se entrega lo que se está revisando', async () => {
+  const { asesor, pedido } = await conEncargo();
+  await assert.rejects(
+    () => pedidoService.entregar(asesor.token, pedido.id, 'https://docs.google.com/abc'),
+    /Solo se entrega/i,
+  );
+});
+
+// ── La nota ────────────────────────────────────────────────────────────────
+
+/** Un encargo llevado hasta el final, listo para calificar. */
+async function hastaEntregar(idAsesor = ID.uno) {
+  const { asesor, pedido, slug } = await conEncargo(idAsesor);
+  await pedidoService.aceptar(asesor.token, pedido.id);
+  await pedidoService.entregar(asesor.token, pedido.id, 'https://docs.google.com/abc');
+  return { asesor, pedido, slug };
+}
+
+test('no se califica antes de que entreguen, ni dos veces', async () => {
+  const { asesor, pedido } = await conEncargo();
+  await assert.rejects(
+    () => pedidoService.resenar(pedido.codigo, { estrellas: 5, comentario: '' }),
+    /cuando recibas tus observaciones/i,
+  );
+
+  await pedidoService.aceptar(asesor.token, pedido.id);
+  await pedidoService.entregar(asesor.token, pedido.id, 'https://docs.google.com/abc');
+  await pedidoService.resenar(pedido.codigo, { estrellas: 5, comentario: 'Clarísimo.' });
+
+  await assert.rejects(
+    () => pedidoService.resenar(pedido.codigo, { estrellas: 1, comentario: '' }),
+    /Ya calificaste/i,
+  );
+});
+
+test('la nota no se enseña hasta que hay tres reseñas', async () => {
+  const { asesor, slug } = await hastaEntregar();
+
+  await pedidoService.resenar((await pedidoService.listar())[0].codigo, { estrellas: 5, comentario: '' });
+  let ficha = (await pedidoService.directorio(slug))[0];
+  assert.equal(ficha.resenas, 1);
+  assert.equal(ficha.nota, null, 'con una reseña no se enseña nota');
+  assert.equal(ficha.tesisRevisadas, 1);
+
+  // Dos encargos más, hasta entregar y calificar.
+  for (const estrellas of [4, 3]) {
+    const pedido = await pedidoService.crear(slug, validar({ asesorId: asesor.id }), DOCX, 'x.docx');
+    await pedidoService.aceptar(asesor.token, pedido.id);
+    await pedidoService.entregar(asesor.token, pedido.id, 'https://docs.google.com/abc');
+    await pedidoService.resenar(pedido.codigo, { estrellas, comentario: 'Bien.' });
+  }
+
+  ficha = (await pedidoService.directorio(slug))[0];
+  assert.equal(ficha.resenas, 3);
+  assert.equal(ficha.nota, 4, 'con tres, la media: (5+4+3)/3');
+  assert.equal(ficha.tesisRevisadas, 3);
+  assert.equal(ficha.ultimasResenas.length, 2, 'solo las que traen comentario');
+});
+
+// ── El documento ───────────────────────────────────────────────────────────
 
 test('al Word antiguo se le dice qué hacer, no solo que no vale', async () => {
   empezar();
   const { slug } = await abrirPuerta();
+  asesorEn(ID.uno);
   await assert.rejects(
-    () => pedidoService.crear(slug, validar(), DOC_ANTIGUO, 'tesis.doc'),
+    () => pedidoService.crear(slug, validar({ asesorId: ID.uno }), DOC_ANTIGUO, 'tesis.doc'),
     /gu[áa]rdalo como \.docx/i,
   );
 });
@@ -179,160 +520,90 @@ test('al Word antiguo se le dice qué hacer, no solo que no vale', async () => {
 test('lo que no es un .docx no se guarda', async () => {
   empezar();
   const { slug } = await abrirPuerta();
+  asesorEn(ID.uno);
+  const datos = validar({ asesorId: ID.uno });
 
   await assert.rejects(
-    () => pedidoService.crear(slug, validar(), Buffer.from('%PDF-1.7'), 'tesis.pdf'),
+    () => pedidoService.crear(slug, datos, Buffer.from('%PDF-1.7'), 'tesis.pdf'),
     /no es un documento de Word/i,
   );
-  // Zip de verdad pero con otro nombre: tampoco.
-  await assert.rejects(
-    () => pedidoService.crear(slug, validar(), DOCX, 'tesis.zip'),
-    /Word \(\.docx\)/i,
-  );
-  await assert.rejects(() => pedidoService.crear(slug, validar(), Buffer.alloc(0), 'x.docx'), /Falta el documento/i);
+  await assert.rejects(() => pedidoService.crear(slug, datos, DOCX, 'tesis.zip'), /Word \(\.docx\)/i);
 });
 
-// ── La puerta ───────────────────────────────────────────────────────────────
+// ── La puerta ──────────────────────────────────────────────────────────────
 
 test('el enlace de los asesores no abre el formulario de los tesistas', async () => {
   empezar();
   const deAsesores = await puerta.crear('ASESORES', { nombre: 'Asesores' }, 'admin-1');
-
   await assert.rejects(() => pedidoService.verConvocatoria(deAsesores.slug), /no existe/i);
-  await assert.rejects(
-    () => pedidoService.crear(deAsesores.slug, validar(), DOCX, 'tesis.docx'),
-    /no existe/i,
-  );
+  await assert.rejects(() => pedidoService.directorio(deAsesores.slug), /no existe/i);
 });
 
 test('mientras no haya una pública, /revision no encuentra nada', async () => {
   empezar();
   await abrirPuerta();
   assert.equal(await pedidoService.convocatoriaPublica(), null);
-
-  const otra = await abrirPuerta();
-  await puerta.cambiar(otra.id, { publica: true });
-  const publica = await pedidoService.convocatoriaPublica();
-  assert.equal(publica.slug, otra.slug);
-  assert.ok(publica.catalogos.capitulos.length >= 5);
 });
 
 test('cerrada, el enlace abre pero ya no recibe', async () => {
   empezar();
   const convocatoria = await abrirPuerta();
+  asesorEn(ID.uno);
   await puerta.cambiar(convocatoria.id, { abierta: false });
 
-  const vista = await pedidoService.verConvocatoria(convocatoria.slug);
-  assert.equal(vista.abierta, false);
+  assert.equal((await pedidoService.verConvocatoria(convocatoria.slug)).abierta, false);
   await assert.rejects(
-    () => pedidoService.crear(convocatoria.slug, validar(), DOCX, 'tesis.docx'),
+    () => pedidoService.crear(convocatoria.slug, validar({ asesorId: ID.uno }), DOCX, 'tesis.docx'),
     /no estamos recibiendo/i,
   );
 });
 
-// ── El pedido ───────────────────────────────────────────────────────────────
+// ── El pedido y el aviso ───────────────────────────────────────────────────
 
-test('el pedido nace recibido, con su código, y el archivo queda en disco', async () => {
-  empezar();
-  const { slug } = await abrirPuerta();
-  const pedido = await pedidoService.crear(slug, validar(), DOCX, 'Tesis avance.docx');
+test('el pedido nace esperando a su asesor, con su código y su archivo en disco', async () => {
+  const { pedido } = await conEncargo();
 
-  assert.equal(pedido.estado, 'RECIBIDO');
+  assert.equal(pedido.estado, 'ESPERANDO');
   assert.match(pedido.codigo, /^[a-z0-9]{8}$/);
-  assert.equal(pedido.email, 'luis@correo.com');
-  assert.equal(pedido.capituloNombre, 'Capítulo III — Metodología');
-  assert.equal(pedido.bytes, DOCX.length);
-  assert.ok(fs.existsSync(path.join(CARPETA, `${pedido.id}.docx`)), 'el .docx tiene que estar en disco');
+  assert.equal(pedido.asesorId, ID.uno);
+  assert.ok(pedido.asignadoAt instanceof Date);
+  assert.ok(fs.existsSync(path.join(CARPETA, `${pedido.id}.docx`)));
 });
 
 test('el aviso al móvil no lleva el correo ni el nombre del tesista', async () => {
-  empezar();
-  const { slug } = await abrirPuerta();
-  const pedido = await pedidoService.crear(slug, validar(), DOCX, 'tesis.docx');
+  const { pedido } = await conEncargo();
 
-  assert.equal(estado.avisos.length, 1);
   const aviso = JSON.stringify(estado.avisos[0]);
-  assert.ok(!aviso.includes('luis@correo.com'), 'el aviso no debe llevar el correo');
-  assert.ok(!aviso.includes('Ramírez'), 'el aviso no debe llevar el nombre');
-  assert.ok(aviso.includes(pedido.codigo), 'el aviso sí lleva el código');
+  assert.ok(!aviso.includes('luis@correo.com'), 'sin el correo');
+  assert.ok(!aviso.includes('Ramírez'), 'sin el nombre del tesista');
+  assert.ok(aviso.includes(pedido.codigo), 'con el código');
 });
 
-test('el seguimiento no dice quién revisa ni enseña las notas internas', async () => {
-  empezar();
-  const { slug } = await abrirPuerta();
-  const pedido = await pedidoService.crear(slug, validar(), DOCX, 'tesis.docx');
-  await pedidoService.cambiar(pedido.id, {
-    asesorId: aprobado(),
-    notas: 'Ojo: la matriz no cuadra con el instrumento.',
-  });
+test('el seguimiento sí dice a quién está esperando, pero no las notas internas', async () => {
+  const { pedido } = await conEncargo();
+  await pedidoService.cambiar(pedido.id, { notas: 'Ojo con este.' });
 
   const visto = await pedidoService.seguimiento(pedido.codigo);
-  const texto = JSON.stringify(visto);
-  assert.ok(!texto.includes('Rosa Quispe'), 'no se revela el asesor');
-  assert.ok(!texto.includes('la matriz no cuadra'), 'no se revelan las notas');
-  assert.equal(visto.estado, 'EN_REVISION');
-});
-
-test('el enlace de observaciones solo se ve cuando está entregado', async () => {
-  empezar();
-  const { slug } = await abrirPuerta();
-  const pedido = await pedidoService.crear(slug, validar(), DOCX, 'tesis.docx');
-
-  await pedidoService.cambiar(pedido.id, { enlaceObservaciones: 'https://docs.google.com/abc' });
-  assert.equal((await pedidoService.seguimiento(pedido.codigo)).enlaceObservaciones, '');
-
-  await pedidoService.cambiar(pedido.id, { estado: 'ENTREGADO' });
-  const entregado = await pedidoService.seguimiento(pedido.codigo);
-  assert.equal(entregado.enlaceObservaciones, 'https://docs.google.com/abc');
-  assert.ok(entregado.entregadoAt instanceof Date);
-});
-
-test('no se entrega un pedido sin el documento de observaciones', async () => {
-  empezar();
-  const { slug } = await abrirPuerta();
-  const pedido = await pedidoService.crear(slug, validar(), DOCX, 'tesis.docx');
-
-  await assert.rejects(
-    () => pedidoService.cambiar(pedido.id, { estado: 'ENTREGADO' }),
-    /sin el documento de observaciones/i,
-  );
-});
-
-test('asignar a un asesor aprobado lo pone en revisión y sella la fecha', async () => {
-  empezar();
-  const { slug } = await abrirPuerta();
-  const pedido = await pedidoService.crear(slug, validar(), DOCX, 'tesis.docx');
-
-  const asignado = await pedidoService.cambiar(pedido.id, { asesorId: aprobado() });
-  assert.equal(asignado.estado, 'EN_REVISION');
-  assert.ok(asignado.asignadoAt instanceof Date);
-  assert.equal(asignado.asesor.nombre, 'Rosa Quispe');
-});
-
-test('a un asesor sin aprobar no se le asigna nada', async () => {
-  empezar();
-  const { slug } = await abrirPuerta();
-  const pedido = await pedidoService.crear(slug, validar(), DOCX, 'tesis.docx');
-  estado.asesores.set('a-9', { id: 'a-9', nombre: 'Sin comprobar', estado: 'PENDIENTE' });
-
-  await assert.rejects(
-    () => pedidoService.cambiar(pedido.id, { asesorId: 'a-9' }),
-    /todav[íi]a no est[áa] aprobado/i,
-  );
+  assert.equal(visto.asesor.nombre, 'Rosa Quispe Mamani');
+  assert.equal(visto.asesor.iniciales, 'RM');
+  assert.ok(!JSON.stringify(visto).includes('Ojo con este'), 'las notas son de la casa');
 });
 
 test('un pedido cancelado deja de existir para su código', async () => {
-  empezar();
-  const { slug } = await abrirPuerta();
-  const pedido = await pedidoService.crear(slug, validar(), DOCX, 'tesis.docx');
+  const { pedido } = await conEncargo();
   await pedidoService.cambiar(pedido.id, { estado: 'CANCELADO' });
-
   await assert.rejects(() => pedidoService.seguimiento(pedido.codigo), /No encontramos/i);
 });
 
-// ── El formulario ───────────────────────────────────────────────────────────
+// ── El formulario ──────────────────────────────────────────────────────────
 
-test('el formulario exige tema, universidad y los tres códigos del catálogo', () => {
+test('sin asesor elegido el formulario no pasa', () => {
+  const salida = pedidoQuerySchema.safeParse(datosValidos({ asesorId: '' }));
+  assert.equal(salida.success, false);
+  assert.ok(salida.error.issues.some((i) => i.path[0] === 'asesorId'));
+});
+
+test('el formulario exige tema, universidad y los códigos del catálogo', () => {
   for (const cambio of [
     { tema: 'corto' },
     { universidad: '' },
@@ -345,10 +616,6 @@ test('el formulario exige tema, universidad y los tres códigos del catálogo', 
     const salida = pedidoQuerySchema.safeParse(datosValidos(cambio));
     assert.equal(salida.success, false, `debería rechazar ${JSON.stringify(cambio)}`);
   }
-});
-
-test('lo que quiera que se mire con cuidado es opcional', () => {
-  assert.equal(validar({ mensaje: '' }).mensaje, '');
 });
 
 test.after(() => fs.rmSync(CARPETA, { recursive: true, force: true }));

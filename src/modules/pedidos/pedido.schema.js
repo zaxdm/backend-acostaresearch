@@ -24,6 +24,9 @@ const unoDe = (catalogo, mensaje) =>
   z.string().refine((valor) => Object.keys(catalogo).includes(valor), { message: mensaje });
 
 const pedidoQuerySchema = z.object({
+  // A quién eligió. Obligatorio: el pedido se manda desde el perfil de un
+  // asesor, así que no existe un pedido sin destinatario.
+  asesorId: z.string().uuid('Elige a tu asesor antes de enviar.'),
   nombre: texto(3, 160, 'Escribe tu nombre completo: va en la portada de tu trabajo.'),
   email: z.string().trim().toLowerCase().max(255).email('Ese correo no es válido.'),
   telefono: z
@@ -69,32 +72,79 @@ const idParamSchema = z.object({
 });
 
 /**
- * Lo que el administrador cambia de un pedido.
+ * Lo que la casa cambia de un pedido.
  *
- * Todo opcional: el panel manda solo lo que se tocó. Asignar y entregar son dos
- * momentos distintos del mismo pedido y no tienen por qué viajar juntos.
+ * Ya no asigna ni entrega —eso es del tesista y del asesor—, así que solo queda
+ * anotar y cancelar, que es lo que hace falta cuando algo se tuerce y alguien
+ * tiene que poder pararlo.
  */
 const pedidoPatchSchema = z
   .object({
-    estado: z.enum(['RECIBIDO', 'EN_REVISION', 'ENTREGADO', 'CANCELADO']).optional(),
-    // Cadena vacía = quitarle el asesor y dejarlo sin asignar.
-    asesorId: z.union([z.literal(''), z.string().uuid('Ese asesor no es válido.')]).optional(),
-    enlaceObservaciones: z
-      .string()
-      .trim()
-      .max(500)
-      .refine((valor) => valor === '' || /^https?:\/\/\S+$/i.test(valor), {
-        message: 'Pega el enlace completo del documento, empezando por https://',
-      })
-      .optional(),
+    estado: z.literal('CANCELADO').optional(),
     notas: z.string().trim().max(2000).optional(),
   })
   .refine((datos) => Object.keys(datos).length > 0, { message: 'No hay nada que cambiar.' });
+
+/** El enlace del documento de observaciones. Sin él no se entrega. */
+const enlaceDeObservaciones = z
+  .string()
+  .trim()
+  .min(1, 'Pega el enlace de tu documento de observaciones.')
+  .max(500)
+  .refine((valor) => /^https?:\/\/\S+$/i.test(valor), {
+    message: 'Pega el enlace completo del documento, empezando por https://',
+  });
+
+/** La llave privada del asesor: /asesor/<token>. */
+const tokenParamSchema = z.object({
+  token: z
+    .string()
+    .trim()
+    .min(16, 'Ese enlace no es válido.')
+    .max(64)
+    .regex(/^[a-z0-9]+$/i, 'Ese enlace no es válido.'),
+});
+
+const entregaSchema = z.object({ enlaceObservaciones: enlaceDeObservaciones });
+
+/**
+ * El motivo del rechazo.
+ *
+ * Obligatorio y corto. Al tesista le llega, y no es lo mismo «ahora no tengo
+ * hueco» —vuelve dentro de un mes— que «esto no es lo mío» —elige a otro con
+ * otra especialidad—.
+ */
+const rechazoSchema = z.object({
+  motivo: texto(5, 300, 'Dile en una frase por qué no puedes tomarlo.'),
+});
+
+const disponibilidadSchema = z.object({ visible: z.boolean() });
+
+/** Elegir otro asesor tras un rechazo, sin volver a subir el documento. */
+const reasignarSchema = z.object({
+  asesorId: z.string().uuid('Elige a otro asesor.'),
+});
+
+/** La nota del tesista. El comentario es opcional: hay quien solo puntúa. */
+const resenaSchema = z.object({
+  estrellas: z.coerce
+    .number()
+    .int()
+    .min(1, 'Pon entre una y cinco estrellas.')
+    .max(5, 'Pon entre una y cinco estrellas.'),
+  comentario: z.string().trim().max(1000).optional().default(''),
+});
 
 module.exports = {
   pedidoQuerySchema,
   codigoParamSchema,
   slugParamSchema,
   idParamSchema,
+  tokenParamSchema,
+  entregaSchema,
+  rechazoSchema,
+  disponibilidadSchema,
+  reasignarSchema,
+  resenaSchema,
   pedidoPatchSchema,
 };

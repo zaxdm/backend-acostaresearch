@@ -1907,8 +1907,27 @@ model Asesor {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  /// Los encargos que se le asignaron. Ver `Pedido`.
+  /// ¿Sale en el directorio? Aprobado pero invisible es el asesor que está
+  /// lleno o de viaje: se apaga sin rechazarlo y vuelve cuando pueda. Un
+  /// directorio donde figura quien no va a contestar es peor que uno corto.
+  visible Boolean @default(true)
+
+  /// Su llave privada: /asesor/<token>, donde ve sus encargos y los entrega.
+  ///
+  /// POR QUÉ UN ENLACE Y NO UNA CUENTA
+  /// ---------------------------------
+  /// Porque el encargo le llega directo del tesista que lo eligió, sin pasar
+  /// por nadie, y para eso hace falta que pueda entrar HOY. Montarle registro,
+  /// contraseña y recuperación de contraseña para que dos asesores revisen
+  /// tesis es construir el edificio antes de saber si alguien va a vivir en él.
+  /// Es la misma decisión que los enlaces de subida del conector: el enlace ES
+  /// la llave. Se genera al aprobarlo y se puede rehacer si se le escapa.
+  token String? @unique @db.VarChar(64)
+
+  /// Los encargos que le mandaron los tesistas que lo eligieron. Ver `Pedido`.
   pedidos Pedido[]
+  /// Lo que dijeron de él los tesistas a los que ya les entregó.
+  resenas Resena[]
 
   /// Un correo, una ficha: quien insiste corrige la suya, no abre otra.
   @@unique([email])
@@ -1919,14 +1938,26 @@ model Asesor {
 
 /// En qué punto está un encargo de revisión.
 ///
-/// Tres estados y un desvío. Se quedaron en tres porque son los que el tesista
-/// necesita distinguir mientras espera: llegó, lo están mirando, ya está. Un
-/// «asignado» aparte no le dice nada a quien espera —para él, asignado y en
-/// revisión son lo mismo— y obligaría a tocar dos veces el mismo pedido.
+/// EL ENCARGO ESPERA A QUE SU ASESOR LO ACEPTE
+/// -------------------------------------------
+/// El tesista lo eligió, así que el encargo va directo a él, sin que nadie de
+/// la casa lo reparta. Pero un asesor puede estar lleno, de viaje o ver que el
+/// tema no es lo suyo, y obligarle a cargar con lo que le caiga produce
+/// revisiones hechas de mala gana. Por eso ESPERANDO existe: es el hueco entre
+/// «te lo mandaron» y «dije que sí».
+///
+/// Y mientras espera NO VE EL DOCUMENTO. Solo el tema, el capítulo, la
+/// universidad y qué le preocupa al tesista, que es de sobra para decidir si
+/// puede con ello. Así nadie recorre el catálogo leyendo tesis ajenas sin
+/// comprometerse a nada: el Word se abre al aceptar.
 enum PedidoEstado {
-  RECIBIDO
+  /// Mandado a su asesor, todavía sin respuesta.
+  ESPERANDO
+  /// Aceptado: el asesor ya tiene el documento.
   EN_REVISION
   ENTREGADO
+  /// El asesor no lo tomó. El tesista elige otro sin volver a subir nada.
+  RECHAZADO
   CANCELADO
 }
 
@@ -1989,10 +2020,12 @@ model Pedido {
   bytes         Int    @default(0)
 
   // ── Qué se hace con él ────────────────────────────────────────────────
-  estado PedidoEstado @default(RECIBIDO)
+  estado PedidoEstado @default(ESPERANDO)
 
-  /// A quién se le asignó. Nulo = todavía a nadie. `SetNull` y no `Cascade`:
-  /// borrar a un asesor no puede llevarse por delante el encargo de un tesista.
+  /// A quién eligió el tesista. Nulo solo si ese asesor se dio de baja después:
+  /// un pedido nace con asesor, porque se manda desde su perfil. `SetNull` y no
+  /// `Cascade`, que borrar a un asesor no puede llevarse por delante el
+  /// encargo de un tesista.
   asesorId String? @db.Char(36)
   asesor   Asesor? @relation(fields: [asesorId], references: [id], onDelete: SetNull)
 
@@ -2003,12 +2036,57 @@ model Pedido {
   /// Para el panel. No se le enseñan al tesista.
   notas String? @db.Text
 
+  /// Por qué lo rechazó, en una frase. Se le enseña al tesista: «no puedo
+  /// ahora» y «esto no es lo mío» le llevan a elegir cosas distintas.
+  motivoRechazo String @default("") @db.VarChar(300)
+
+  /// Cuándo se le mandó a este asesor. Cambia si el tesista elige otro.
   asignadoAt  DateTime?
+  /// Cuándo dijo que sí. Es el momento en que se le abre el documento.
+  aceptadoAt  DateTime?
   entregadoAt DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
+  /// Lo que dijo el tesista al recibir sus observaciones. Ver `Resena`.
+  resena Resena?
+
   @@index([estado])
   @@index([asesorId])
   @@map("pedidos")
+}
+
+/// Lo que el tesista dice de su asesor cuando recibe sus observaciones.
+///
+/// UNA POR PEDIDO, Y SOLO SI SE ENTREGÓ
+/// ------------------------------------
+/// Cuelga del pedido y no de la persona: así no hay forma de puntuar a alguien
+/// con quien no se trabajó, ni de puntuarlo diez veces. Es lo único que
+/// sostiene una nota cuando el directorio crezca y ya no se conozca a nadie.
+///
+/// LA NOTA NO SE ENSEÑA HASTA QUE SIGNIFIQUE ALGO
+/// ----------------------------------------------
+/// Con dos o tres reseñas, una media no informa: dice más del azar que del
+/// asesor, y un 5,0 de una sola persona parece inflado. El perfil enseña
+/// mientras tanto lo verificable —grado, universidades, años, tesis
+/// revisadas—, que es más difícil de fingir que una estrella.
+model Resena {
+  id String @id @default(uuid()) @db.Char(36)
+
+  /// Una por pedido. El índice único es lo que lo garantiza.
+  pedidoId String @unique @db.Char(36)
+  pedido   Pedido @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+
+  asesorId String @db.Char(36)
+  asesor   Asesor @relation(fields: [asesorId], references: [id], onDelete: Cascade)
+
+  /// De 1 a 5.
+  estrellas  Int
+  /// Lo que quiera contar. Vacío = puso nota y no escribió nada.
+  comentario String @default("") @db.Text
+
+  createdAt DateTime @default(now())
+
+  @@index([asesorId])
+  @@map("resenas")
 }

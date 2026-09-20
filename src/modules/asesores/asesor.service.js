@@ -1,5 +1,8 @@
 'use strict';
 
+const crypto = require('node:crypto');
+
+const env = require('../../config/env');
 const prisma = require('../../lib/prisma');
 const { avisarAlAdmin } = require('../../lib/notify');
 const { NotFoundError, ConflictError } = require('../../shared/errors/AppError');
@@ -63,13 +66,27 @@ const asesorSelect = {
   aceptaReglas: true,
   estado: true,
   notas: true,
+  visible: true,
+  token: true,
   revisadoAt: true,
   createdAt: true,
 };
 
+/**
+ * Su llave privada: la pantalla donde ve sus encargos y los entrega.
+ *
+ * Se le da al aprobarlo. Es un enlace y no una cuenta porque el encargo le
+ * llega directo del tesista, sin pasar por nadie, y para eso tiene que poder
+ * entrar hoy: montarle registro y contraseña para que dos asesores revisen
+ * tesis es construir el edificio antes de saber si alguien va a vivir en él.
+ */
+const urlDelPanel = (token) =>
+  token ? `${env.APP_URL.replace(/\/+$/, '')}/asesor/${token}` : '';
+
 /** La ficha como la lee el panel: los códigos, ya traducidos. */
 const salida = (fila) => ({
   ...fila,
+  enlacePanel: urlDelPanel(fila.token),
   areas: nombresDe(fila.areas, AREAS),
   metodos: nombresDe(fila.metodos, METODOS),
   gradoNombre: GRADOS[fila.grado] ?? fila.grado,
@@ -168,7 +185,7 @@ async function listar() {
  * nadie rechazara nunca.
  */
 async function revisar(id, { estado, notas }, adminId) {
-  const existe = await prisma.asesor.findUnique({ where: { id }, select: { id: true } });
+  const existe = await prisma.asesor.findUnique({ where: { id }, select: { id: true, token: true } });
   if (!existe) throw new NotFoundError('Esa ficha no existe.');
 
   const pendiente = estado === 'PENDIENTE';
@@ -179,6 +196,11 @@ async function revisar(id, { estado, notas }, adminId) {
       notas: notas || null,
       revisadoAt: pendiente ? null : new Date(),
       revisadoPorId: pendiente ? null : (adminId ?? null),
+      // Aprobarlo es darle la llave. Si ya tenía una, se respeta: rehacerla a
+      // cada aprobación dejaría muerto el enlace que ya le mandaste.
+      token: estado === 'APROBADO' && !existe.token ? crypto.randomBytes(24).toString('hex') : undefined,
+      // Y vuelve al directorio, por si se le había apagado.
+      visible: estado === 'APROBADO' ? true : undefined,
     },
     select: asesorSelect,
   });

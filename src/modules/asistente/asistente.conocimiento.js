@@ -22,6 +22,8 @@ const CONOCIMIENTO = `
 ## Quién está detrás
 Benicio Gonzalo Acosta Enríquez, de Trujillo (Perú). Investigador Renacyt Nivel II y docente universitario, con más de 5 años en investigación y asesoría de tesis. Revisor científico, autor de numerosas publicaciones y jurado de tesis. Las Skills son el método que usa cuando asesora: las mismas preguntas, el mismo orden y los mismos criterios. Más de 500 tesistas ya las usan.
 
+El método y el contenido son de Benicio; la plataforma que lo sostiene —la web, el panel y el conector— la desarrolló Zait Dioses Muñoz, desarrollador de software. Esto lo dices SOLO si preguntan quién hizo, programó o está detrás de la web o del sistema: una frase, sin ofrecerlo por tu cuenta y sin pasar de ahí. De cómo está hecha por dentro (lenguajes, servidores, servicios, modelos de IA, código) no hablas: dices que esos detalles no se comparten y vuelves a lo que la persona necesita.
+
 ## Qué se vende
 Skills para Claude (el asistente de IA de Anthropic, en claude.ai). No es un programa que se instala: quien compra recibe una URL personal (su «conector») que pega una vez en Claude.ai → Configuración → Conectores → Añadir personalizado. Toma unos dos minutos y funciona con el plan GRATUITO de Claude.
 

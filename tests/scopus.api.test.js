@@ -728,6 +728,27 @@ test('por significado: se ordenan por cercanía a la pregunta, no por el orden d
   assert.equal(elsevier.peticiones[0].url.searchParams.get('sort'), 'relevancy');
 });
 
+test('quedarse sin cuota del minuto se cuenta como tal, no como «no contestó»', async () => {
+  empezar();
+  env.asistenteEnabled = true;
+  const sinCuota = async () => {
+    const fallo = new Error('You exceeded your current quota');
+    fallo.status = 429;
+    throw fallo;
+  };
+
+  await assert.rejects(
+    () =>
+      servicio.buscarSemantica(
+        'u1',
+        { ecuacion: 'TITLE-ABS-KEY(x)', pregunta: '¿qué?' },
+        { embeber: sinCuota, resumenes: async () => new Map() },
+      ),
+    // Esperar un momento lo arregla; reintentar a ciegas contra el tope, no.
+    (error) => error.statusCode === 503 && /tope de búsquedas por significado/.test(error.message),
+  );
+});
+
 test('si Gemini no da los vectores, 503 del asistente y no un 500', async () => {
   empezar();
   env.asistenteEnabled = true;

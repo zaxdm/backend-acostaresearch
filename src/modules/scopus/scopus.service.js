@@ -691,8 +691,18 @@ async function cuentas(userId, { ecuacion, faceta }) {
 
 // ── Búsqueda semántica ─────────────────────────────────────────────────────
 
-/** Cuántos candidatos se ordenan por significado: tres páginas de Scopus. */
-const CANDIDATOS_SEMANTICA = 75;
+/**
+ * Cuántos candidatos se ordenan por significado.
+ *
+ * Eran 75 —tres páginas de Scopus— y ordenaban mejor, pero el plan gratuito de
+ * Gemini cuenta CADA TEXTO que se embebe y no cada petición: cien al minuto.
+ * Con 75 más la pregunta, la segunda búsqueda del minuto se quedaba sin
+ * vectores y el tesista veía «no se pudo ordenar por significado». Con 40 caben
+ * dos, que es lo que pasa de verdad cuando se prueban dos temas seguidos.
+ *
+ * El día que la clave tenga facturación, esto vuelve a 75 y se acabó.
+ */
+const CANDIDATOS_SEMANTICA = 40;
 
 const coseno = (a, b) => {
   let producto = 0;
@@ -760,10 +770,16 @@ async function buscarSemantica(
     vectores = { consulta, documentos };
   } catch (fallo) {
     logger.warn({ err: fallo.message }, 'Búsqueda semántica: Gemini no dio los vectores');
-    throw new AppError('La búsqueda por significado no contestó. Vuelve a intentarlo en un momento.', {
-      statusCode: 503,
-      code: ERROR_CODES.ASSISTANT_UNAVAILABLE,
-    });
+    // Quedarse sin cuota del minuto y que Gemini esté caído se arreglan
+    // distinto —uno esperando un momento y el otro no— y decir siempre «no
+    // contestó» deja al tesista reintentando a ciegas contra un tope.
+    const sinCuota = fallo?.status === 429 || /quota|rate limit/i.test(fallo?.message ?? '');
+    throw new AppError(
+      sinCuota
+        ? 'Se llegó al tope de búsquedas por significado de este minuto. Espera un momento y vuelve a ordenarlas.'
+        : 'La búsqueda por significado no contestó. Vuelve a intentarlo en un momento.',
+      { statusCode: 503, code: ERROR_CODES.ASSISTANT_UNAVAILABLE },
+    );
   }
 
   const ordenados = candidatos

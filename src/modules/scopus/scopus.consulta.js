@@ -78,6 +78,14 @@ TEMAS
   estudia, lo más concreto que permita lo que te contó.
 - Cada tema trae además sus propios conceptos en inglés, de 2 a 3, con las mismas reglas de
   arriba: son los que se usarán para buscar ESE tema en Scopus.
+- LOS CONCEPTOS DE UN TEMA SON SUS VARIABLES: uno por cada una de las que tenga, "independiente"
+  y "dependiente", dicho con el término en inglés que usa la literatura. Si dejas una fuera, lo
+  que se busca no es ese tema. En "Alfabetización digital en IA y su relación con la
+  empleabilidad" los conceptos son "digital literacy" Y "employability", no "artificial
+  intelligence" y "digital literacy": sin la segunda variable salen cientos de miles de
+  artículos que no tienen nada que ver con lo que el tesista quiere estudiar.
+- La población va en el tema, no en los conceptos, salvo que sea el sujeto que estudia la
+  literatura ("university students", "nurses"): ahí sí es un concepto más.
 
 Responde SOLO con un JSON, sin texto antes ni después, con esta forma:
 {"conceptos":[{"nombre":"critical thinking","sinonimos":["critical reasoning"]}],

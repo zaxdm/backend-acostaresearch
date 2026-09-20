@@ -761,3 +761,84 @@ test('si Gemini no da los vectores, 503 del asistente y no un 500', async () => 
     (error) => error.statusCode === 503 && error.code === 'ASSISTANT_UNAVAILABLE',
   );
 });
+
+test('un tope de pocos segundos se espera y se reintenta, sin cambiarle el orden', async () => {
+  // Mirar dos tarjetas de temas seguidas alcanza el tope del minuto de Gemini,
+  // y hasta aquí eso acababa en «te los mostramos por más citados»: la
+  // búsqueda que pidió, cambiada por otra, por ocho segundos.
+  empezar();
+  env.asistenteEnabled = true;
+  let llamadas = 0;
+  const esperas = [];
+  const embeber = async (textos) => {
+    llamadas += 1;
+    if (llamadas === 1) {
+      const fallo = new Error('Quota exceeded for metric: embed_content_free_tier_requests. Please retry in 8.56s.');
+      fallo.status = 429;
+      throw fallo;
+    }
+    return textos.map((_, i) => [1, i]);
+  };
+
+  const busqueda = await servicio.buscarSemantica(
+    'u1',
+    { ecuacion: 'TITLE-ABS-KEY(x)', pregunta: '¿qué?' },
+    { embeber, resumenes: async () => new Map(), esperar: async (ms) => esperas.push(ms) },
+  );
+
+  assert.equal(busqueda.semantica, true, 'sigue siendo por significado');
+  // Lo que dijo Gemini, redondeado hacia arriba, más uno: volver justo en el
+  // borde es volver a chocar.
+  assert.deepEqual(esperas, [10_000]);
+});
+
+test('un tope largo no se espera: se le dice al tesista', async () => {
+  empezar();
+  env.asistenteEnabled = true;
+  const esperas = [];
+  const embeber = async () => {
+    const fallo = new Error('Quota exceeded. Please retry in 45s.');
+    fallo.status = 429;
+    throw fallo;
+  };
+
+  await assert.rejects(
+    () =>
+      servicio.buscarSemantica(
+        'u1',
+        { ecuacion: 'TITLE-ABS-KEY(x)', pregunta: '¿qué?' },
+        { embeber, resumenes: async () => new Map(), esperar: async (ms) => esperas.push(ms) },
+      ),
+    (error) => error.statusCode === 503 && /tope/.test(error.message),
+  );
+  assert.deepEqual(esperas, [], 'medio minuto con la pantalla cargando parece que se colgó');
+});
+
+test('por significado se ordenan 40 candidatos, no las dos páginas enteras de Scopus', async () => {
+  // Scopus da páginas de 25: pedir «hasta 40» traía 50, 51 textos con la
+  // pregunta, y dos búsquedas en un minuto eran 102 contra el tope de 100 de
+  // Gemini. El cambio a 40 no cambiaba nada.
+  empezar();
+  env.asistenteEnabled = true;
+  const pagina = Array.from({ length: 25 }, (_, i) => ({
+    ...FICHA,
+    eid: `2-s2.0-${i}`,
+    'dc:title': `Artículo ${i}`,
+  }));
+  elsevier.responder = respuestaCon(pagina, 1000);
+
+  const embebidos = [];
+  const embeber = async (textos, { tarea }) => {
+    if (tarea === 'RETRIEVAL_DOCUMENT') embebidos.push(...textos);
+    return textos.map(() => [1, 0]);
+  };
+
+  const busqueda = await servicio.buscarSemantica(
+    'u1',
+    { ecuacion: 'TITLE-ABS-KEY(x)', pregunta: '¿qué?' },
+    { embeber, resumenes: async () => new Map() },
+  );
+
+  assert.equal(embebidos.length, 40, 'cuarenta a Gemini, que es lo que cabe dos veces por minuto');
+  assert.equal(busqueda.candidatos, 40, 'y es lo que dice la línea gris: «de entre los 40»');
+});

@@ -704,6 +704,26 @@ async function cuentas(userId, { ecuacion, faceta }) {
  */
 const CANDIDATOS_SEMANTICA = 40;
 
+/** Lo más que se espera a Gemini antes de darle al tesista el error. */
+const ESPERA_MAXIMA_S = 20;
+
+const dormir = (ms) => new Promise((resolver) => setTimeout(resolver, ms));
+
+/**
+ * Cuántos segundos pide Gemini que se espere, o null si no es un tope.
+ *
+ * Lo dice en el texto del error —«Please retry in 8.563842925s.»—, y a veces
+ * en `retryDelay` («8s»). Se redondea hacia arriba y se suma uno: volver justo
+ * en el borde es volver a chocar.
+ */
+function segundosParaReintentar(fallo) {
+  const texto = String(fallo?.message ?? '');
+  const esTope = fallo?.status === 429 || /quota|rate limit/i.test(texto);
+  if (!esTope) return null;
+  const dicho = texto.match(/retry in ([\d.]+)\s*s/i) ?? texto.match(/"retryDelay"\s*:\s*"([\d.]+)s"/i);
+  return dicho ? Math.ceil(Number(dicho[1])) + 1 : null;
+}
+
 const coseno = (a, b) => {
   let producto = 0;
   let normaA = 0;
@@ -730,7 +750,7 @@ const coseno = (a, b) => {
 async function buscarSemantica(
   userId,
   { ecuacion, pregunta },
-  { embeber = gemini.embeber, resumenes = openalex.resumenesPorDoi } = {},
+  { embeber = gemini.embeber, resumenes = openalex.resumenesPorDoi, esperar = dormir } = {},
 ) {
   exigirQueEsteEncendido();
   if (!env.asistenteEnabled) {
@@ -751,6 +771,15 @@ async function buscarSemantica(
     candidatos.push(...pagina.fichas.map(mapper.comoResultado).filter((r) => r.eid));
     if (candidatos.length >= total || pagina.fichas.length < cliente.POR_PAGINA) break;
   }
+  /**
+   * Y se recorta al número que se buscaba.
+   *
+   * Scopus da páginas de 25, así que pedir «hasta 40» traía dos páginas enteras:
+   * 50 candidatos, 51 textos con la pregunta, y dos búsquedas en un minuto eran
+   * 102 contra el tope de 100 de Gemini. El cambio a 40 no había cambiado nada,
+   * y el tesista seguía viendo «se llegó al tope de este minuto» a la segunda.
+   */
+  candidatos.length = Math.min(candidatos.length, CANDIDATOS_SEMANTICA);
   await repositorio.anotarBusqueda(userId).catch(() => {});
 
   if (candidatos.length === 0) {
@@ -763,11 +792,37 @@ async function buscarSemantica(
     return resumen ? `${c.titulo}. ${resumen.slice(0, 1500)}` : c.titulo;
   });
 
-  let vectores;
-  try {
+  const pedirVectores = async () => {
     const [consulta] = await embeber([pregunta], { tarea: 'RETRIEVAL_QUERY' });
     const documentos = await embeber(textos, { tarea: 'RETRIEVAL_DOCUMENT' });
-    vectores = { consulta, documentos };
+    return { consulta, documentos };
+  };
+
+  let vectores;
+  try {
+    try {
+      vectores = await pedirVectores();
+    } catch (primero) {
+      /**
+       * Un tope de segundos se espera; no se le devuelve al tesista.
+       *
+       * El tope de Gemini es por MINUTO y el propio error dice cuánto falta
+       * —«Please retry in 8.5s»—. Mirar dos tarjetas de temas seguidas lo
+       * alcanza, y hasta aquí eso acababa en «no se pudo ordenar por
+       * significado, te los mostramos por más citados»: la búsqueda que pidió,
+       * cambiada por otra, por unos segundos. Se espera lo que dice y se
+       * vuelve a pedir una vez. Lo ya calculado se recuerda (ver `embeber`),
+       * así que el segundo intento solo pide lo que faltó.
+       *
+       * Solo si es poco: más de veinte segundos con la pantalla cargando se
+       * parece demasiado a que se colgó, y ahí es mejor decírselo.
+       */
+      const espera = segundosParaReintentar(primero);
+      if (espera === null || espera > ESPERA_MAXIMA_S) throw primero;
+      logger.info({ espera }, 'Búsqueda semántica: tope del minuto, se espera y se reintenta');
+      await esperar(espera * 1000);
+      vectores = await pedirVectores();
+    }
   } catch (fallo) {
     logger.warn({ err: fallo.message }, 'Búsqueda semántica: Gemini no dio los vectores');
     // Quedarse sin cuota del minuto y que Gemini esté caído se arreglan

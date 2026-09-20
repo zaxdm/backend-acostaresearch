@@ -213,6 +213,32 @@ test('las fases de trabajo tampoco salen al final como sobrantes', () => {
   assert.deepEqual(sobrantes, []);
 });
 
+test('la propuesta de tema no entra en el documento ni nombrándola en el esquema', () => {
+  // Es la puerta que dejó volver la tabla de la propuesta al Capítulo I: basta
+  // con que el modelo la meta en un capítulo. El cuestionario sí puede ir como
+  // anexo; la propuesta que se lleva al asesor no es parte de ninguna tesis.
+  assert.throws(
+    () =>
+      normalizar(
+        [{ titulo: 'CAPÍTULO I: PROBLEMA Y OBJETIVOS', de: ['tema-y-delimitacion', 'problema-y-objetivos'] }],
+        { catalogo: CON_FASES_DE_TRABAJO },
+      ),
+    /no va dentro del documento/,
+  );
+
+  // Y un esquema guardado antes, que ya la tenía dentro, tampoco la imprime.
+  const guardado = {
+    capitulos: [{ titulo: 'CAPÍTULO I', de: ['tema-y-delimitacion', 'problema-y-objetivos'] }],
+  };
+  const { capitulos } = esquema.capitulosDelDocumento({
+    esquema: guardado,
+    catalogo: CON_FASES_DE_TRABAJO,
+    conTexto: new Set(['tema-y-delimitacion', 'problema-y-objetivos']),
+  });
+
+  assert.deepEqual(capitulos[0].partes, ['problema-y-objetivos']);
+});
+
 test('si el reglamento de su facultad SÍ pide el instrumento, sale', () => {
   const conAnexo = normalizar(
     [

@@ -160,6 +160,24 @@ function normalizar(entrada, { catalogo = [], anterior = null, conTexto = new Se
           `No hay ninguna fase con la clave "${fase}". Usa listar_capitulos para ver las que hay.`,
         );
       }
+      /**
+       * Y la propuesta de tema no es un capítulo de nadie.
+       *
+       * El esquema es la puerta por la que un reglamento puede pedir una fase
+       * de trabajo dentro del documento —el cuestionario como anexo, que sí
+       * pasa—, pero la propuesta que se lleva al asesor no es parte de ninguna
+       * tesis, y quien escribe el esquema es el modelo. Bastó con que metiera
+       * «tema-y-delimitacion» en el Capítulo I para que la tabla de la
+       * propuesta volviera a encabezar la tesis, con índice y todo, que es
+       * justo lo que se quitó.
+       */
+      if (fase === 'tema-y-delimitacion') {
+        throw new EsquemaNoValido(
+          'La fase "tema-y-delimitacion" no va dentro del documento: la propuesta de tema es ' +
+            'lo que el tesista lleva al asesor, no un capítulo de su tesis. Quítala del esquema ' +
+            'y deja el capítulo con las fases que sí se escriben.',
+        );
+      }
       if (usadas.has(fase)) {
         throw new EsquemaNoValido(
           `La fase "${fase}" está en dos capítulos a la vez. Cada una va en uno solo.`,
@@ -231,7 +249,16 @@ function capitulosDelDocumento({
   const nombradas = new Set(esquema.capitulos.flatMap((c) => c.de ?? []));
   const capitulos = esquema.capitulos.map((c) => ({
     titulo: c.titulo,
-    partes: c.clave ? [c.clave] : c.de,
+    /**
+     * Y de un esquema ya guardado, la propuesta de tema se cae igual.
+     *
+     * `normalizar` ya no la deja entrar, pero los esquemas que se guardaron
+     * antes siguen en la base y se imprimen en cada descarga: el tesista veía
+     * su Capítulo I encabezado por la tabla de la propuesta.
+     */
+    partes: c.clave
+      ? [c.clave]
+      : c.de.filter((code) => incluirFasesDeTrabajo || code !== 'tema-y-delimitacion'),
     // Un capítulo propio no está en el catálogo: se dice, para poder tratarlo
     // como las secciones aparte del informe.
     ...(c.clave ? { propio: true } : {}),

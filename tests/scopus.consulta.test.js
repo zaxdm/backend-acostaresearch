@@ -69,6 +69,65 @@ test('techo de conceptos y de sinónimos, y nada repetido', () => {
   assert.deepEqual(repetidos.conceptos[0].sinonimos, ['GPT-4']);
 });
 
+test('los temas propuestos traen sus variables, y lo que no dijo el modelo queda en nulo', () => {
+  const { temas } = normalizar({
+    conceptos: [{ nombre: 'burnout', sinonimos: [] }],
+    temas: [
+      {
+        titulo: '  Síndrome de burnout   en enfermeras de   hospitales públicos ',
+        independiente: 'carga laboral semanal',
+        dependiente: 'nivel de burnout',
+        relacion: 'si a mayor carga laboral aumenta el agotamiento',
+        poblacion: 'enfermeras asistenciales',
+        conceptos: [{ nombre: 'burnout', sinonimos: ['"occupational burnout"'] }],
+      },
+      {
+        // Un cualitativo: sin independiente ni dependiente, y así se queda.
+        titulo: 'Vivencias del agotamiento en enfermeras de emergencia',
+        relacion: 'cómo describen su agotamiento quienes trabajan en emergencia',
+        conceptos: [{ nombre: 'burnout', sinonimos: [] }, { nombre: 'nurses', sinonimos: [] }],
+      },
+    ],
+  });
+
+  assert.equal(temas.length, 2);
+  assert.equal(temas[0].titulo, 'Síndrome de burnout en enfermeras de hospitales públicos');
+  assert.deepEqual(temas[0].conceptos[0].sinonimos, ['occupational burnout']);
+  assert.equal(temas[1].independiente, null);
+  assert.equal(temas[1].dependiente, null);
+  assert.equal(temas[1].poblacion, null);
+  // Los temas comparten conceptos entre sí: el segundo conserva «burnout»
+  // aunque ya estuviera en el primero, o se quedaría sin con qué buscarse.
+  assert.equal(temas[1].conceptos[0].nombre, 'burnout');
+});
+
+test('un tema sin título o sin conceptos no se propone, y hay techo de cuatro', () => {
+  const { temas } = normalizar({
+    conceptos: [{ nombre: 'burnout', sinonimos: [] }],
+    temas: [
+      { titulo: 'Sin nada con qué buscar', conceptos: [] },
+      { independiente: 'algo', conceptos: [{ nombre: 'stress', sinonimos: [] }] },
+      ...Array.from({ length: 6 }, (_, i) => ({
+        titulo: `Tema ${i}`,
+        conceptos: [{ nombre: `concept ${i}`, sinonimos: [] }],
+      })),
+    ],
+  });
+
+  assert.equal(temas.length, 4);
+  assert.deepEqual(
+    temas.map((t) => t.titulo),
+    ['Tema 0', 'Tema 1', 'Tema 2', 'Tema 3'],
+  );
+});
+
+test('sin temas en la respuesta, los conceptos siguen sirviendo', () => {
+  const { conceptos, temas } = normalizar({ conceptos: [{ nombre: 'burnout', sinonimos: [] }] });
+
+  assert.equal(conceptos.length, 1);
+  assert.deepEqual(temas, []);
+});
+
 test('lee el JSON aunque el modelo lo envuelva en texto', async () => {
   const resultado = await generarConsulta('uso de la IA y pensamiento crítico', {
     generar: contesta(

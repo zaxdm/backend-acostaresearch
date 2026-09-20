@@ -147,6 +147,27 @@ async function resumir(
   const usadas = conResumen.filter((f) => f.resumen).length;
 
   if (usadas === 0) {
+    /**
+     * Qué se pidió y qué volvió, para poder distinguir las causas.
+     *
+     * El 20-sep-2026 esto salió nueve veces en tres horas, siempre justo
+     * después de ordenar por significado, sin un solo fallo de OpenAlex en el
+     * registro y con resúmenes que OpenAlex sí tiene cuando se le piden a mano.
+     * Sin saber cuántos DOI llegaron y cuántos volvieron no hay forma de saber
+     * si faltan los DOI, si faltan los resúmenes o si no casan las claves. Los
+     * DOI no son de nadie: identifican artículos publicados.
+     */
+    const dois = lista.map((f) => f.doi).filter(Boolean);
+    logger.warn(
+      {
+        fuentes: lista.length,
+        conDoi: dois.length,
+        devueltosPorOpenAlex: porDoi.size,
+        doisPedidos: dois.slice(0, 5),
+        clavesDevueltas: [...porDoi.keys()].slice(0, 5),
+      },
+      'Resumen con IA: ninguno de los artículos llegó con resumen',
+    );
     throw new ValidationError(
       'Ninguno de estos artículos tiene resumen en el catálogo abierto, así que la IA no tendría ' +
         'qué leer. Prueba con otra página de resultados o con otro orden.',

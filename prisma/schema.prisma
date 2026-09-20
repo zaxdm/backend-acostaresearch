@@ -1768,10 +1768,25 @@ model EnlaceCorto {
 /// El slug es aleatorio, como el de `TrialLink`: quien no lo tiene no lo
 /// adivina. Si se filtra, se cierra esta convocatoria y se crea otra; las
 /// fichas ya recibidas se quedan donde están.
+/// Para qué sirve una puerta: a quién deja pasar y a qué formulario.
+///
+/// Son la misma mecánica —un slug que se reparte a mano y dos interruptores—
+/// aplicada a los dos lados del servicio, así que comparten tabla en vez de
+/// duplicar el mismo modelo con otro nombre.
+enum ConvocatoriaTipo {
+  /// Quien quiere revisar tesis: /asesores/<slug>.
+  ASESORES
+  /// Quien quiere que le revisen la suya: /revision/<slug>.
+  REVISION
+}
+
 model Convocatoria {
   id String @id @default(uuid()) @db.Char(36)
 
-  /// Lo que va en la URL: /asesores/<slug>.
+  /// A qué formulario abre. Ver `ConvocatoriaTipo`.
+  tipo ConvocatoriaTipo @default(ASESORES)
+
+  /// Lo que va en la URL: /asesores/<slug> o /revision/<slug>.
   slug   String @unique @db.VarChar(40)
   /// Para quién es, visto desde el panel: «Piloto de revisión, setiembre».
   nombre String @db.VarChar(120)
@@ -1892,9 +1907,108 @@ model Asesor {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  /// Los encargos que se le asignaron. Ver `Pedido`.
+  pedidos Pedido[]
+
   /// Un correo, una ficha: quien insiste corrige la suya, no abre otra.
   @@unique([email])
   @@index([estado])
   @@index([convocatoriaId])
   @@map("asesores")
+}
+
+/// En qué punto está un encargo de revisión.
+///
+/// Tres estados y un desvío. Se quedaron en tres porque son los que el tesista
+/// necesita distinguir mientras espera: llegó, lo están mirando, ya está. Un
+/// «asignado» aparte no le dice nada a quien espera —para él, asignado y en
+/// revisión son lo mismo— y obligaría a tocar dos veces el mismo pedido.
+enum PedidoEstado {
+  RECIBIDO
+  EN_REVISION
+  ENTREGADO
+  CANCELADO
+}
+
+/// Nivel del trabajo. Decide quién puede revisarlo: un bachiller no observa la
+/// metodología de una tesis de maestría.
+enum PedidoNivel {
+  PREGRADO
+  MAESTRIA
+  DOCTORADO
+}
+
+/// Un encargo de revisión: el capítulo que manda un tesista para que se lo
+/// observen.
+///
+/// SIN CUENTA Y SIN PAGO
+/// ---------------------
+/// No se le pide registrarse: el embudo ya es bastante largo —hoy, para usar el
+/// método, hace falta además una suscripción a Claude— y esto tiene que poder
+/// probarlo alguien que llega desde un enlace de WhatsApp. Durante el piloto
+/// tampoco se cobra aquí: lo que se está midiendo es si alguien entrega su
+/// capítulo, no si paga, y el cobro se cierra aparte.
+///
+/// EL CÓDIGO ES LA LLAVE
+/// ---------------------
+/// Con él se consulta el estado en /pedido/<codigo>, sin sesión, igual que los
+/// enlaces de subida que reparte el conector. Por eso es aleatorio y no
+/// correlativo: un número de pedido que se adivina deja leer el de al lado.
+///
+/// EL ARCHIVO VA A DISCO
+/// ---------------------
+/// Como las guías y los capítulos. Una tesis en Word ronda el medio mega y no
+/// tiene por qué engordar la base; el identificador da el nombre en disco, así
+/// que cómo se llamara el archivo del tesista nunca decide dónde se escribe.
+model Pedido {
+  id String @id @default(uuid()) @db.Char(36)
+
+  /// Lo que va en la URL del seguimiento. Aleatorio, ver la nota de arriba.
+  codigo String @unique @db.VarChar(16)
+
+  // ── Quién manda ───────────────────────────────────────────────────────
+  nombre   String @db.VarChar(160)
+  email    String @db.VarChar(255)
+  telefono String @default("") @db.VarChar(20)
+
+  // ── Qué manda ─────────────────────────────────────────────────────────
+  universidad String      @db.VarChar(160)
+  nivel       PedidoNivel @default(PREGRADO)
+  /// Códigos del catálogo de áreas, el mismo que usan los asesores.
+  area        String      @db.VarChar(40)
+  metodo      String      @db.VarChar(40)
+  /// Qué parte manda: un capítulo, el proyecto o la tesis entera.
+  capitulo    String      @db.VarChar(40)
+  /// Su tema, tal como lo tiene ahora.
+  tema        String      @db.VarChar(500)
+  /// Lo que quiere que se mire con más cuidado. Vacío = lo que haga falta.
+  mensaje     String      @db.Text
+
+  /// Cómo se llamaba el archivo que subió y cuánto pesa.
+  archivoNombre String @default("") @db.VarChar(200)
+  bytes         Int    @default(0)
+
+  // ── Qué se hace con él ────────────────────────────────────────────────
+  estado PedidoEstado @default(RECIBIDO)
+
+  /// A quién se le asignó. Nulo = todavía a nadie. `SetNull` y no `Cascade`:
+  /// borrar a un asesor no puede llevarse por delante el encargo de un tesista.
+  asesorId String? @db.Char(36)
+  asesor   Asesor? @relation(fields: [asesorId], references: [id], onDelete: SetNull)
+
+  /// El documento de observaciones que se le entrega, que durante el piloto es
+  /// un Google Doc compartido. Es lo único que el tesista ve al final.
+  enlaceObservaciones String @default("") @db.VarChar(500)
+
+  /// Para el panel. No se le enseñan al tesista.
+  notas String? @db.Text
+
+  asignadoAt  DateTime?
+  entregadoAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([estado])
+  @@index([asesorId])
+  @@map("pedidos")
 }

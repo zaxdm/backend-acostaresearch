@@ -21,6 +21,7 @@ const mapasRoutes = require('./modules/mapas/mapas.routes');
 const asistenteRoutes = require('./modules/asistente/asistente.routes');
 const reclamoRoutes = require('./modules/reclamos/reclamo.routes');
 const asesorRoutes = require('./modules/asesores/asesor.routes');
+const pedidoRoutes = require('./modules/pedidos/pedido.routes');
 const rRoutes = require('./modules/r/r.routes');
 const cualitativoRoutes = require('./modules/cualitativo/cualitativo.routes');
 
@@ -81,6 +82,10 @@ router.use('/reclamos', reclamoRoutes);
 // cuenta—, pero solo se llega con el enlace de una convocatoria mientras no se
 // marque como pública desde el panel. Ver `modules/asesores`.
 router.use('/asesores', asesorRoutes);
+// El otro lado: el tesista que manda su capítulo a revisar y consulta cómo va
+// con su código. Sin sesión y sin pago durante el piloto; solo se llega con el
+// enlace mientras el formulario no se marque como público. Ver `modules/pedidos`.
+router.use('/pedidos', pedidoRoutes);
 // R en la conversación: subir la matriz y bajar lo que produce el análisis,
 // desde los enlaces que da Claude. Sin sesión: el enlace firmado es la llave.
 router.use('/r', rRoutes);

@@ -161,6 +161,16 @@ const schema = z.object({
   // acordarse de nada.
   CAPITULOS_DIR: vacioComoAusente(z.string()),
 
+  // ── Pedidos de revisión ─────────────────────────────────────────────────
+  // El Word que sube el tesista para que se lo observen. Mismo criterio que los
+  // capítulos: vacío = al lado de los comprobantes, que en producción es
+  // /var/lib/acostaresearch, así entra en el respaldo diario sin acordarse de
+  // nada y un despliegue no puede llevárselo por delante.
+  PEDIDOS_DIR: vacioComoAusente(z.string()),
+  // Techo del documento. Una tesis con figuras incrustadas ronda los 10 MB; 25
+  // deja margen sin abrir la puerta a que alguien use esto de alojamiento.
+  PEDIDO_MAX_BYTES: z.coerce.number().int().positive().default(25 * 1024 * 1024),
+
   // ── Guía de instalación ─────────────────────────────────────────────────
   // Dónde está el PDF que se le enlaza al comprador, y con qué dirección se le
   // enlaza.
@@ -470,6 +480,8 @@ const env = Object.freeze({
   // él y nadie tiene que acordarse de que existía una segunda ruta.
   capitulosDir:
     raw.CAPITULOS_DIR ?? path.join(path.dirname(raw.PROOFS_DIR), 'capitulos'),
+  // Por lo mismo que los capítulos: colgado de donde vivan los comprobantes.
+  pedidosDir: raw.PEDIDOS_DIR ?? path.join(path.dirname(raw.PROOFS_DIR), 'pedidos'),
   // R en la conversación (ver R_MOTOR): la jaula en producción, apagado fuera.
   rMotor: raw.R_MOTOR ?? (raw.NODE_ENV === 'production' ? 'systemd' : 'apagado'),
   // Fuera de /var/lib/acostaresearch a propósito: la jaula tapa /var entero y

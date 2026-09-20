@@ -1,11 +1,9 @@
 'use strict';
 
-const crypto = require('node:crypto');
-
-const env = require('../../config/env');
 const prisma = require('../../lib/prisma');
 const { avisarAlAdmin } = require('../../lib/notify');
 const { NotFoundError, ConflictError } = require('../../shared/errors/AppError');
+const puerta = require('../convocatorias/convocatoria.service');
 const {
   AREAS,
   METODOS,
@@ -33,32 +31,15 @@ const {
  * hace después de comprobar el grado en SUNEDU.
  */
 
-/** El mismo alfabeto que los enlaces de prueba: sin letras que se confundan. */
-const ALFABETO = 'abcdefghjkmnpqrstuvwxyz23456789';
-const LARGO_SLUG = 12;
-
-function generarSlug() {
-  let slug = '';
-  for (let i = 0; i < LARGO_SLUG; i += 1) {
-    slug += ALFABETO[crypto.randomInt(0, ALFABETO.length)];
-  }
-  return slug;
-}
+/**
+ * La puerta —el enlace, los dos interruptores— vive en
+ * `modules/convocatorias`, compartida con los pedidos de revisión: es la misma
+ * mecánica para los dos lados del servicio. Aquí solo se le pasa el tipo.
+ */
+const TIPO = 'ASESORES';
 
 /** La página que se reparte a los candidatos. */
-function urlDeLaConvocatoria(slug) {
-  return `${env.APP_URL.replace(/\/+$/, '')}/asesores/${slug}`;
-}
-
-const convocatoriaSelect = {
-  id: true,
-  slug: true,
-  nombre: true,
-  intro: true,
-  abierta: true,
-  publica: true,
-  createdAt: true,
-};
+const urlDeLaConvocatoria = (slug) => puerta.urlDe(TIPO, slug);
 
 const asesorSelect = {
   id: true,
@@ -99,60 +80,25 @@ const salida = (fila) => ({
 function salidaConvocatoria(fila, conteo = {}) {
   return {
     ...fila,
-    url: urlDeLaConvocatoria(fila.slug),
     fichas: conteo.total ?? 0,
     pendientes: conteo.pendientes ?? 0,
   };
 }
 
-/** Lo que se le enseña a quien abre el enlace. */
-const salidaPublica = (convocatoria) => ({
-  slug: convocatoria.slug,
-  nombre: convocatoria.nombre,
-  intro: convocatoria.intro,
-  abierta: convocatoria.abierta,
-  catalogos: catalogos(),
-});
-
-/**
- * Lo que necesita la página del candidato.
- *
- * Cerrada se devuelve igual, con `abierta` en falso: quien llega tarde con un
- * enlace que le pasó un colega merece leer «ya no recibimos fichas» y no un
- * 404, que parece una web rota.
- */
+/** Lo que necesita la página del candidato: la puerta más el catálogo. */
 async function verConvocatoria(slug) {
-  const convocatoria = await prisma.convocatoria.findUnique({
-    where: { slug },
-    select: convocatoriaSelect,
-  });
-  if (!convocatoria) throw new NotFoundError('Ese enlace no existe o ya no está disponible.');
-
-  return salidaPublica(convocatoria);
+  return { ...(await puerta.ver(TIPO, slug)), catalogos: catalogos() };
 }
 
-/**
- * La convocatoria pública vigente, si la hay.
- *
- * Es lo que contesta /asesores sin slug. Mientras ninguna esté marcada como
- * pública devuelve nulo y la web se comporta como si la página no existiera,
- * que es lo que se quiere mientras el piloto esté cerrado.
- */
+/** La convocatoria de asesores abierta al público, si la hay. */
 async function convocatoriaPublica() {
-  const convocatoria = await prisma.convocatoria.findFirst({
-    where: { publica: true, abierta: true },
-    orderBy: { createdAt: 'desc' },
-    select: convocatoriaSelect,
-  });
-  return convocatoria ? salidaPublica(convocatoria) : null;
+  const convocatoria = await puerta.publica(TIPO);
+  return convocatoria ? { ...convocatoria, catalogos: catalogos() } : null;
 }
 
 /** Registra una ficha. Nace PENDIENTE: lo demás lo decide el panel. */
 async function postular(slug, datos) {
-  const convocatoria = await prisma.convocatoria.findUnique({
-    where: { slug },
-    select: { id: true, abierta: true },
-  });
+  const convocatoria = await puerta.paraEnviar(TIPO, slug);
   if (!convocatoria) throw new NotFoundError('Ese enlace no existe o ya no está disponible.');
   if (!convocatoria.abierta) throw new ConflictError('Esta convocatoria ya no recibe fichas.');
 
@@ -240,12 +186,9 @@ async function revisar(id, { estado, notas }, adminId) {
   return salida(asesor);
 }
 
-/** Las convocatorias, con cuántas fichas lleva cada una. */
+/** Las convocatorias de asesores, con cuántas fichas lleva cada una. */
 async function listarConvocatorias() {
-  const filas = await prisma.convocatoria.findMany({
-    orderBy: { createdAt: 'desc' },
-    select: convocatoriaSelect,
-  });
+  const filas = await puerta.listar(TIPO);
 
   const porConvocatoria = await prisma.asesor.groupBy({
     by: ['convocatoriaId', 'estado'],
@@ -265,29 +208,12 @@ async function listarConvocatorias() {
 
 /** Una convocatoria nueva. Nace abierta y NO pública: el enlace es la llave. */
 async function crearConvocatoria({ nombre, intro }, adminId) {
-  const convocatoria = await prisma.convocatoria.create({
-    data: {
-      slug: generarSlug(),
-      nombre,
-      intro: intro ?? '',
-      createdById: adminId ?? null,
-    },
-    select: convocatoriaSelect,
-  });
-  return salidaConvocatoria(convocatoria);
+  return salidaConvocatoria(await puerta.crear(TIPO, { nombre, intro }, adminId));
 }
 
 /** Cerrarla, abrirla o hacerla pública. Lo que no venga, no se toca. */
 async function cambiarConvocatoria(id, cambios) {
-  const existe = await prisma.convocatoria.findUnique({ where: { id }, select: { id: true } });
-  if (!existe) throw new NotFoundError('Esa convocatoria no existe.');
-
-  const convocatoria = await prisma.convocatoria.update({
-    where: { id },
-    data: cambios,
-    select: convocatoriaSelect,
-  });
-  return salidaConvocatoria(convocatoria);
+  return salidaConvocatoria(await puerta.cambiar(id, cambios));
 }
 
 module.exports = {

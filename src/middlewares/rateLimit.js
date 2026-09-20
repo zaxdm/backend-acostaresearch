@@ -275,6 +275,20 @@ const asesorLimiter = build({
 });
 
 /**
+ * Capítulos que llegan a revisar.
+ *
+ * Tres por hora. Un tesista manda uno y, como mucho, lo vuelve a mandar porque
+ * se equivocó de archivo; más que eso desde la misma IP no es prisa, es alguien
+ * probando cuánto aguanta. Cada envío escribe un Word de hasta 25 MB en disco,
+ * así que el freno aquí no protege una tabla: protege el disco.
+ */
+const pedidoLimiter = build({
+  windowMs: 60 * 60 * 1000,
+  max: 3,
+  message: 'Has enviado varios trabajos seguidos. Si algo salió mal, escríbenos por WhatsApp.',
+});
+
+/**
  * Límite del conector MCP, contado POR LICENCIA y no por IP.
  *
  * Es obligatorio que sea así: Claude llama desde la infraestructura de
@@ -342,5 +356,6 @@ module.exports = {
   asistenteLimiter,
   reclamoLimiter,
   asesorLimiter,
+  pedidoLimiter,
   mcpLimiter,
 };

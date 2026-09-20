@@ -20,6 +20,7 @@ const scopusRoutes = require('./modules/scopus/scopus.routes');
 const mapasRoutes = require('./modules/mapas/mapas.routes');
 const asistenteRoutes = require('./modules/asistente/asistente.routes');
 const reclamoRoutes = require('./modules/reclamos/reclamo.routes');
+const asesorRoutes = require('./modules/asesores/asesor.routes');
 const rRoutes = require('./modules/r/r.routes');
 const cualitativoRoutes = require('./modules/cualitativo/cualitativo.routes');
 
@@ -76,6 +77,10 @@ router.use('/asistente', asistenteRoutes);
 // El Libro de Reclamaciones. Presentar una hoja es público; responderla, del
 // administrador.
 router.use('/reclamos', reclamoRoutes);
+// El registro de asesores. Postular es público —quien postula no tiene
+// cuenta—, pero solo se llega con el enlace de una convocatoria mientras no se
+// marque como pública desde el panel. Ver `modules/asesores`.
+router.use('/asesores', asesorRoutes);
 // R en la conversación: subir la matriz y bajar lo que produce el análisis,
 // desde los enlaces que da Claude. Sin sesión: el enlace firmado es la llave.
 router.use('/r', rRoutes);

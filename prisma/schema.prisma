@@ -1748,3 +1748,153 @@ model EnlaceCorto {
   @@index([expiresAt])
   @@map("enlaces_cortos")
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// El registro de asesores
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Quién puede llegar al formulario de asesores.
+///
+/// POR QUÉ EXISTE
+/// --------------
+/// El registro arranca cerrado: el enlace se reparte a dedo y no se anuncia en
+/// ninguna parte. Pero «cerrado» no puede significar «sin desplegar», porque
+/// entonces abrirlo al público sería un despliegue en vez de una decisión, y
+/// eso obliga a esperar a que alguien tenga tiempo de desplegar. Por eso la
+/// puerta es una fila: con `publica` en falso solo entra quien tiene el slug;
+/// puesta en cierto, el formulario aparece además en /asesores. Abrir es un
+/// clic en el panel.
+///
+/// El slug es aleatorio, como el de `TrialLink`: quien no lo tiene no lo
+/// adivina. Si se filtra, se cierra esta convocatoria y se crea otra; las
+/// fichas ya recibidas se quedan donde están.
+model Convocatoria {
+  id String @id @default(uuid()) @db.Char(36)
+
+  /// Lo que va en la URL: /asesores/<slug>.
+  slug   String @unique @db.VarChar(40)
+  /// Para quién es, visto desde el panel: «Piloto de revisión, setiembre».
+  nombre String @db.VarChar(120)
+
+  /// ¿Admite fichas? Cerrada, el enlace sigue abriendo y avisa de que ya no se
+  /// reciben. Es más honesto que un 404 para quien llegó tarde con el enlace
+  /// que le pasó un colega.
+  abierta Boolean @default(true)
+  /// ¿Se llega sin el enlace? Falso = solo con el slug.
+  publica Boolean @default(false)
+
+  /// Lo que se le dice al asesor al abrir la página. Aquí y no en el código
+  /// para no tocar la web en cada campaña.
+  intro String @default("") @db.VarChar(600)
+
+  /// Sin relación a propósito, como en `Reclamo`: si ese administrador se va,
+  /// la convocatoria y sus fichas se quedan.
+  createdById String?  @db.Char(36)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  asesores Asesor[]
+
+  @@map("convocatorias")
+}
+
+/// En qué punto está una ficha. Ninguna nace aprobada: nadie se autopublica.
+enum AsesorEstado {
+  PENDIENTE
+  APROBADO
+  RECHAZADO
+}
+
+/// El grado más alto que declara. Es lo que decide qué puede revisar: un
+/// bachiller no observa la metodología de una tesis de maestría.
+enum AsesorGrado {
+  BACHILLER
+  MAGISTER
+  DOCTOR
+}
+
+enum AsesorDocumento {
+  DNI
+  CE
+  PASAPORTE
+}
+
+/// Alguien que se ofrece a revisar tesis en la plataforma.
+///
+/// NO ES `Project.asesor`. Aquel es el nombre del asesor de la universidad tal
+/// como va en la portada del Word, y es solo texto. Esto es una persona que
+/// postula para trabajar aquí.
+///
+/// LO QUE NO SE PIDE
+/// -----------------
+/// Ni cuenta bancaria ni copia del documento. Las dos hacen falta para pagarle
+/// y para firmar el acuerdo, o sea DESPUÉS de aprobarlo, y se le piden
+/// entonces. Guardar datos de cobro de gente que quizá no entre es asumir la
+/// custodia de algo que no se usa, que es justo lo contrario de lo que pide la
+/// Ley 29733.
+///
+/// EL COMPROMISO SE GUARDA, NO SE SUPONE
+/// -------------------------------------
+/// `aceptaReglas` es el sí explícito a las tres que sostienen el servicio: no
+/// redactar texto por el tesista, usar la plantilla de observaciones y aceptar
+/// auditorías. Se guarda con la ficha porque es lo que se le recuerda el día
+/// que haya que recordárselo.
+model Asesor {
+  id String @id @default(uuid()) @db.Char(36)
+
+  convocatoriaId String       @db.Char(36)
+  convocatoria   Convocatoria @relation(fields: [convocatoriaId], references: [id], onDelete: Cascade)
+
+  // ── Quién es ──────────────────────────────────────────────────────────
+  nombre          String          @db.VarChar(160)
+  tipoDocumento   AsesorDocumento @default(DNI)
+  numeroDocumento String          @db.VarChar(20)
+  /// Por donde se le contesta. Uno por ficha: ver el índice único de abajo.
+  email           String          @db.VarChar(255)
+  telefono        String          @db.VarChar(20)
+
+  // ── Qué acredita ──────────────────────────────────────────────────────
+  grado            AsesorGrado
+  /// Dónde y cuándo lo obtuvo, para poder buscarlo en SUNEDU.
+  gradoUniversidad String      @db.VarChar(160)
+  gradoAnio        Int?
+  /// El enlace o el código del grado en el Registro Nacional de Grados y
+  /// Títulos. Vacío = habrá que buscarlo a mano antes de aprobar.
+  registroSunedu   String      @default("") @db.VarChar(255)
+  /// CV, LinkedIn o ORCID. Opcional: no se sube ningún archivo todavía.
+  enlaceCv         String      @default("") @db.VarChar(500)
+
+  // ── Qué puede revisar ─────────────────────────────────────────────────
+  /// Códigos separados por coma. Ver `asesor.catalogo`.
+  areas           String @db.VarChar(200)
+  metodos         String @db.VarChar(120)
+  /// Su campo, dicho por él: «Gestión educativa», «Salud pública».
+  especialidad    String @db.VarChar(160)
+  /// Las universidades cuyo reglamento de tesis conoce, separadas por coma.
+  universidades   String @default("") @db.VarChar(500)
+  anosExperiencia Int    @default(0)
+  /// Lo que quiera contar en tres o cuatro frases. Es la mitad del criterio
+  /// para aprobarlo, así que se guarda entero.
+  presentacion    String @db.Text
+
+  /// El sí a las tres reglas. Sin esto la ficha no se registra.
+  aceptaReglas Boolean @default(false)
+
+  // ── Qué se decidió ────────────────────────────────────────────────────
+  estado AsesorEstado @default(PENDIENTE)
+  /// Por qué se rechazó o qué quedó pendiente de comprobar. Solo del panel.
+  notas  String?      @db.Text
+
+  revisadoAt    DateTime?
+  /// Sin relación, por lo mismo que `createdById` de la convocatoria.
+  revisadoPorId String?   @db.Char(36)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Un correo, una ficha: quien insiste corrige la suya, no abre otra.
+  @@unique([email])
+  @@index([estado])
+  @@index([convocatoriaId])
+  @@map("asesores")
+}

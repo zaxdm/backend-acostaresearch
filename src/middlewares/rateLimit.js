@@ -261,6 +261,20 @@ const reclamoLimiter = build({
 });
 
 /**
+ * Fichas de asesor.
+ *
+ * Cinco por hora: nadie postula dos veces con motivo —el correo es único—, y
+ * las pocas de más dejan sitio a quien se equivocó y vuelve a enviar. El enlace
+ * se reparte a mano, así que un aluvión desde una IP no es entusiasmo, es un
+ * script llenando el panel de fichas falsas que alguien tendría que leer.
+ */
+const asesorLimiter = build({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  message: 'Has enviado varias fichas seguidas. Si algo salió mal, escríbenos por WhatsApp.',
+});
+
+/**
  * Límite del conector MCP, contado POR LICENCIA y no por IP.
  *
  * Es obligatorio que sea así: Claude llama desde la infraestructura de
@@ -327,5 +341,6 @@ module.exports = {
   mapasUmbralLimiter,
   asistenteLimiter,
   reclamoLimiter,
+  asesorLimiter,
   mcpLimiter,
 };

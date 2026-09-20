@@ -18,6 +18,14 @@
  * dirección sola en su línea y prohibido convertirla en enlace. Con quién se
  * está hablando lo decide `mcp.cliente`, que también explica cómo se comprobó.
  *
+ * Y se le prohíbe TAMBIÉN el bloque de código. Con la primera versión de este
+ * texto ChatGPT eligió el recuadro gris con botón de copiar: la dirección
+ * llegaba entera, pero el tesista tenía que copiarla y pegarla en el navegador
+ * a mano, que es justo lo que no queremos. Suelta y como texto normal, la
+ * interfaz la vuelve pulsable ella sola, sin que el modelo escriba el Markdown
+ * que la rompía. Si ChatGPT le añade su `?utm_source=chatgpt.com`, da igual:
+ * la ruta de la web casa por el camino y no mira la consulta.
+ *
  * Los dos textos comparten el final: llamar otra vez a la herramienta en vez de
  * repetir un enlace anterior. ChatGPT repetía uno de horas antes y el
  * estudiante leía «este enlace venció».
@@ -41,10 +49,12 @@ function enlaceClic({ texto, url, minutos, cliente = 'otro' }) {
   if (cliente === 'chatgpt') {
     return (
       `${limpiarTexto(texto)}:\n${url}\n` +
-      `Dale la dirección ENTERA, tal cual, sola en su línea y sin cambiar ni un carácter.${caduca} ` +
-      'NO la conviertas en un enlace con un texto encima, NO la acortes y NO escribas solo el ' +
-      'dominio: en esta interfaz eso la rompe y el tesista aterriza en la portada sin saber por ' +
-      `qué. ${NO_REPITAS}`
+      'Escríbela TAL CUAL, entera, sola en su línea y COMO TEXTO NORMAL: así tu interfaz la ' +
+      'convierte sola en algo que el tesista puede pulsar. NO la metas en un bloque de código ' +
+      '—le sale un recuadro que hay que copiar a mano—, NO la pongas entre comillas y NO la ' +
+      'escribas como enlace con un texto encima: eso último la rompe y el tesista aterriza en ' +
+      `la portada sin saber por qué. No la acortes ni escribas solo el dominio.${caduca} ` +
+      `${NO_REPITAS}`
     );
   }
 

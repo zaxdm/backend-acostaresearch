@@ -72,7 +72,8 @@ test('desde ChatGPT sale la dirección entera, nunca dentro de un enlace de Mark
 
   assert.ok(texto.includes(`\n${URL_FALSA}\n`), 'la dirección va sola en su línea');
   assert.ok(!texto.includes(`](${URL_FALSA})`), 'a ChatGPT no se le pide Markdown');
-  assert.match(texto, /NO la conviertas en un enlace/);
+  assert.match(texto, /NO la metas en un bloque de código/);
+  assert.match(texto, /NO la escribas como enlace con un texto encima/);
 });
 
 test('desde Claude sigue saliendo el enlace que se pulsa, sin enseñar la dirección', async () => {

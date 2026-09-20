@@ -40,8 +40,11 @@ test('a ChatGPT se le da la dirección entera y se le prohíbe convertirla en en
   const lineas = linea.split('\n');
   assert.equal(lineas[1], URL_LARGA);
   assert.ok(!linea.includes(`](${URL_LARGA})`), 'a ChatGPT no se le pide Markdown');
-  assert.match(linea, /NO la conviertas en un enlace/);
-  assert.match(linea, /NO escribas solo el dominio/);
+  assert.match(linea, /NO la escribas como enlace con un texto encima/);
+  // El bloque de código la dejaba entera pero obligaba a copiarla a mano.
+  assert.match(linea, /NO la metas en un bloque de código/);
+  assert.match(linea, /COMO TEXTO NORMAL/);
+  assert.match(linea, /No la acortes ni escribas solo el dominio/);
   assert.match(linea, /30 minutos/);
   assert.match(linea, /NUNCA repitas/);
 });

@@ -88,6 +88,35 @@ test('una respuesta sin conceptos usables es un 503 del asistente, no un 500', a
   );
 });
 
+test('si el tema es demasiado general y la IA propone temas, se devuelven para elegir', async () => {
+  const resultado = await generarConsulta('marketing', {
+    generar: contesta(
+      JSON.stringify({
+        conceptos: [],
+        nota: 'Marketing es muy amplio.',
+        sugerencias: [
+          '«Marketing digital y ventas en mypes»',
+          'marketing digital y ventas en mypes',
+          'x',
+          'Calidad de servicio y fidelización de clientes en restaurantes',
+          'Influencers en Instagram e intención de compra en jóvenes',
+          'Branding y posicionamiento de universidades privadas',
+          'Uno de más, que no cabe en el máximo de cuatro',
+        ],
+      }),
+    ),
+  });
+
+  assert.deepEqual(resultado.conceptos, []);
+  assert.equal(resultado.nota, 'Marketing es muy amplio.');
+  assert.deepEqual(resultado.sugerencias, [
+    'Marketing digital y ventas en mypes',
+    'Calidad de servicio y fidelización de clientes en restaurantes',
+    'Influencers en Instagram e intención de compra en jóvenes',
+    'Branding y posicionamiento de universidades privadas',
+  ]);
+});
+
 test('si el tema no da para conceptos, se le dice al tesista lo que pide la IA, y no es un 503', async () => {
   // El 21-sep «tesis» o «IA» volvían con la lista vacía y una nota pidiendo
   // más detalle; la nota se tiraba y salía «la IA no devolvió conceptos».

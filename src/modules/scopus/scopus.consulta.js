@@ -29,6 +29,8 @@ const { generarConRespaldo, modelosDeTexto, GeminiError } = require('../../lib/g
 const MAXIMO_CONCEPTOS = 5;
 const MAXIMO_SINONIMOS = 5;
 const LARGO_MAXIMO = 80;
+const MAXIMO_SUGERENCIAS = 4;
+const LARGO_SUGERENCIA = 160;
 
 const SISTEMA = `Eres un bibliotecario experto en búsquedas en Scopus que ayuda a tesistas de
 Latinoamérica. Recibes el tema de una tesis, casi siempre en español, y devuelves los conceptos
@@ -46,9 +48,14 @@ Reglas:
 - NO incluyas palabras de relleno como concepto: effect, impact, relationship, influence, study,
   analysis, level.
 - Nada de operadores (AND, OR), paréntesis, comillas ni códigos de campo: solo los términos.
+- Si el tema es tan general que no se puede buscar ("tesis", "IA", "educación", "marketing"),
+  devuelve "conceptos" vacío, explica en "nota" qué le falta, y en "sugerencias" propón de 3 a 4
+  temas de tesis concretos EN ESPAÑOL a partir de lo que escribió, cada uno en una línea, con sus
+  variables y su población, sin país ni ciudad ("uso de ChatGPT y pensamiento crítico en
+  estudiantes universitarios"). Si el tema se puede buscar, "sugerencias" va vacío.
 
 Responde SOLO con un JSON, sin texto antes ni después, con esta forma:
-{"conceptos":[{"nombre":"critical thinking","sinonimos":["critical reasoning"]}],"nota":"una frase en español para el tesista"}`;
+{"conceptos":[{"nombre":"critical thinking","sinonimos":["critical reasoning"]}],"nota":"una frase en español para el tesista","sugerencias":[]}`;
 
 /** Un término apto para ir dentro de una ecuación, o nada. */
 function limpiarTermino(valor) {
@@ -92,7 +99,20 @@ function normalizar(bruto) {
   }
 
   const nota = typeof bruto?.nota === 'string' ? bruto.nota.trim().slice(0, 400) : '';
-  return { conceptos, nota: nota || null };
+
+  // Los temas que propone cuando el suyo es demasiado general. Van a un botón
+  // que los vuelve a mandar aquí: texto llano, corto y sin repetir.
+  const sugerencias = [];
+  for (const sugerencia of Array.isArray(bruto?.sugerencias) ? bruto.sugerencias : []) {
+    if (typeof sugerencia !== 'string') continue;
+    const limpia = sugerencia.replace(/["«»*#`]/g, '').replace(/\s+/g, ' ').trim();
+    if (limpia.length < 8 || limpia.length > LARGO_SUGERENCIA) continue;
+    if (sugerencias.some((s) => s.toLowerCase() === limpia.toLowerCase())) continue;
+    sugerencias.push(limpia);
+    if (sugerencias.length === MAXIMO_SUGERENCIAS) break;
+  }
+
+  return { conceptos, nota: nota || null, sugerencias };
 }
 
 const noDisponible = (message) =>
@@ -145,6 +165,10 @@ async function generarConsulta(tema, { generar = generarConRespaldo } = {}) {
   }
 
   const resultado = normalizar(bruto);
+
+  // Demasiado general, pero con temas propuestos: eso es la respuesta. La web
+  // los enseña como botones y el tesista elige uno en vez de volver a escribir.
+  if (resultado.conceptos.length === 0 && resultado.sugerencias.length > 0) return resultado;
 
   // El modelo entendió, pero el tema no da para conceptos («tesis», «IA»):
   // devuelve la lista vacía y en la nota pide más detalle. Eso no es que la IA

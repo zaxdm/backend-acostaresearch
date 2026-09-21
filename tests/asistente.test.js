@@ -304,6 +304,75 @@ test('si fallan todos, sale el error del último', async () => {
   );
 });
 
+/** Un Gemini que responde por turnos: la primera llamada, la segunda… */
+function fetchPorTurnos(turnosDeRespuesta, pedidos = []) {
+  let n = 0;
+  return async (url) => {
+    pedidos.push(/models\/([^:]+):/.exec(url)[1]);
+    const [status, cuerpo] = turnosDeRespuesta[Math.min(n, turnosDeRespuesta.length - 1)];
+    n += 1;
+    return { ok: status < 400, status, json: async () => cuerpo };
+  };
+}
+
+const SATURADO = [503, { error: { message: 'This model is currently experiencing high demand. Please try again later.' } }];
+
+test('si los dos modelos están en un pico, se espera un poco y se vuelve a probar', async () => {
+  // El 21-sep-2026 el generador de consultas dijo «la IA no contestó» porque
+  // los dos modelos dieron «high demand» en cuatro segundos. Pasar al de
+  // respaldo no cubre un pico de Google: los tumba a la vez.
+  const pedidos = [];
+  const esperas = [];
+  const fetchImpl = fetchPorTurnos([SATURADO, SATURADO, [200, RESPUESTA_OK]], pedidos);
+
+  const { texto, modelo } = await generarConRespaldo({
+    modelos: ['principal', 'respaldo'],
+    sistema: 's',
+    mensajes: turnos(1),
+    fetchImpl,
+    esperar: async (ms) => esperas.push(ms),
+  });
+
+  assert.equal(texto, 'Hola.');
+  assert.equal(modelo, 'principal', 'a la segunda vuelta contestó el principal');
+  assert.deepEqual(esperas, [2000], 'una espera corta y listo');
+  assert.deepEqual(pedidos, ['principal', 'respaldo', 'principal']);
+});
+
+test('un pico que no se va: tres vueltas como mucho, y el error', async () => {
+  const esperas = [];
+  await assert.rejects(
+    generarConRespaldo({
+      modelos: ['principal', 'respaldo'],
+      sistema: 's',
+      mensajes: turnos(1),
+      fetchImpl: fetchPorTurnos([SATURADO]),
+      esperar: async (ms) => esperas.push(ms),
+    }),
+    (error) => error.status === 503,
+  );
+  assert.deepEqual(esperas, [2000, 4000]);
+});
+
+test('un fallo que no es un pico no se reintenta: se pasa al respaldo y se acabó', async () => {
+  // Un 500 o un tiempo agotado no se arreglan esperando dos segundos, y un
+  // tiempo agotado ya se comió los suyos.
+  const esperas = [];
+  const pedidos = [];
+  await assert.rejects(
+    generarConRespaldo({
+      modelos: ['principal', 'respaldo'],
+      sistema: 's',
+      mensajes: turnos(1),
+      fetchImpl: fetchPorTurnos([SATURADO, [500, { error: { message: 'roto' } }]], pedidos),
+      esperar: async (ms) => esperas.push(ms),
+    }),
+    (error) => error.status === 500,
+  );
+  assert.deepEqual(esperas, []);
+  assert.deepEqual(pedidos, ['principal', 'respaldo']);
+});
+
 // ── Promociones ────────────────────────────────────────────────────────────
 
 const PLANES_CON_CODIGO = [

@@ -129,17 +129,55 @@ async function generar({
  * modelo se negó a responder algo, preguntárselo a otro es buscar el que diga
  * que sí.
  */
-async function generarConRespaldo({ modelos, ...opciones }) {
+/**
+ * Un pico pasajero de Google: saturado (503) o el tope del minuto (429).
+ *
+ * «This model is currently experiencing high demand. Spikes in demand are
+ * usually temporary»: lo dice el propio error. Un tiempo agotado NO cuenta:
+ * ese ya se comió sus quince o treinta segundos, y reintentarlo dejaría al
+ * tesista mirando la pantalla cargando más de un minuto.
+ */
+const esPicoPasajero = (error) =>
+  error instanceof GeminiError &&
+  (error.status === 503 ||
+    error.status === 429 ||
+    /high demand|overloaded|try again later/i.test(error.message));
+
+/** Lo que se espera entre vuelta y vuelta cuando todos los modelos están en un pico. */
+const ESPERAS_TRAS_PICO = [2_000, 4_000];
+
+const dormir = (ms) => new Promise((resolver) => setTimeout(resolver, ms));
+
+async function generarConRespaldo({ modelos, esperar = dormir, ...opciones }) {
   let ultimoError;
 
-  for (const modelo of modelos) {
-    try {
-      return { ...(await generar({ ...opciones, modelo })), modelo };
-    } catch (error) {
-      if (error instanceof GeminiError && error.bloqueado) throw error;
-      logger.warn({ modelo, err: error.message }, 'Gemini: el modelo falló, se prueba el siguiente');
-      ultimoError = error;
+  /**
+   * Y si TODOS están en un pico, se espera un poco y se vuelve a probar la lista.
+   *
+   * Pasar al modelo de respaldo cubre que uno se caiga; no cubre un pico de
+   * Google, que tumba a los dos a la vez. El 21-sep-2026 el generador de
+   * consultas respondió «la IA no contestó» porque los dos modelos dieron
+   * «high demand» en cuatro segundos. Dos vueltas más, con dos y cuatro
+   * segundos de espera: como estos errores vuelven en uno o dos segundos, lo
+   * peor son unos doce segundos más, y casi siempre sale a la primera espera.
+   */
+  for (let vuelta = 0; ; vuelta += 1) {
+    let todosEnPico = true;
+
+    for (const modelo of modelos) {
+      try {
+        return { ...(await generar({ ...opciones, modelo })), modelo };
+      } catch (error) {
+        if (error instanceof GeminiError && error.bloqueado) throw error;
+        logger.warn({ modelo, err: error.message }, 'Gemini: el modelo falló, se prueba el siguiente');
+        ultimoError = error;
+        if (!esPicoPasajero(error)) todosEnPico = false;
+      }
     }
+
+    if (!ultimoError || !todosEnPico || vuelta >= ESPERAS_TRAS_PICO.length) break;
+    logger.info({ vuelta: vuelta + 1 }, 'Gemini: todos los modelos en un pico, se espera y se reintenta');
+    await esperar(ESPERAS_TRAS_PICO[vuelta]);
   }
 
   throw ultimoError ?? new GeminiError('No hay ningún modelo de Gemini configurado');

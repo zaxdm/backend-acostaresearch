@@ -182,3 +182,26 @@ test('si la constancia falla, el correo de entrega sale igual, sin adjunto', asy
   assert.equal(correos.length, 1);
   assert.deepEqual(correos[0].attachments, []);
 });
+
+test('el número de operación no enseña identificadores internos nuestros', () => {
+  const plinSinNumero = pagoPagado({
+    provider: 'PLIN',
+    providerCaptureId: '7190c5de-e75c-49b2-93a4-f72010e18230',
+  });
+  assert.equal(constancia.datosDeConstancia(plinSinNumero).referencia, null);
+
+  const yapeConNumero = pagoPagado({ provider: 'YAPE', operationCode: '01234567', providerCaptureId: '01234567' });
+  assert.equal(constancia.datosDeConstancia(yapeConNumero).referencia, '01234567');
+});
+
+test('las condiciones de licencia solo salen en planes de licencia', () => {
+  const licencia = constancia.datosDeConstancia(
+    pagoPagado({ plan: { ...PLAN, kind: 'LICENSE', words: 0, durationDays: 360 } }),
+  );
+  const palabras = constancia.datosDeConstancia(pagoPagado());
+
+  assert.match(licencia.condiciones[0], /intransferible/);
+  assert.ok(!palabras.condiciones.some((texto) => /intransferible/.test(texto)));
+  assert.ok(licencia.condiciones.some((texto) => /acostaresearch\.com\/terminos/.test(texto)));
+  assert.equal(licencia.detalle, 'acceso por 360 días');
+});

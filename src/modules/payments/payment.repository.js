@@ -54,7 +54,7 @@ const paymentRepository = {
     return prisma.payment.findUnique({
       where: { id },
       include: {
-        plan: { select: { code: true, name: true, words: true, durationDays: true } },
+        plan: { select: { code: true, name: true, kind: true, words: true, durationDays: true } },
         user: { select: { id: true, email: true, firstName: true, lastName: true } },
         discountCode: { select: { code: true } },
       },

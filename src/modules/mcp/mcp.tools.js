@@ -602,6 +602,13 @@ const ESQUEMA_TRABAJAR_EN_R = fromJsonSchema({
         'Nombre de un archivo de la sesión para darle al tesista un enlace de descarga: ' +
         '«resultados.csv», «figura1.png» o «graficos/grafico-01.png». Los que hay salen en la respuesta.',
     },
+    subir: {
+      type: 'boolean',
+      description:
+        'Un enlace para subir OTRO archivo aunque la sesión ya tenga datos: su matriz corregida, o ' +
+        'el exporte de Scopus o WoS para un mapeo bibliométrico. Lo que suba reemplaza lo que hay ' +
+        'en la sesión: díselo antes. Sin datos en la sesión, el enlace sale solo.',
+    },
     informe: {
       type: 'object',
       description:
@@ -2682,6 +2689,8 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         'escribir_csv(tabla, "archivo.csv"). Si lo que subió es un exporte bibliográfico, ver ' +
         'MAPEO BIBLIOMÉTRICO.\n' +
         '· descargar: un enlace para que baje un archivo que creó el análisis.\n' +
+        '· subir: un enlace para subir otro archivo cuando ya hay datos (su matriz corregida o un ' +
+        'exporte bibliográfico); reemplaza lo que hay en la sesión.\n' +
         '· reiniciar: borra los objetos y vuelve a leer sus datos.\n' +
         '· informe: arma el informe en Word del análisis y da el enlace (ver INFORME EN WORD).\n\n' +
         'ANTES DE CORRER PRUEBAS, PREGÚNTALE lo que no sepas —sus variables y dimensiones, qué ' +
@@ -2724,7 +2733,10 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         'segundos a cada llamada. NO hay brms, rstanarm ni blavaan (Stan compila cada modelo y aquí ' +
         'no hay compilador; para lo bayesiano, BayesFactor), ni leaflet, tmap o FielDHub (mapas y ' +
         'aplicaciones interactivas que no se ven en el chat ni en un Word).\n\n' +
-        'MAPEO BIBLIOMÉTRICO: al mismo enlace de subida puede subir, en vez de una matriz, el exporte ' +
+        'MAPEO BIBLIOMÉTRICO: si pide un mapeo o análisis bibliométrico y "listar_capitulos" trae ' +
+        'la herramienta o la fase de mapeo bibliométrico, ÁBRELA PRIMERO con "redactar" y sigue sus ' +
+        'pasos: es el método, y sabe dónde va cada cosa en su documento. Al mismo enlace de subida ' +
+        'puede subir, en vez de una matriz, el exporte ' +
         'de Scopus (CSV, BibTeX o el texto plano que baja por defecto), de Web of Science (texto plano ' +
         'o BibTeX) o de PubMed. Entonces `datos` ya es la tabla de bibliometrix, una fila por ' +
         'documento, con sus etiquetas (AU, TI, SO, PY, TC, CR, DE, ID, C1…). Antes de que exporte, ' +
@@ -2771,7 +2783,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         'que vayan al texto se guardan con "guardar_analisis" (resultados), como siempre.',
       inputSchema: ESQUEMA_TRABAJAR_EN_R,
     },
-    async ({ codigo, reiniciar, descargar, informe }) => {
+    async ({ codigo, reiniciar, descargar, subir, informe }) => {
       // El informe va aparte: no ejecuta R, arma un Word con lo que ya salió.
       if (informe) {
         const cupo = await cupoDePrueba('trabajar_en_r');
@@ -2808,6 +2820,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
           codigo,
           reiniciar,
           descargar,
+          subir,
         });
 
         // El intento queda en el uso de la licencia, donde lo ve la vigilancia.

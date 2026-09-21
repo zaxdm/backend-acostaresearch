@@ -209,7 +209,7 @@ test('trabajar_en_r arma el informe en Word con la estructura como ejemplo, no c
 test('trabajar_en_r no obliga a mandar nada: sin argumentos da el estado', () => {
   const e = esquema('trabajar_en_r');
   assert.equal(e.required, undefined);
-  assert.deepEqual(Object.keys(e.properties).sort(), ['codigo', 'descargar', 'informe', 'reiniciar']);
+  assert.deepEqual(Object.keys(e.properties).sort(), ['codigo', 'descargar', 'informe', 'reiniciar', 'subir']);
   assert.equal(e.additionalProperties, false);
 });
 

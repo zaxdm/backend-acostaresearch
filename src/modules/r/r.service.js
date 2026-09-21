@@ -223,6 +223,25 @@ function avisoDeSubida({ userId, productCode }) {
   );
 }
 
+/**
+ * El enlace para subir otro archivo cuando la sesión ya tiene datos.
+ *
+ * Sin él, quien ya había subido su matriz no tenía cómo subir la corregida ni
+ * el exporte de un mapeo bibliométrico: el enlace solo salía con la sesión
+ * vacía.
+ */
+function avisoDeResubida({ userId, productCode }) {
+  const { url, minutos } = enlaces.enlaceDeSubida({ userId, productCode });
+  return (
+    `ENLACE PARA SUBIR OTRO ARCHIVO. Lo que suba REEMPLAZA los datos de la sesión y empieza una ` +
+    'sesión nueva: díselo antes si no lo sabe. Si es un exporte bibliográfico, su análisis de ' +
+    'resultados guardado no se toca; si es otra matriz, el análisis guardado pasa a ser el de la ' +
+    `sesión nueva.${N}` +
+    `${enlaceClic({ texto: 'Haz clic aquí para subir tu archivo', url, minutos })}${N}${N}` +
+    'Dile que vuelva aquí cuando lo haya subido.'
+  );
+}
+
 // ── La herramienta ──────────────────────────────────────────────────────────
 
 /**
@@ -232,7 +251,7 @@ function avisoDeSubida({ userId, productCode }) {
  * el bloqueo —si el filtro paró el código— es para que la herramienta lo anote
  * en el uso de la licencia.
  */
-async function trabajar({ userId, productCode, codigo, reiniciar = false, descargar }) {
+async function trabajar({ userId, productCode, codigo, reiniciar = false, descargar, subir = false }) {
   const m = motorActual();
   if (!m || !(await m.listo())) return { contenido: texto(NO_DISPONIBLE) };
 
@@ -376,6 +395,7 @@ async function trabajar({ userId, productCode, codigo, reiniciar = false, descar
   }
 
   if (!actual.hayDatos) partes.push(avisoDeSubida({ userId, productCode }));
+  else if (subir) partes.push(avisoDeResubida({ userId, productCode }));
 
   return {
     contenido: { content: [{ type: 'text', text: partes.join(`${N}${N}`) }, ...imagenes] },

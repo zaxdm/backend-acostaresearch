@@ -104,6 +104,17 @@ test('sin datos, la respuesta trae el enlace para subirlos', async () => {
   assert.match(textoDe(contenido), /\/subir-datos\//);
 });
 
+test('con datos ya subidos, el enlace solo sale si se pide con subir, y avisa de que reemplaza', async () => {
+  rService.usarMotor(motorFalso({ hayDatos: true }));
+
+  const sinPedir = textoDe((await rService.trabajar(USO)).contenido);
+  assert.doesNotMatch(sinPedir, /\/subir-datos\//);
+
+  const pedido = textoDe((await rService.trabajar({ ...USO, subir: true })).contenido);
+  assert.match(pedido, /\/subir-datos\//);
+  assert.match(pedido, /REEMPLAZA los datos de la sesión/);
+});
+
 test('una ejecución trae consola, estructura, cómo se lee, gráficos y queda guardada', async () => {
   guardados.length = 0;
   rService.usarMotor(motorFalso());

@@ -2735,16 +2735,18 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         'aplicaciones interactivas que no se ven en el chat ni en un Word).\n\n' +
         'MAPEO BIBLIOMÉTRICO: si pide un mapeo o análisis bibliométrico y "listar_capitulos" trae ' +
         'la herramienta o la fase de mapeo bibliométrico, ÁBRELA PRIMERO con "redactar" y sigue sus ' +
-        'pasos: es el método, y sabe dónde va cada cosa en su documento. Al mismo enlace de subida ' +
-        'puede subir, en vez de una matriz, el exporte ' +
+        'pasos: es el método, y sabe dónde va cada cosa en su documento. EL CAMINO NORMAL ES SU ' +
+        'PERFIL, no un enlace: en acostaresearch.com/perfil, pestaña «Tus fuentes de Scopus», busca ' +
+        'con la ecuación («Consulta avanzada») y pulsa «Hacer un mapeo bibliométrico con estos ' +
+        'resultados»; los datos llegan solos a esta sesión. Dale esas indicaciones. Solo si YA tiene ' +
+        'un archivo exportado, al mismo enlace de subida puede subir, en vez de una matriz, el exporte ' +
         'de Scopus (CSV, BibTeX o el texto plano que baja por defecto), de Web of Science (texto plano ' +
         'o BibTeX) o de PubMed. Entonces `datos` ya es la tabla de bibliometrix, una fila por ' +
         'documento, con sus etiquetas (AU, TI, SO, PY, TC, CR, DE, ID, C1…). Antes de que exporte, ' +
         'dile que marque TODOS los campos, o al menos resumen, palabras clave, afiliaciones y ' +
-        'referencias: sin referencias no hay cocitación ni acoplamiento. También puede mandarlo sin ' +
-        'exportar nada desde el buscador de Scopus de la web («Hacer un mapeo bibliométrico con estos ' +
-        'resultados»): llega con los datos de OpenAlex, sus palabras clave y sus identificadores en ' +
-        'las referencias, y eso se declara en Métodos.\n' +
+        'referencias: sin referencias no hay cocitación ni acoplamiento. Lo que llega desde el perfil ' +
+        'trae los datos de OpenAlex, sus palabras clave y sus identificadores en las referencias, y ' +
+        'eso se declara en Métodos.\n' +
         'Funciones de la casa para esto: resumen_bibliometrico(k = 10) —información principal, ' +
         'producción anual, autores, fuentes, países y lo más citado— y figura_bibliometrica(tipo), que ' +
         'guarda «figura_<tipo>.png» lista para el informe, la dibuja aquí e imprime sus cifras. Tipos: ' +

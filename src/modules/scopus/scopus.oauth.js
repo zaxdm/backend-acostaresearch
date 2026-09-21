@@ -108,7 +108,7 @@ async function pedirTokens(cuerpo, queEs) {
     logger.error({ err: fallo, queEs }, 'Scopus: el canje de tokens no llegó a completarse');
     throw new AppError('Elsevier no contestó a tiempo. Vuelve a intentarlo.', {
       statusCode: 504,
-      code: ERROR_CODES.SERVICE_UNAVAILABLE,
+      code: ERROR_CODES.EXTERNAL_UNAVAILABLE,
     });
   }
 
@@ -121,7 +121,7 @@ async function pedirTokens(cuerpo, queEs) {
     );
     const fallo = new AppError(
       'Elsevier no completó la autorización. Vuelve a conectar tu cuenta.',
-      { statusCode: 502, code: ERROR_CODES.SERVICE_UNAVAILABLE },
+      { statusCode: 502, code: ERROR_CODES.EXTERNAL_UNAVAILABLE },
     );
     // Se marca EN LA INSTANCIA y no como opción del constructor: `AppError`
     // solo se queda con `statusCode`, `code` y `details`, así que una opción

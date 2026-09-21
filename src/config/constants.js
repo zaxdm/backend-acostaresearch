@@ -48,6 +48,10 @@ const ERROR_CODES = Object.freeze({
   R_UNAVAILABLE: 'R_UNAVAILABLE',
   // Y para el catálogo abierto: que OpenAlex no conteste no tapa la web.
   CATALOG_UNAVAILABLE: 'CATALOG_UNAVAILABLE',
+  // Y para Scopus, Elsevier y Mendeley. El 21-sep a las 10:26 Scopus tardó más
+  // de quince segundos en una búsqueda y la web entera se tapó con «estamos en
+  // mantenimiento» mientras todo lo nuestro funcionaba.
+  EXTERNAL_UNAVAILABLE: 'EXTERNAL_UNAVAILABLE',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
 });
 

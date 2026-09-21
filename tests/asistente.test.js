@@ -434,6 +434,49 @@ test('el modelo que agotó su tiempo se pregunta al final unos minutos, y luego 
   olvidarReposos();
 });
 
+test('con ventaja, si el primero tarda se le pregunta también al segundo y gana el más rápido', async () => {
+  // El 21-sep a las 10:25 el copiloto tardó 32 s: en fila, la espera del
+  // principal colgado y la del respaldo lento se sumaban.
+  olvidarReposos();
+  const pedidos = [];
+  let soltarPrincipal;
+  const fetchImpl = async (url) => {
+    const modelo = /models\/([^:]+):/.exec(url)[1];
+    pedidos.push(modelo);
+    if (modelo === 'principal') {
+      await new Promise((r) => {
+        soltarPrincipal = r;
+      });
+    }
+    return { ok: true, status: 200, json: async () => RESPUESTA_OK };
+  };
+
+  const { modelo } = await generarConRespaldo({
+    modelos: ['principal', 'respaldo'],
+    sistema: 's',
+    mensajes: turnos(1),
+    fetchImpl,
+    ventajaMs: 10,
+  });
+  soltarPrincipal();
+
+  assert.equal(modelo, 'respaldo');
+  assert.deepEqual(pedidos, ['principal', 'respaldo']);
+});
+
+test('con ventaja, si el primero contesta a tiempo no se molesta al segundo', async () => {
+  const pedidos = [];
+  const { modelo } = await generarConRespaldo({
+    modelos: ['principal', 'respaldo'],
+    sistema: 's',
+    mensajes: turnos(1),
+    fetchImpl: fetchPorModelo({ principal: [200, RESPUESTA_OK], respaldo: [200, RESPUESTA_OK] }, pedidos),
+    ventajaMs: 1_000,
+  });
+  assert.equal(modelo, 'principal');
+  assert.deepEqual(pedidos, ['principal']);
+});
+
 test('un modelo en reposo sigue siendo el último recurso', async () => {
   olvidarReposos();
   let reloj = 1_000_000;

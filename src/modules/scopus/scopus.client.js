@@ -88,7 +88,7 @@ function comoFallo(estado) {
     return new AppError(
       'Scopus no aceptó nuestras credenciales. Es cosa nuestra, no tuya, y ya estamos avisados. ' +
         'Mientras tanto puedes subir tu export de Scopus, que funciona igual.',
-      { statusCode: 502, code: ERROR_CODES.SERVICE_UNAVAILABLE },
+      { statusCode: 502, code: ERROR_CODES.EXTERNAL_UNAVAILABLE },
     );
   }
 
@@ -110,7 +110,7 @@ function comoFallo(estado) {
 
   return new AppError('Scopus no contestó bien. Inténtalo de nuevo en un momento.', {
     statusCode: 502,
-    code: ERROR_CODES.SERVICE_UNAVAILABLE,
+    code: ERROR_CODES.EXTERNAL_UNAVAILABLE,
   });
 }
 
@@ -150,7 +150,7 @@ async function buscar({
   if (!env.scopusApiEnabled) {
     throw new AppError('La búsqueda en Scopus no está activada en este servidor.', {
       statusCode: 503,
-      code: ERROR_CODES.SERVICE_UNAVAILABLE,
+      code: ERROR_CODES.EXTERNAL_UNAVAILABLE,
     });
   }
 
@@ -180,7 +180,7 @@ async function buscar({
     logger.warn({ err: fallo }, 'Scopus: la petición no llegó a completarse');
     throw new AppError('Scopus tardó demasiado en contestar. Inténtalo otra vez.', {
       statusCode: 504,
-      code: ERROR_CODES.SERVICE_UNAVAILABLE,
+      code: ERROR_CODES.EXTERNAL_UNAVAILABLE,
     });
   }
 

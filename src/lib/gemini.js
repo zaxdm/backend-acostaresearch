@@ -176,9 +176,78 @@ function enOrdenDeConfianza(modelos, ahora) {
 /** Para las pruebas: que ninguna herede el reposo de otra. */
 const olvidarReposos = () => enReposo.clear();
 
-async function generarConRespaldo({ modelos, esperar = dormir, ahora = Date.now, ...opciones }) {
+/**
+ * Una vuelta por la lista de modelos, y el primero que conteste gana.
+ *
+ * Sin `ventajaMs`, en fila: el siguiente solo si el anterior falló. Con ella,
+ * además, si el que está preguntado tarda más que eso, se le pregunta también
+ * al siguiente sin soltar al primero. El 21-sep a las 10:25 el copiloto tardó
+ * 32 s: el principal se colgó 15, y el respaldo, que en otros momentos contesta
+ * en uno, tardó 12 en decir «high demand». En fila, las esperas se suman; en
+ * carrera, cuenta la del más rápido.
+ *
+ * Devuelve `{ resultado }` o `{ fallos }` en el orden en que llegaron; un
+ * rechazo por contenido corta la vuelta y se lanza.
+ */
+function unaVuelta(modelos, opciones, { ventajaMs, alFallar }) {
+  return new Promise((resolver, rechazar) => {
+    const fallos = [];
+    let siguiente = 0;
+    let enCurso = 0;
+    let terminada = false;
+    let reloj = null;
+
+    const terminar = (accion, valor) => {
+      terminada = true;
+      clearTimeout(reloj);
+      accion(valor);
+    };
+
+    const preguntarAlSiguiente = () => {
+      clearTimeout(reloj);
+      if (terminada) return;
+      if (siguiente >= modelos.length) {
+        if (enCurso === 0) terminar(resolver, { fallos });
+        return;
+      }
+
+      const modelo = modelos[siguiente];
+      siguiente += 1;
+      enCurso += 1;
+      generar({ ...opciones, modelo }).then(
+        (respuesta) => {
+          enCurso -= 1;
+          if (!terminada) terminar(resolver, { resultado: { ...respuesta, modelo } });
+        },
+        (error) => {
+          enCurso -= 1;
+          // Aunque ya haya ganado otro: que el colgado quede en reposo igual.
+          alFallar(modelo, error);
+          if (terminada) return;
+          if (error instanceof GeminiError && error.bloqueado) return terminar(rechazar, error);
+          fallos.push({ modelo, error });
+          preguntarAlSiguiente();
+        },
+      );
+
+      if (Number.isFinite(ventajaMs) && siguiente < modelos.length) {
+        reloj = setTimeout(preguntarAlSiguiente, ventajaMs);
+      }
+    };
+
+    preguntarAlSiguiente();
+  });
+}
+
+async function generarConRespaldo({ modelos, esperar = dormir, ahora = Date.now, ventajaMs = Infinity, ...opciones }) {
   let ultimoError;
   modelos = enOrdenDeConfianza(modelos, ahora());
+
+  const alFallar = (modelo, error) => {
+    if (error instanceof GeminiError && error.bloqueado) return;
+    logger.warn({ modelo, err: error.message }, 'Gemini: el modelo falló, se prueba el siguiente');
+    if (esTiempoAgotado(error)) enReposo.set(modelo, ahora() + REPOSO_MS);
+  };
 
   /**
    * Y si TODOS están en un pico, se espera un poco y se vuelve a probar la lista.
@@ -197,19 +266,11 @@ async function generarConRespaldo({ modelos, esperar = dormir, ahora = Date.now,
    * sola vez.
    */
   for (let vuelta = 0; ; vuelta += 1) {
-    const enPico = [];
+    const { resultado, fallos } = await unaVuelta(modelos, opciones, { ventajaMs, alFallar });
+    if (resultado) return resultado;
 
-    for (const modelo of modelos) {
-      try {
-        return { ...(await generar({ ...opciones, modelo })), modelo };
-      } catch (error) {
-        if (error instanceof GeminiError && error.bloqueado) throw error;
-        logger.warn({ modelo, err: error.message }, 'Gemini: el modelo falló, se prueba el siguiente');
-        ultimoError = error;
-        if (esTiempoAgotado(error)) enReposo.set(modelo, ahora() + REPOSO_MS);
-        if (esPicoPasajero(error)) enPico.push(modelo);
-      }
-    }
+    if (fallos.length > 0) ultimoError = fallos[fallos.length - 1].error;
+    const enPico = fallos.filter((f) => esPicoPasajero(f.error)).map((f) => f.modelo);
 
     if (enPico.length === 0 || vuelta >= ESPERAS_TRAS_PICO.length) break;
     logger.info({ vuelta: vuelta + 1, modelos: enPico }, 'Gemini: modelos en un pico, se espera y se reintenta');

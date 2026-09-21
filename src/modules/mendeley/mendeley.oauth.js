@@ -84,7 +84,7 @@ async function pedirTokens(cuerpo, queEs) {
     logger.error({ err: fallo, queEs }, 'Mendeley: el canje de tokens no llegó a completarse');
     throw new AppError('Mendeley no contestó a tiempo. Vuelve a intentarlo.', {
       statusCode: 504,
-      code: ERROR_CODES.SERVICE_UNAVAILABLE,
+      code: ERROR_CODES.EXTERNAL_UNAVAILABLE,
     });
   }
 
@@ -97,7 +97,7 @@ async function pedirTokens(cuerpo, queEs) {
     );
     const fallo = new AppError('Mendeley no completó la autorización. Vuelve a conectar tu cuenta.', {
       statusCode: 502,
-      code: ERROR_CODES.SERVICE_UNAVAILABLE,
+      code: ERROR_CODES.EXTERNAL_UNAVAILABLE,
     });
     // Un refresco RECHAZADO no se arregla reintentando: el tesista retiró el
     // permiso o el de refresco caducó. Uno que no llegó a salir, sí. Se marca en

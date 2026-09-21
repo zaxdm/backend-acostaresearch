@@ -122,6 +122,9 @@ async function generarConsulta(tema, { generar = generarConRespaldo } = {}) {
       mensajes: [{ rol: 'usuario', texto: tema }],
       maxTokens: 700,
       timeoutMs: 15_000,
+      // Lo normal son uno o dos segundos: pasados cuatro, se le pregunta
+      // también al respaldo y gana el que conteste antes.
+      ventajaMs: 4_000,
       json: true,
     }));
   } catch (fallo) {

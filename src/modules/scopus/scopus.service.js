@@ -76,7 +76,7 @@ function exigirQueEsteEncendido() {
     throw new AppError(
       'Buscar en Scopus desde aquí todavía no está disponible. Puedes buscar en Scopus con el ' +
         'acceso de tu universidad y subir el archivo que exportes: funciona igual.',
-      { statusCode: 503, code: ERROR_CODES.SERVICE_UNAVAILABLE },
+      { statusCode: 503, code: ERROR_CODES.EXTERNAL_UNAVAILABLE },
     );
   }
 }

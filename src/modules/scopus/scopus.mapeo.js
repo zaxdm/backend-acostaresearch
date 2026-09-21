@@ -22,7 +22,6 @@
  * alineados —uno por autor— porque bibliometrix los empareja por posición.
  */
 
-const env = require('../../config/env');
 const logger = require('../../config/logger');
 const { ValidationError, AppError } = require('../../shared/errors/AppError');
 const { ERROR_CODES } = require('../../config/constants');
@@ -35,8 +34,13 @@ const openalex = require('../references/openalex.client');
  */
 const TOPE_DEL_MAPEO = 2000;
 
-/** Por página en la vista STANDARD: el máximo que admite la API. */
-const POR_PAGINA_STANDARD = 200;
+/**
+ * Páginas de Scopus que se piden a la vez. De veinticinco en veinticinco —con
+ * nuestra clave, Elsevier rechaza más por página: «Exceeds the maximum number
+ * allowed for the service level», probado el 21-sep-2026—, dos mil son ochenta
+ * páginas; de cinco en cinco, dieciséis rondas.
+ */
+const PAGINAS_A_LA_VEZ = 5;
 
 const COLUMNAS = [
   'id',
@@ -71,7 +75,7 @@ function limpio(valor) {
 const juntar = (lista) => lista.map(limpio).join('|');
 
 /** Una obra de OpenAlex, como fila del CSV. */
-function filaDe(w) {
+function filaDe(w, etiquetas = new Map()) {
   const autorias = w.authorships ?? [];
   const primera = (a) => a?.institutions?.[0] ?? null;
 
@@ -93,7 +97,7 @@ function filaDe(w) {
     'authorships.institutions.id': juntar(autorias.map((a) => primera(a)?.id)),
     'authorships.is_corresponding': juntar(autorias.map((a) => (a?.is_corresponding ? 'true' : 'false'))),
     'keywords.display_name': juntar((w.keywords ?? []).map((k) => k?.display_name).filter(Boolean)),
-    referenced_works: juntar(w.referenced_works ?? []),
+    referenced_works: juntar((w.referenced_works ?? []).map((r) => etiquetas.get(r) ?? r)),
     referenced_works_count: w.referenced_works_count ?? (w.referenced_works ?? []).length,
     abstract: limpio(openalex.resumenDelIndice(w.abstract_inverted_index)),
   };
@@ -104,13 +108,55 @@ function campoCsv(valor) {
 }
 
 /** Las obras, como el CSV de OpenAlex que lee bibliometrix. */
-function csvDeOpenAlex(obras) {
+function csvDeOpenAlex(obras, etiquetas = new Map()) {
   const lineas = [COLUMNAS.map(campoCsv).join(',')];
   for (const w of obras) {
-    const fila = filaDe(w);
+    const fila = filaDe(w, etiquetas);
     lineas.push(COLUMNAS.map((c) => campoCsv(fila[c])).join(','));
   }
   return `${lineas.join('\n')}\n`;
+}
+
+/** Cuántas referencias, las más citadas del corpus, llevan nombre en vez de identificador. */
+const REFERENCIAS_CON_NOMBRE = 200;
+
+/**
+ * Las referencias más citadas del corpus, con «Autor, I. (año)» en vez de
+ * «W2146887469».
+ *
+ * OpenAlex da las referencias como identificadores, y así salen en la red de
+ * cocitación: un tesista no puede leer «w2146887469». Las que se dibujan son
+ * siempre de las más citadas, así que basta con nombrar esas: cuatro
+ * peticiones más. Lo que no se encuentre sigue con su identificador.
+ *
+ * Sin «;» ni «|» en la etiqueta: bibliometrix parte las referencias por ahí.
+ */
+async function etiquetasDeReferencias(obras) {
+  const veces = new Map();
+  for (const w of obras) {
+    for (const r of w.referenced_works ?? []) veces.set(r, (veces.get(r) ?? 0) + 1);
+  }
+  const top = [...veces.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, REFERENCIAS_CON_NOMBRE)
+    .map(([id]) => id);
+  if (top.length === 0) return new Map();
+
+  const etiquetas = new Map();
+  const usadas = new Set();
+  try {
+    for (const obra of await openalex.obrasPorIds(top, ['autores'])) {
+      const autor = obra.autores[0] ?? 'Anónimo';
+      let etiqueta = `${autor} (${obra.anio ?? 's. f.'})`.replace(/[;|]/g, ',');
+      // Dos del mismo autor y año: se distinguen por el principio del título.
+      if (usadas.has(etiqueta)) etiqueta = `${etiqueta} ${limpio(obra.titulo).slice(0, 30)}`.replace(/[;|]/g, ',');
+      usadas.add(etiqueta);
+      etiquetas.set(`https://openalex.org/${obra.id}`, etiqueta);
+    }
+  } catch (error) {
+    logger.warn({ err: error }, 'Mapeo desde Scopus: no se pudieron nombrar las referencias');
+  }
+  return etiquetas;
 }
 
 /**
@@ -119,30 +165,25 @@ function csvDeOpenAlex(obras) {
  * recorridos no traen DOI.
  */
 async function doisDeLaBusqueda({ ecuacion, accessToken }) {
-  const porPagina = env.scopusView === 'COMPLETE' ? cliente.POR_PAGINA : POR_PAGINA_STANDARD;
-  const dois = [];
-  let total = 0;
-  let recorridos = 0;
+  const porPagina = cliente.POR_PAGINA;
+  const pedir = (desde) =>
+    cliente.buscar({ ecuacion, desde, cuantas: porPagina, orden: 'citas', accessToken });
 
-  for (let desde = 0; desde < TOPE_DEL_MAPEO; desde += porPagina) {
-    const pagina = await cliente.buscar({
-      ecuacion,
-      desde,
-      cuantas: Math.min(porPagina, TOPE_DEL_MAPEO - desde),
-      orden: 'citas',
-      accessToken,
-      porPaginaMaxima: porPagina,
-    });
-    total = pagina.total;
-    recorridos += pagina.fichas.length;
-    for (const ficha of pagina.fichas) {
-      const doi = openalex.limpiarDoi(ficha['prism:doi']);
-      if (doi) dois.push(doi);
-    }
-    if (pagina.fichas.length < porPagina || desde + porPagina >= total) break;
+  // La primera dice cuántos hay; el resto se pide por tandas, en orden.
+  const primera = await pedir(0);
+  const total = primera.total;
+  const hasta = Math.min(total, TOPE_DEL_MAPEO);
+  const paginas = [primera];
+
+  const desdes = [];
+  for (let desde = porPagina; desde < hasta; desde += porPagina) desdes.push(desde);
+  for (let i = 0; i < desdes.length; i += PAGINAS_A_LA_VEZ) {
+    paginas.push(...(await Promise.all(desdes.slice(i, i + PAGINAS_A_LA_VEZ).map(pedir))));
   }
 
-  return { dois: [...new Set(dois)], total, recorridos };
+  const fichas = paginas.flatMap((p) => p.fichas).slice(0, TOPE_DEL_MAPEO);
+  const dois = fichas.map((f) => openalex.limpiarDoi(f['prism:doi'])).filter(Boolean);
+  return { dois: [...new Set(dois)], total, recorridos: fichas.length };
 }
 
 /**
@@ -170,7 +211,8 @@ async function prepararMapeo({ ecuacion, accessToken, subir }) {
     });
   }
 
-  const subido = await subir(Buffer.from(csvDeOpenAlex(obras), 'utf8'));
+  const etiquetas = await etiquetasDeReferencias(obras);
+  const subido = await subir(Buffer.from(csvDeOpenAlex(obras, etiquetas), 'utf8'));
 
   return {
     total,
@@ -184,4 +226,12 @@ async function prepararMapeo({ ecuacion, accessToken, subir }) {
   };
 }
 
-module.exports = { prepararMapeo, csvDeOpenAlex, filaDe, doisDeLaBusqueda, TOPE_DEL_MAPEO, COLUMNAS };
+module.exports = {
+  prepararMapeo,
+  csvDeOpenAlex,
+  filaDe,
+  doisDeLaBusqueda,
+  etiquetasDeReferencias,
+  TOPE_DEL_MAPEO,
+  COLUMNAS,
+};

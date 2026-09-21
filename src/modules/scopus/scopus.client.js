@@ -146,9 +146,6 @@ async function buscar({
   cuantas = POR_PAGINA,
   orden = 'citas',
   accessToken = null,
-  // Solo el mapeo bibliométrico pide más: la vista STANDARD admite hasta 200.
-  // La web sigue con 25 para que su paginación no cambie de forma.
-  porPaginaMaxima = POR_PAGINA,
 }) {
   if (!env.scopusApiEnabled) {
     throw new AppError('La búsqueda en Scopus no está activada en este servidor.', {
@@ -167,7 +164,7 @@ async function buscar({
   const url = new URL(BASE);
   url.searchParams.set('query', ecuacion);
   url.searchParams.set('start', String(desde));
-  url.searchParams.set('count', String(Math.min(cuantas, porPaginaMaxima)));
+  url.searchParams.set('count', String(Math.min(cuantas, POR_PAGINA)));
   url.searchParams.set('view', env.scopusView);
   // Lo más citado primero si no se pide otra cosa. Un orden desconocido cae
   // también ahí: nunca llega a Elsevier nada que no esté en la lista.

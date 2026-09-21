@@ -26,8 +26,8 @@ require.cache[rutaCliente] = {
   loaded: true,
   exports: {
     POR_PAGINA: 25,
-    async buscar({ desde, cuantas, porPaginaMaxima }) {
-      paginasPedidas.push({ desde, cuantas, porPaginaMaxima });
+    async buscar({ desde, cuantas }) {
+      paginasPedidas.push({ desde, cuantas });
       return { total: scopus.total, desde, fichas: scopus.fichas.slice(desde, desde + cuantas) };
     },
   },
@@ -40,6 +40,14 @@ require.cache[rutaOpenalex] = {
     ...realOpenalex,
     async obrasCompletasPorDoi(dois) {
       return obrasDeOpenalex.filter((w) => dois.includes(realOpenalex.limpiarDoi(w.doi)));
+    },
+    // Las referencias citadas, con su primer autor y su año, como obraDelMapa.
+    async obrasPorIds(ids) {
+      const conocidas = {
+        W9: { id: 'W9', autores: ['Junco, R.'], anio: 2011, titulo: 'Uno' },
+        W8: { id: 'W8', autores: ['Junco, R.'], anio: 2011, titulo: 'Otro estudio' },
+      };
+      return ids.map((id) => conocidas[realOpenalex.soloElId(id)]).filter(Boolean);
     },
   },
 };
@@ -100,6 +108,18 @@ test('cada autor lleva su país y su institución en la misma posición', () => 
   assert.equal(fila.abstract, 'Un estudio');
 });
 
+test('las referencias más citadas llevan «Autor, I. (año)» y las desconocidas su identificador', async () => {
+  const obras = [OBRA, { ...OBRA, referenced_works: ['https://openalex.org/W9', 'https://openalex.org/W7'] }];
+  const etiquetas = await mapeo.etiquetasDeReferencias(obras);
+
+  assert.equal(etiquetas.get('https://openalex.org/W9'), 'Junco, R. (2011)');
+  // Mismo autor y año: se distingue por el título.
+  assert.equal(etiquetas.get('https://openalex.org/W8'), 'Junco, R. (2011) Otro estudio');
+
+  const [fila] = leerCsv(mapeo.csvDeOpenAlex([obras[1]], etiquetas));
+  assert.equal(fila.referenced_works, 'Junco, R. (2011)|https://openalex.org/W7');
+});
+
 test('una barra o un salto dentro de un valor no parten la celda ni la fila', () => {
   const texto = mapeo.csvDeOpenAlex([OBRA]);
   assert.equal(texto.trim().split('\n').length, 2);
@@ -119,7 +139,7 @@ test('el CSV se reconoce como de OpenAlex y se lee con los países arreglados', 
   );
 });
 
-test('recorre la búsqueda de doscientos en doscientos y para en la última página', async () => {
+test('recorre la búsqueda de veinticinco en veinticinco y para en la última página', async () => {
   paginasPedidas.length = 0;
   scopus = {
     total: 450,
@@ -130,9 +150,11 @@ test('recorre la búsqueda de doscientos en doscientos y para en la última pág
 
   assert.deepEqual(
     paginasPedidas.map((p) => p.desde),
-    [0, 200, 400],
+    Array.from({ length: 18 }, (_, i) => i * 25),
   );
-  assert.ok(paginasPedidas.every((p) => p.porPaginaMaxima === 200));
+  // Con nuestra clave, Elsevier rechaza más de 25 por página («Exceeds the
+  // maximum number allowed for the service level», 21-sep-2026).
+  assert.ok(paginasPedidas.every((p) => p.cuantas === 25));
   assert.equal(total, 450);
   assert.equal(recorridos, 450);
   assert.equal(dois.length, 405, 'los que no traen DOI no cuentan');
@@ -145,7 +167,7 @@ test('no pasa del tope de dos mil aunque la búsqueda tenga más', async () => {
   const { dois } = await mapeo.doisDeLaBusqueda({ ecuacion: 'x', accessToken: null });
 
   assert.equal(dois.length, mapeo.TOPE_DEL_MAPEO);
-  assert.equal(paginasPedidas.at(-1).desde + paginasPedidas.at(-1).cuantas, mapeo.TOPE_DEL_MAPEO);
+  assert.equal(Math.max(...paginasPedidas.map((p) => p.desde + p.cuantas)), mapeo.TOPE_DEL_MAPEO);
 });
 
 test('prepararMapeo sube el CSV a la sesión y cuenta lo que quedó fuera', async () => {

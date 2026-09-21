@@ -176,6 +176,17 @@ preparar_openalex <- function(M) {
   M
 }
 
+# Una red, solo con sus k nodos mas fuertes (la diagonal: veces citada, veces
+# que aparece). Con 632 documentos la cocitacion tiene 21.000 referencias, y
+# networkPlot con normalize = "association" la vuelve densa: 3,2 GB (medido el
+# 21-sep-2026). Se dibujan 30; con 150 candidatos sobra para elegirlos.
+.recortar_red <- function(red, k) {
+  if (nrow(red) <= k) return(red)
+  fuerza <- Matrix::diag(red)
+  quedan <- order(fuerza, decreasing = TRUE)[seq_len(k)]
+  red[quedan, quedan]
+}
+
 # Los paises de cada documento. En OpenAlex ya vienen de la fuente y NO se
 # recalculan: metaTagExtraction los saca de las afiliaciones, que alli son solo
 # nombres de institucion, y los dejaria vacios.
@@ -283,6 +294,7 @@ figura_bibliometrica <- function(tipo, M = datos, archivo = paste0("figura_", ti
     # Normalizada por asociacion, como la dibuja biblioshiny: sin eso, los
     # terminos mas frecuentes se llevan todos los enlaces.
     normalizar <- if (tipo %in% c("coocurrencia", "cocitacion")) "association" else NULL
+    red <- .recortar_red(red, max(150, n * 5))
     dibujo <- function() {
       bibliometrix::networkPlot(red, normalize = normalizar, n = min(n, nrow(red)), Title = titulo,
                                 type = forma, labelsize = 0.7, size.cex = TRUE,

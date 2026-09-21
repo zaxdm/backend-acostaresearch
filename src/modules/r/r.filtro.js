@@ -200,6 +200,10 @@ const PAQUETES_PERMITIDOS = new Set([
   'NLP',
   'SnowballC',
   'wordcloud',
+  // Mapeo bibliométrico sobre un exporte de Scopus, WoS o PubMed. igraph, para
+  // leer las redes que devuelve networkPlot.
+  'bibliometrix',
+  'igraph',
 ]);
 
 /** Reglas sobre el código, ya sin comentarios. */

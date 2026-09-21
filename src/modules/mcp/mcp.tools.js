@@ -2679,7 +2679,8 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         '· codigo: ejecuta R y devuelve la consola, los gráficos como imagen y cómo se lee cada ' +
         'prueba. Ya existen `datos` (su matriz) y estas funciones: alfa_de_cronbach(items), ' +
         'puntaje(datos, columnas), normalidad(x), descriptivos(datos), frecuencias(x) y ' +
-        'escribir_csv(tabla, "archivo.csv").\n' +
+        'escribir_csv(tabla, "archivo.csv"). Si lo que subió es un exporte bibliográfico, ver ' +
+        'MAPEO BIBLIOMÉTRICO.\n' +
         '· descargar: un enlace para que baje un archivo que creó el análisis.\n' +
         '· reiniciar: borra los objetos y vuelve a leer sus datos.\n' +
         '· informe: arma el informe en Word del análisis y da el enlace (ver INFORME EN WORD).\n\n' +
@@ -2718,10 +2719,30 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         '(con quanteda.textstats y quanteda.textplots), topicmodels.\n' +
         '· Tablas listas: gtsummary («Tabla 1» y regresiones; al Word con as_flex_table), ' +
         'apaTables, janitor.\n' +
+        '· Bibliometría: bibliometrix (e igraph para sus redes). Ver MAPEO BIBLIOMÉTRICO.\n' +
         'Los library() se recuerdan entre llamadas. Carga solo lo que uses: cada paquete suma ' +
         'segundos a cada llamada. NO hay brms, rstanarm ni blavaan (Stan compila cada modelo y aquí ' +
         'no hay compilador; para lo bayesiano, BayesFactor), ni leaflet, tmap o FielDHub (mapas y ' +
         'aplicaciones interactivas que no se ven en el chat ni en un Word).\n\n' +
+        'MAPEO BIBLIOMÉTRICO: al mismo enlace de subida puede subir, en vez de una matriz, el exporte ' +
+        'de Scopus (CSV, BibTeX o el texto plano que baja por defecto), de Web of Science (texto plano ' +
+        'o BibTeX) o de PubMed. Entonces `datos` ya es la tabla de bibliometrix, una fila por ' +
+        'documento, con sus etiquetas (AU, TI, SO, PY, TC, CR, DE, ID, C1…). Antes de que exporte, ' +
+        'dile que marque TODOS los campos, o al menos resumen, palabras clave, afiliaciones y ' +
+        'referencias: sin referencias no hay cocitación ni acoplamiento.\n' +
+        'Funciones de la casa para esto: resumen_bibliometrico(k = 10) —información principal, ' +
+        'producción anual, autores, fuentes, países y lo más citado— y figura_bibliometrica(tipo), que ' +
+        'guarda «figura_<tipo>.png» lista para el informe, la dibuja aquí e imprime sus cifras. Tipos: ' +
+        'produccion_anual, fuentes, autores, paises, palabras, coocurrencia, mapa_tematico, cocitacion, ' +
+        'coautoria, colaboracion_paises, bradford y lotka; opciones n (cuántos), campo ("DE" palabras ' +
+        'de autor, "ID" las de la base) y minfreq (mapa temático). UNA figura por llamada: con miles ' +
+        'de documentos, cada red se come buena parte del tiempo. Para lo demás, las funciones de ' +
+        'bibliometrix tal cual (thematicEvolution, conceptualStructure, histNetwork…). NO hay ' +
+        'biblioshiny: aquí no hay navegador ni red. Las figuras de bibliometrix rotulan en inglés ' +
+        '(«Motor Themes»): nómbralas en español en el texto.\n' +
+        'Su licencia EXIGE citarlo en lo que se publique: antes del informe, guarda la fuente con ' +
+        '"anadir_a_mis_fuentes" (DOI 10.1016/j.joi.2017.08.007; Aria y Cuccurullo, 2017, Journal of ' +
+        'Informetrics) y cítala con su clave en el párrafo de método.\n\n' +
         'INFORME EN WORD: cuando pida su informe o su capítulo de resultados en Word, manda solo ' +
         '«informe». El servidor pone las tablas en APA, mete las figuras de la sesión, pone las citas y ' +
         'las referencias en la norma que elija y te da el enlace.\n' +
@@ -2744,7 +2765,8 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         'comparativo lleva sus propios apartados.\n' +
         'CADA CIFRA SALE DE LA CONSOLA DE ESTA SESIÓN: la respuesta te marca las que no encuentre.\n\n' +
         'LÍMITES: sin internet, sin install.packages y sin salir de su carpeta. Cada llamada ' +
-        `tiene ${env.R_LIMITE_SEGUNDOS} segundos y 400 MB.\n\n` +
+        `tiene ${env.R_LIMITE_SEGUNDOS} segundos y 400 MB (900 MB si sus datos son un exporte ` +
+        'bibliográfico).\n\n' +
         'Todo lo que ejecutas queda guardado en su análisis: "ver_analisis" lo lee, y las cifras ' +
         'que vayan al texto se guardan con "guardar_analisis" (resultados), como siempre.',
       inputSchema: ESQUEMA_TRABAJAR_EN_R,

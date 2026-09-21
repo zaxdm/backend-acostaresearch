@@ -402,6 +402,10 @@ const schema = z.object({
   R_LIMITE_SEGUNDOS: z.coerce.number().int().positive().default(45),
   // Una matriz de tesis con cientos de encuestados no llega a un mega.
   R_SUBIDA_MAX_BYTES: z.coerce.number().int().positive().default(5 * 1024 * 1024),
+  // El exporte de Scopus o WoS para bibliometrix, con resúmenes y referencias:
+  // unos 10 KB por documento, así que 2000 documentos rondan los 20 MB. Solo
+  // vale para un exporte bibliográfico; una matriz sigue con el tope de arriba.
+  R_SUBIDA_BIBLIO_MAX_BYTES: z.coerce.number().int().positive().default(25 * 1024 * 1024),
   // A partir de cuánto ocupa una sesión se le dice a Claude que libere espacio.
   // El techo de verdad es el disco de las sesiones (infra/r/disco-de-sesiones.sh).
   R_AVISO_SESION_MB: z.coerce.number().int().positive().default(300),

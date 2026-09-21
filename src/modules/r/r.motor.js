@@ -67,7 +67,17 @@ const INTERNOS = new Set([
   'consola.txt',
   'lectura.R',
   'paquetes.txt',
+  'bibliografia',
 ]);
+
+/**
+ * La marca de una sesión cuyos datos son un exporte bibliográfico. La deja el
+ * backend al subirlo y con ella el conductor elige la jaula con más memoria:
+ * bibliometrix pasa de los 400 MB de la de siempre con unos cientos de
+ * documentos. R podría crearla o borrarla, pero lo más que gana es la otra
+ * jaula, igual de cerrada y dentro del mismo slice.
+ */
+const MARCA_BIBLIOGRAFIA = 'bibliografia';
 
 const MAXIMO_SALIDA = 2 * 1024 * 1024;
 const MAXIMO_ESTADO = 512 * 1024;
@@ -318,17 +328,28 @@ const NO_DISPONIBLE =
  * (`TimeoutStartSec`), y al cortarlo mata el grupo de procesos entero; el reloj
  * de aquí es solo por si systemd no contestara.
  */
-function conductorSystemd({ unidad = 'acostaresearch-r', limiteSegundos }) {
-  return ({ sesion }) =>
-    new Promise((resolve) => {
+function conductorSystemd({ unidad = 'acostaresearch-r', unidadBibliografica = 'acostaresearch-r-biblio', limiteSegundos }) {
+  return async ({ sesion, carpeta }) => {
+    const plantilla = carpeta && (await esBibliografica(carpeta)) ? unidadBibliografica : unidad;
+    return new Promise((resolve) => {
       execFile(
         'systemctl',
-        ['start', '--no-ask-password', '--quiet', `${unidad}@${sesion}.service`],
+        ['start', '--no-ask-password', '--quiet', `${plantilla}@${sesion}.service`],
         { timeout: (limiteSegundos + 30) * 1000, env: { PATH: '/usr/sbin:/usr/bin:/sbin:/bin' } },
         (error, _stdout, stderr) =>
           resolve({ fallo: error ? String(error.code ?? 'error') : null, stderr: String(stderr ?? '') }),
       );
     });
+  };
+}
+
+/** ¿Tiene la sesión la marca de exporte bibliográfico? Un enlace no cuenta. */
+async function esBibliografica(carpeta) {
+  try {
+    return (await fs.lstat(path.join(carpeta, MARCA_BIBLIOGRAFIA))).isFile();
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -593,14 +614,17 @@ function crearMotor({
      * Mete el archivo del tesista y lo lee. Empieza una sesión nueva: los
      * objetos de otros datos no valen para estos.
      */
-    subirDatos(sesion, { archivo, contenido, lectura }) {
+    subirDatos(sesion, { tipo, archivo, contenido, lectura }) {
       return enSuTurno(sesion, async () => {
         const carpeta = await prepararCarpeta(sesion);
         const g = await grupo();
         await borrarSesionSinTurno(carpeta);
         await Promise.all(
-          ['datos.csv', 'datos.xlsx', 'datos.xls', 'datos.sav'].map((n) => fs.rm(path.join(carpeta, n), BORRAR)),
+          ['datos.csv', 'datos.xlsx', 'datos.xls', 'datos.sav', 'datos.bib', 'datos.txt', MARCA_BIBLIOGRAFIA].map((n) =>
+            fs.rm(path.join(carpeta, n), BORRAR),
+          ),
         );
+        if (tipo === 'bibliografia') await escribirSeguro(carpeta, MARCA_BIBLIOGRAFIA, 'bibliometrix\n', g);
         await escribirSeguro(carpeta, archivo, contenido, g);
         await escribirSeguro(carpeta, 'lectura.R', lectura, g);
 
@@ -690,6 +714,7 @@ module.exports = {
   crearMotor,
   conductorSystemd,
   conductorLocal,
+  esBibliografica,
   parsearEstado,
   leerSeguro,
   escribirSeguro,

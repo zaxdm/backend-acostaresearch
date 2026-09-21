@@ -391,6 +391,8 @@ async function subirDatos({ userId, productCode, bytes }) {
 
   return {
     leido,
+    // «bibliografia» si es un exporte de Scopus, WoS o PubMed: las filas son documentos.
+    tipo: preparado.tipo === 'bibliografia' ? 'bibliografia' : 'matriz',
     filas: dim?.filas ?? null,
     columnas: hecho.estado.columnas.map((c) => c.nombre),
     aviso: preparado.aviso,

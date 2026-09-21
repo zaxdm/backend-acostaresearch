@@ -1,0 +1,48 @@
+FN Clarivate Analytics Web of Science
+VR 1.0
+PT J
+AU Perez, J
+   Lopez, M
+TI Estudio de prueba 1
+SO REVISTA DE PRUEBAS
+DE inteligencia artificial; educacion superior; etica
+ID ARTIFICIAL-INTELLIGENCE; HIGHER-EDUCATION
+C1 [Perez, J] Univ Nacl, Lima, Peru.
+CR Smith J, 2020, J TEST, V1, P1
+   Doe A, 2019, J TEST, V2, P3
+TC 1
+PY 2021
+UT WOS:000000000000001
+ER
+
+PT J
+AU Lopez, M
+   Garcia, A
+TI Estudio de prueba 2
+SO REVISTA DE PRUEBAS
+DE inteligencia artificial; educacion superior; etica
+ID ARTIFICIAL-INTELLIGENCE; HIGHER-EDUCATION
+C1 [Lopez, M] Univ Nacl, Lima, Chile.
+CR Smith J, 2020, J TEST, V1, P1
+   Doe A, 2019, J TEST, V2, P3
+TC 2
+PY 2022
+UT WOS:000000000000002
+ER
+
+PT J
+AU Perez, J
+   Garcia, A
+TI Estudio de prueba 3
+SO REVISTA DE PRUEBAS
+DE inteligencia artificial; educacion superior; etica
+ID ARTIFICIAL-INTELLIGENCE; HIGHER-EDUCATION
+C1 [Perez, J] Univ Nacl, Lima, Peru.
+CR Smith J, 2020, J TEST, V1, P1
+   Doe A, 2019, J TEST, V2, P3
+TC 3
+PY 2023
+UT WOS:000000000000003
+ER
+
+EF

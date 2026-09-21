@@ -15,7 +15,7 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 
-const { crearMotor, MotorNoDisponible, MotorOcupado } = require('../src/modules/r/r.motor');
+const { crearMotor, esBibliografica, MotorNoDisponible, MotorOcupado } = require('../src/modules/r/r.motor');
 
 const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47]), Buffer.alloc(300, 1)]);
 
@@ -181,6 +181,34 @@ test('subir datos empieza una sesión nueva', async () => {
   assert.match(r.guion, /read\.csv/);
   await assert.rejects(fs.stat(path.join(base, 'p1', 'entorno.RData')), 'el entorno viejo se borra');
   assert.equal((await motor.estado('p1')).hayDatos, true);
+});
+
+test('un exporte bibliográfico marca la sesión para la jaula del mapeo; una matriz la desmarca', async () => {
+  const base = await carpetaTemporal();
+  const motor = crearMotor({ carpetaBase: base, conductor: conductorFalso() });
+  const carpeta = path.join(base, 'p1');
+
+  await motor.subirDatos('p1', {
+    tipo: 'bibliografia',
+    archivo: 'datos.txt',
+    contenido: Buffer.from('FN Clarivate Analytics Web of Science\n'),
+    lectura: 'datos <- bibliometrix::convert2df("datos.txt", dbsource = "wos", format = "plaintext")',
+  });
+  assert.equal(await esBibliografica(carpeta), true);
+  assert.ok(!(await motor.estado('p1')).archivos.some((a) => a.nombre === 'bibliografia'), 'la marca es interna');
+
+  // Después de reiniciar sigue siendo la misma bibliografía.
+  await motor.reiniciar('p1');
+  assert.equal(await esBibliografica(carpeta), true);
+
+  await motor.subirDatos('p1', {
+    tipo: 'csv',
+    archivo: 'datos.csv',
+    contenido: Buffer.from('a;b\n1;2\n'),
+    lectura: 'datos <- read.csv("datos.csv", sep = ";")',
+  });
+  assert.equal(await esBibliografica(carpeta), false);
+  await assert.rejects(fs.stat(path.join(carpeta, 'datos.txt')), 'el exporte anterior se borra');
 });
 
 test('reiniciar sin datos no ejecuta nada', async () => {

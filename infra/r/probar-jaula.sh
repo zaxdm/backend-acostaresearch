@@ -26,7 +26,7 @@ ejecutar() {
   rm -f "$CARPETA/fin" "$CARPETA/salida.txt"
   printf '%s\n' "$1" | sudo -u acosta tee "$CARPETA/orden.R" >/dev/null
   local inicio=$SECONDS
-  sudo -u acosta systemctl start --no-ask-password "acostaresearch-r@$ID.service" 2>/tmp/jaula-err-$$ || true
+  sudo -u acosta systemctl start --no-ask-password "${UNIDAD:-acostaresearch-r}@$ID.service" 2>/tmp/jaula-err-$$ || true
   SEGUNDOS=$((SECONDS - inicio))
   SALIDA="$(cat "$CARPETA/salida.txt" 2>/dev/null; cat /tmp/jaula-err-$$ 2>/dev/null)"
   rm -f /tmp/jaula-err-$$
@@ -54,7 +54,7 @@ comprobar "lo que escribe R lo lee la API" 'sudo -u acosta test -r "$CARPETA/pru
 # porque al cargarse lanza un proceso y la jaula no lo deja. Todos a la vez en
 # una sola orden pasarían de 400 MB. Tarda un par de minutos.
 FALLAN=""
-for p in readxl haven writexl openxlsx flextable officer tidyverse dplyr tidyr readr forcats stringr purrr tibble lubridate magrittr glue scales ggplot2 ggpubr gridExtra cowplot ggrepel corrplot psych GPArotation psy lavaan semTools car carData rstatix nortest effectsize performance parameters insight datawizard bayestestR broom emmeans lme4 rio knitr patchwork skimr kableExtra sjPlot sjmisc sjstats ggeffects GGally ggthemes viridis ggalluvial dendextend mice Hmisc pwr coin multcomp lmerTest ordinal pscl polycor vcd eRm qgraph epitools epiR pROC survminer metafor survey plm AER lmtest sandwich forecast tseries urca zoo xts vegan ade4 FactoMineR factoextra randomForest glmnet e1071 caret tidytext tm NLP SnowballC wordcloud survival MASS semPlot nFactors paran mirt ltm difR irr MVN seminr cSEM plspm moments DescTools BayesFactor gtsummary apaTables janitor meta fixest panelr pdynmc agricolae sf terra quanteda quanteda.textstats quanteda.textplots topicmodels; do
+for p in readxl haven writexl openxlsx flextable officer tidyverse dplyr tidyr readr forcats stringr purrr tibble lubridate magrittr glue scales ggplot2 ggpubr gridExtra cowplot ggrepel corrplot psych GPArotation psy lavaan semTools car carData rstatix nortest effectsize performance parameters insight datawizard bayestestR broom emmeans lme4 rio knitr patchwork skimr kableExtra sjPlot sjmisc sjstats ggeffects GGally ggthemes viridis ggalluvial dendextend mice Hmisc pwr coin multcomp lmerTest ordinal pscl polycor vcd eRm qgraph epitools epiR pROC survminer metafor survey plm AER lmtest sandwich forecast tseries urca zoo xts vegan ade4 FactoMineR factoextra randomForest glmnet e1071 caret tidytext tm NLP SnowballC wordcloud survival MASS semPlot nFactors paran mirt ltm difR irr MVN seminr cSEM plspm moments DescTools BayesFactor gtsummary apaTables janitor meta fixest panelr pdynmc agricolae sf terra quanteda quanteda.textstats quanteda.textplots topicmodels bibliometrix igraph; do
   rm -f "$CARPETA/paquetes.txt" "$CARPETA/entorno.RData"
   ejecutar "suppressPackageStartupMessages(library($p)); cat(\"CARGA-OK\\n\")"
   grep -q "CARGA-OK" <<<"$SALIDA" || FALLAN="$FALLAN $p"
@@ -68,6 +68,19 @@ ejecutar 'cat("psych sigue cargado:", "package:psych" %in% search(), "\n")'
 comprobar "los library() se recuerdan en la orden siguiente" 'grep -q "psych sigue cargado: TRUE" <<<"$SALIDA"'
 ejecutar 'suppressPackageStartupMessages(library(ggplot2)); print(ggplot(mtcars, aes(wt, mpg)) + geom_point()); cat("ggplot ok\n")'
 comprobar "ggplot2 dibuja dentro de la jaula" 'grep -q "ggplot ok" <<<"$SALIDA" && ls "$CARPETA"/graficos/grafico-*.png >/dev/null 2>&1'
+
+echo "── Mapeo bibliométrico (la jaula con más memoria) ──"
+# Tres registros de WoS escritos por R, leídos como los lee la subida y
+# analizados con las funciones de la casa, dentro de acostaresearch-r-biblio.
+UNIDAD=acostaresearch-r-biblio
+rm -f "$CARPETA/paquetes.txt" "$CARPETA/entorno.RData"
+ejecutar 'r <- function(i, au, pais, anio) c("PT J", paste("AU", au[1]), paste("  ", au[-1]), paste("TI Estudio", i), "SO REVISTA DE PRUEBAS", "DE inteligencia artificial; educacion superior; etica", paste0("C1 [", au[1], "] Univ Nacl, Lima, ", pais, "."), "CR Smith J, 2020, J TEST, V1, P1", "   Doe A, 2019, J TEST, V2, P3", paste("TC", i), paste("PY", anio), sprintf("UT WOS:%015d", i), "ER", ""); writeLines(c("FN Clarivate Analytics Web of Science", "VR 1.0", r(1, c("Perez, J", "Lopez, M"), "Peru", 2021), r(2, c("Lopez, M", "Garcia, A"), "Chile", 2022), r(3, c("Perez, J", "Garcia, A"), "Peru", 2023), "EF"), "datos.txt"); datos <- suppressWarnings(bibliometrix::convert2df("datos.txt", dbsource = "wos", format = "plaintext")); cat("documentos:", nrow(datos), "\n"); figura_bibliometrica("produccion_anual"); figura_bibliometrica("coocurrencia"); cat("BIBLIO-OK\n")'
+comprobar "bibliometrix lee WoS y dibuja en la jaula del mapeo" 'grep -q "documentos: 3" <<<"$SALIDA" && grep -q "BIBLIO-OK" <<<"$SALIDA" && [ -f "$CARPETA/figura_coocurrencia.png" ]'
+SALIDA="$(systemctl show -p MemoryMax "acostaresearch-r-biblio@$ID.service")"
+comprobar "la jaula del mapeo tiene 900 MB y la de siempre sigue en 400" \
+  'grep -q "MemoryMax=943718400" <<<"$SALIDA" && systemctl show -p MemoryMax "acostaresearch-r@$ID.service" | grep -q "MemoryMax=419430400"'
+unset UNIDAD
+rm -f "$CARPETA/paquetes.txt" "$CARPETA/entorno.RData" "$CARPETA"/figura_*.png "$CARPETA/datos.txt"
 
 echo "── Secretos ──"
 ejecutar 'print(names(Sys.getenv()))'

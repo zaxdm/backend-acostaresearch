@@ -19,6 +19,8 @@
  * como UTF-8, R corta el archivo en la primera «ñ» y avisa en inglés.
  */
 
+const bibliografia = require('./r.bibliografia');
+
 /** Los tres bytes con los que Excel marca un CSV en UTF-8. */
 const BOM = [0xef, 0xbb, 0xbf];
 
@@ -135,6 +137,18 @@ const NOMBRES_LIMPIOS = 'names(datos) <- make.names(names(datos), unique = TRUE)
  * que se guardan y la orden que lo lee.
  */
 function preparar(bytes) {
+  // Un exporte de Scopus, WoS o PubMed también es texto, y leído como CSV daría
+  // una tabla sin sentido: va antes que nada.
+  const exporte = bibliografia.detectar(bytes);
+  if (exporte) {
+    try {
+      return bibliografia.preparar(bytes, exporte);
+    } catch (error) {
+      if (error instanceof bibliografia.BibliografiaNoValida) throw new ArchivoNoValido(error.message);
+      throw error;
+    }
+  }
+
   const tipo = tipoDe(bytes);
 
   if (tipo === 'xlsx' || tipo === 'xls') {
@@ -186,7 +200,8 @@ function preparar(bytes) {
   }
 
   throw new ArchivoNoValido(
-    'Ese archivo no es una hoja de datos. Sube tu matriz en Excel (.xlsx), CSV o SPSS (.sav).',
+    'Ese archivo no es una hoja de datos. Sube tu matriz en Excel (.xlsx), CSV o SPSS (.sav), o el ' +
+      'exporte de Scopus, Web of Science o PubMed si es un mapeo bibliométrico.',
   );
 }
 

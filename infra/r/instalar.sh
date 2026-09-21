@@ -102,7 +102,11 @@ $APT install -y --no-install-recommends \
   r-cran-fixest r-cran-panelr r-cran-pdynmc \
   r-cran-agricolae \
   r-cran-sf r-cran-terra \
-  r-cran-quanteda r-cran-quanteda.textstats r-cran-quanteda.textplots r-cran-topicmodels
+  r-cran-quanteda r-cran-quanteda.textstats r-cran-quanteda.textplots r-cran-topicmodels \
+  r-cran-bibliometrix r-cran-igraph
+# bibliometrix arrastra shiny, plotly y visNetwork (su biblioshiny): se instalan
+# pero no sirven aquí, porque la jaula no tiene red ni proceso vivo que sirva una
+# web. Se usa por funciones, desde la conversación.
 # A propósito NO: devtools y remotes (instalar desde GitHub es lo que la jaula
 # impide), quarto y rmarkdown (la tesis la redacta Claude y el Word lo arma el
 # backend), quantmod y leaflet (descargan de internet y la jaula no tiene red),
@@ -125,6 +129,13 @@ ls -ld /var/lib/acostaresearch-r "$SESIONES"
 echo "── Unidad, slice y polkit ──"
 install -m 0644 "$ORIGEN/acostaresearch-r@.service" /etc/systemd/system/
 install -m 0644 "$ORIGEN/acostaresearch-r.slice" /etc/systemd/system/
+# La jaula del mapeo bibliométrico: la MISMA unidad con otro nombre y más
+# memoria. Copiada y no escrita aparte, para que no se aparten con el tiempo: lo
+# único que cambia es el añadido de memoria. La elige el backend cuando la
+# sesión tiene un exporte de Scopus o WoS (ver r.motor, esBibliografica).
+install -m 0644 "$ORIGEN/acostaresearch-r@.service" /etc/systemd/system/acostaresearch-r-biblio@.service
+install -d -m 0755 /etc/systemd/system/acostaresearch-r-biblio@.service.d
+install -m 0644 "$ORIGEN/biblio-memoria.conf" /etc/systemd/system/acostaresearch-r-biblio@.service.d/memoria.conf
 install -d -m 0755 /etc/polkit-1/rules.d
 install -m 0644 "$ORIGEN/60-acostaresearch-r.rules" /etc/polkit-1/rules.d/
 # La unidad de la API lleva ProtectSystem=strict y solo escribe en

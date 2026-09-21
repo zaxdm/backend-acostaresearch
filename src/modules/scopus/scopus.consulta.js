@@ -145,6 +145,19 @@ async function generarConsulta(tema, { generar = generarConRespaldo } = {}) {
   }
 
   const resultado = normalizar(bruto);
+
+  // El modelo entendió, pero el tema no da para conceptos («tesis», «IA»):
+  // devuelve la lista vacía y en la nota pide más detalle. Eso no es que la IA
+  // haya fallado, es que falta tema, y hay que decírselo con sus palabras. El
+  // 21-sep a las 10:58 dos tesistas vieron «la IA no devolvió conceptos» por
+  // esto, y la nota que les explicaba qué escribir se tiraba.
+  if (resultado.conceptos.length === 0 && resultado.nota) {
+    throw new AppError(
+      `${resultado.nota} Por ejemplo: «uso de ChatGPT y pensamiento crítico en estudiantes universitarios».`,
+      { statusCode: 422, code: ERROR_CODES.VALIDATION_ERROR },
+    );
+  }
+
   if (resultado.conceptos.length === 0) {
     logger.warn('Generador de consultas: la respuesta de Gemini no traía conceptos usables');
     throw noDisponible(

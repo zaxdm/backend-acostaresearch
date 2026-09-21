@@ -88,6 +88,21 @@ test('una respuesta sin conceptos usables es un 503 del asistente, no un 500', a
   );
 });
 
+test('si el tema no da para conceptos, se le dice al tesista lo que pide la IA, y no es un 503', async () => {
+  // El 21-sep «tesis» o «IA» volvían con la lista vacía y una nota pidiendo
+  // más detalle; la nota se tiraba y salía «la IA no devolvió conceptos».
+  await assert.rejects(
+    () =>
+      generarConsulta('mi tesis', {
+        generar: contesta('{"conceptos":[],"nota":"Proporciona el tema de tu tesis."}'),
+      }),
+    (error) =>
+      error.statusCode === 422 &&
+      error.code === 'VALIDATION_ERROR' &&
+      /^Proporciona el tema de tu tesis\. Por ejemplo: «/.test(error.message),
+  );
+});
+
 test('si Gemini falla, 503 del asistente y nunca SERVICE_UNAVAILABLE', async () => {
   const falla = async () => {
     throw new GeminiError('high demand', { status: 503 });

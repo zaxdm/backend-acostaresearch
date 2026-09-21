@@ -96,11 +96,16 @@ const schema = z.object({
   // Flash-Lite y no Flash ni Pro: responde preguntas de una ficha, y la espera se
   // nota más que la diferencia de calidad. Medido el 13 de septiembre de 2026 con
   // el mismo prompt: 2 s con respuestas más ceñidas, frente a 25 s de Flash.
-  GEMINI_MODEL: z.string().default('gemini-3.5-flash-lite'),
+  //
+  // Desde el 21-sep-2026, 3.1 y no 3.5: medidos ese día con la instrucción del
+  // copiloto y siete temas, 3.5 falló en cuatro (tiempo agotado o «high
+  // demand») y tardó de 13 a 20 s en los otros; 3.1 contestó seis de siete en
+  // uno a cuatro segundos. 3.5 queda de último recurso.
+  GEMINI_MODEL: z.string().default('gemini-3.1-flash-lite'),
   // Al que se pasa si el principal falla, tarda o está saturado. Mejor de otra
   // generación: cuando uno se satura, los de su misma familia suelen ir igual.
   // Vacío = sin respaldo.
-  GEMINI_MODEL_RESPALDO: vacioComoAusente(z.string()).default('gemini-3.1-flash-lite'),
+  GEMINI_MODEL_RESPALDO: vacioComoAusente(z.string()).default('gemini-3.5-flash-lite'),
   GEMINI_THINKING: z.enum(['minimal', 'low', 'medium', 'high']).default('minimal'),
   // Groq: un tercer modelo de OTRA empresa para cuando Gemini se satura. El
   // 21-sep-2026 los dos Gemini tardaban de 15 a 40 s a la vez; medido ese día

@@ -2741,7 +2741,10 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         'o BibTeX) o de PubMed. Entonces `datos` ya es la tabla de bibliometrix, una fila por ' +
         'documento, con sus etiquetas (AU, TI, SO, PY, TC, CR, DE, ID, C1…). Antes de que exporte, ' +
         'dile que marque TODOS los campos, o al menos resumen, palabras clave, afiliaciones y ' +
-        'referencias: sin referencias no hay cocitación ni acoplamiento.\n' +
+        'referencias: sin referencias no hay cocitación ni acoplamiento. También puede mandarlo sin ' +
+        'exportar nada desde el buscador de Scopus de la web («Hacer un mapeo bibliométrico con estos ' +
+        'resultados»): llega con los datos de OpenAlex, sus palabras clave y sus identificadores en ' +
+        'las referencias, y eso se declara en Métodos.\n' +
         'Funciones de la casa para esto: resumen_bibliometrico(k = 10) —información principal, ' +
         'producción anual, autores, fuentes, países y lo más citado— y figura_bibliometrica(tipo), que ' +
         'guarda «figura_<tipo>.png» lista para el informe, la dibuja aquí e imprime sus cifras. Tipos: ' +

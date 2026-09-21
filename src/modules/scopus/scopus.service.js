@@ -15,6 +15,7 @@ const openalex = require('../references/openalex.client');
 const crossref = require('../references/crossref.client');
 const enlaceAbierto = require('../references/enlaceAbierto');
 const cliente = require('./scopus.client');
+const mapeo = require('./scopus.mapeo');
 const mapper = require('./scopus.mapper');
 const oauth = require('./scopus.oauth');
 const repositorio = require('./scopus.repository');
@@ -865,7 +866,99 @@ async function buscarSemantica(
   };
 }
 
+// ── Mapeo bibliométrico con los resultados de una búsqueda ────────────────
+
+/** ¿Vale la licencia hoy? */
+function vigente(licencia, ahora = new Date()) {
+  return licencia.status === 'ACTIVE' && (!licencia.expiresAt || new Date(licencia.expiresAt) > ahora);
+}
+
+/**
+ * A qué proyectos puede ir el mapeo: los de sus licencias vigentes cuyo método
+ * trae la herramienta o la fase de mapeo bibliométrico. La sesión de R es una
+ * por proyecto, así que si tiene dos, la web le pregunta a cuál.
+ *
+ * Se piden aquí y no arriba: `project.service` y `r.service` tiran de medio
+ * backend, y este módulo lo carga el arranque.
+ */
+async function destinosDelMapeo(userId) {
+  // eslint-disable-next-line global-require
+  const licenseService = require('../licensing/license.service');
+  // eslint-disable-next-line global-require
+  const projectService = require('../projects/project.service');
+
+  const destinos = [];
+  const vistos = new Set();
+  for (const licencia of await licenseService.listForUser(userId)) {
+    if (!vigente(licencia) || vistos.has(licencia.productCode)) continue;
+    vistos.add(licencia.productCode);
+    if (await projectService.capituloDeMapeo(licencia.productCode)) {
+      destinos.push({ productCode: licencia.productCode, nombre: licencia.productName });
+    }
+  }
+  return destinos;
+}
+
+/**
+ * La búsqueda, a la sesión de R del proyecto: de Scopus los DOI, de OpenAlex lo
+ * demás, y bibliometrix lo lee como si hubiera subido un exporte.
+ */
+async function mapear(userId, { ecuacion, productCode }) {
+  exigirQueEsteEncendido();
+  // eslint-disable-next-line global-require
+  const rService = require('../r/r.service');
+  if (!rService.disponible()) {
+    throw new AppError('El análisis en R no está disponible ahora mismo. Inténtalo más tarde.', {
+      statusCode: 503,
+      code: ERROR_CODES.EXTERNAL_UNAVAILABLE,
+    });
+  }
+
+  const destinos = await destinosDelMapeo(userId);
+  const destino = destinos.find((d) => d.productCode === productCode);
+  if (!destino) {
+    throw new ValidationError(
+      destinos.length === 0
+        ? 'Ninguna de tus licencias vigentes trae el mapeo bibliométrico.'
+        : 'Elige a qué proyecto va el mapeo.',
+    );
+  }
+
+  const conexion = await conexionParaUsar(userId);
+  const resultado = await mapeo.prepararMapeo({
+    ecuacion,
+    accessToken: await tokenDe(conexion),
+    subir: async (bytes) => {
+      // eslint-disable-next-line global-require
+      const { MotorOcupado, MotorNoDisponible } = require('../r/r.motor');
+      try {
+        return await rService.subirDatos({ userId, productCode, bytes });
+      } catch (error) {
+        if (error instanceof MotorOcupado) {
+          throw new AppError('Hay mucha gente analizando ahora mismo. Vuelve a intentarlo en un minuto.', {
+            statusCode: 503,
+            code: ERROR_CODES.EXTERNAL_UNAVAILABLE,
+          });
+        }
+        if (error instanceof MotorNoDisponible) {
+          logger.error({ err: error, userId }, 'Mapeo desde Scopus: el motor de R no está disponible');
+          throw new AppError('El análisis en R no está disponible ahora mismo. Inténtalo más tarde.', {
+            statusCode: 503,
+            code: ERROR_CODES.EXTERNAL_UNAVAILABLE,
+          });
+        }
+        throw error;
+      }
+    },
+  });
+  await repositorio.anotarBusqueda(userId).catch(() => {});
+
+  return { ...resultado, proyecto: destino.nombre };
+}
+
 module.exports = {
+  destinosDelMapeo,
+  mapear,
   empezar,
   terminar,
   buscar,

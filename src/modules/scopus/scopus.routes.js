@@ -19,6 +19,7 @@ const {
   buscarSchema,
   consultaSchema,
   importarSchema,
+  mapeoSchema,
   resumenesSchema,
   resumirSchema,
   vueltaSchema,
@@ -109,6 +110,13 @@ router.post(
   validate({ body: resumenesSchema }),
   scopusController.resumenes,
 );
+/**
+ * El mapeo bibliométrico de una búsqueda: a qué proyectos puede ir, y
+ * mandarlo. Recorre la búsqueda entera (hasta dos mil, de doscientos en
+ * doscientos) y la cruza con OpenAlex: puede tardar un minuto.
+ */
+router.get('/mapeo/destinos', scopusController.destinosDelMapeo);
+router.post('/mapeo', scopusBuscarLimiter, validate({ body: mapeoSchema }), scopusController.mapear);
 router.post(
   '/importar',
   scopusBuscarLimiter,

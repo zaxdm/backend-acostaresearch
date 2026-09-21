@@ -50,6 +50,12 @@ const consultaSchema = z.object({
  * gastar una petición a Elsevier, y aquello garantiza que lo que entra en la
  * ecuación `EID(...)` no lleva paréntesis ni operadores dentro.
  */
+/** El mapeo bibliométrico de una búsqueda, y a qué proyecto va. */
+const mapeoSchema = z.object({
+  ecuacion,
+  productCode: z.string().trim().min(1, 'Elige a qué proyecto va el mapeo.').max(40),
+});
+
 const importarSchema = z.object({
   eids: z
     .array(z.string().trim().max(64))
@@ -175,6 +181,7 @@ module.exports = {
   buscarSchema,
   consultaSchema,
   importarSchema,
+  mapeoSchema,
   resumenesSchema,
   resumirSchema,
   vueltaSchema,

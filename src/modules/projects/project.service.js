@@ -2332,6 +2332,7 @@ async function textoDeCapitulo(userId, productCode, skillCode, { parte = 1 } = {
 }
 
 module.exports = {
+  capituloDeMapeo,
   seccionAparte,
   seccionDelDocumento,
   guardarEsquema,

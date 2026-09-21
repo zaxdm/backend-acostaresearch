@@ -149,6 +149,23 @@ const scopusController = {
     return ok(res, { ok: true });
   }),
 
+  destinosDelMapeo: asyncHandler(async (req, res) => {
+    return ok(res, { destinos: await servicio.destinosDelMapeo(req.user.id) });
+  }),
+
+  mapear: asyncHandler(async (req, res) => {
+    const r = await servicio.mapear(req.user.id, req.body);
+    const partes = [`${r.documentos} documentos listos para el mapeo en tu proyecto «${r.proyecto}»`];
+    if (r.total > r.tope) partes.push(`los ${r.tope} más citados de ${r.total}`);
+    const fuera = r.recorridos - r.documentos;
+    if (fuera > 0) partes.push(`${fuera} quedaron fuera por no tener DOI o no estar en el catálogo abierto`);
+    return ok(res, r, {
+      message: r.leido
+        ? `${partes.join('; ')}.`
+        : 'Los datos llegaron a tu sesión de R, pero no se pudieron leer como exporte bibliográfico.',
+    });
+  }),
+
   importar: asyncHandler(async (req, res) => {
     const resultado = await servicio.importar(req.user.id, { eids: req.body.eids });
 

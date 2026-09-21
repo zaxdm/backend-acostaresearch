@@ -165,6 +165,26 @@ escribir_csv <- function(datos, archivo = "resultados.csv",
   invisible(resultado)
 }
 
+# Lo que la lectura de OpenAlex deja a medias en bibliometrix 5.5: junta los
+# paises con "; " (y sus funciones parten por ";", asi que " CHINA" y "CHINA"
+# serian dos paises), y sin autor de correspondencia marcado deja vacio AU1_CO.
+# Lo llama la subida, no Claude.
+preparar_openalex <- function(M) {
+  M$AU_CO <- gsub("\\s*;\\s*", ";", M$AU_CO)
+  sin_pais <- is.na(M$AU1_CO) | M$AU1_CO == ""
+  M$AU1_CO[sin_pais] <- sub(";.*", "", M$AU_CO[sin_pais])
+  M
+}
+
+# Los paises de cada documento. En OpenAlex ya vienen de la fuente y NO se
+# recalculan: metaTagExtraction los saca de las afiliaciones, que alli son solo
+# nombres de institucion, y los dejaria vacios.
+.con_paises <- function(M, campo) {
+  de_openalex <- "DB" %in% names(M) && identical(toupper(M$DB[1]), "OPENALEX")
+  if (de_openalex && campo %in% names(M) && any(!is.na(M[[campo]]) & M[[campo]] != "")) return(M)
+  bibliometrix::metaTagExtraction(M, Field = campo, sep = ";")
+}
+
 resumen_bibliometrico <- function(M = datos, k = 10) {
   resultados <- bibliometrix::biblioAnalysis(M, sep = ";")
   # Sin `verbose`: en bibliometrix 5.5, nombrarlo (aunque sea TRUE) lo apaga y
@@ -228,7 +248,7 @@ figura_bibliometrica <- function(tipo, M = datos, archivo = paste0("figura_", ti
       tabla <- .contar(.palabras_de(M$AU), n)
       titulo <- "Autores mas productivos"
     } else if (tipo == "paises") {
-      paises <- bibliometrix::metaTagExtraction(M, Field = "AU1_CO", sep = ";")$AU1_CO
+      paises <- .con_paises(M, "AU1_CO")$AU1_CO
       tabla <- .contar(paises[!is.na(paises) & paises != ""], n)
       titulo <- "Pais del autor de correspondencia"
     } else {
@@ -255,7 +275,7 @@ figura_bibliometrica <- function(tipo, M = datos, archivo = paste0("figura_", ti
       red <- bibliometrix::biblioNetwork(M, analysis = "collaboration", network = "authors", sep = ";")
       titulo <- "Red de coautoria"
     } else {
-      con_paises <- bibliometrix::metaTagExtraction(M, Field = "AU_CO", sep = ";")
+      con_paises <- .con_paises(M, "AU_CO")
       red <- bibliometrix::biblioNetwork(con_paises, analysis = "collaboration", network = "countries", sep = ";")
       titulo <- "Colaboracion entre paises"
       forma <- "circle"

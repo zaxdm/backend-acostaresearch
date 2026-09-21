@@ -30,6 +30,7 @@ const BASES = {
   'wos-bibtex': { nombre: 'Web of Science (BibTeX)', dbsource: 'wos', format: 'bibtex', archivo: 'datos.bib' },
   pubmed: { nombre: 'PubMed (MEDLINE)', dbsource: 'pubmed', format: 'pubmed', archivo: 'datos.txt' },
   'lens-csv': { nombre: 'Lens.org (CSV)', dbsource: 'lens', format: 'csv', archivo: 'datos.csv' },
+  'openalex-csv': { nombre: 'OpenAlex (CSV)', dbsource: 'openalex', format: 'csv', archivo: 'datos.csv' },
 };
 
 class BibliografiaNoValida extends Error {}
@@ -76,6 +77,15 @@ function detectar(bytes) {
     return 'scopus-csv';
   }
   if (columnas.includes('Lens ID')) return 'lens-csv';
+  // El CSV con los nombres de la API de OpenAlex: el que arma la web desde una
+  // búsqueda de Scopus (scopus.mapeo) y el que exportaba OpenAlex.
+  if (
+    columnas.includes('authorships.author.display_name') &&
+    columnas.includes('publication_year') &&
+    (columnas.includes('display_name') || columnas.includes('title'))
+  ) {
+    return 'openalex-csv';
+  }
 
   return null;
 }
@@ -361,9 +371,12 @@ function preparar(bytes, tipo) {
 
   // suppressWarnings: convert2df avisa de cada campo que el exporte no trae, y
   // esos avisos taparían en la consola lo que sí importa.
-  const lectura =
-    `datos <- suppressWarnings(bibliometrix::convert2df("${base.archivo}", ` +
+  const lee =
+    `suppressWarnings(bibliometrix::convert2df("${base.archivo}", ` +
     `dbsource = "${base.dbsource}", format = "${base.format}"))`;
+  // OpenAlex sale de convert2df con los países a medias: ver preparar_openalex
+  // en r/preambulo.R.
+  const lectura = tipo === 'openalex-csv' ? `datos <- preparar_openalex(${lee})` : `datos <- ${lee}`;
 
   return { tipo: 'bibliografia', base: tipo, archivo: base.archivo, contenido, lectura, aviso };
 }

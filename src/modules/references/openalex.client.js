@@ -778,6 +778,49 @@ async function obrasPorLotes(campo, valores, campos) {
 }
 
 const obrasPorDoi = (dois, campos) => obrasPorLotes('doi', dois.map(limpiarDoi).filter(Boolean), campos);
+
+/** Lo que necesita bibliometrix de cada obra, tal como lo da OpenAlex. */
+const CAMPOS_BIBLIOMETRICOS = [
+  'id',
+  'doi',
+  'display_name',
+  'publication_year',
+  'type',
+  'language',
+  'cited_by_count',
+  'primary_location',
+  'authorships',
+  'keywords',
+  'referenced_works',
+  'referenced_works_count',
+  'abstract_inverted_index',
+].join(',');
+
+/**
+ * Las obras de una lista de DOI, enteras, para el mapeo bibliométrico.
+ *
+ * A diferencia de `obrasPorDoi`, sin pasar por la forma del mapa: bibliometrix
+ * necesita qué institución y qué país van con CADA autor, y el mapa los junta.
+ * Tres lotes de cincuenta a la vez: con dos mil DOI son cuarenta peticiones, y
+ * una detrás de otra el tesista esperaría medio minuto de más.
+ */
+async function obrasCompletasPorDoi(dois) {
+  const lotes = enLotes(unicos(dois.map(limpiarDoi).filter(Boolean)), POR_FILTRO);
+  const obras = [];
+  for (let i = 0; i < lotes.length; i += 3) {
+    const tanda = await Promise.all(
+      lotes.slice(i, i + 3).map((lote) =>
+        consultar({
+          filter: `doi:${lote.join('|')}`,
+          select: CAMPOS_BIBLIOMETRICOS,
+          'per-page': String(POR_FILTRO),
+        }),
+      ),
+    );
+    for (const resultados of tanda) obras.push(...resultados);
+  }
+  return obras;
+}
 const obrasPorIds = (ids, campos) => obrasPorLotes('ids.openalex', ids.map(soloElId), campos);
 
 /** «https://openalex.org/W123» → «W123». El filtro quiere el corto. */
@@ -794,6 +837,7 @@ module.exports = {
   citanA,
   obrasParaMapa,
   obrasPorDoi,
+  obrasCompletasPorDoi,
   obrasPorIds,
   limpiarDoi,
   nombreApa,

@@ -740,3 +740,82 @@ test('si Gemini no da los vectores, 503 del asistente y no un 500', async () => 
     (error) => error.statusCode === 503 && error.code === 'ASSISTANT_UNAVAILABLE',
   );
 });
+
+// ── La cuota de Gemini al ordenar por significado ──────────────────────────
+
+test('por significado se ordenan 40 candidatos, no las páginas enteras de Scopus', async () => {
+  // Scopus da páginas de 25: sin recortar, «hasta 40» traía 50, y dos
+  // búsquedas en un minuto pasaban del tope de 100 textos de Gemini.
+  empezar();
+  env.asistenteEnabled = true;
+  const pagina = Array.from({ length: 25 }, (_, i) => ({
+    ...FICHA,
+    eid: `2-s2.0-${i}`,
+    'dc:title': `Artículo ${i}`,
+  }));
+  elsevier.responder = respuestaCon(pagina, 1000);
+
+  const embebidos = [];
+  const embeber = async (textos, { tarea }) => {
+    if (tarea === 'RETRIEVAL_DOCUMENT') embebidos.push(...textos);
+    return textos.map(() => [1, 0]);
+  };
+
+  const busqueda = await servicio.buscarSemantica(
+    'u1',
+    { ecuacion: 'TITLE-ABS-KEY(x)', pregunta: '¿qué?' },
+    { embeber, resumenes: async () => new Map() },
+  );
+
+  assert.equal(embebidos.length, 40);
+  assert.equal(busqueda.candidatos, 40);
+});
+
+test('un tope de pocos segundos se espera en el servidor y la búsqueda sale igual', async () => {
+  empezar();
+  env.asistenteEnabled = true;
+  let llamadas = 0;
+  const esperas = [];
+  const embeber = async (textos) => {
+    llamadas += 1;
+    if (llamadas === 1) {
+      const fallo = new Error('Quota exceeded for metric: embed_content_free_tier_requests. Please retry in 8.56s.');
+      fallo.status = 429;
+      throw fallo;
+    }
+    return textos.map((_, i) => [1, i]);
+  };
+
+  const busqueda = await servicio.buscarSemantica(
+    'u1',
+    { ecuacion: 'TITLE-ABS-KEY(x)', pregunta: '¿qué?' },
+    { embeber, resumenes: async () => new Map(), esperar: async (ms) => esperas.push(ms) },
+  );
+
+  assert.equal(busqueda.semantica, true, 'sigue siendo por significado');
+  // Lo que dijo Gemini, hacia arriba, más uno: volver justo en el borde es chocar.
+  assert.deepEqual(esperas, [10_000]);
+});
+
+test('un tope largo no se espera: sale el aviso de siempre', async () => {
+  empezar();
+  env.asistenteEnabled = true;
+  const esperas = [];
+  const embeber = async () => {
+    const fallo = new Error('Quota exceeded. Please retry in 45s.');
+    fallo.status = 429;
+    throw fallo;
+  };
+
+  await assert.rejects(
+    () =>
+      servicio.buscarSemantica(
+        'u1',
+        { ecuacion: 'TITLE-ABS-KEY(x)', pregunta: '¿qué?' },
+        { embeber, resumenes: async () => new Map(), esperar: async (ms) => esperas.push(ms) },
+      ),
+    // El mismo aviso que antes: no se cambió ninguno.
+    (error) => error.statusCode === 503 && /no contestó/.test(error.message),
+  );
+  assert.deepEqual(esperas, []);
+});

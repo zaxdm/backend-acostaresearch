@@ -691,8 +691,37 @@ async function cuentas(userId, { ecuacion, faceta }) {
 
 // ── Búsqueda semántica ─────────────────────────────────────────────────────
 
-/** Cuántos candidatos se ordenan por significado: tres páginas de Scopus. */
-const CANDIDATOS_SEMANTICA = 75;
+/**
+ * Cuántos candidatos se ordenan por significado.
+ *
+ * Eran 75 —tres páginas de Scopus— y ordenaban mejor, pero el plan gratuito de
+ * Gemini cuenta CADA TEXTO que se embebe, y no cada petición: cien al minuto
+ * para toda la plataforma. Con 75 más la pregunta, la segunda búsqueda del
+ * minuto se quedaba sin vectores. Con 40 caben dos.
+ *
+ * El día que la clave tenga facturación, esto vuelve a 75 y se acabó.
+ */
+const CANDIDATOS_SEMANTICA = 40;
+
+/** Lo más que se espera a Gemini antes de dar el error. */
+const ESPERA_MAXIMA_S = 20;
+
+const dormir = (ms) => new Promise((resolver) => setTimeout(resolver, ms));
+
+/**
+ * Cuántos segundos pide Gemini que se espere, o null si no es un tope.
+ *
+ * Lo dice en el texto del error —«Please retry in 8.563842925s.»— y a veces en
+ * `retryDelay` («8s»). Se redondea hacia arriba y se suma uno: volver justo en
+ * el borde es volver a chocar.
+ */
+function segundosParaReintentar(fallo) {
+  const texto = String(fallo?.message ?? '');
+  const esTope = fallo?.status === 429 || /quota|rate limit/i.test(texto);
+  if (!esTope) return null;
+  const dicho = texto.match(/retry in ([\d.]+)\s*s/i) ?? texto.match(/"retryDelay"\s*:\s*"([\d.]+)s"/i);
+  return dicho ? Math.ceil(Number(dicho[1])) + 1 : null;
+}
 
 const coseno = (a, b) => {
   let producto = 0;
@@ -709,7 +738,7 @@ const coseno = (a, b) => {
 /**
  * Los artículos más cercanos a la PREGUNTA, no a las palabras.
  *
- * Lo que hace la búsqueda semántica de Scopus, con lo nuestro: se traen los 75
+ * Lo que hace la búsqueda semántica de Scopus, con lo nuestro: se traen los 40
  * más relevantes de la ecuación, se completan con su resumen de OpenAlex, y
  * se ordenan por lo parecido que es lo que dicen a lo que el tesista preguntó,
  * con los vectores de Gemini. Se devuelven los 25 más cercanos.
@@ -720,7 +749,7 @@ const coseno = (a, b) => {
 async function buscarSemantica(
   userId,
   { ecuacion, pregunta },
-  { embeber = gemini.embeber, resumenes = openalex.resumenesPorDoi } = {},
+  { embeber = gemini.embeber, resumenes = openalex.resumenesPorDoi, esperar = dormir } = {},
 ) {
   exigirQueEsteEncendido();
   if (!env.asistenteEnabled) {
@@ -741,6 +770,12 @@ async function buscarSemantica(
     candidatos.push(...pagina.fichas.map(mapper.comoResultado).filter((r) => r.eid));
     if (candidatos.length >= total || pagina.fichas.length < cliente.POR_PAGINA) break;
   }
+  /**
+   * Y se recorta al número que se buscaba: Scopus da páginas de 25, y pedir
+   * «hasta 40» trae dos enteras. Sin esto eran 50, 51 textos con la pregunta, y
+   * dos búsquedas en un minuto volvían a pasar del tope de 100.
+   */
+  candidatos.length = Math.min(candidatos.length, CANDIDATOS_SEMANTICA);
   await repositorio.anotarBusqueda(userId).catch(() => {});
 
   if (candidatos.length === 0) {
@@ -753,11 +788,31 @@ async function buscarSemantica(
     return resumen ? `${c.titulo}. ${resumen.slice(0, 1500)}` : c.titulo;
   });
 
-  let vectores;
-  try {
+  const pedirVectores = async () => {
     const [consulta] = await embeber([pregunta], { tarea: 'RETRIEVAL_QUERY' });
     const documentos = await embeber(textos, { tarea: 'RETRIEVAL_DOCUMENT' });
-    vectores = { consulta, documentos };
+    return { consulta, documentos };
+  };
+
+  let vectores;
+  try {
+    try {
+      vectores = await pedirVectores();
+    } catch (primero) {
+      /**
+       * Un tope de segundos se espera en el servidor; no llega al tesista.
+       *
+       * El tope de Gemini es por minuto y el propio error dice cuánto falta.
+       * Se espera eso y se pide otra vez, una sola: lo ya calculado se
+       * recuerda (ver `embeber`), así que solo se pide lo que faltó. Si pide
+       * más de veinte segundos, se sigue como antes: con el error de siempre.
+       */
+      const espera = segundosParaReintentar(primero);
+      if (espera === null || espera > ESPERA_MAXIMA_S) throw primero;
+      logger.info({ espera }, 'Búsqueda semántica: tope del minuto, se espera y se reintenta');
+      await esperar(espera * 1000);
+      vectores = await pedirVectores();
+    }
   } catch (fallo) {
     logger.warn({ err: fallo.message }, 'Búsqueda semántica: Gemini no dio los vectores');
     throw new AppError('La búsqueda por significado no contestó. Vuelve a intentarlo en un momento.', {

@@ -115,6 +115,97 @@ async function generar({
   };
 }
 
+const GROQ = 'https://api.groq.com/openai/v1/chat/completions';
+const PREFIJO_GROQ = 'groq:';
+
+/** Los motivos de parada de Groq (los de OpenAI), con el nombre de Gemini. */
+const PARADA_GROQ = { stop: 'STOP', length: 'MAX_TOKENS', content_filter: 'SAFETY' };
+
+/**
+ * Lo mismo que `generar`, pero en Groq: mismas entradas, misma salida y el
+ * mismo GeminiError, para que quien lo usa no sepa quién contestó.
+ *
+ * gpt-oss piensa antes de contestar y ese pensamiento cuenta dentro del tope
+ * de salida: se le da el esfuerzo más bajo y mil tokens más de margen, o una
+ * respuesta corta podría quedarse sin sitio.
+ */
+async function generarEnGroq({
+  sistema,
+  mensajes,
+  modelo,
+  maxTokens = 900,
+  timeoutMs = 20_000,
+  json = false,
+  fetchImpl = fetch,
+}) {
+  const respuesta = await fetchImpl(GROQ, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.GROQ_API_KEY ?? ''}` },
+    body: JSON.stringify({
+      model: modelo,
+      messages: [
+        { role: 'system', content: sistema },
+        ...mensajes.map((m) => ({ role: m.rol === 'asistente' ? 'assistant' : 'user', content: m.texto })),
+      ],
+      max_completion_tokens: maxTokens + 1_000,
+      ...(modelo.startsWith('openai/gpt-oss') ? { reasoning_effort: 'low' } : {}),
+      ...(json ? { response_format: { type: 'json_object' } } : {}),
+    }),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+
+  const cuerpo = await respuesta.json().catch(() => null);
+  if (!respuesta.ok) {
+    throw new GeminiError(cuerpo?.error?.message ?? `Groq respondió ${respuesta.status}`, {
+      status: respuesta.status,
+    });
+  }
+
+  const eleccion = cuerpo?.choices?.[0];
+  const finishReason = PARADA_GROQ[eleccion?.finish_reason] ?? eleccion?.finish_reason ?? 'desconocido';
+  const texto = String(eleccion?.message?.content ?? '').trim();
+  if (!texto) {
+    throw new GeminiError(`Groq no devolvió texto (${finishReason})`, { bloqueado: finishReason === 'SAFETY' });
+  }
+
+  const uso = cuerpo.usage;
+  return {
+    texto,
+    finishReason,
+    uso: uso
+      ? {
+          promptTokenCount: uso.prompt_tokens,
+          candidatesTokenCount: uso.completion_tokens,
+          totalTokenCount: uso.total_tokens,
+        }
+      : null,
+  };
+}
+
+/** Pide a quien toque: `groq:<modelo>` va a Groq, lo demás a Gemini. */
+const generarCon = (modelo, opciones) =>
+  modelo.startsWith(PREFIJO_GROQ)
+    ? generarEnGroq({ ...opciones, modelo: modelo.slice(PREFIJO_GROQ.length) })
+    : generar({ ...opciones, modelo });
+
+/**
+ * Los modelos de texto en su orden: el Gemini principal, Groq si hay clave, y
+ * el Gemini de respaldo.
+ *
+ * Groq, segundo y no primero: su plan gratuito cuenta peticiones por día, y
+ * así solo se le pregunta cuando el principal falla o, con la carrera de
+ * `ventajaMs`, tarda. Y segundo y no tercero: cuando Gemini se satura suelen
+ * ir lentos los dos a la vez (el 21-sep-2026), y de tercero habría que esperar
+ * dos ventajas antes de preguntarle.
+ */
+const modelosDeTexto = () => [
+  ...new Set(
+    [env.GEMINI_MODEL, env.GROQ_API_KEY ? `${PREFIJO_GROQ}${env.GROQ_MODEL}` : null, env.GEMINI_MODEL_RESPALDO].filter(
+      Boolean,
+    ),
+  ),
+];
+
 /**
  * Prueba los modelos en orden hasta que uno conteste.
  *
@@ -214,7 +305,7 @@ function unaVuelta(modelos, opciones, { ventajaMs, alFallar }) {
       const modelo = modelos[siguiente];
       siguiente += 1;
       enCurso += 1;
-      generar({ ...opciones, modelo }).then(
+      generarCon(modelo, opciones).then(
         (respuesta) => {
           enCurso -= 1;
           if (!terminada) terminar(resolver, { resultado: { ...respuesta, modelo } });
@@ -407,4 +498,4 @@ async function embeber(
 /** Vaciar lo recordado. Para las pruebas: cada una empieza sin memoria. */
 const olvidarVectores = () => memoria.clear();
 
-module.exports = { generar, generarConRespaldo, olvidarReposos, embeber, olvidarVectores, GeminiError };
+module.exports = { generar, generarEnGroq, generarConRespaldo, modelosDeTexto, olvidarReposos, embeber, olvidarVectores, GeminiError };

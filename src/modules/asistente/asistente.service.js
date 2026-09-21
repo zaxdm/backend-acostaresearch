@@ -4,7 +4,7 @@ const env = require('../../config/env');
 const logger = require('../../config/logger');
 const { ERROR_CODES } = require('../../config/constants');
 const { AppError } = require('../../shared/errors/AppError');
-const { generarConRespaldo, GeminiError } = require('../../lib/gemini');
+const { generarConRespaldo, modelosDeTexto, GeminiError } = require('../../lib/gemini');
 const billingService = require('../billing/billing.service');
 const discountService = require('../billing/discount.service');
 const { construirSistema } = require('./asistente.prompt');
@@ -56,8 +56,6 @@ async function preciosVigentes() {
 
 const tope = crearTopeDiario(env.ASISTENTE_MAX_DIARIO);
 
-const MODELOS = [...new Set([env.GEMINI_MODEL, env.GEMINI_MODEL_RESPALDO].filter(Boolean))];
-
 /**
  * Cuando Gemini se niega por sus filtros. No es un error del visitante ni del
  * servicio, así que se le contesta como un mensaje más y no con un fallo.
@@ -91,9 +89,11 @@ const asistenteService = {
 
     try {
       const { texto, finishReason, uso, modelo } = await generarConRespaldo({
-        modelos: MODELOS,
+        modelos: modelosDeTexto(),
         sistema,
         mensajes,
+        // Pasados cinco segundos sin respuesta, se pregunta también al siguiente.
+        ventajaMs: 5_000,
       });
       logger.info(
         {

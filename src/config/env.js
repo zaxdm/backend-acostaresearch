@@ -102,6 +102,13 @@ const schema = z.object({
   // Vacío = sin respaldo.
   GEMINI_MODEL_RESPALDO: vacioComoAusente(z.string()).default('gemini-3.1-flash-lite'),
   GEMINI_THINKING: z.enum(['minimal', 'low', 'medium', 'high']).default('minimal'),
+  // Groq: un tercer modelo de OTRA empresa para cuando Gemini se satura. El
+  // 21-sep-2026 los dos Gemini tardaban de 15 a 40 s a la vez; medido ese día
+  // con la instrucción del copiloto, gpt-oss-120b en Groq contestaba en 0,4 s
+  // con los mismos conceptos. Qwen, en cambio, se inventó sinónimos. Sin clave
+  // = sin tercer modelo.
+  GROQ_API_KEY: vacioComoAusente(z.string()),
+  GROQ_MODEL: z.string().default('openai/gpt-oss-120b'),
   // El de los vectores con los que la búsqueda semántica de Scopus ordena por
   // significado. Probado en el servidor el 19-sep-2026: los 002 y
   // text-embedding-004 ya dan 404.

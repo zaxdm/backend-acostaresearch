@@ -32,7 +32,7 @@
 
 const env = require('../../config/env');
 const logger = require('../../config/logger');
-const { generarConRespaldo } = require('../../lib/gemini');
+const { generarConRespaldo, modelosDeTexto } = require('../../lib/gemini');
 const partesDePlantilla = require('./project.plantilla-partes');
 
 const CAMPOS = ['titulo', 'autor', 'asesor', 'carrera', 'grado', 'anio', 'instruccion'];
@@ -272,7 +272,7 @@ async function clasificarConGemini(lineas) {
   if (!env.asistenteEnabled) throw new Error('Gemini sin configurar');
 
   const { texto } = await generarConRespaldo({
-    modelos: [env.GEMINI_MODEL, env.GEMINI_MODEL_RESPALDO].filter(Boolean),
+    modelos: modelosDeTexto(),
     sistema: SISTEMA,
     mensajes: [
       {

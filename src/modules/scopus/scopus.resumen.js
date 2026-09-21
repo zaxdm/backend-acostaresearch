@@ -4,7 +4,7 @@ const env = require('../../config/env');
 const logger = require('../../config/logger');
 const { AppError, ValidationError } = require('../../shared/errors/AppError');
 const { ERROR_CODES } = require('../../config/constants');
-const { generarConRespaldo, GeminiError } = require('../../lib/gemini');
+const { generarConRespaldo, modelosDeTexto, GeminiError } = require('../../lib/gemini');
 const openalex = require('../references/openalex.client');
 
 /**
@@ -172,11 +172,14 @@ async function resumir(
     let respuesta;
     try {
       ({ texto: respuesta } = await generar({
-        modelos: [env.GEMINI_MODEL, env.GEMINI_MODEL_RESPALDO].filter(Boolean),
+        modelos: modelosDeTexto(),
         sistema: SISTEMA,
         mensajes: [{ rol: 'usuario', texto: mensaje }],
         maxTokens: 3000,
         timeoutMs: 30_000,
+        // Un resumen largo tarda lo suyo; pasados diez segundos sin nada, se
+        // le pregunta también al siguiente y gana el que termine antes.
+        ventajaMs: 10_000,
         json: true,
       }));
     } catch (fallo) {

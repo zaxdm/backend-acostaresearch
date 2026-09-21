@@ -12,7 +12,7 @@ const {
   formatearPrecio,
 } = require('../src/modules/asistente/asistente.prompt');
 const { crearTopeDiario } = require('../src/modules/asistente/asistente.tope');
-const { generar, generarConRespaldo, olvidarReposos, GeminiError } = require('../src/lib/gemini');
+const { generar, generarEnGroq, generarConRespaldo, olvidarReposos, GeminiError } = require('../src/lib/gemini');
 
 /**
  * El Asistente Acosta habla con cualquiera que entre a la web y le cuesta
@@ -475,6 +475,104 @@ test('con ventaja, si el primero contesta a tiempo no se molesta al segundo', as
   });
   assert.equal(modelo, 'principal');
   assert.deepEqual(pedidos, ['principal']);
+});
+
+// ── Groq ──────────────────────────────────────────────────────────────────
+
+const RESPUESTA_GROQ = {
+  choices: [{ finish_reason: 'stop', message: { content: '{"conceptos":[]}' } }],
+  usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+};
+
+test('Groq recibe la conversación en su formato y devuelve lo mismo que Gemini', async () => {
+  let pedido;
+  const fetchImpl = async (url, init) => {
+    pedido = { url, cuerpo: JSON.parse(init.body) };
+    return { ok: true, status: 200, json: async () => RESPUESTA_GROQ };
+  };
+
+  const r = await generarEnGroq({
+    modelo: 'openai/gpt-oss-120b',
+    sistema: 'sé breve',
+    mensajes: [
+      { rol: 'usuario', texto: 'hola' },
+      { rol: 'asistente', texto: 'qué tal' },
+      { rol: 'usuario', texto: 'tema' },
+    ],
+    maxTokens: 700,
+    json: true,
+    fetchImpl,
+  });
+
+  assert.match(pedido.url, /api\.groq\.com\/openai\/v1\/chat\/completions$/);
+  assert.deepEqual(
+    pedido.cuerpo.messages.map((m) => m.role),
+    ['system', 'user', 'assistant', 'user'],
+  );
+  assert.equal(pedido.cuerpo.model, 'openai/gpt-oss-120b');
+  assert.equal(pedido.cuerpo.reasoning_effort, 'low');
+  assert.equal(pedido.cuerpo.max_completion_tokens, 1700, 'con margen para lo que piensa');
+  assert.deepEqual(pedido.cuerpo.response_format, { type: 'json_object' });
+  assert.deepEqual(r, {
+    texto: '{"conceptos":[]}',
+    finishReason: 'STOP',
+    uso: { promptTokenCount: 10, candidatesTokenCount: 5, totalTokenCount: 15 },
+  });
+});
+
+test('los fallos de Groq son GeminiError, con su estado, y el filtro de contenido es un bloqueo', async () => {
+  await assert.rejects(
+    generarEnGroq({
+      modelo: 'm',
+      sistema: 's',
+      mensajes: turnos(1),
+      fetchImpl: async () => ({ ok: false, status: 429, json: async () => ({ error: { message: 'Rate limit' } }) }),
+    }),
+    (e) => e instanceof GeminiError && e.status === 429 && !e.bloqueado,
+  );
+  await assert.rejects(
+    generarEnGroq({
+      modelo: 'm',
+      sistema: 's',
+      mensajes: turnos(1),
+      fetchImpl: async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ choices: [{ finish_reason: 'content_filter', message: { content: '' } }] }),
+      }),
+    }),
+    (e) => e instanceof GeminiError && e.bloqueado === true,
+  );
+});
+
+test('en la carrera, «groq:<modelo>» va a Groq y gana si Gemini se cuelga', async () => {
+  olvidarReposos();
+  const pedidos = [];
+  let soltarGemini;
+  const fetchImpl = async (url) => {
+    if (url.includes('api.groq.com')) {
+      pedidos.push('groq');
+      return { ok: true, status: 200, json: async () => RESPUESTA_GROQ };
+    }
+    pedidos.push('gemini');
+    await new Promise((r) => {
+      soltarGemini = r;
+    });
+    return { ok: true, status: 200, json: async () => RESPUESTA_OK };
+  };
+
+  const { modelo, texto } = await generarConRespaldo({
+    modelos: ['principal', 'groq:openai/gpt-oss-120b'],
+    sistema: 's',
+    mensajes: turnos(1),
+    fetchImpl,
+    ventajaMs: 10,
+  });
+  soltarGemini();
+
+  assert.equal(modelo, 'groq:openai/gpt-oss-120b');
+  assert.equal(texto, '{"conceptos":[]}');
+  assert.deepEqual(pedidos, ['gemini', 'groq']);
 });
 
 test('un modelo en reposo sigue siendo el último recurso', async () => {

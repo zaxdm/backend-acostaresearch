@@ -4,7 +4,7 @@ const env = require('../../config/env');
 const logger = require('../../config/logger');
 const { AppError } = require('../../shared/errors/AppError');
 const { ERROR_CODES } = require('../../config/constants');
-const { generarConRespaldo, GeminiError } = require('../../lib/gemini');
+const { generarConRespaldo, modelosDeTexto, GeminiError } = require('../../lib/gemini');
 
 /**
  * El generador de consultas: del tema en español a los conceptos en inglés.
@@ -117,13 +117,13 @@ async function generarConsulta(tema, { generar = generarConRespaldo } = {}) {
   let texto;
   try {
     ({ texto } = await generar({
-      modelos: [env.GEMINI_MODEL, env.GEMINI_MODEL_RESPALDO].filter(Boolean),
+      modelos: modelosDeTexto(),
       sistema: SISTEMA,
       mensajes: [{ rol: 'usuario', texto: tema }],
       maxTokens: 700,
       timeoutMs: 15_000,
       // Lo normal son uno o dos segundos: pasados cuatro, se le pregunta
-      // también al respaldo y gana el que conteste antes.
+      // también al siguiente modelo y gana el que conteste antes.
       ventajaMs: 4_000,
       json: true,
     }));

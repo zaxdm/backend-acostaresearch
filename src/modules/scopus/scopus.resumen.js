@@ -201,6 +201,12 @@ async function resumir(
 
     const normalizado = normalizar(bruto, lista.length);
     if (normalizado.secciones.length > 0) resultado = normalizado;
+    // Sin puntos citados pero diciendo por qué: «ninguno de estos artículos
+    // trata del Perú». Es una respuesta, y de las que más sirven al tesista,
+    // porque le dice que busque otra cosa; no se reintenta ni se da por fallo.
+    // El 21-sep a las 11:19 se tiraba y salía «la IA no devolvió un resumen».
+    // No lleva citas, así que no hay ninguna que pueda ser inventada.
+    else if (normalizado.limites && (normalizado.introduccion || normalizado.conclusion)) resultado = normalizado;
   }
 
   if (!resultado) {

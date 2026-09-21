@@ -116,6 +116,27 @@ test('sin ningún resumen no se inventa nada a partir de los títulos', async ()
   assert.equal(llamadas, 0);
 });
 
+test('si los artículos no responden la pregunta y la IA lo dice, eso es la respuesta', async () => {
+  // El 21-sep «la riqueza del Perú» sobre artículos que no hablaban del Perú
+  // volvió sin puntos citados pero explicándolo, y salía como un fallo.
+  const resultado = await resumir(
+    { pregunta: '¿Qué dicen de la riqueza del Perú?', fuentes: FUENTES },
+    {
+      generar: contesta({
+        titulo: 'Estos artículos no tratan del Perú',
+        introduccion: 'Analizan recursos naturales y desarrollo en otros países.',
+        secciones: [],
+        conclusion: '',
+        limites: 'Ninguno aborda el Perú.',
+      }),
+      resumenes: conResumenes,
+    },
+  );
+  assert.deepEqual(resultado.secciones, []);
+  assert.equal(resultado.limites, 'Ninguno aborda el Perú.');
+  assert.equal(resultado.titulo, 'Estos artículos no tratan del Perú');
+});
+
 test('un resumen sin puntos citables es un 503 del asistente, no un 500', async () => {
   await assert.rejects(
     () =>

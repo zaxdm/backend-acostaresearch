@@ -52,6 +52,14 @@ router.post(
 router.get('/', authenticate, paymentController.mine);
 router.get('/recent', authenticate, authorize(ROLES.ADMIN), paymentController.recent);
 
+// Constancia de pago en PDF: del propio comprador, o cualquiera para ADMIN.
+router.get(
+  '/:id/constancia',
+  authenticate,
+  validate({ params: paymentIdParamSchema }),
+  paymentController.constancia,
+);
+
 // Limpiar el historial. Va la última para que ninguna ruta con nombre fijo
 // —«/recent», «/manual»— acabe interpretada como un identificador.
 router.delete(

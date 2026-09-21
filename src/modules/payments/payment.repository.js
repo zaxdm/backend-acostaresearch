@@ -45,6 +45,22 @@ const paymentRepository = {
     });
   },
 
+  /**
+   * Todo lo que lleva la constancia de pago: el plan, el comprador y el código
+   * de descuento, si lo hubo. No filtra por dueño: eso lo decide el servicio,
+   * porque un administrador también puede descargarla.
+   */
+  findForConstancia(id) {
+    return prisma.payment.findUnique({
+      where: { id },
+      include: {
+        plan: { select: { code: true, name: true, words: true, durationDays: true } },
+        user: { select: { id: true, email: true, firstName: true, lastName: true } },
+        discountCode: { select: { code: true } },
+      },
+    });
+  },
+
   findForUser(id, userId) {
     return prisma.payment.findFirst({ where: { id, userId }, select: paymentSelect });
   },

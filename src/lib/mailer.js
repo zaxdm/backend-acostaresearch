@@ -21,7 +21,11 @@ const transporter = env.smtpEnabled
     })
   : nodemailer.createTransport({ jsonTransport: true });
 
-async function sendMail({ to, subject, html, text }) {
+/**
+ * `attachments`, opcional, con la forma de nodemailer: `[{ filename, content,
+ * contentType }]`. Hoy solo la usa la constancia de pago.
+ */
+async function sendMail({ to, subject, html, text, attachments }) {
   const info = await transporter.sendMail({
     from: env.MAIL_FROM,
     // A dónde va la respuesta si el tesista le da a «Responder».
@@ -36,6 +40,7 @@ async function sendMail({ to, subject, html, text }) {
     subject,
     html,
     text,
+    ...(attachments?.length ? { attachments } : {}),
   });
 
   if (!env.smtpEnabled) {

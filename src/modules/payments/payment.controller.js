@@ -55,6 +55,18 @@ const paymentController = {
     return ok(res, { payments });
   }),
 
+  constancia: asyncHandler(async (req, res) => {
+    const { nombre, pdf } = await paymentService.constancia({
+      id: req.params.id,
+      userId: req.user.id,
+      role: req.user.role,
+    });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${nombre}"`);
+    res.setHeader('Cache-Control', 'no-store');
+    return res.send(pdf);
+  }),
+
   remove: asyncHandler(async (req, res) => {
     await paymentService.remove({ id: req.params.id, byId: req.user.id });
     return noContent(res);

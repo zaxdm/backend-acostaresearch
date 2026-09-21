@@ -8,6 +8,7 @@ const discountService = require('../billing/discount.service');
 const licenseService = require('../licensing/license.service');
 const licenseRepository = require('../licensing/license.repository');
 const paymentRepository = require('./payment.repository');
+const constancia = require('./payment.constancia');
 
 /**
  * Avisa al comprador de lo que acaba de recibir, sin bloquear.
@@ -55,12 +56,43 @@ function avisarAlComprador(payment, entrega) {
     return;
   }
 
-  sendMail({ to: usuario.email, ...mensaje }).catch((error) => {
-    logger.error(
-      { err: error, paymentId: payment.id, userId: payment.userId },
-      'No se pudo enviar el correo de entrega al comprador',
-    );
-  });
+  adjuntarConstancia(payment.id)
+    .then((attachments) => sendMail({ to: usuario.email, ...mensaje, attachments }))
+    .catch((error) => {
+      logger.error(
+        { err: error, paymentId: payment.id, userId: payment.userId },
+        'No se pudo enviar el correo de entrega al comprador',
+      );
+    });
+}
+
+/**
+ * La constancia de pago en PDF, para adjuntarla al correo de entrega.
+ *
+ * Por eso solo la reciben por correo los pagos NUEVOS: este correo sale una vez,
+ * al entregar. Los antiguos la descargan desde «Mis compras» en la web.
+ *
+ * Se lee el pago otra vez porque el que trae la entrega es el de ANTES de
+ * cobrar: sin fecha de pago ni número de operación. Si algo falla aquí, el
+ * correo sale igual sin adjunto: la entrega importa más que el PDF, y la
+ * constancia sigue disponible en la web.
+ */
+async function adjuntarConstancia(paymentId) {
+  try {
+    const pago = await paymentRepository.findForConstancia(paymentId);
+    if (!constancia.tieneConstancia(pago)) return [];
+
+    return [
+      {
+        filename: constancia.nombreDeArchivo(pago),
+        content: await constancia.generarConstancia(pago),
+        contentType: 'application/pdf',
+      },
+    ];
+  } catch (error) {
+    logger.error({ err: error, paymentId }, 'No se pudo generar la constancia para el correo');
+    return [];
+  }
 }
 
 /**

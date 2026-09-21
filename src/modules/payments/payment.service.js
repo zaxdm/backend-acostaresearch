@@ -1,7 +1,7 @@
 'use strict';
 
 const logger = require('../../config/logger');
-const { ERROR_CODES } = require('../../config/constants');
+const { ERROR_CODES, ROLES } = require('../../config/constants');
 const billingRepository = require('../billing/billing.repository');
 const { enPrueba } = require('../billing/plan.visibilidad');
 const billingService = require('../billing/billing.service');
@@ -9,6 +9,7 @@ const discountService = require('../billing/discount.service');
 const licenseRepository = require('../licensing/license.repository');
 const paymentRepository = require('./payment.repository');
 const proofStorage = require('./proof.storage');
+const constancia = require('./payment.constancia');
 const { entregarPago } = require('./payment.delivery');
 const { getProvider, enabledProviders } = require('./providers');
 const { AppError, NotFoundError, ValidationError } = require('../../shared/errors/AppError');
@@ -292,6 +293,32 @@ const paymentService = {
     }
 
     await paymentRepository.cancel(payment.id, userId);
+  },
+
+  /**
+   * La constancia de pago en PDF. La descarga el comprador desde «Mis compras»
+   * —también la de pagos anteriores a que existiera— o un administrador desde
+   * el panel. Se genera al vuelo: no se guarda ningún archivo.
+   */
+  async constancia({ id, userId, role }) {
+    const pago = await paymentRepository.findForConstancia(id);
+
+    // Un pago ajeno responde igual que uno inexistente: no se confirma que exista.
+    if (!pago || (pago.userId !== userId && role !== ROLES.ADMIN)) {
+      throw new NotFoundError('No encontramos ese pago.');
+    }
+
+    if (!constancia.tieneConstancia(pago)) {
+      throw new AppError('Este pago todavía no tiene constancia: aún no está confirmado.', {
+        statusCode: 409,
+        code: ERROR_CODES.PAYMENT_FAILED,
+      });
+    }
+
+    return {
+      nombre: constancia.nombreDeArchivo(pago),
+      pdf: await constancia.generarConstancia(pago),
+    };
   },
 
   listForUser(userId) {

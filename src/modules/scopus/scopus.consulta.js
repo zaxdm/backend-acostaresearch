@@ -50,9 +50,14 @@ Reglas:
 - Nada de operadores (AND, OR), paréntesis, comillas ni códigos de campo: solo los términos.
 - Si el tema es tan general que no se puede buscar ("tesis", "IA", "educación", "marketing"),
   devuelve "conceptos" vacío, explica en "nota" qué le falta, y en "sugerencias" propón de 3 a 4
-  temas de tesis concretos EN ESPAÑOL a partir de lo que escribió, cada uno en una línea, con sus
-  variables y su población, sin país ni ciudad ("uso de ChatGPT y pensamiento crítico en
-  estudiantes universitarios"). Si el tema se puede buscar, "sugerencias" va vacío.
+  temas de tesis concretos EN ESPAÑOL, cada uno en una línea, con sus variables y su población
+  ("uso de ChatGPT y pensamiento crítico en estudiantes universitarios"). Las sugerencias SALEN
+  DE LO QUE ESCRIBIÓ: cada una conserva sus palabras y su asunto, y solo lo concreta; nunca
+  cambies de tema. Si nombró un país, una región o una ciudad, TODAS las sugerencias tratan de
+  ese lugar ("El Perú y sus cosas" → temas sobre el Perú: su turismo, su minería, su
+  gastronomía…). Si no nombró ninguno, ninguna sugerencia lleva país, región, ciudad ni
+  gentilicio ("marketing" → "marketing digital y ventas en pequeñas empresas", nunca "…en
+  pymes colombianas"). Si el tema se puede buscar, "sugerencias" va vacío.
 
 Responde SOLO con un JSON, sin texto antes ni después, con esta forma:
 {"conceptos":[{"nombre":"critical thinking","sinonimos":["critical reasoning"]}],"nota":"una frase en español para el tesista","sugerencias":[]}`;

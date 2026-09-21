@@ -2738,8 +2738,12 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         'pasos: es el método, y sabe dónde va cada cosa en su documento. EL CAMINO NORMAL ES SU ' +
         'PERFIL, no un enlace: en acostaresearch.com/perfil, pestaña «Tus fuentes de Scopus», busca ' +
         'con la ecuación («Consulta avanzada») y pulsa «Hacer un mapeo bibliométrico con estos ' +
-        'resultados»; los datos llegan solos a esta sesión. Dale esas indicaciones. Solo si YA tiene ' +
-        'un archivo exportado, al mismo enlace de subida puede subir, en vez de una matriz, el exporte ' +
+        'resultados»; los datos llegan solos a esta sesión. Dale esas indicaciones. En el ARTÍCULO de ' +
+        'revisión (Fase 3B) es al revés: lo preferente es el exporte oficial de su universidad, y el ' +
+        'perfil queda para quien no tiene ese acceso; la fase lo explica. Del perfil, Scopus elige los ' +
+        'documentos y sus datos son de OpenAlex: se escribe «búsqueda en Scopus; metadatos de ' +
+        'OpenAlex», nunca «datos de Scopus». Con un archivo ' +
+        'exportado, al mismo enlace de subida puede subir, en vez de una matriz, el exporte ' +
         'de Scopus (CSV, BibTeX o el texto plano que baja por defecto), de Web of Science (texto plano ' +
         'o BibTeX) o de PubMed. Entonces `datos` ya es la tabla de bibliometrix, una fila por ' +
         'documento, con sus etiquetas (AU, TI, SO, PY, TC, CR, DE, ID, C1…). Antes de que exporte, ' +

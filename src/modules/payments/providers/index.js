@@ -1,6 +1,7 @@
 'use strict';
 
 const { paypalProvider } = require('./paypal.provider');
+const { culqiProvider } = require('./culqi.provider');
 
 /**
  * Registro de pasarelas.
@@ -17,14 +18,27 @@ const { paypalProvider } = require('./paypal.provider');
  *                           no se puede cobrar aquí
  *   createOrder({ plan, amountCents, referencia })
  *                           → { orderId, approveUrl }
- *   captureOrder(orderId)   → { captured, captureId, amountCents, currency,
+ *   captureOrder(orderId, contexto)
+ *                           → { captured, captureId, amountCents, currency,
  *                               payerEmail, status, raw }
+ *                             o { requiresAuthentication: true, raw } si el
+ *                             banco pide 3-D Secure y todavía no se cobró nada.
+ *                             `contexto` trae el pago (`payment`) y lo que mandó
+ *                             el navegador (`token`, `email`, `authentication3DS`,
+ *                             `deviceFingerprint`); PayPal no lo usa.
  *
- * Culqi y Mercado Pago sí cobran en soles, así que su `priceForPlan` devolverá
- * `plan.priceCents` y no hará falta el precio en dólares.
+ * Opcionales:
+ *
+ *   needsToken              true si el cobro no se confirma sin el token que da
+ *                           el formulario de la pasarela en el navegador (Culqi)
+ *   publicKey()             llave pública que el navegador necesita, o null
+ *
+ * Culqi cobra en soles, así que su `priceForPlan` devuelve `plan.priceCents` y
+ * no necesita el precio en dólares.
  */
 const PROVIDERS = Object.freeze({
   [paypalProvider.code]: paypalProvider,
+  [culqiProvider.code]: culqiProvider,
 });
 
 function getProvider(code) {

@@ -24,11 +24,14 @@ const paymentController = {
       userId: req.user.id,
       orderId: req.params.orderId,
       providerCode: req.query.provider,
+      datosDelCobro: req.body,
     });
 
-    const mensaje = resultado.alreadyProcessed
-      ? 'Este pago ya estaba confirmado.'
-      : '¡Pago confirmado! Ya tienes tus palabras disponibles.';
+    const mensaje = resultado.requiresAuthentication
+      ? 'Tu banco pide confirmar el pago. Sigue los pasos de la verificación.'
+      : resultado.alreadyProcessed
+        ? 'Este pago ya estaba confirmado.'
+        : '¡Pago confirmado! Ya tienes tus palabras disponibles.';
 
     return ok(res, resultado, { message: mensaje });
   }),

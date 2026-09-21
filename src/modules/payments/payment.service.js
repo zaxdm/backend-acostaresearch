@@ -11,7 +11,7 @@ const paymentRepository = require('./payment.repository');
 const proofStorage = require('./proof.storage');
 const { entregarPago } = require('./payment.delivery');
 const { getProvider, enabledProviders } = require('./providers');
-const { AppError, NotFoundError } = require('../../shared/errors/AppError');
+const { AppError, NotFoundError, ValidationError } = require('../../shared/errors/AppError');
 
 /** Pasarela pedida, siempre que exista y tenga credenciales. */
 function obtenerPasarela(code) {
@@ -48,6 +48,18 @@ async function entregaDeUnPago(payment) {
   return {};
 }
 
+/**
+ * La rebaja del código en la moneda en que cobra la pasarela.
+ *
+ * `discount.service` la da en soles (`amountCents`) y en dólares
+ * (`discountUsdCents`). PayPal cobra en dólares; Culqi, en soles. Restar la
+ * de dólares a un precio en soles cobraría de más o de menos.
+ */
+function rebajaEnLaMoneda(descuento, moneda) {
+  if (!descuento) return 0;
+  return moneda === 'USD' ? descuento.discountUsdCents : descuento.amountCents;
+}
+
 const paymentService = {
   /** Pasarelas que el navegador puede ofrecer. Vacío = solo pago manual. */
   listProviders() {
@@ -55,6 +67,9 @@ const paymentService = {
       code: provider.code,
       label: provider.label,
       currency: provider.currency,
+      // Solo la pasarela que abre su formulario en el navegador (Culqi) la
+      // necesita. Es la llave pública: no protege nada por sí sola.
+      ...(provider.publicKey ? { publicKey: provider.publicKey() } : {}),
     }));
   },
 
@@ -84,7 +99,7 @@ const paymentService = {
     // El descuento lo resuelve el servidor a partir del código: el navegador
     // manda el código, nunca el importe rebajado.
     const descuento = await discountService.resolve({ code: discountCode, plan });
-    const rebaja = descuento ? descuento.discountUsdCents : 0;
+    const rebaja = rebajaEnLaMoneda(descuento, provider.currency);
     const amountCents = precioBase - rebaja;
 
     let orden;
@@ -135,8 +150,17 @@ const paymentService = {
    * cobra, se comprueba que lo cobrado coincide con lo que este servidor había
    * calculado, y solo entonces se entrega. Repetir la llamada no duplica nada.
    */
-  async captureOrder({ userId, orderId, providerCode }) {
+  async captureOrder({ userId, orderId, providerCode, datosDelCobro = {} }) {
     const provider = obtenerPasarela(providerCode);
+
+    // Se mira antes de tocar nada: sin token no hay cobro posible, y dejar que
+    // la pasarela lo rechace marcaría el pago como fallido sin motivo.
+    if (provider.needsToken && !datosDelCobro.token) {
+      throw new ValidationError([
+        { field: 'body.token', message: 'Falta el token del formulario de pago.' },
+      ]);
+    }
+
     const payment = await paymentRepository.findByOrderId(provider.code, orderId);
 
     // Comprobar el dueño evita que una orden ajena entregue palabras aquí.
@@ -158,8 +182,25 @@ const paymentService = {
 
     let captura;
     try {
-      captura = await provider.captureOrder(orderId);
+      captura = await provider.captureOrder(orderId, { payment, ...datosDelCobro });
     } catch (error) {
+      // El banco rechazó ESTA tarjeta: el pago sigue abierto para que pruebe
+      // con otra sin empezar la compra de nuevo. Solo se anota el motivo.
+      if (error.reintentable) {
+        await paymentRepository.noteAttempt(payment.id, {
+          errorCode: error.body?.decline_code ?? error.body?.code ?? error.body?.type ?? 'DECLINED',
+          rawResponse: error.body,
+        });
+        logger.warn(
+          { detalle: error.body, userId, orderId, provider: provider.code },
+          'La pasarela rechazó el cobro; el pago sigue abierto para reintentar',
+        );
+        throw new AppError(
+          error.userMessage ?? 'Tu banco no aprobó el pago. Prueba con otra tarjeta o con Yape.',
+          { statusCode: 402, code: ERROR_CODES.PAYMENT_DECLINED },
+        );
+      }
+
       await paymentRepository.fail(payment.id, {
         errorCode: 'GATEWAY_ERROR',
         rawResponse: error.body,
@@ -172,6 +213,12 @@ const paymentService = {
         statusCode: 400,
         code: ERROR_CODES.PAYMENT_FAILED,
       });
+    }
+
+    // El banco pide 3-D Secure: todavía no se cobró nada y el pago sigue
+    // pendiente. El navegador pasa la verificación y vuelve a llamar.
+    if (captura.requiresAuthentication) {
+      return { alreadyProcessed: false, requiresAuthentication: true };
     }
 
     if (!captura.captured) {

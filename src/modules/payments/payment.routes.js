@@ -9,6 +9,7 @@ const { ROLES } = require('../../config/constants');
 const {
   createOrderSchema,
   orderParamsSchema,
+  captureBodySchema,
   providerQuerySchema,
   paymentIdParamSchema,
 } = require('./payment.schema');
@@ -37,7 +38,7 @@ router.post(
 router.post(
   '/orders/:orderId/capture',
   authenticate,
-  validate({ params: orderParamsSchema, query: providerQuerySchema }),
+  validate({ params: orderParamsSchema, query: providerQuerySchema, body: captureBodySchema }),
   paymentController.capture,
 );
 

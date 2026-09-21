@@ -17,6 +17,13 @@ const vacioComoAusente = (esquema) =>
     .optional()
     .transform((valor) => valor || undefined);
 
+/** `pk_test_…` con `sk_test_…`, o `pk_live_…` con `sk_live_…`. */
+function llavesCulqiValidas(publica, secreta) {
+  const entorno = (llave, prefijo) => new RegExp(`^${prefijo}_(test|live)_\\S+$`).exec(llave ?? '')?.[1];
+  const dePublica = entorno(publica, 'pk');
+  return Boolean(dePublica) && dePublica === entorno(secreta, 'sk');
+}
+
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(3000),
@@ -117,6 +124,19 @@ const schema = z.object({
   PAYPAL_ENV: z.enum(['sandbox', 'live']).default('sandbox'),
   PAYPAL_CLIENT_ID: vacioComoAusente(z.string()),
   PAYPAL_CLIENT_SECRET: vacioComoAusente(z.string()),
+
+  // ── Pasarela de pago (Culqi) ────────────────────────────────────────────
+  // Tarjeta y Yape en soles, con el cobro confirmado al momento. Llaves del
+  // panel de Culqi: la pública (pk_…) viaja al navegador para abrir el
+  // formulario; la secreta (sk_…) no sale nunca de este servidor. No hay
+  // variable de entorno aparte: el prefijo `_test_` o `_live_` de la llave ya
+  // dice si el cobro es de prueba o real, y la API es la misma.
+  //
+  // Sin regex a propósito: una llave mal pegada aquí tumbaría el arranque de
+  // todo el servidor. Si no tienen buena forma, `culqiEnabled` queda en false
+  // y Culqi simplemente no se ofrece.
+  CULQI_PUBLIC_KEY: vacioComoAusente(z.string().trim()),
+  CULQI_SECRET_KEY: vacioComoAusente(z.string().trim()),
 
   // ── Pago manual (Yape o transferencia) ──────────────────────────────────
   // El comprador paga con el QR y sube la captura; un administrador la mira y
@@ -478,6 +498,9 @@ const env = Object.freeze({
     .map((id) => id.trim())
     .filter(Boolean),
   paypalEnabled: Boolean(raw.PAYPAL_CLIENT_ID && raw.PAYPAL_CLIENT_SECRET),
+  // Las dos llaves, con su forma, y del MISMO entorno: una pública de prueba
+  // con una secreta real genera tokens que el cobro rechaza siempre.
+  culqiEnabled: llavesCulqiValidas(raw.CULQI_PUBLIC_KEY, raw.CULQI_SECRET_KEY),
   // El pago manual no depende de credenciales: basta con que haya un QR en la
   // web. Estos datos son solo el texto que lo acompaña.
   yape: {

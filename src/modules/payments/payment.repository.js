@@ -105,6 +105,21 @@ const paymentRepository = {
     });
   },
 
+  /**
+   * Un intento rechazado que NO cierra el pago (tarjeta denegada en Culqi): el
+   * comprador puede reintentar con otra. Se guarda el último motivo para que
+   * el panel lo enseñe, sin cambiar el estado.
+   */
+  async noteAttempt(paymentId, { errorCode, rawResponse }) {
+    await prisma.payment.updateMany({
+      where: { id: paymentId, status: 'PENDING' },
+      data: {
+        errorCode: String(errorCode).slice(0, 60),
+        rawResponse: rawResponse ? JSON.stringify(rawResponse) : undefined,
+      },
+    });
+  },
+
   async cancel(paymentId, userId) {
     const { count } = await prisma.payment.updateMany({
       where: { id: paymentId, userId, status: 'PENDING' },

@@ -658,6 +658,11 @@ function crearMotor({
     },
 
     /** Lo que hay en la sesión, sin ejecutar nada. */
+    /** ¿Son sus datos un exporte bibliográfico? */
+    esBibliografica(sesion) {
+      return esBibliografica(carpetaDe(sesion));
+    },
+
     async estado(sesion) {
       const carpeta = carpetaDe(sesion);
       const hayDatos = (await leerTexto(path.join(carpeta, 'lectura.R'), 4096)) !== null;

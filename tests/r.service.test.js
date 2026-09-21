@@ -22,7 +22,11 @@ falso(rutaRepo, {
 falso(rutaProyectos, {
   recibirAnalisis: async (datos) => {
     guardados.push(datos);
-    return { capitulo: 'analisis-datos-rstudio', escritos: ['script', 'salida'] };
+    // Como project.service: un exporte bibliográfico va a la skill del mapeo.
+    return {
+      capitulo: datos.bibliografico ? 'mapeo-bibliometrico' : 'analisis-datos-rstudio',
+      escritos: ['script', 'salida'],
+    };
   },
 });
 
@@ -32,11 +36,14 @@ const { MotorNoDisponible } = require('../src/modules/r/r.motor');
 const PNG = Buffer.from('89504e470d0a1a0a', 'hex');
 const USO = { userId: 'u1', productCode: 'METODO_9_SKILLS' };
 
-function motorFalso({ hayDatos = true, resultado = 'ok', lanzar, archivos = [] } = {}) {
+function motorFalso({ hayDatos = true, resultado = 'ok', lanzar, archivos = [], bibliografica = false } = {}) {
   const motor = {
     ordenes: [],
     async listo() {
       return true;
+    },
+    async esBibliografica() {
+      return bibliografica;
     },
     async ejecutar(sesion, codigo) {
       if (lanzar) throw lanzar;
@@ -115,6 +122,26 @@ test('una ejecución trae consola, estructura, cómo se lee, gráficos y queda g
   assert.equal(guardados.length, 1);
   assert.match(guardados[0].script, /cor\.test/);
   assert.match(texto, /ver_analisis/);
+});
+
+test('con un exporte bibliográfico, lo ejecutado va al análisis del mapeo y no al de resultados', async () => {
+  guardados.length = 0;
+  rService.usarMotor(motorFalso({ bibliografica: true }));
+
+  const { contenido } = await rService.trabajar({ ...USO, codigo: 'figura_bibliometrica("produccion_anual")' });
+  const texto = textoDe(contenido);
+
+  assert.equal(guardados.length, 1);
+  assert.equal(guardados[0].bibliografico, true);
+  assert.match(texto, /capitulo "mapeo-bibliometrico"/);
+  assert.match(texto, /resultados de su tesis, si lo tenía, sigue intacto/);
+});
+
+test('con una matriz, lo ejecutado sigue yendo al análisis de resultados', async () => {
+  guardados.length = 0;
+  rService.usarMotor(motorFalso());
+  await rService.trabajar({ ...USO, codigo: 'x <- 1' });
+  assert.equal(guardados[0].bibliografico, false);
 });
 
 test('un error de R se le dice a Claude para que lo corrija', async () => {

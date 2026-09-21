@@ -196,15 +196,17 @@ function ultimos(textoLargo) {
  * `ver_analisis`, el aviso de `mi_proyecto` y el repaso de cifras. Devuelve
  * false si no se pudo, para decírselo a Claude en vez de callarlo.
  */
-async function guardarEnElProyecto({ userId, productCode, guion, consola }) {
+async function guardarEnElProyecto({ userId, productCode, guion, consola, bibliografico = false }) {
   try {
-    await projectService.recibirAnalisis({
+    const guardado = await projectService.recibirAnalisis({
       userId,
       productCode,
       script: ultimos(guion),
       salida: ultimos(consola),
+      bibliografico,
     });
-    return true;
+    // El capítulo donde quedó, o true si el método no tiene dónde guardarlo.
+    return guardado?.capitulo ?? true;
   } catch (error) {
     logger.error({ err: error, userId }, 'No se pudo guardar en el proyecto el análisis de R');
     return false;
@@ -318,19 +320,31 @@ async function trabajar({ userId, productCode, codigo, reiniciar = false, descar
       );
     }
 
+    const bibliografico = await m.esBibliografica(sesion);
     const guardado = await guardarEnElProyecto({
       userId,
       productCode,
       guion: hecho.guion,
       consola: hecho.consola,
+      bibliografico,
     });
-    partes.push(
-      guardado
-        ? 'Guardado en su análisis: "ver_analisis" ya lo lee. Las cifras que vayan al texto, ' +
-            'guárdalas con "guardar_analisis" (resultados).'
-        : 'OJO: esta vez NO se pudo guardar en su análisis. Lo ejecutado sigue en la sesión; ' +
-            'vuelve a intentarlo más tarde.',
-    );
+    let avisoDeGuardado;
+    if (!guardado) {
+      avisoDeGuardado =
+        'OJO: esta vez NO se pudo guardar en su análisis. Lo ejecutado sigue en la sesión; ' +
+        'vuelve a intentarlo más tarde.';
+    } else if (bibliografico) {
+      avisoDeGuardado =
+        typeof guardado === 'string'
+          ? `Guardado en el análisis del mapeo: "ver_analisis" con capitulo "${guardado}" lo lee. ` +
+            'El análisis de resultados de su tesis, si lo tenía, sigue intacto.'
+          : 'Lo ejecutado queda en la sesión; su método no tiene capítulo de mapeo donde guardarlo.';
+    } else {
+      avisoDeGuardado =
+        'Guardado en su análisis: "ver_analisis" ya lo lee. Las cifras que vayan al texto, ' +
+        'guárdalas con "guardar_analisis" (resultados).';
+    }
+    partes.push(avisoDeGuardado);
   } else if (reiniciar) {
     partes.push('Sesión reiniciada. No había datos que volver a leer.');
   }
@@ -384,7 +398,13 @@ async function subirDatos({ userId, productCode, bytes }) {
   const proyecto = await projectRepository.asegurar(userId, productCode);
   const hecho = await m.subirDatos(proyecto.id, preparado);
 
-  await guardarEnElProyecto({ userId, productCode, guion: hecho.guion, consola: hecho.consola });
+  await guardarEnElProyecto({
+    userId,
+    productCode,
+    guion: hecho.guion,
+    consola: hecho.consola,
+    bibliografico: preparado.tipo === 'bibliografia',
+  });
 
   const dim = dimensiones(hecho.estado.objetos);
   const leido = hecho.resultado === 'ok' && dim !== null;

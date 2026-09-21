@@ -87,6 +87,24 @@ async function capituloDeResultados(productCode) {
 }
 
 /**
+ * Donde cae el análisis de una sesión con un exporte bibliográfico: la skill
+ * del mapeo, no el capítulo de resultados.
+ *
+ * La sesión de R es una por proyecto. Si el mapeo se guardara en resultados,
+ * el tesista que ya analizó su matriz perdería el registro de ese análisis
+ * —el que leen ver_analisis y el repaso— al abrir el mapeo para sus
+ * antecedentes. Sin skill de mapeo en su método, no se guarda: lo ejecutado
+ * sigue en la sesión.
+ */
+const CAPITULOS_DE_MAPEO = ['mapeo-bibliometrico', 'articulo-fase3b-mapeo-bibliometrico'];
+
+async function capituloDeMapeo(productCode) {
+  const catalogo = await skillService.listCatalog(productCode);
+  const claves = new Set(catalogo.map((skill) => skill.code));
+  return CAPITULOS_DE_MAPEO.find((clave) => claves.has(clave)) ?? null;
+}
+
+/**
  * El aviso de que hay un análisis que el asistente todavía no ha leído.
  *
  * Guardado no sirve de nada si Claude no se entera, y no se va a enterar solo:
@@ -1604,8 +1622,8 @@ async function guardarAnalisisEnSuTurno({
  * licencias. Este servicio no carga el de licencias a propósito: lo usan una
  * docena de pruebas que no tienen base de datos.
  */
-async function recibirAnalisis({ userId, productCode, script, salida }) {
-  const capitulo = await capituloDeResultados(productCode);
+async function recibirAnalisis({ userId, productCode, script, salida, bibliografico = false }) {
+  const capitulo = bibliografico ? await capituloDeMapeo(productCode) : await capituloDeResultados(productCode);
   if (!capitulo) return null;
 
   const { escritos } = await guardarAnalisis({ userId, productCode, capitulo, script, salida });

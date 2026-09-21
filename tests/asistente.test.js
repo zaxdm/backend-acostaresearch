@@ -299,8 +299,15 @@ test('si fallan todos, sale el error del último', async () => {
     respaldo: [500, { error: { message: 'roto' } }],
   });
   await assert.rejects(
-    generarConRespaldo({ modelos: ['principal', 'respaldo'], sistema: 's', mensajes: turnos(1), fetchImpl }),
-    (error) => error.status === 500,
+    generarConRespaldo({
+      modelos: ['principal', 'respaldo'],
+      sistema: 's',
+      mensajes: turnos(1),
+      fetchImpl,
+      esperar: async () => {},
+    }),
+    // El saturado se reintenta dos veces más, así que el último es el suyo.
+    (error) => error.status === 503,
   );
 });
 
@@ -354,23 +361,37 @@ test('un pico que no se va: tres vueltas como mucho, y el error', async () => {
   assert.deepEqual(esperas, [2000, 4000]);
 });
 
-test('un fallo que no es un pico no se reintenta: se pasa al respaldo y se acabó', async () => {
+test('un fallo que no es un pico no se reintenta; el que sí lo fue, sí', async () => {
   // Un 500 o un tiempo agotado no se arreglan esperando dos segundos, y un
-  // tiempo agotado ya se comió los suyos.
+  // tiempo agotado ya se comió los suyos. Pero no le quitan su reintento al
+  // que solo estaba en un pico.
   const esperas = [];
   const pedidos = [];
+  const { modelo } = await generarConRespaldo({
+    modelos: ['principal', 'respaldo'],
+    sistema: 's',
+    mensajes: turnos(1),
+    fetchImpl: fetchPorTurnos([SATURADO, [500, { error: { message: 'roto' } }], [200, RESPUESTA_OK]], pedidos),
+    esperar: async (ms) => esperas.push(ms),
+  });
+  assert.equal(modelo, 'principal');
+  assert.deepEqual(esperas, [2000]);
+  assert.deepEqual(pedidos, ['principal', 'respaldo', 'principal'], 'el roto no vuelve a preguntarse');
+});
+
+test('si ninguno dio pico, no se espera nada', async () => {
+  const esperas = [];
   await assert.rejects(
     generarConRespaldo({
       modelos: ['principal', 'respaldo'],
       sistema: 's',
       mensajes: turnos(1),
-      fetchImpl: fetchPorTurnos([SATURADO, [500, { error: { message: 'roto' } }]], pedidos),
+      fetchImpl: fetchPorTurnos([[500, { error: { message: 'roto' } }]]),
       esperar: async (ms) => esperas.push(ms),
     }),
     (error) => error.status === 500,
   );
   assert.deepEqual(esperas, []);
-  assert.deepEqual(pedidos, ['principal', 'respaldo']);
 });
 
 /** Un Gemini cuyo modelo `principal` se queda sin contestar. */

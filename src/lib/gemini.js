@@ -189,9 +189,15 @@ async function generarConRespaldo({ modelos, esperar = dormir, ahora = Date.now,
    * «high demand» en cuatro segundos. Dos vueltas más, con dos y cuatro
    * segundos de espera: como estos errores vuelven en uno o dos segundos, lo
    * peor son unos doce segundos más, y casi siempre sale a la primera espera.
+   *
+   * En la vuelta siguiente solo entran los que dieron pico: el que agotó su
+   * tiempo o se rompió no se arregla esperando. Antes, uno así bastaba para no
+   * reintentar ninguno, y el 21-sep a las 10:13 el tesista vio «la IA no
+   * contestó» porque el principal se colgó y el respaldo dio «high demand» una
+   * sola vez.
    */
   for (let vuelta = 0; ; vuelta += 1) {
-    let todosEnPico = true;
+    const enPico = [];
 
     for (const modelo of modelos) {
       try {
@@ -201,13 +207,14 @@ async function generarConRespaldo({ modelos, esperar = dormir, ahora = Date.now,
         logger.warn({ modelo, err: error.message }, 'Gemini: el modelo falló, se prueba el siguiente');
         ultimoError = error;
         if (esTiempoAgotado(error)) enReposo.set(modelo, ahora() + REPOSO_MS);
-        if (!esPicoPasajero(error)) todosEnPico = false;
+        if (esPicoPasajero(error)) enPico.push(modelo);
       }
     }
 
-    if (!ultimoError || !todosEnPico || vuelta >= ESPERAS_TRAS_PICO.length) break;
-    logger.info({ vuelta: vuelta + 1 }, 'Gemini: todos los modelos en un pico, se espera y se reintenta');
+    if (enPico.length === 0 || vuelta >= ESPERAS_TRAS_PICO.length) break;
+    logger.info({ vuelta: vuelta + 1, modelos: enPico }, 'Gemini: modelos en un pico, se espera y se reintenta');
     await esperar(ESPERAS_TRAS_PICO[vuelta]);
+    modelos = enPico;
   }
 
   throw ultimoError ?? new GeminiError('No hay ningún modelo de Gemini configurado');

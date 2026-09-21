@@ -12,7 +12,7 @@ const {
   formatearPrecio,
 } = require('../src/modules/asistente/asistente.prompt');
 const { crearTopeDiario } = require('../src/modules/asistente/asistente.tope');
-const { generar, generarConRespaldo, GeminiError } = require('../src/lib/gemini');
+const { generar, generarConRespaldo, olvidarReposos, GeminiError } = require('../src/lib/gemini');
 
 /**
  * El Asistente Acosta habla con cualquiera que entre a la web y le cuesta
@@ -371,6 +371,68 @@ test('un fallo que no es un pico no se reintenta: se pasa al respaldo y se acab�
   );
   assert.deepEqual(esperas, []);
   assert.deepEqual(pedidos, ['principal', 'respaldo']);
+});
+
+/** Un Gemini cuyo modelo `principal` se queda sin contestar. */
+function principalColgado(pedidos) {
+  return async (url) => {
+    const modelo = /models\/([^:]+):/.exec(url)[1];
+    pedidos.push(modelo);
+    if (modelo === 'principal') throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+    return { ok: true, status: 200, json: async () => RESPUESTA_OK };
+  };
+}
+
+test('el modelo que agotó su tiempo se pregunta al final unos minutos, y luego vuelve a su sitio', async () => {
+  // El 21-sep-2026 el principal agotaba sus quince segundos en todas las
+  // peticiones y el copiloto de Scopus tardaba veinte en vez de dos.
+  olvidarReposos();
+  const pedidos = [];
+  let reloj = 1_000_000;
+  const pedir = () =>
+    generarConRespaldo({
+      modelos: ['principal', 'respaldo'],
+      sistema: 's',
+      mensajes: turnos(1),
+      fetchImpl: principalColgado(pedidos),
+      ahora: () => reloj,
+    });
+
+  assert.equal((await pedir()).modelo, 'respaldo');
+  assert.deepEqual(pedidos, ['principal', 'respaldo'], 'la primera vez sí se espera al principal');
+
+  pedidos.length = 0;
+  reloj += 60_000;
+  assert.equal((await pedir()).modelo, 'respaldo');
+  assert.deepEqual(pedidos, ['respaldo'], 'un minuto después ya no se le espera');
+
+  pedidos.length = 0;
+  reloj += 5 * 60_000;
+  await pedir();
+  assert.deepEqual(pedidos, ['principal', 'respaldo'], 'pasado el reposo, vuelve a ir primero');
+  olvidarReposos();
+});
+
+test('un modelo en reposo sigue siendo el último recurso', async () => {
+  olvidarReposos();
+  let reloj = 1_000_000;
+  const colgado = async () => {
+    throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+  };
+  await assert.rejects(
+    generarConRespaldo({ modelos: ['principal'], sistema: 's', mensajes: turnos(1), fetchImpl: colgado, ahora: () => reloj }),
+  );
+
+  reloj += 1_000;
+  const { modelo } = await generarConRespaldo({
+    modelos: ['principal'],
+    sistema: 's',
+    mensajes: turnos(1),
+    fetchImpl: fetchPorModelo({ principal: [200, RESPUESTA_OK] }),
+    ahora: () => reloj,
+  });
+  assert.equal(modelo, 'principal', 'si es el único, se le pregunta igual');
+  olvidarReposos();
 });
 
 // ── Promociones ────────────────────────────────────────────────────────────

@@ -148,8 +148,37 @@ const ESPERAS_TRAS_PICO = [2_000, 4_000];
 
 const dormir = (ms) => new Promise((resolver) => setTimeout(resolver, ms));
 
-async function generarConRespaldo({ modelos, esperar = dormir, ...opciones }) {
+/**
+ * Los modelos que hace poco se quedaron sin contestar, y hasta cuándo se les
+ * pregunta al final.
+ *
+ * El 21-sep-2026, desde las nueve de la mañana, `gemini-3.5-flash-lite` agotaba
+ * sus quince segundos en TODAS las peticiones y el respaldo contestaba en dos:
+ * el copiloto de Scopus pasó de uno o dos segundos a veinte. Cada tesista
+ * volvía a pagar la espera entera por un modelo que ya se sabía caído. Ahora,
+ * el que se agota se va al final de la lista unos minutos; sigue ahí como
+ * último recurso, y pasado el reposo vuelve a su sitio solo.
+ *
+ * Solo el tiempo agotado: un «high demand» vuelve en un segundo y no hace
+ * esperar a nadie.
+ */
+const REPOSO_MS = 5 * 60_000;
+const enReposo = new Map();
+
+const esTiempoAgotado = (error) => error?.name === 'TimeoutError' || /aborted due to timeout/i.test(error?.message ?? '');
+
+/** Los modelos en su orden, con los que están en reposo al final. */
+function enOrdenDeConfianza(modelos, ahora) {
+  const descansa = (m) => (enReposo.get(m) ?? 0) > ahora;
+  return [...modelos.filter((m) => !descansa(m)), ...modelos.filter(descansa)];
+}
+
+/** Para las pruebas: que ninguna herede el reposo de otra. */
+const olvidarReposos = () => enReposo.clear();
+
+async function generarConRespaldo({ modelos, esperar = dormir, ahora = Date.now, ...opciones }) {
   let ultimoError;
+  modelos = enOrdenDeConfianza(modelos, ahora());
 
   /**
    * Y si TODOS están en un pico, se espera un poco y se vuelve a probar la lista.
@@ -171,6 +200,7 @@ async function generarConRespaldo({ modelos, esperar = dormir, ...opciones }) {
         if (error instanceof GeminiError && error.bloqueado) throw error;
         logger.warn({ modelo, err: error.message }, 'Gemini: el modelo falló, se prueba el siguiente');
         ultimoError = error;
+        if (esTiempoAgotado(error)) enReposo.set(modelo, ahora() + REPOSO_MS);
         if (!esPicoPasajero(error)) todosEnPico = false;
       }
     }
@@ -309,4 +339,4 @@ async function embeber(
 /** Vaciar lo recordado. Para las pruebas: cada una empieza sin memoria. */
 const olvidarVectores = () => memoria.clear();
 
-module.exports = { generar, generarConRespaldo, embeber, olvidarVectores, GeminiError };
+module.exports = { generar, generarConRespaldo, olvidarReposos, embeber, olvidarVectores, GeminiError };

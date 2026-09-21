@@ -120,6 +120,32 @@ test('las referencias más citadas llevan «Autor, I. (año)» y las desconocida
   assert.equal(fila.referenced_works, 'Junco, R. (2011)|https://openalex.org/W7');
 });
 
+test('de las palabras clave de OpenAlex quedan las específicas, sin los grandes campos', () => {
+  const w = {
+    keywords: [
+      ['Chatbot', 0.57],
+      ['Psychology', 0.57],
+      ['Higher education', 0.52],
+      ['Medical education', 0.39],
+      ['Medicine', 0.12],
+    ].map(([display_name, score]) => ({ display_name, score })),
+  };
+  assert.equal(mapeo.filaDe(w)['keywords.display_name'], 'Chatbot|Higher education');
+});
+
+test('el origen cuenta de dónde salieron los datos y las cifras del PRISMA', () => {
+  const texto = mapeo.origenDelMapeo(
+    'TITLE-ABS-KEY(redes)',
+    { total: 693, recorridos: 693, conDoi: 645, documentos: 632 },
+    new Date('2026-09-21T12:00:00Z'),
+  );
+  assert.match(texto, /buscador de acostaresearch\.com el 2026-09-21/);
+  assert.match(texto, /No es un exporte de Scopus/);
+  assert.match(texto, /Ecuación: TITLE-ABS-KEY\(redes\)/);
+  assert.match(texto, /Resultados en Scopus: 693\. Tomados .*: 693\. Con DOI: 645\. Encontrados en OpenAlex: 632\./);
+  assert.match(texto, /metadatos de OpenAlex/);
+});
+
 test('una barra o un salto dentro de un valor no parten la celda ni la fila', () => {
   const texto = mapeo.csvDeOpenAlex([OBRA]);
   assert.equal(texto.trim().split('\n').length, 2);
@@ -178,8 +204,9 @@ test('prepararMapeo sube el CSV a la sesión y cuenta lo que quedó fuera', asyn
   const r = await mapeo.prepararMapeo({
     ecuacion: 'redes',
     accessToken: null,
-    subir: async (bytes) => {
+    subir: async (bytes, origen) => {
       subido = bytes.toString('utf8');
+      assert.match(origen, /Resultados en Scopus: 3\. .*Con DOI: 2\. Encontrados en OpenAlex: 1\./);
       return { leido: true };
     },
   });

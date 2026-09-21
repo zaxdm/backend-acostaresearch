@@ -2750,7 +2750,9 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         'guarda «figura_<tipo>.png» lista para el informe, la dibuja aquí e imprime sus cifras. Tipos: ' +
         'produccion_anual, fuentes, autores, paises, palabras, coocurrencia, mapa_tematico, cocitacion, ' +
         'coautoria, colaboracion_paises, bradford y lotka; opciones n (cuántos), campo ("DE" palabras ' +
-        'de autor, "ID" las de la base) y minfreq (mapa temático). UNA figura por llamada: con miles ' +
+        'de autor, "ID" las de la base, "TI" o "AB" los términos de títulos o resúmenes, que es lo que ' +
+        'toca si los datos son de OpenAlex) y minfreq (mapa temático). Si los datos no los subió él, ' +
+        'al mirar la sesión sale DE DÓNDE SALIERON: úsalo en el PRISMA y los Métodos. UNA figura por llamada: con miles ' +
         'de documentos, cada red se come buena parte del tiempo. Para lo demás, las funciones de ' +
         'bibliometrix tal cual (thematicEvolution, conceptualStructure, histNetwork…). NO hay ' +
         'biblioshiny: aquí no hay navegador ni red. Las figuras de bibliometrix rotulan en inglés ' +

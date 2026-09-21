@@ -36,7 +36,7 @@ const { MotorNoDisponible } = require('../src/modules/r/r.motor');
 const PNG = Buffer.from('89504e470d0a1a0a', 'hex');
 const USO = { userId: 'u1', productCode: 'METODO_9_SKILLS' };
 
-function motorFalso({ hayDatos = true, resultado = 'ok', lanzar, archivos = [], bibliografica = false } = {}) {
+function motorFalso({ hayDatos = true, resultado = 'ok', lanzar, archivos = [], bibliografica = false, origen = null } = {}) {
   const motor = {
     ordenes: [],
     async listo() {
@@ -69,7 +69,7 @@ function motorFalso({ hayDatos = true, resultado = 'ok', lanzar, archivos = [], 
       return null;
     },
     async estado() {
-      return { hayDatos, objetos: [], columnas: [], archivos };
+      return { hayDatos, origen, objetos: [], columnas: [], archivos };
     },
     async leerArchivo(_sesion, nombre) {
       return archivos.some((a) => a.nombre === nombre) ? Buffer.from('a;b') : null;
@@ -113,6 +113,12 @@ test('con datos ya subidos, el enlace solo sale si se pide con subir, y avisa de
   const pedido = textoDe((await rService.trabajar({ ...USO, subir: true })).contenido);
   assert.match(pedido, /\/subir-datos\//);
   assert.match(pedido, /REEMPLAZA los datos de la sesión/);
+});
+
+test('si los datos llegaron desde la web, al mirar la sesión se dice de dónde salieron', async () => {
+  rService.usarMotor(motorFalso({ origen: 'Búsqueda en Scopus hecha desde el buscador de acostaresearch.com' }));
+  const texto = textoDe((await rService.trabajar(USO)).contenido);
+  assert.match(texto, /DE DÓNDE SALIERON ESTOS DATOS:\nBúsqueda en Scopus hecha desde el buscador/);
 });
 
 test('una ejecución trae consola, estructura, cómo se lee, gráficos y queda guardada', async () => {

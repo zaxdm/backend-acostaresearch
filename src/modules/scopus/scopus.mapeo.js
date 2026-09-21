@@ -74,6 +74,31 @@ function limpio(valor) {
 
 const juntar = (lista) => lista.map(limpio).join('|');
 
+/**
+ * Las palabras clave de OpenAlex que dicen algo del artículo.
+ *
+ * OpenAlex mete entre sus «keywords» los grandes campos del saber —Psychology,
+ * Medicine, Computer science—, a veces con una puntuación de 0,12. Con ellos,
+ * la coocurrencia y el mapa temático salían llenos de disciplinas en vez de
+ * temas (lo cazó Claude en la primera prueba, el 21-sep-2026). Se quedan las
+ * de puntuación 0,4 o más y nunca los diecinueve campos de primer nivel.
+ */
+const CAMPOS_GENERALES = new Set(
+  [
+    'Art', 'Biology', 'Business', 'Chemistry', 'Computer science', 'Economics', 'Engineering',
+    'Environmental science', 'Geography', 'Geology', 'History', 'Materials science', 'Mathematics',
+    'Medicine', 'Philosophy', 'Physics', 'Political science', 'Psychology', 'Sociology',
+  ].map((c) => c.toLowerCase()),
+);
+const PUNTUACION_MINIMA = 0.4;
+
+function palabrasClave(keywords) {
+  return (keywords ?? [])
+    .filter((k) => k?.display_name && (k.score ?? 1) >= PUNTUACION_MINIMA)
+    .map((k) => k.display_name)
+    .filter((nombre) => !CAMPOS_GENERALES.has(nombre.toLowerCase()));
+}
+
 /** Una obra de OpenAlex, como fila del CSV. */
 function filaDe(w, etiquetas = new Map()) {
   const autorias = w.authorships ?? [];
@@ -96,7 +121,7 @@ function filaDe(w, etiquetas = new Map()) {
     'authorships.institutions.display_name': juntar(autorias.map((a) => primera(a)?.display_name)),
     'authorships.institutions.id': juntar(autorias.map((a) => primera(a)?.id)),
     'authorships.is_corresponding': juntar(autorias.map((a) => (a?.is_corresponding ? 'true' : 'false'))),
-    'keywords.display_name': juntar((w.keywords ?? []).map((k) => k?.display_name).filter(Boolean)),
+    'keywords.display_name': juntar(palabrasClave(w.keywords)),
     referenced_works: juntar((w.referenced_works ?? []).map((r) => etiquetas.get(r) ?? r)),
     referenced_works_count: w.referenced_works_count ?? (w.referenced_works ?? []).length,
     abstract: limpio(openalex.resumenDelIndice(w.abstract_inverted_index)),
@@ -187,6 +212,27 @@ async function doisDeLaBusqueda({ ecuacion, accessToken }) {
 }
 
 /**
+ * Lo que Claude tiene que saber de estos datos, porque no los subió el tesista:
+ * de dónde salieron, con qué ecuación y cuántos quedaron en cada paso —las
+ * cifras del PRISMA—, y lo que se declara en los Métodos.
+ */
+function origenDelMapeo(ecuacion, { total, recorridos, conDoi, documentos }, fecha = new Date()) {
+  const dia = fecha.toISOString().slice(0, 10);
+  return [
+    `Búsqueda en Scopus hecha desde el buscador de acostaresearch.com el ${dia}, con el botón «Hacer un ` +
+      'mapeo bibliométrico con estos resultados». No es un exporte de Scopus.',
+    `Ecuación: ${ecuacion}`,
+    `Resultados en Scopus: ${total}. Tomados (los más citados, hasta ${TOPE_DEL_MAPEO}): ${recorridos}. ` +
+      `Con DOI: ${conDoi}. Encontrados en OpenAlex: ${documentos}.`,
+    'Los datos de cada documento (autores, afiliaciones, países, palabras clave, resumen y referencias) ' +
+      'son de OpenAlex: en los Métodos se dice «búsqueda en Scopus; metadatos de OpenAlex».',
+    'Las palabras clave son las de OpenAlex, ya sin los campos generales (Psychology, Medicine…); para ' +
+      'los temas suelen ir mejor los títulos y los resúmenes (campo "TI" o "AB").',
+    'Las referencias más citadas llevan «Autor (año)»; las demás, su identificador de OpenAlex.',
+  ].join('\n');
+}
+
+/**
  * Todo el camino: la búsqueda, OpenAlex, el CSV y la sesión de R.
  *
  * `subir` es la subida de la sesión de R (`r.service.subirDatos`), que se pasa
@@ -212,7 +258,8 @@ async function prepararMapeo({ ecuacion, accessToken, subir }) {
   }
 
   const etiquetas = await etiquetasDeReferencias(obras);
-  const subido = await subir(Buffer.from(csvDeOpenAlex(obras, etiquetas), 'utf8'));
+  const cifras = { total, recorridos, conDoi: dois.length, documentos: obras.length };
+  const subido = await subir(Buffer.from(csvDeOpenAlex(obras, etiquetas), 'utf8'), origenDelMapeo(texto, cifras));
 
   return {
     total,
@@ -232,6 +279,7 @@ module.exports = {
   filaDe,
   doisDeLaBusqueda,
   etiquetasDeReferencias,
+  origenDelMapeo,
   TOPE_DEL_MAPEO,
   COLUMNAS,
 };

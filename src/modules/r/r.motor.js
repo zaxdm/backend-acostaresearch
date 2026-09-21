@@ -68,6 +68,7 @@ const INTERNOS = new Set([
   'lectura.R',
   'paquetes.txt',
   'bibliografia',
+  'origen.txt',
 ]);
 
 /**
@@ -614,17 +615,20 @@ function crearMotor({
      * Mete el archivo del tesista y lo lee. Empieza una sesión nueva: los
      * objetos de otros datos no valen para estos.
      */
-    subirDatos(sesion, { tipo, archivo, contenido, lectura }) {
+    subirDatos(sesion, { tipo, archivo, contenido, lectura, origen = null }) {
       return enSuTurno(sesion, async () => {
         const carpeta = await prepararCarpeta(sesion);
         const g = await grupo();
         await borrarSesionSinTurno(carpeta);
         await Promise.all(
-          ['datos.csv', 'datos.xlsx', 'datos.xls', 'datos.sav', 'datos.bib', 'datos.txt', MARCA_BIBLIOGRAFIA].map((n) =>
+          ['datos.csv', 'datos.xlsx', 'datos.xls', 'datos.sav', 'datos.bib', 'datos.txt', MARCA_BIBLIOGRAFIA, 'origen.txt'].map((n) =>
             fs.rm(path.join(carpeta, n), BORRAR),
           ),
         );
         if (tipo === 'bibliografia') await escribirSeguro(carpeta, MARCA_BIBLIOGRAFIA, 'bibliometrix\n', g);
+        // De dónde salieron los datos cuando no los subió él: el mapeo desde el
+        // buscador de Scopus. Claude lo necesita para el PRISMA y los Métodos.
+        if (origen) await escribirSeguro(carpeta, 'origen.txt', origen, g);
         await escribirSeguro(carpeta, archivo, contenido, g);
         await escribirSeguro(carpeta, 'lectura.R', lectura, g);
 
@@ -666,8 +670,9 @@ function crearMotor({
     async estado(sesion) {
       const carpeta = carpetaDe(sesion);
       const hayDatos = (await leerTexto(path.join(carpeta, 'lectura.R'), 4096)) !== null;
+      const origen = hayDatos ? await leerTexto(path.join(carpeta, 'origen.txt'), 4096) : null;
       const estado = parsearEstado(await leerTexto(path.join(carpeta, 'estado.tsv'), MAXIMO_ESTADO));
-      return { hayDatos, ...estado, archivos: await listarArchivos(carpeta) };
+      return { hayDatos, origen, ...estado, archivos: await listarArchivos(carpeta) };
     },
 
     /** Un archivo de la sesión para bajarlo, o null. Solo de la raíz o de graficos/. */

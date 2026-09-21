@@ -234,6 +234,15 @@ figura_bibliometrica <- function(tipo, M = datos, archivo = paste0("figura_", ti
     campo <- if ("DE" %in% names(M) && length(.palabras_de(M$DE)) > 0) "DE" else "ID"
   }
   red_de_palabras <- if (campo == "DE") "author_keywords" else "keywords"
+  # Titulos o resumenes: se sacan sus terminos de dos palabras ("social media",
+  # "mental health"), que es lo que se usa con OpenAlex, cuyas palabras clave
+  # asigna un clasificador y no el autor.
+  sobre_texto <- campo %in% c("TI", "AB")
+  if (sobre_texto && tipo %in% c("palabras", "coocurrencia")) {
+    M <- bibliometrix::termExtraction(M, Field = campo, ngrams = 2, verbose = FALSE)
+    red_de_palabras <- if (campo == "TI") "titles" else "abstracts"
+  }
+  lugar <- if (campo == "TI") "los titulos" else "los resumenes"
 
   if (tipo == "produccion_anual") {
     anios <- as.data.frame(table(M$PY), stringsAsFactors = FALSE)
@@ -263,8 +272,9 @@ figura_bibliometrica <- function(tipo, M = datos, archivo = paste0("figura_", ti
       tabla <- .contar(paises[!is.na(paises) & paises != ""], n)
       titulo <- "Pais del autor de correspondencia"
     } else {
-      tabla <- .contar(.palabras_de(M[[campo]]), n)
-      titulo <- if (campo == "DE") "Palabras clave de autor mas frecuentes" else "Palabras clave mas frecuentes"
+      tabla <- .contar(.palabras_de(M[[if (sobre_texto) paste0(campo, "_TM") else campo]]), n)
+      titulo <- if (sobre_texto) paste("Terminos mas frecuentes en", lugar)
+                else if (campo == "DE") "Palabras clave de autor mas frecuentes" else "Palabras clave mas frecuentes"
     }
     cat(titulo, "\n")
     print(tabla, row.names = FALSE)
@@ -278,7 +288,8 @@ figura_bibliometrica <- function(tipo, M = datos, archivo = paste0("figura_", ti
     forma <- "fruchterman"
     if (tipo == "coocurrencia") {
       red <- bibliometrix::biblioNetwork(M, analysis = "co-occurrences", network = red_de_palabras, sep = ";")
-      titulo <- "Red de coocurrencia de palabras clave"
+      titulo <- if (sobre_texto) paste("Red de coocurrencia de terminos en", lugar)
+                else "Red de coocurrencia de palabras clave"
     } else if (tipo == "cocitacion") {
       red <- bibliometrix::biblioNetwork(M, analysis = "co-citation", network = "references", sep = ";")
       titulo <- "Red de cocitacion"
@@ -312,7 +323,8 @@ figura_bibliometrica <- function(tipo, M = datos, archivo = paste0("figura_", ti
   if (tipo == "mapa_tematico") {
     if (is.null(minfreq)) minfreq <- max(2, min(5, ceiling(nrow(M) / 100)))
     mapa <- bibliometrix::thematicMap(M, field = campo, n = if (is.null(n)) 250 else n,
-                                      minfreq = minfreq, size = 0.5, repel = TRUE)
+                                      minfreq = minfreq, ngrams = if (sobre_texto) 2 else 1,
+                                      size = 0.5, repel = TRUE)
     if (is.null(mapa$map)) stop("No hay palabras que se repitan al menos ", minfreq, " veces: baja minfreq.")
     cat("Mapa tematico sobre", campo, "con minfreq =", minfreq, "\n")
     cat("Motor: centralidad y densidad altas. Nicho: densidad alta, centralidad baja.\n")

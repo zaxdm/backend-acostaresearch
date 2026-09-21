@@ -370,6 +370,8 @@ async function trabajar({ userId, productCode, codigo, reiniciar = false, descar
 
   const actual = await m.estado(sesion);
 
+  if (!hecho && actual.origen) partes.push(`DE DÓNDE SALIERON ESTOS DATOS:${N}${actual.origen.trim()}`);
+
   if (!hecho) {
     const estado = describirEstado(actual);
     if (estado) partes.push(estado);
@@ -410,13 +412,13 @@ async function trabajar({ userId, productCode, codigo, reiniciar = false, descar
  * Lanza `ArchivoNoValido` si no es una hoja de datos, y los errores del motor
  * tal cual: la ruta los traduce.
  */
-async function subirDatos({ userId, productCode, bytes }) {
+async function subirDatos({ userId, productCode, bytes, origen = null }) {
   const m = motorActual();
   if (!m || !(await m.listo())) throw new MotorNoDisponible('El motor de R está apagado o sin instalar.');
 
   const preparado = formato.preparar(bytes);
   const proyecto = await projectRepository.asegurar(userId, productCode);
-  const hecho = await m.subirDatos(proyecto.id, preparado);
+  const hecho = await m.subirDatos(proyecto.id, { ...preparado, origen });
 
   await guardarEnElProyecto({
     userId,

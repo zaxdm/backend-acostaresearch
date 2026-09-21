@@ -928,11 +928,11 @@ async function mapear(userId, { ecuacion, productCode }) {
   const resultado = await mapeo.prepararMapeo({
     ecuacion,
     accessToken: await tokenDe(conexion),
-    subir: async (bytes) => {
+    subir: async (bytes, origen) => {
       // eslint-disable-next-line global-require
       const { MotorOcupado, MotorNoDisponible } = require('../r/r.motor');
       try {
-        return await rService.subirDatos({ userId, productCode, bytes });
+        return await rService.subirDatos({ userId, productCode, bytes, origen });
       } catch (error) {
         if (error instanceof MotorOcupado) {
           throw new AppError('Hay mucha gente analizando ahora mismo. Vuelve a intentarlo en un minuto.', {

@@ -2148,3 +2148,25 @@ model Mensaje {
   @@index([pedidoId])
   @@map("mensajes")
 }
+
+/// El vector de un texto, calculado una vez y guardado para siempre.
+///
+/// Los usa la búsqueda por significado de Scopus. El vector de un artículo no
+/// cambia nunca —mismo título y resumen, mismo vector—, pero se recordaba solo
+/// en memoria y cada reinicio lo tiraba: el 20-sep se desplegó quince veces, y
+/// cada vez se volvió a pedir a Gemini lo que ya se tenía, contra el tope de
+/// cien textos por minuto del plan gratuito para toda la plataforma.
+///
+/// No es un dato de nadie: la clave es un hash del texto y el vector, el
+/// resultado de una cuenta. Por eso no lleva usuario ni se borra con ninguno.
+model VectorDeTexto {
+  /// sha256 de modelo, tarea y texto, en hexadecimal.
+  clave  String @id @db.Char(64)
+  modelo String @db.VarChar(80)
+  /// 768 números en coma flotante de 32 bits: 3 KB por vector.
+  vector Bytes  @db.Blob
+
+  createdAt DateTime @default(now())
+
+  @@map("vectores_de_texto")
+}

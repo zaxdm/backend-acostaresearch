@@ -2,6 +2,7 @@
 
 const env = require('../config/env');
 const logger = require('../config/logger');
+const vectoresGuardados = require('./vectoresGuardados');
 
 /**
  * El cliente de Gemini que usa el Asistente Acosta.
@@ -183,12 +184,19 @@ function recordarVector(clave, vector) {
  */
 async function embeber(
   textos,
-  { tarea = 'RETRIEVAL_DOCUMENT', modelo = env.GEMINI_EMBEDDING_MODEL, fetchImpl = fetch } = {},
+  {
+    tarea = 'RETRIEVAL_DOCUMENT',
+    modelo = env.GEMINI_EMBEDDING_MODEL,
+    fetchImpl = fetch,
+    // Los vectores de la base. `null` = sin base, para las pruebas que no la tienen.
+    guardados = vectoresGuardados,
+  } = {},
 ) {
   const recortados = textos.map((texto) => String(texto).slice(0, 8000));
   const vectores = new Array(recortados.length);
   const pendientes = [];
 
+  const enMemoria = [];
   recortados.forEach((texto, posicion) => {
     const clave = claveDelVector(modelo, tarea, texto);
     const guardado = memoria.get(clave);
@@ -196,9 +204,28 @@ async function embeber(
       vectores[posicion] = guardado;
       recordarVector(clave, guardado);
     } else {
-      pendientes.push({ texto, posicion });
+      enMemoria.push({ texto, posicion });
     }
   });
+
+  /**
+   * Lo que no está en memoria, se busca en la base antes de pedírselo a Gemini.
+   *
+   * La memoria se vacía en cada reinicio y la base no: un artículo que buscó
+   * cualquier tesista, cualquier día, ya no gasta cuota. Ver `vectoresGuardados`.
+   */
+  const deLaBase = guardados
+    ? await guardados.leer(enMemoria.map(({ texto }) => guardados.claveDe(modelo, tarea, texto)))
+    : new Map();
+  for (const pendiente of enMemoria) {
+    const vector = guardados ? deLaBase.get(guardados.claveDe(modelo, tarea, pendiente.texto)) : null;
+    if (vector) {
+      vectores[pendiente.posicion] = vector;
+      recordarVector(claveDelVector(modelo, tarea, pendiente.texto), vector);
+    } else {
+      pendientes.push(pendiente);
+    }
+  }
 
   for (let i = 0; i < pendientes.length; i += 100) {
     const lote = pendientes.slice(i, i + 100);
@@ -224,11 +251,18 @@ async function embeber(
       });
     }
 
+    const nuevos = [];
     lote.forEach(({ texto, posicion }, n) => {
       const vector = cuerpo.embeddings[n]?.values ?? [];
       vectores[posicion] = vector;
-      if (vector.length > 0) recordarVector(claveDelVector(modelo, tarea, texto), vector);
+      if (vector.length > 0) {
+        recordarVector(claveDelVector(modelo, tarea, texto), vector);
+        if (guardados) nuevos.push({ clave: guardados.claveDe(modelo, tarea, texto), modelo, vector });
+      }
     });
+    // Cada lote que llega se guarda ya: si el siguiente choca con el tope, lo
+    // que sí se calculó no se vuelve a pedir.
+    if (guardados) await guardados.guardar(nuevos);
   }
 
   return vectores;

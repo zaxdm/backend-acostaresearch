@@ -814,17 +814,28 @@ async function buscarSemantica(
       vectores = await pedirVectores();
     }
   } catch (fallo) {
-    logger.warn({ err: fallo.message }, 'Búsqueda semántica: Gemini no dio los vectores');
-    throw new AppError('La búsqueda por significado no contestó. Vuelve a intentarlo en un momento.', {
-      statusCode: 503,
-      code: ERROR_CODES.ASSISTANT_UNAVAILABLE,
-    });
+    /**
+     * Sin vectores, los mismos candidatos en el orden de relevancia de Scopus.
+     *
+     * Antes esto era un 503, y la web respondía buscando OTRA VEZ en Scopus
+     * por más citados: una segunda consulta contra la cuota semanal de la
+     * casa, para enseñar artículos ordenados por algo que nadie pidió. Los 40
+     * candidatos ya están aquí, y llegan ordenados por relevancia a los
+     * términos en inglés de su ecuación, que es lo más parecido a su pregunta
+     * que se puede hacer sin Gemini. No se ordenan por palabras de la pregunta
+     * porque la pregunta está en español y los artículos en inglés: casi no
+     * comparten ninguna.
+     */
+    logger.warn({ err: fallo.message }, 'Búsqueda semántica: Gemini no dio los vectores; por relevancia');
+    vectores = null;
   }
 
-  const ordenados = candidatos
-    .map((c, i) => ({ ...c, afinidad: Number(coseno(vectores.consulta, vectores.documentos[i]).toFixed(3)) }))
-    .sort((a, b) => b.afinidad - a.afinidad)
-    .slice(0, cliente.POR_PAGINA);
+  const ordenados = vectores
+    ? candidatos
+        .map((c, i) => ({ ...c, afinidad: Number(coseno(vectores.consulta, vectores.documentos[i]).toFixed(3)) }))
+        .sort((a, b) => b.afinidad - a.afinidad)
+        .slice(0, cliente.POR_PAGINA)
+    : candidatos.slice(0, cliente.POR_PAGINA);
 
   const yaLasTiene = await claveDeLasQueYaTiene(userId, ordenados);
 
@@ -838,6 +849,12 @@ async function buscarSemantica(
     candidatos: candidatos.length,
     semantica: true,
     orden: 'significado',
+    /**
+     * Verdadero cuando Gemini no dio los vectores y el orden es el de
+     * relevancia de Scopus. La web lo dice en la línea gris: no puede decir
+     * «los más cercanos a tu pregunta» de una lista que no se comparó con ella.
+     */
+    porRelevancia: vectores === null,
     conResumenes: env.scopusView === 'COMPLETE',
     /** El enlace abierto también aquí: si estuviera solo en la búsqueda normal,
      *  el mismo artículo tendría dónde leerse o no según por qué pestaña se

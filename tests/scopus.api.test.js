@@ -728,17 +728,44 @@ test('por significado: se ordenan por cercanía a la pregunta, no por el orden d
   assert.equal(elsevier.peticiones[0].url.searchParams.get('sort'), 'relevancy');
 });
 
-test('si Gemini no da los vectores, 503 del asistente y no un 500', async () => {
+test('si Gemini no da los vectores, salen los mismos candidatos por relevancia, sin otra búsqueda', async () => {
+  // Antes era un 503 y la web buscaba OTRA VEZ en Scopus por más citados: una
+  // consulta más contra la cuota semanal para enseñar un orden que nadie pidió.
   empezar();
   env.asistenteEnabled = true;
+  const primero = { ...FICHA, eid: '2-s2.0-1', 'dc:title': 'Primero en relevancia' };
+  const segundo = { ...FICHA, eid: '2-s2.0-2', 'dc:title': 'Segundo en relevancia' };
+  elsevier.responder = respuestaCon([primero, segundo], 2);
   const embeber = async () => {
     throw new Error('caído');
   };
 
-  await assert.rejects(
-    () => servicio.buscarSemantica('u1', { ecuacion: 'TITLE-ABS-KEY(x)', pregunta: '¿qué?' }, { embeber, resumenes: async () => new Map() }),
-    (error) => error.statusCode === 503 && error.code === 'ASSISTANT_UNAVAILABLE',
+  const busqueda = await servicio.buscarSemantica(
+    'u1',
+    { ecuacion: 'TITLE-ABS-KEY(x)', pregunta: '¿qué?' },
+    { embeber, resumenes: async () => new Map() },
   );
+
+  assert.equal(busqueda.porRelevancia, true, 'y lo dice, para que la web no hable de «significado»');
+  assert.deepEqual(
+    busqueda.resultados.map((r) => r.titulo),
+    ['Primero en relevancia', 'Segundo en relevancia'],
+    'en el orden en que los dio Scopus',
+  );
+  assert.ok(busqueda.resultados.every((r) => r.afinidad === undefined), 'sin afinidad inventada');
+  assert.equal(elsevier.peticiones.length, 1, 'una sola consulta a Scopus');
+});
+
+test('con los vectores, porRelevancia es falso', async () => {
+  empezar();
+  env.asistenteEnabled = true;
+  elsevier.responder = respuestaCon([FICHA], 1);
+  const busqueda = await servicio.buscarSemantica(
+    'u1',
+    { ecuacion: 'TITLE-ABS-KEY(x)', pregunta: '¿qué?' },
+    { embeber: async (textos) => textos.map(() => [1, 0]), resumenes: async () => new Map() },
+  );
+  assert.equal(busqueda.porRelevancia, false);
 });
 
 // ── La cuota de Gemini al ordenar por significado ──────────────────────────
@@ -797,7 +824,7 @@ test('un tope de pocos segundos se espera en el servidor y la búsqueda sale igu
   assert.deepEqual(esperas, [10_000]);
 });
 
-test('un tope largo no se espera: sale el aviso de siempre', async () => {
+test('un tope largo no se espera: sale por relevancia en el momento', async () => {
   empezar();
   env.asistenteEnabled = true;
   const esperas = [];
@@ -807,15 +834,11 @@ test('un tope largo no se espera: sale el aviso de siempre', async () => {
     throw fallo;
   };
 
-  await assert.rejects(
-    () =>
-      servicio.buscarSemantica(
-        'u1',
-        { ecuacion: 'TITLE-ABS-KEY(x)', pregunta: '¿qué?' },
-        { embeber, resumenes: async () => new Map(), esperar: async (ms) => esperas.push(ms) },
-      ),
-    // El mismo aviso que antes: no se cambió ninguno.
-    (error) => error.statusCode === 503 && /no contestó/.test(error.message),
+  const busqueda = await servicio.buscarSemantica(
+    'u1',
+    { ecuacion: 'TITLE-ABS-KEY(x)', pregunta: '¿qué?' },
+    { embeber, resumenes: async () => new Map(), esperar: async (ms) => esperas.push(ms) },
   );
-  assert.deepEqual(esperas, []);
+  assert.equal(busqueda.porRelevancia, true);
+  assert.deepEqual(esperas, [], 'medio minuto cargando parece que se colgó');
 });

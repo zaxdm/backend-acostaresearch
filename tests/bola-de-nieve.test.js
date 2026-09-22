@@ -192,3 +192,85 @@ test('si el catálogo no responde, se dice: no se devuelve una lista vacía a se
   assert.equal(resultado.caida, true);
   assert.deepEqual(resultado.atras, []);
 });
+
+// ── Hacia delante: primero lo de su tema ─────────────────────────────────────
+//
+// El filtro de OpenAlex es un O: basta citar a UNA de sus fuentes. Y casi toda
+// biblioteca de tesis lleva una fuente de método con decenas de miles de citas
+// de todos los campos —el G*Power del cálculo de muestra, un BLAST que se coló
+// de un trabajo prestado—. Ordenando solo por fecha, la lista se llenaba con lo
+// último publicado en química o en biología molecular. Le pasó a una tesis de
+// escalas de redes sociales: los tres de arriba eran estructura de alta presión
+// del CaMg2Bi2, ácidos nucleicos PEGilados y extracción enantioselectiva.
+
+/** Un trabajo que cita a `cuantas` de sus fuentes. */
+const citante = (id, titulo, cuantas, anio = 2026) => ({
+  ...obra(id, titulo, { anio }),
+  tuyasQueCita: cuantas,
+});
+
+function conSemillas() {
+  empezar();
+  openalex.obras = [
+    { id: 'S1', doi: '10.1/a', referencias: [] },
+    { id: 'S2', doi: '10.2/b', referencias: [] },
+    { id: 'S3', doi: '10.3/c', referencias: [] },
+  ];
+}
+
+test('hacia delante, el que cita a varias de sus fuentes va antes que el más nuevo', async () => {
+  conSemillas();
+  openalex.citantes = [
+    citante('C1', 'Lo último de química, que cita solo el BLAST', 1, 2026),
+    citante('C2', 'Lo último de biología molecular', 1, 2026),
+    citante('C3', 'Del tema de la tesis, cita tres fuentes suyas', 3, 2024),
+  ];
+
+  const { adelante } = await propias.boladeNieve('u1');
+
+  assert.equal(adelante[0].title, 'Del tema de la tesis, cita tres fuentes suyas');
+});
+
+test('pero no se queda corto: si no hay bastantes, completa con los demás', async () => {
+  // Media lista buena es mejor que ninguna. Antes salían los tres; ahora
+  // salen los tres, solo que en otro orden.
+  conSemillas();
+  openalex.citantes = [
+    citante('C1', 'De paso, uno', 1),
+    citante('C2', 'De paso, dos', 1),
+    citante('C3', 'Del tema', 2),
+  ];
+
+  const { adelante } = await propias.boladeNieve('u1');
+
+  assert.equal(adelante.length, 3);
+  assert.equal(adelante[0].title, 'Del tema');
+});
+
+test('entre los de su tema se conserva el orden por fecha, que es para lo que sirve', async () => {
+  conSemillas();
+  openalex.citantes = [
+    citante('C1', 'Del tema, de este año', 2, 2026),
+    citante('C2', 'Del tema, de hace tres años', 4, 2023),
+  ];
+
+  const { adelante } = await propias.boladeNieve('u1');
+
+  // Llegan ya ordenadas por fecha desde OpenAlex y no se reordenan por número.
+  assert.deepEqual(
+    adelante.map((f) => f.title),
+    ['Del tema, de este año', 'Del tema, de hace tres años'],
+  );
+});
+
+test('lo que ya es suyo sigue sin proponérsele, aunque cite a varias', async () => {
+  conSemillas();
+  openalex.citantes = [
+    { ...citante('C1', 'Una que ya tiene', 3), doi: '10.1/A' },
+    citante('C2', 'Una que no tiene', 2),
+  ];
+
+  const { adelante } = await propias.boladeNieve('u1');
+
+  assert.deepEqual(adelante.map((f) => f.title), ['Una que no tiene']);
+});

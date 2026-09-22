@@ -222,15 +222,32 @@ function corridas(texto, contexto) {
 }
 
 /**
- * **Negrita** y *cursiva* de Markdown, hechas formato de Word.
+ * El Markdown de dentro de una línea, hecho formato de Word.
  *
- * Las skills las usan donde APA las pide —el término del marco conceptual en
- * negrita, los símbolos estadísticos como *p* o *M* en cursiva— y el Word las
- * enseñaba como asteriscos. Solo cuentan pegadas al texto: «2 * 3» no es una
- * cursiva. El guion bajo no se interpreta, porque aparece en los nombres de
- * variables de R.
+ * Las skills usan la negrita y la cursiva donde APA las pide —el término del
+ * marco conceptual en negrita, los símbolos estadísticos como *p* o *M* en
+ * cursiva— y el Word las enseñaba como asteriscos. Solo cuentan pegadas al
+ * texto: «2 * 3» no es una cursiva. El guion bajo no se interpreta, porque
+ * aparece en los nombres de variables de R.
+ *
+ * LAS OTRAS TRES SALÍAN LITERALES
+ * -------------------------------
+ * ***Las dos a la vez***, que dejaba un asterisco suelto a cada lado; el código
+ * entre acentos graves, que Claude usa al nombrar una función de R —«se usó
+ * `alfa_de_cronbach()`»—; y el enlace de Markdown, que salía con sus corchetes
+ * y sus paréntesis a la vista. En un capítulo son tres formas distintas de que
+ * el tesista entregue un documento con sintaxis dentro.
+ *
+ * El enlace conserva la dirección entre paréntesis: quitarla perdería el dato,
+ * y en un texto académico la dirección es justo lo que hay que poder comprobar.
+ * Si el texto del enlace YA es la dirección, no se repite.
+ *
+ * El orden de las alternativas importa: los tres asteriscos van antes que los
+ * dos, y los dos antes que uno, o el más corto casa primero y parte el más
+ * largo por la mitad.
  */
-const ENFASIS_RE = /\*\*(?=\S)([^*]+?)(?<=\S)\*\*|\*(?=[^\s*])([^*]+?)(?<=\S)\*/g;
+const ENFASIS_RE =
+  /\*\*\*(?=\S)([^*]+?)(?<=\S)\*\*\*|\*\*(?=\S)([^*]+?)(?<=\S)\*\*|\*(?=[^\s*])([^*]+?)(?<=\S)\*|`([^`\n]+)`|(?<!!)\[([^\]\n]+)\]\(\s*([^)\s]+)\s*\)/g;
 
 function conEnfasis(texto) {
   const hijos = [];
@@ -238,9 +255,26 @@ function conEnfasis(texto) {
 
   for (const m of texto.matchAll(ENFASIS_RE)) {
     if (m.index > desde) hijos.push(new TextRun(texto.slice(desde, m.index)));
+
+    const [, negritaCursiva, negrita, cursiva, codigo, textoEnlace, direccion] = m;
+
     // Solo se pone lo que se marca: un «sin cursiva» explícito en la negrita
     // anularía la cursiva que traiga el estilo del párrafo o de la plantilla.
-    hijos.push(new TextRun(m[1] !== undefined ? { text: m[1], bold: true } : { text: m[2], italics: true }));
+    if (negritaCursiva !== undefined) {
+      hijos.push(new TextRun({ text: negritaCursiva, bold: true, italics: true }));
+    } else if (negrita !== undefined) {
+      hijos.push(new TextRun({ text: negrita, bold: true }));
+    } else if (cursiva !== undefined) {
+      hijos.push(new TextRun({ text: cursiva, italics: true }));
+    } else if (codigo !== undefined) {
+      // Sin tipografía de máquina de escribir: en una tesis desentona, y lo que
+      // había que quitar eran los acentos graves.
+      hijos.push(new TextRun(codigo));
+    } else {
+      hijos.push(new TextRun(textoEnlace));
+      if (direccion && direccion !== textoEnlace) hijos.push(new TextRun(` (${direccion})`));
+    }
+
     desde = m.index + m[0].length;
   }
 
@@ -283,6 +317,28 @@ function partirTabla(lineas) {
     filas: lineas.slice(inicio + 2, fin).map(celdasDe),
     despues: lineas.slice(fin).map((l) => l.trim()).filter(Boolean),
   };
+}
+
+/**
+ * La tabla a la que se le olvidó la fila de guiones.
+ *
+ * `partirTabla` la exige, y con razón: sin ella, unas líneas que empiezan por
+ * «|» pueden ser texto. Pero cuando el bloque ENTERO son filas y todas tienen
+ * el mismo número de celdas, no es texto: es una tabla a la que le falta una
+ * línea, y dejarla pasar imprime los palotes en medio del capítulo.
+ *
+ * Solo se prueba cuando `partirTabla` ha dicho que no, así que no puede cambiar
+ * ninguna tabla de las que ya salían bien.
+ */
+function tablaSinSeparador(lineas) {
+  const filas = lineas.map((l) => l.trim()).filter(Boolean);
+  if (filas.length < 2 || !filas.every((l) => FILA_RE.test(l))) return null;
+
+  const celdas = filas.map(celdasDe);
+  const columnas = celdas[0].length;
+  if (columnas < 2 || !celdas.every((f) => f.length === columnas)) return null;
+
+  return { antes: [], cabecera: celdas[0], filas: celdas.slice(1), despues: [] };
 }
 
 const LINEA_APA = { style: BorderStyle.SINGLE, size: 8, color: '000000' };
@@ -494,7 +550,16 @@ const FIGURA_RE = /^[*_]*\s*Figura\s+\d+(?:\.\d+)*[A-Za-z]?\s*[*_]*$/i;
  * imagen en Markdown, «![](figura2.png)», que es como la escribe el informe de
  * R (`r.informe`). Aquí no está el archivo, así que las dos salen como la marca.
  */
-const MARCA_FIGURA_RE = /^(\[Insertar aquí[^\]]*\]|!\[[^\]]*\]\([^)]+\))$/i;
+/*
+ * La tercera forma, «[figura1_histogramas.png]», es la que escribe Claude
+ * cuando redacta el capítulo de Resultados: solo el nombre del archivo entre
+ * corchetes. No estaba reconocida, así que esa figura no se buscaba nunca y el
+ * nombre del archivo salía impreso en medio del capítulo, literal. Exige
+ * terminar en «.png» dentro del corchete, así que no se confunde con una clave
+ * de cita —«[AR146151BC]»— ni con «[FALTA FUENTE]».
+ */
+const MARCA_FIGURA_RE =
+  /^(\[Insertar aquí[^\]]*\]|!\[[^\]]*\]\([^)]+\)|\[\s*[^\]\s]+\.png\s*\])$/i;
 
 /** Lo que se ve en la marca: la imagen en Markdown se dice con palabras. */
 function textoDeMarca(linea, numero) {
@@ -529,15 +594,108 @@ function dimensionesPng(bytes) {
  * la marca amarilla de siempre, que es lo que había para todas.
  */
 function archivoDeMarca(linea) {
-  const enMarkdown = String(linea).match(/^!\[[^\]]*\]\(\s*([^)\s]+)\s*\)$/);
-  const archivo = enMarkdown ? enMarkdown[1] : (String(linea).match(/:\s*([^\]\s]+)\s*\]$/) ?? [])[1];
+  const texto = String(linea);
+  const enMarkdown = texto.match(/^!\[[^\]]*\]\(\s*([^)\s]+)\s*\)$/);
+  // El nombre a secas entre corchetes, que es como lo escribe Claude.
+  const aSecas = texto.match(/^\[\s*([^\]\s]+\.png)\s*\]$/i);
+  const archivo =
+    (enMarkdown ?? aSecas ?? [])[1] ?? (texto.match(/:\s*([^\]\s]+)\s*\]$/) ?? [])[1];
   return archivo && /\.png$/i.test(archivo) ? archivo : null;
+}
+
+/** «*Nota.* Elaboración propia.», el pie del rótulo. */
+const NOTA_RE = /^[*_]*\s*Nota[.:]/i;
+
+/** El título del rótulo, en cursiva y en su propia línea. */
+const TITULO_DE_ROTULO_RE = /^[*_].+[*_]$/;
+
+/**
+ * Vuelve a juntar el rótulo de una figura con su marca.
+ *
+ * POR QUÉ HACE FALTA
+ * ------------------
+ * El rótulo se reconoce como UN bloque: «**Figura 1**», el título en cursiva y
+ * la marca de la imagen, seguidos. Así lo describe `figuraApa` y así lo escribe
+ * Claude unas veces. Pero cuando lo guarda con una línea en blanco entre medias
+ * —que es Markdown perfectamente normal, y es como estaba el capítulo de
+ * Resultados de una tesis de verdad— el texto se parte en tres bloques: el
+ * primero es el rótulo sin marca, y la marca queda suelta en otro bloque que ya
+ * no mira nadie. Salía el índice de figuras montado, el rótulo puesto, y el
+ * nombre del archivo impreso en medio del capítulo.
+ *
+ * Solo se junta si de verdad aparece una marca en los bloques siguientes. Sin
+ * marca no se toca nada: un rótulo suelto sigue saliendo como salía.
+ */
+function juntarRotulosDeFigura(bloques) {
+  const juntos = [];
+
+  for (let i = 0; i < bloques.length; i += 1) {
+    const lineas = bloques[i].trim().split('\n').map((l) => l.trim()).filter(Boolean);
+
+    const esRotuloSuelto =
+      lineas.length > 0 &&
+      FIGURA_RE.test(lineas[0]) &&
+      !lineas.some((l) => MARCA_FIGURA_RE.test(l));
+
+    if (!esRotuloSuelto) {
+      juntos.push(bloques[i]);
+      continue;
+    }
+
+    // Se mira adelante sin consumir nada: si no hay marca, no se junta.
+    const partes = [...lineas];
+    let j = i + 1;
+    let conMarca = false;
+
+    while (j < bloques.length && j <= i + 3) {
+      const suyas = bloques[j].trim().split('\n').map((l) => l.trim()).filter(Boolean);
+      if (suyas.length !== 1) break;
+      const linea = suyas[0];
+
+      if (MARCA_FIGURA_RE.test(linea)) {
+        partes.push(linea);
+        conMarca = true;
+        j += 1;
+        // La nota, si viene justo detrás, entra con el rótulo.
+        const siguiente = (bloques[j] ?? '').trim();
+        if (siguiente && !siguiente.includes('\n') && NOTA_RE.test(siguiente)) {
+          partes.push(siguiente);
+          j += 1;
+        }
+        break;
+      }
+
+      // El título en cursiva. La nota no: esa va después de la imagen.
+      if (TITULO_DE_ROTULO_RE.test(linea) && !NOTA_RE.test(linea)) {
+        partes.push(linea);
+        j += 1;
+        continue;
+      }
+
+      break;
+    }
+
+    if (!conMarca) {
+      juntos.push(bloques[i]);
+      continue;
+    }
+
+    juntos.push(partes.join('\n'));
+    i = j - 1;
+  }
+
+  return juntos;
+}
+
+/** Los bloques de un texto, con los rótulos de figura ya recompuestos. */
+function bloquesDe(texto) {
+  return juntarRotulosDeFigura(String(texto ?? '').split(/\n{2,}/));
 }
 
 /** Los archivos de figura que pide un capítulo, en orden y sin repetir. */
 function figurasDe(texto) {
   const archivos = [];
-  for (const bruto of String(texto ?? '').split(/\n{2,}/)) {
+  for (const bruto of bloquesDe(texto)) {
     const lineas = bruto
       .trim()
       .split('\n')
@@ -684,9 +842,17 @@ function comoParrafos(texto, contexto = {}) {
   const niveles = [...texto.matchAll(/^(#{1,4})\s+\S/gm)].map((m) => m[1].length);
   const masAlto = niveles.length > 0 ? Math.min(...niveles) : 1;
 
-  for (const bruto of texto.split(/\n{2,}/)) {
+  for (const bruto of bloquesDe(texto)) {
     const bloque = bruto.trim();
     if (bloque === '') continue;
+
+    /*
+     * El separador de Markdown —«---», «***», «___»— no es nada en una tesis.
+     * Claude lo escribe para separar tramos mientras redacta, y salía impreso
+     * tal cual en medio del capítulo. Se tira: el espacio entre párrafos ya
+     * separa, y una raya suelta en un documento académico no significa nada.
+     */
+    if (/^([-*_])\1{2,}$/.test(bloque)) continue;
 
     const encabezado = bloque.match(/^(#{1,4})\s+(.*)$/);
     if (encabezado) {
@@ -722,7 +888,8 @@ function comoParrafos(texto, contexto = {}) {
       continue;
     }
 
-    const tabla = partirTabla(bloque.split('\n'));
+    const lineasDeTabla = bloque.split('\n');
+    const tabla = partirTabla(lineasDeTabla) ?? tablaSinSeparador(lineasDeTabla);
     if (tabla) {
       parrafos.push(...tablaApa(tabla, contexto));
       continue;
@@ -1393,4 +1560,7 @@ module.exports = {
   ANCHO_MAXIMO,
   // Lo usa también el informe de R (`r.informe`): misma lista, misma maqueta.
   referenciasDelDocumento,
+  // Y las marcas de figura, para que las tres formas valgan en los dos sitios.
+  MARCA_FIGURA_RE,
+  archivoDeMarca,
 };

@@ -27,7 +27,13 @@
  * El primer grupo sigue siendo la clave, así que quien solo busca claves
  * —la evidencia, la auditoría, el BibTeX— no nota la diferencia.
  */
-const MARCA = /\[(AR[0-9A-F]{8})(?::([^\]\n]{1,40}))?\]/g;
+// Sin distinguir mayúsculas de minúsculas, y la clave se pasa a mayúsculas al
+// usarla. Las herramientas siempre la dan en mayúsculas, pero un modelo la
+// normaliza de vez en cuando, y en minúsculas esto no casaba: la marca salía
+// impresa tal cual en el capítulo Y la fuente no entraba en las referencias,
+// sin que nadie se enterara. Es peor que una clave equivocada, que al menos
+// deja «[CITA SIN LOCALIZAR]» a la vista y se anota en `perdidas`.
+const MARCA = /\[(AR[0-9A-F]{8})(?::([^\]\n]{1,40}))?\]/gi;
 
 /**
  * Qué dicen los dos puntos de una marca.
@@ -206,7 +212,7 @@ function entradaDeBibliografia(fuente) {
 /** Las claves que aparecen en un texto, sin repetir. */
 function clavesDe(texto) {
   const encontradas = new Set();
-  for (const [, clave] of texto.matchAll(MARCA)) encontradas.add(clave);
+  for (const [, clave] of texto.matchAll(MARCA)) encontradas.add(clave.toUpperCase());
   return [...encontradas];
 }
 
@@ -224,12 +230,14 @@ function resolver(texto, porClave) {
   const perdidas = new Set();
 
   const resuelto = texto.replace(MARCA, (original, clave, modificadores) => {
-    const fuente = porClave.get(clave);
+    // La ficha se guarda con la clave en mayúsculas, que es la forma canónica.
+    const canonica = clave.toUpperCase();
+    const fuente = porClave.get(canonica);
     if (!fuente) {
-      perdidas.add(clave);
+      perdidas.add(canonica);
       return '[CITA SIN LOCALIZAR: revísala]';
     }
-    usadas.set(clave, fuente);
+    usadas.set(canonica, fuente);
     return citaConModificadores(fuente, modificadores);
   });
 

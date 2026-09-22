@@ -607,6 +607,48 @@ async function informe({ userId, productCode, titulo, texto: contenido, norma })
  * leído y puede pedir cinco figuras seguidas. Una consulta por figura se comería
  * las conexiones que hay.
  */
+/** Cuántas figuras se archivan como mucho de una sesión. */
+const MAXIMO_FIGURAS_ARCHIVADAS = 30;
+
+/**
+ * Los PNG que hay ahora mismo en la sesión, por nombre de archivo.
+ *
+ * Es para archivarlos junto al análisis. La sesión de R es efímera, y hasta
+ * ahora las figuras solo vivían ahí: en cuanto se limpiaba, el Word de esa
+ * tesis empezaba a salir con la marca «[figura1.png]» en vez de la imagen que
+ * el servidor ya había dibujado.
+ *
+ * Se miran las dos carpetas donde R deja figuras: la raíz de la sesión y
+ * `graficos/`. El texto del capítulo las cita por su nombre a secas —«[figura1
+ * _histogramas.png]»—, así que se archivan por ese nombre, venga de donde
+ * venga; si está en las dos, gana la de la raíz, que es la que hasta ahora
+ * encontraba el Word.
+ */
+async function figurasDeSesion(sesion) {
+  const figuras = new Map();
+  const m = motorActual();
+  if (!m) return figuras;
+
+  const estado = await m.estado(sesion).catch(() => null);
+  const enLaRaiz = (estado?.archivos ?? []).map((a) => a.nombre).filter((n) => /\.png$/i.test(n));
+  const enGraficos = m.listarGraficos ? await m.listarGraficos(sesion).catch(() => []) : [];
+
+  // La raíz primero: si el mismo nombre está en las dos, no se pisa.
+  const rutas = [
+    ...enLaRaiz.map((nombre) => ({ nombre, ruta: nombre })),
+    ...enGraficos.map((nombre) => ({ nombre, ruta: `graficos/${nombre}` })),
+  ].slice(0, MAXIMO_FIGURAS_ARCHIVADAS);
+
+  for (const { nombre, ruta } of rutas) {
+    if (figuras.has(nombre)) continue;
+    const bytes = await m.leerArchivo(sesion, ruta).catch(() => null);
+    // Un PNG de menos de cien bytes es un dispositivo que se abrió sin dibujar.
+    if (bytes && bytes.length >= 100) figuras.set(nombre, bytes);
+  }
+
+  return figuras;
+}
+
 async function leerArchivoDeSesion(sesion, archivo) {
   const m = motorActual();
   if (!m) return null;
@@ -630,6 +672,7 @@ module.exports = {
   subirDatos,
   leerArchivo,
   leerArchivoDeSesion,
+  figurasDeSesion,
   disponible,
   usarMotor,
   describirEstado,

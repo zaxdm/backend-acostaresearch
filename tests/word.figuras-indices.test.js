@@ -250,3 +250,66 @@ test('la numeración por capítulo también entra en los índices', async () => 
   assert.deepEqual(entradasDe(cuerpo, 'Índice de tablas'), ['Tabla 1.1. Matriz de consistencia']);
   assert.deepEqual(entradasDe(cuerpo, 'Índice de figuras'), ['Figura 1.2. Modelo del estudio']);
 });
+
+// ── La marca que de verdad escribe Claude ────────────────────────────────────
+//
+// Se reconocían «[Insertar aquí la Figura 1: g.png]» y «![](g.png)», pero no
+// «[figura1_histogramas.png]», que es lo que Claude pone al redactar el
+// capítulo de Resultados. Y el rótulo tenía que venir sin líneas en blanco
+// entre medias, cuando lo normal en Markdown es separarlas. Con cualquiera de
+// las dos cosas, la figura no se buscaba: salía el nombre del archivo impreso
+// en medio del capítulo, con su índice de figuras y todo, como si estuviera.
+
+test('el nombre del archivo a secas entre corchetes es una marca de figura', () => {
+  const texto = '**Figura 1**\n*Distribución*\n[figura1_histogramas.png]';
+
+  assert.deepEqual(documento.figurasDe(texto), ['figura1_histogramas.png']);
+});
+
+test('una clave de cita o un pendiente NO son una figura', () => {
+  // La marca exige terminar en «.png» dentro del corchete, justamente por esto.
+  assert.deepEqual(documento.figurasDe('**Figura 1**\n*T*\n[AR146151BC]'), []);
+  assert.deepEqual(documento.figurasDe('**Figura 1**\n*T*\n[FALTA FUENTE]'), []);
+  assert.deepEqual(documento.figurasDe('**Figura 1**\n*T*\n[DATO PENDIENTE]'), []);
+});
+
+test('el rótulo separado por líneas en blanco se vuelve a juntar', () => {
+  const comoLoGuarda = [
+    '**Figura 1**',
+    '',
+    '*Distribución de los puntajes*',
+    '',
+    '[figura1_histogramas.png]',
+    '',
+    '*Nota.* Elaboración propia.',
+  ].join('\n');
+
+  assert.deepEqual(documento.figurasDe(comoLoGuarda), ['figura1_histogramas.png']);
+});
+
+test('y así la imagen entra en el Word, no su nombre', async () => {
+  const comoLoGuarda = '**Figura 1**\n\n*Distribución*\n\n[histograma.png]\n\n*Nota.* Propia.';
+  const { zip, cuerpo } = await wordDe([{ titulo: 'Capítulo IV', texto: comoLoGuarda }], {
+    figuras: new Map([['histograma.png', png(1600, 1100)]]),
+  });
+
+  const imagenes = zip
+    .getEntries()
+    .filter((e) => e.entryName.startsWith('word/media/') && e.entryName !== 'word/media/');
+
+  assert.equal(imagenes.length, 1);
+  assert.ok(!cuerpo.includes('histograma.png'), 'no debería quedar el nombre del archivo escrito');
+});
+
+test('dos figuras separadas se juntan cada una con la suya', () => {
+  const texto = '**Figura 1**\n\n*A*\n\n[uno.png]\n\n**Figura 2**\n\n*B*\n\n[dos.png]';
+
+  assert.deepEqual(documento.figurasDe(texto), ['uno.png', 'dos.png']);
+});
+
+test('un rótulo sin marca no arrastra el párrafo siguiente', () => {
+  // Solo se junta si aparece una marca de verdad. Sin ella no se toca nada.
+  const texto = '**Figura 1**\n\n*Solo el título*\n\nY este es un párrafo normal del capítulo.';
+
+  assert.deepEqual(documento.figurasDe(texto), []);
+});

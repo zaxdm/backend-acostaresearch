@@ -108,3 +108,43 @@ test('se recogen las claves de un texto sin repetirlas', () => {
 
   assert.deepEqual(claves.sort(), ['AR11112222', 'AR97D22F86']);
 });
+
+// ── La clave escrita en minúsculas ──────────────────────────────────────────
+//
+// Las herramientas dan siempre la clave en mayúsculas, pero un modelo la
+// normaliza de vez en cuando. En minúsculas la marca no casaba, y eso falla
+// PEOR que una clave equivocada: salía impresa tal cual en el capítulo y la
+// fuente no entraba en las referencias, sin dejar rastro en ninguna parte. Una
+// clave equivocada, al menos, deja «[CITA SIN LOCALIZAR]» a la vista y se anota
+// en «perdidas» para que el repaso la cante.
+
+test('una clave en minúsculas se cita igual que en mayúsculas', () => {
+  const porClave = new Map([[GARCIA.ref, GARCIA]]);
+
+  const mayusculas = citas.resolver('La deserción crece [AR97D22F86].', porClave);
+  const minusculas = citas.resolver('La deserción crece [ar97d22f86].', porClave);
+
+  assert.equal(minusculas.texto, mayusculas.texto);
+  assert.deepEqual(minusculas.perdidas, []);
+});
+
+test('y cuenta como la MISMA fuente, no como dos', () => {
+  // Si contara dos, la lista de referencias tendría la misma entrada repetida.
+  const porClave = new Map([[GARCIA.ref, GARCIA]]);
+  const { usadas } = citas.resolver('Uno [AR97D22F86] y otro [ar97d22f86].', porClave);
+
+  assert.equal(usadas.size, 1);
+  assert.ok(usadas.has('AR97D22F86'), 'se guarda en su forma canónica, en mayúsculas');
+});
+
+test('las claves de un texto se devuelven siempre en mayúsculas', () => {
+  assert.deepEqual(citas.clavesDe('Mezcla [ar97d22f86] y [AR97D22F86].'), ['AR97D22F86']);
+});
+
+test('una clave en minúsculas que NO existe sigue avisando', () => {
+  const porClave = new Map([[GARCIA.ref, GARCIA]]);
+  const { texto, perdidas } = citas.resolver('Alguien lo dice [ar99999999].', porClave);
+
+  assert.match(texto, /CITA SIN LOCALIZAR/);
+  assert.deepEqual(perdidas, ['AR99999999']);
+});

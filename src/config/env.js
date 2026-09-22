@@ -121,6 +121,33 @@ const schema = z.object({
   // Mensajes al día para todo el sitio, contados en memoria. 0 = sin tope.
   ASISTENTE_MAX_DIARIO: z.coerce.number().int().nonnegative().default(1500),
 
+  // ── Preparar documento ──────────────────────────────────────────────────
+  // Edición de inglés académico, traducción y resúmenes. Usa la misma clave de
+  // Gemini que el asistente; sin ella el servicio no se ofrece.
+  //
+  // Aquí SÍ el modelo bueno, al revés que en el chat. Allí se contesta una
+  // pregunta de una ficha y la espera se nota más que la calidad; aquí se
+  // entrega un Word por el que alguien pagó, no lo mira un humano después y no
+  // hay a quién reclamarle una frase mal traducida. Un documento de 25.000
+  // palabras cuesta unos S/ 0,64 con este modelo: a diez documentos al mes,
+  // menos de un tercio de lo que paga la membresía mensual.
+  // Dónde viven los .docx. Vacío = al lado de los comprobantes, igual que los
+  // capítulos y los pedidos, para que el respaldo diario ya los recoja.
+  PREPARAR_DIR: vacioComoAusente(z.string()),
+  PREPARAR_MODELO: z.string().default('gemini-3.8-flash'),
+  PREPARAR_MODELO_RESPALDO: vacioComoAusente(z.string()).default('gemini-3.5-flash'),
+  // Palabras por tanda. Más grande = menos llamadas y más contexto para que el
+  // modelo mantenga el mismo registro, pero también más que rehacer si una
+  // tanda sale mal y más riesgo de que la respuesta se corte.
+  PREPARAR_PALABRAS_POR_TANDA: z.coerce.number().int().positive().default(900),
+  // Cuántas tandas a la vez. El proceso es UNO y lo comparten todos los
+  // clientes: con veinte en paralelo, el conector y la web se quedan esperando.
+  PREPARAR_TANDAS_A_LA_VEZ: z.coerce.number().int().positive().default(3),
+  // Tope técnico, no comercial: la membresía es de tamaño libre. Es lo que
+  // evita que un documento de 200.000 palabras se lleve media hora de proceso
+  // y el presupuesto de Gemini de un día.
+  PREPARAR_MAX_PALABRAS: z.coerce.number().int().positive().default(60000),
+
   // ── Acceso con Google ───────────────────────────────────────────────────
   // Client ID de la app OAuth (console.cloud.google.com → Credenciales). Es
   // público por diseño: viaja en el HTML y Google comprueba el origen. Vacío =
@@ -530,6 +557,14 @@ const env = Object.freeze({
     raw.CAPITULOS_DIR ?? path.join(path.dirname(raw.PROOFS_DIR), 'capitulos'),
   // Por lo mismo que los capítulos: colgado de donde vivan los comprobantes.
   pedidosDir: raw.PEDIDOS_DIR ?? path.join(path.dirname(raw.PROOFS_DIR), 'pedidos'),
+  // Los .docx de «Preparar documento», el que sube el cliente y el que se le
+  // devuelve. Colgado de los comprobantes, como los anteriores, así que el
+  // respaldo diario ya se lo lleva sin tocar nada.
+  preparacionesDir:
+    raw.PREPARAR_DIR ?? path.join(path.dirname(raw.PROOFS_DIR), 'preparaciones'),
+  // El servicio necesita la clave de Gemini. Sin ella la web no enseña la
+  // pestaña y las rutas contestan 503, igual que el asistente.
+  prepararEnabled: Boolean(raw.GEMINI_API_KEY),
   // R en la conversación (ver R_MOTOR): la jaula en producción, apagado fuera.
   rMotor: raw.R_MOTOR ?? (raw.NODE_ENV === 'production' ? 'systemd' : 'apagado'),
   // Fuera de /var/lib/acostaresearch a propósito: la jaula tapa /var entero y

@@ -99,7 +99,8 @@ const paymentRepository = {
 
       if (count === 0) return null;
 
-      // Qué se entrega depende del plan: una bolsa de palabras o una licencia.
+      // Qué se entrega depende del plan: una bolsa de palabras, una licencia
+      // del conector o una membresía de «Preparar documento».
       // La entrega va dentro de la misma transacción que el cobro, de modo que
       // no puede quedar un pago cobrado sin nada entregado.
       const { enlace, resultado } = await entregar(tx);
@@ -288,6 +289,7 @@ const paymentRepository = {
         currency: true,
         licenseId: true,
         wordPackId: true,
+        docPackId: true,
         proofPath: true,
         payerEmail: true,
         user: { select: { email: true } },

@@ -156,8 +156,21 @@ test('un pago sin confirmar no tiene constancia', async () => {
   );
 });
 
-/** Espera a que el correo, que sale sin bloquear, termine de enviarse. */
-const esperarCorreo = () => new Promise((resuelve) => setTimeout(resuelve, 50));
+/**
+ * Espera a que el correo, que sale sin bloquear, termine de enviarse.
+ *
+ * Mirando si ya llegó, no durmiendo un rato fijo. Con 50 ms clavados esto
+ * fallaba de vez en cuando —solo en la tanda completa, nunca en este archivo
+ * solo—: generar la constancia carga pdfkit con sus fuentes y el logo, y con
+ * quince procesos de prueba a la vez eso pasa de 50 ms. El correo del segundo
+ * caso llegaba entonces durante el tercero, que contaba dos.
+ */
+async function esperarCorreo(cuantos = 1, tope = 5000) {
+  const hasta = Date.now() + tope;
+  while (correos.length < cuantos && Date.now() < hasta) {
+    await new Promise((resuelve) => setTimeout(resuelve, 5));
+  }
+}
 
 test('el correo de entrega lleva la constancia adjunta', async () => {
   const pago = pagoPagado();

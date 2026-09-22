@@ -46,7 +46,16 @@ const documento = require('../projects/project.docx');
 const { HUECO_RE } = require('../projects/project.citas');
 
 /** Una línea que es solo una imagen: «![texto opcional](archivo.png)». */
-const IMAGEN_RE = /^!\[[^\]]*\]\(\s*([^)\s]+)\s*\)$/;
+/*
+ * La marca de la imagen, en las MISMAS tres formas que acepta el Word de la
+ * tesis: «![](figura1.png)», «[Insertar aquí la Figura 1: figura1.png]» y
+ * «[figura1.png]» a secas. Aquí solo valía la primera, y el texto del informe
+ * lo escribe Claude igual que escribe un capítulo. Con cualquiera de las otras
+ * dos, la figura no se buscaba: el informe se armaba SIN la imagen, con el
+ * nombre del archivo impreso, y sin avisar de nada —`figurasDe` no devolvía
+ * ninguna, así que tampoco entraba en la lista de las que faltan—.
+ */
+const IMAGEN_RE = documento.MARCA_FIGURA_RE;
 
 /**
  * El tamaño máximo de una figura y el lector de PNG viven en `project.docx`,
@@ -66,12 +75,22 @@ function bloquesDe(texto) {
 /** El bloque partido en lo de antes de la imagen, la imagen y lo de después. Null si no hay imagen. */
 function partirFigura(bloque) {
   const lineas = bloque.split('\n').map((l) => l.trim());
-  const indice = lineas.findIndex((l) => IMAGEN_RE.test(l));
+  const esMarca = (l) => {
+    // Lleva la bandera global: sin reiniciar, la segunda llamada empieza donde
+    // acabó la primera y se salta marcas que sí están.
+    IMAGEN_RE.lastIndex = 0;
+    return IMAGEN_RE.test(l);
+  };
+
+  const indice = lineas.findIndex(esMarca);
   if (indice === -1) return null;
+
+  const archivo = documento.archivoDeMarca(lineas[indice]);
+  if (!archivo) return null;
 
   return {
     antes: lineas.slice(0, indice).filter(Boolean),
-    archivo: IMAGEN_RE.exec(lineas[indice])[1],
+    archivo,
     despues: lineas.slice(indice + 1).filter(Boolean),
   };
 }

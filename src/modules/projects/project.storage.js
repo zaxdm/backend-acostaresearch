@@ -186,6 +186,55 @@ async function leerAnalisis(projectId, skillCode, tipo) {
 }
 
 /**
+ * Las figuras que dibujó R, archivadas junto al análisis.
+ *
+ * POR QUÉ SE COPIAN
+ * -----------------
+ * Los PNG vivían SOLO en la sesión de R, que es efímera. Mientras la sesión
+ * existía, el Word salía con las imágenes dentro; en cuanto se limpiaba, la
+ * misma tesis empezaba a descargarse con «[figura1.png]» escrito en medio del
+ * capítulo, y ya no había manera de recuperarla: el tesista tendría que volver
+ * a correr el análisis para conseguir una figura que el servidor ya había
+ * dibujado. Un documento no puede empeorar con el tiempo estando todo guardado.
+ *
+ * Se archivan junto al script y la consola, que es lo que hace reproducible el
+ * análisis, y por el mismo motivo.
+ *
+ * El nombre viene del texto del capítulo, así que se comprueba entero: nada de
+ * barras ni de puntos dobles, y solo PNG, que es lo que la librería de imágenes
+ * sabe incrustar.
+ */
+const FIGURA_SEGURA = /^[A-Za-z0-9][A-Za-z0-9._-]{0,80}\.png$/i;
+
+function rutaDeFigura(projectId, nombre) {
+  if (!SEGURO.test(projectId)) throw new Error('Identificador de proyecto no válido');
+  if (!FIGURA_SEGURA.test(nombre) || nombre.includes('..')) {
+    throw new Error('Nombre de figura no válido');
+  }
+  return path.join(env.capitulosDir, projectId, 'figuras', nombre);
+}
+
+/** ¿Es un nombre de figura que este almacén acepta? Para no tener que probar. */
+function figuraValida(nombre) {
+  return typeof nombre === 'string' && FIGURA_SEGURA.test(nombre) && !nombre.includes('..');
+}
+
+async function guardarFigura(projectId, nombre, bytes) {
+  if (!bytes || bytes.length === 0) return false;
+  await escribirAtomico(rutaDeFigura(projectId, nombre), bytes, null);
+  return true;
+}
+
+async function leerFigura(projectId, nombre) {
+  try {
+    return await fs.readFile(rutaDeFigura(projectId, nombre));
+  } catch (error) {
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
+/**
  * Cuándo se guardó la salida de un análisis, o null si no hay ninguna.
  *
  * Solo la fecha, sin abrir el archivo: se pregunta en cada «mi_proyecto» para
@@ -467,6 +516,9 @@ module.exports = {
   guardarAnalisis,
   leerAnalisis,
   fechaDeAnalisis,
+  guardarFigura,
+  leerFigura,
+  figuraValida,
   guardarPlantilla,
   leerPlantilla,
   borrarPlantilla,

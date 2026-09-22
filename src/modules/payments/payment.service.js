@@ -7,6 +7,7 @@ const { enPrueba } = require('../billing/plan.visibilidad');
 const billingService = require('../billing/billing.service');
 const discountService = require('../billing/discount.service');
 const licenseRepository = require('../licensing/license.repository');
+const prepararRepository = require('../preparar/preparar.repository');
 const paymentRepository = require('./payment.repository');
 const proofStorage = require('./proof.storage');
 const constancia = require('./payment.constancia');
@@ -40,6 +41,9 @@ async function resultadoDeCompra(userId, entrega = {}) {
 async function entregaDeUnPago(payment) {
   if (payment.wordPackId) {
     return { pack: await paymentRepository.findPack(payment.wordPackId) };
+  }
+  if (payment.docPackId) {
+    return { membresia: await prepararRepository.buscarPack(payment.docPackId) };
   }
   if (payment.licenseId) {
     // La URL no se puede reconstruir: del token solo se guarda el hash. El
@@ -360,7 +364,7 @@ const paymentService = {
         amountCents: pago.amountCents,
         currency: pago.currency,
         comprador: pago.user?.email ?? pago.payerEmail,
-        entrego: pago.licenseId ?? pago.wordPackId ?? null,
+        entrego: pago.licenseId ?? pago.wordPackId ?? pago.docPackId ?? null,
         borradoPor: byId,
       },
       'Pago borrado del historial desde el panel',

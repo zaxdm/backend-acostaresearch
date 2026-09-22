@@ -82,6 +82,11 @@ model User {
   /// Sus búsquedas guardadas y sus conversaciones con el copiloto de Scopus.
   scopusBusquedas  ScopusBusqueda[]
 
+  /// Su membresía de «Preparar documento», si la compró, y los documentos que
+  /// ha mandado preparar. Ver `DocPack` y `Preparacion`.
+  docPacks      DocPack[]
+  preparaciones Preparacion[]
+
   /// Enlace de prueba del que salió esta cuenta. Nulo en toda cuenta real.
   ///
   /// Con valor, NO es una persona registrada: es el titular de relleno de un
@@ -288,6 +293,7 @@ enum McpDelivery {
 enum PlanKind {
   WORDS // una bolsa de palabras para el humanizador
   LICENSE // una licencia del conector MCP (el método de las 9 skills)
+  DOCUMENTO // una membresía de «Preparar documento»: N documentos al mes
 }
 
 /// Lo que se vende: una bolsa de palabras que caduca a los N días.
@@ -329,6 +335,14 @@ model Plan {
   /// Cómo se sirve el contenido. Ver `McpDelivery`.
   mcpDelivery McpDelivery @default(EXECUTED)
 
+  /// Solo en los planes DOCUMENTO: cuántos documentos entrega al mes.
+  ///
+  /// «Al mes» y no «en total» a propósito: la mensual y la trimestral se
+  /// diferencian SOLO en `durationDays` (30 y 90), y las dos dan diez al mes.
+  /// Con un total, la trimestral habría que escribirla como treinta y quien
+  /// tuviera prisa se los gastaría la primera semana. Ver `DocPack`.
+  docsPorMes Int @default(0)
+
   /// PayPal no admite soles: para cobrar por ahí hace falta un precio en USD.
   /// Nulo = el plan no se puede comprar con las pasarelas que cobran en dólares
   /// (seguirá activándose a mano por Yape).
@@ -355,6 +369,7 @@ model Plan {
 
   packs    WordPack[]
   payments Payment[]
+  docPacks DocPack[]
 
   @@map("plans")
 }
@@ -443,9 +458,14 @@ model Payment {
   amountCents Int
   currency    String @db.VarChar(3)
 
-  /// Lo entregado al confirmar el cobro. Solo uno de los dos, según el plan.
+  /// Lo entregado al confirmar el cobro. Solo uno de los tres, según el plan.
   wordPackId String?   @unique @db.Char(36)
   wordPack   WordPack? @relation(fields: [wordPackId], references: [id])
+  /// La membresía de «Preparar documento». SIN `@unique`, por lo mismo que la
+  /// licencia: renovar alarga la que ya tiene en vez de abrir otra, y con
+  /// `@unique` la segunda renovación chocaría contra la primera.
+  docPackId  String?   @db.Char(36)
+  docPack    DocPack?  @relation(fields: [docPackId], references: [id])
   /// SIN `@unique`, a propósito: una licencia la paga su compra y después
   /// cada renovación, que alarga la misma licencia en vez de emitir otra. Con
   /// `@unique` la segunda chocaba contra la primera y ninguna renovación se
@@ -489,6 +509,7 @@ model Payment {
 
   @@unique([provider, providerOrderId])
   @@index([licenseId])
+  @@index([docPackId])
   @@index([userId, createdAt])
   @@index([status, createdAt])
   @@map("payments")
@@ -2169,4 +2190,140 @@ model VectorDeTexto {
   createdAt DateTime @default(now())
 
   @@map("vectores_de_texto")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Preparar documento: edición de inglés académico, traducción y resúmenes
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum DocPackStatus {
+  ACTIVE
+  EXPIRED // solo informativo: la caducidad de verdad se compara con `expiresAt`
+  REVOKED
+}
+
+/// La membresía que da derecho a preparar documentos.
+///
+/// POR QUÉ NO ES UNA BOLSA COMO LA DE PALABRAS
+/// -------------------------------------------
+/// Una `WordPack` se gasta: tiene un total y un consumido, y cuando se igualan
+/// se acabó. Aquí no hay total que gastar. Hay un CAUDAL: diez documentos al
+/// mes mientras la membresía esté viva. Guardar «diez» y restar dejaría a quien
+/// compró la trimestral con diez documentos para noventa días, que no es lo que
+/// se vendió.
+///
+/// Por eso no hay columna de consumidos: lo gastado se cuenta mirando las
+/// `Preparacion` de la ventana en curso. Es una cuenta más cara que leer un
+/// entero, pero es la única que no puede desincronizarse de la realidad, y son
+/// diez filas por mes y persona.
+///
+/// LA VENTANA
+/// ----------
+/// Ventanas de treinta días desde `activatedAt`, no meses del calendario. Con
+/// el calendario, quien compra el 28 tiene diez documentos hasta el 30 y otros
+/// diez el día 1: veinte en cuatro días por S/ 29. Con ventanas propias, cada
+/// mes de membresía vale un mes.
+model DocPack {
+  id String @id @default(uuid()) @db.Char(36)
+
+  userId String @db.Char(36)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  planId String @db.Char(36)
+  plan   Plan   @relation(fields: [planId], references: [id])
+
+  /// Documentos al mes, copiados del plan al comprar. Se copia y no se lee del
+  /// plan a propósito: subir mañana la mensual a quince no puede cambiar lo que
+  /// se le vendió a quien compró ayer, ni al revés.
+  docsPorMes Int
+
+  status DocPackStatus @default(ACTIVE)
+
+  /// Desde cuándo cuentan las ventanas de treinta días. Una renovación NO lo
+  /// mueve: si se moviera, renovar el día 20 regalaría un mes nuevo de cupo.
+  activatedAt DateTime @default(now())
+  expiresAt   DateTime
+
+  /// Trazabilidad del cobro, igual que en `WordPack`.
+  paymentMethod String? @db.VarChar(30)
+  paymentRef    String? @db.VarChar(80)
+  amountCents   Int?
+  note          String? @db.VarChar(255)
+
+  /// Administrador que la activó a mano. Null si vino de una pasarela.
+  grantedById String? @db.Char(36)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  payments      Payment[]
+  preparaciones Preparacion[]
+
+  @@index([userId, status, expiresAt])
+  @@map("doc_packs")
+}
+
+/// Los tres servicios de «Preparar documento».
+enum PreparacionServicio {
+  EDICION // inglés académico, con control de cambios
+  TRADUCCION // a español, inglés, portugués o chino
+  RESUMEN // resumen, abstract y palabras clave
+}
+
+enum PreparacionEstado {
+  EN_COLA // aceptada; el turno aún no ha llegado
+  EN_CURSO // el motor la está trabajando
+  LISTO // el Word terminado está en disco
+  FALLIDO // no salió; NO gasta cupo
+}
+
+/// Un documento mandado a preparar.
+///
+/// Es, a la vez, el encargo y el recibo: de ella salen el cupo consumido del
+/// mes (las que no están `FALLIDO`) y el historial que ve el cliente.
+///
+/// El .docx NO se guarda aquí. Ni el de entrada ni el de salida: son megas por
+/// fila y la base ya va justa. Van al disco, en la carpeta de preparaciones,
+/// que el respaldo diario ya recoge. Ver `preparar.storage`.
+model Preparacion {
+  id String @id @default(uuid()) @db.Char(36)
+
+  userId String @db.Char(36)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// La membresía que la pagó. Se apunta para poder reconstruir después qué
+  /// entregó cada compra, aunque el cupo no se cuente por aquí.
+  docPackId String?  @db.Char(36)
+  docPack   DocPack? @relation(fields: [docPackId], references: [id])
+
+  servicio PreparacionServicio
+  /// Solo en TRADUCCION: a qué idioma. `es`, `en`, `pt` o `zh`.
+  idioma   String?             @db.VarChar(5)
+
+  /// Nombre del archivo tal y como lo subió el cliente, para devolvérselo con
+  /// un nombre que reconozca.
+  nombre   String @db.VarChar(255)
+  /// Palabras del cuerpo, sin bibliografía ni tablas. No decide el precio
+  /// —la membresía es de tamaño libre— pero sí se le enseña y sirve para saber
+  /// cuánto cuesta de verdad cada entrega.
+  palabras Int
+  bytes    Int
+
+  estado PreparacionEstado @default(EN_COLA)
+  /// Por qué falló, escrito para que lo lea el cliente.
+  error  String?           @db.VarChar(500)
+
+  /// Cuántos párrafos se tocaron y cuántos quedaron intactos porque llevaban
+  /// algo que no se puede rehacer (un campo de Zotero, una ecuación).
+  tocados  Int @default(0)
+  intactos Int @default(0)
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  entregadoAt DateTime?
+
+  @@index([userId, createdAt])
+  @@index([docPackId, createdAt])
+  @@index([estado, createdAt])
+  @@map("preparaciones")
 }

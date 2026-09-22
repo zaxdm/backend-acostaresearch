@@ -141,7 +141,10 @@ const CITAS_MINIMAS = 2;
  * trabajo es fundacional PARA ÉL.
  *
  * Hacia delante se ordena por fecha, porque sirve para lo contrario: no quedarse
- * en 2019 cuando el jurado va a mirar si hay algo de los dos últimos años.
+ * en 2019 cuando el jurado va a mirar si hay algo de los dos últimos años. Pero
+ * primero los que citan a VARIAS de sus fuentes, por el mismo motivo que hacia
+ * atrás: si no, una sola fuente de método con miles de citas llena la lista con
+ * lo último de otro campo.
  */
 async function boladeNieve(userId, { desdeAnio = null, cuantas = 8 } = {}) {
   const semillas = await propiasRepository.doisDe(userId, SEMILLAS_MAXIMAS);
@@ -189,14 +192,35 @@ async function boladeNieve(userId, { desdeAnio = null, cuantas = 8 } = {}) {
     .filter((ficha) => ficha && ficha.doi && !suyasPorDoi.has(ficha.doi.toLowerCase()))
     .slice(0, cuantas);
 
-  const adelante = (
+  /*
+   * Hacia delante, primero los que citan a VARIAS de sus fuentes.
+   *
+   * El filtro de OpenAlex es un O —basta citar a una—, y casi toda biblioteca
+   * de tesis lleva una fuente de método con decenas de miles de citas de todos
+   * los campos: el G*Power del cálculo de muestra, un BLAST que se coló de un
+   * trabajo prestado. Ordenado solo por fecha, la lista se llenaba con lo
+   * último publicado en química o en biología molecular. Le pasó a una tesis de
+   * escalas de redes sociales: los tres de arriba eran estructura de alta
+   * presión del CaMg2Bi2, ácidos nucleicos PEGilados y extracción
+   * enantioselectiva. Nada que ver, y el tesista no tiene por qué saber por qué.
+   *
+   * Es el mismo criterio del lado de atrás: lo que tocan dos de sus fuentes es
+   * de su tema; lo que toca una puede ser de cualquier cosa. Dentro de cada
+   * grupo se conserva el orden por fecha, que es para lo que sirve este lado, y
+   * si no hay bastantes con dos se completa con los demás en vez de dejarlo
+   * corto: media lista buena es mejor que ninguna.
+   */
+  const candidatos = (
     await openalex.citanA(
       obras.map((obra) => obra.id),
       { desdeAnio, cuantas: cuantas * 3 },
     )
-  )
-    .filter((ficha) => ficha.doi && !suyasPorDoi.has(ficha.doi.toLowerCase()))
-    .slice(0, cuantas);
+  ).filter((ficha) => ficha.doi && !suyasPorDoi.has(ficha.doi.toLowerCase()));
+
+  const deSuTema = candidatos.filter((ficha) => (ficha.tuyasQueCita ?? 0) >= CITAS_MINIMAS);
+  const elResto = candidatos.filter((ficha) => (ficha.tuyasQueCita ?? 0) < CITAS_MINIMAS);
+
+  const adelante = [...deSuTema, ...elResto].slice(0, cuantas);
 
   logger.info(
     { userId, semillas: obras.length, atras: atras.length, adelante: adelante.length },

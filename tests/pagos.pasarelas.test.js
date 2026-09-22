@@ -273,6 +273,21 @@ test('si el banco pide 3-D Secure, no se entrega nada y el pago sigue abierto', 
   assert.equal(llamadas.fail.length, 0);
 });
 
+test('la petición de 3DS se reconoce aunque llegue con 201', async () => {
+  const orden = await abrirCulqi();
+  respuestasFetch = [{ status: 201, body: { action_code: 'REVIEW' } }];
+
+  const resultado = await paymentService.captureOrder({
+    userId: 'user-1',
+    orderId: orden.orderId,
+    providerCode: 'CULQI',
+    datosDelCobro: { token: 'tkn_test_0CjjdWhFpEAZlxlz' },
+  });
+
+  assert.equal(resultado.requiresAuthentication, true);
+  assert.equal(llamadas.entregas.length, 0);
+});
+
 test('el segundo intento con 3DS manda los parámetros del banco y cobra', async () => {
   const orden = await abrirCulqi();
   respuestasFetch = [cargoCulqi()];

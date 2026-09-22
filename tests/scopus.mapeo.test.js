@@ -26,8 +26,8 @@ require.cache[rutaCliente] = {
   loaded: true,
   exports: {
     POR_PAGINA: 25,
-    async buscar({ desde, cuantas }) {
-      paginasPedidas.push({ desde, cuantas });
+    async buscar({ ecuacion, desde, cuantas }) {
+      paginasPedidas.push({ ecuacion, desde, cuantas });
       return { total: scopus.total, desde, fichas: scopus.fichas.slice(desde, desde + cuantas) };
     },
   },
@@ -142,8 +142,45 @@ test('el origen cuenta de dónde salieron los datos y las cifras del PRISMA', ()
   assert.match(texto, /buscador de acostaresearch\.com el 2026-09-21/);
   assert.match(texto, /No es un exporte de Scopus/);
   assert.match(texto, /Ecuación: TITLE-ABS-KEY\(redes\)/);
-  assert.match(texto, /Resultados en Scopus: 693\. Tomados .*: 693\. Con DOI: 645\. Encontrados en OpenAlex: 632\./);
+  assert.match(
+    texto,
+    /Resultados en Scopus con ese criterio: 693\. Tomados .*: 693\. Con DOI: 645\. Encontrados en OpenAlex: 632\./,
+  );
+  assert.match(texto, /solo artículos y revisiones \(DOCTYPE ar, re\)/);
   assert.match(texto, /metadatos de OpenAlex/);
+});
+
+test('el mapeo se pide a Scopus acotado a artículos y revisiones', async () => {
+  paginasPedidas.length = 0;
+  scopus = { total: 1, fichas: [{ 'prism:doi': '10.1234/uno' }] };
+  obrasDeOpenalex = [OBRA];
+  let origenLeido = null;
+
+  await mapeo.prepararMapeo({
+    ecuacion: 'TITLE-ABS-KEY(redes)',
+    accessToken: null,
+    subir: async (_bytes, origen) => {
+      origenLeido = origen;
+      return { leido: true };
+    },
+  });
+
+  // La cláusula va DENTRO de la ecuación, para que quien la copie y la pegue
+  // en Scopus vea el mismo corpus.
+  assert.equal(
+    paginasPedidas[0].ecuacion,
+    '(TITLE-ABS-KEY(redes)) AND (DOCTYPE(ar) OR DOCTYPE(re))',
+  );
+  // Y es la que se le cuenta a Claude: es la que hay que declarar en Métodos.
+  assert.match(origenLeido, /Ecuación: \(TITLE-ABS-KEY\(redes\)\) AND \(DOCTYPE\(ar\) OR DOCTYPE\(re\)\)/);
+});
+
+test('una búsqueda sin artículos ni revisiones lo dice, en vez de mapear otra cosa', async () => {
+  scopus = { total: 0, fichas: [] };
+  await assert.rejects(
+    mapeo.prepararMapeo({ ecuacion: 'x', subir: async () => assert.fail('no debería subir nada') }),
+    /no tiene artículos ni revisiones/,
+  );
 });
 
 test('una barra o un salto dentro de un valor no parten la celda ni la fila', () => {
@@ -206,7 +243,7 @@ test('prepararMapeo sube el CSV a la sesión y cuenta lo que quedó fuera', asyn
     accessToken: null,
     subir: async (bytes, origen) => {
       subido = bytes.toString('utf8');
-      assert.match(origen, /Resultados en Scopus: 3\. .*Con DOI: 2\. Encontrados en OpenAlex: 1\./);
+      assert.match(origen, /Resultados en Scopus con ese criterio: 3\. .*Con DOI: 2\. Encontrados en OpenAlex: 1\./);
       return { leido: true };
     },
   });
@@ -224,7 +261,7 @@ test('sin resultados, sin DOI o sin respuesta de OpenAlex, se dice y no se sube 
   const subir = async () => assert.fail('no debería subir nada');
 
   scopus = { total: 0, fichas: [] };
-  await assert.rejects(mapeo.prepararMapeo({ ecuacion: 'x', subir }), /no tiene resultados/);
+  await assert.rejects(mapeo.prepararMapeo({ ecuacion: 'x', subir }), /no tiene artículos ni revisiones/);
 
   scopus = { total: 2, fichas: [{}, {}] };
   await assert.rejects(mapeo.prepararMapeo({ ecuacion: 'x', subir }), /Ninguno de los resultados trae DOI/);

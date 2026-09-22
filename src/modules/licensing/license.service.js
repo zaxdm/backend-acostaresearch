@@ -13,6 +13,7 @@ const limites = require('./license.limits');
 const watch = require('./license.watch');
 const prisma = require('../../lib/prisma');
 const { visiblePara } = require('../billing/plan.visibilidad');
+const { traeHerramientas } = require('../productos/producto.perfil');
 const proofStorage = require('../payments/proof.storage');
 const { enlaceTerminado } = require('../trials/trial.plazo');
 const {
@@ -1044,6 +1045,16 @@ const licenseService = {
        * lo pagado a nadie.
        */
       retirado: !seVende.has(licencia.productCode),
+      /**
+       * Si este producto trae las herramientas del panel: Scopus, Zotero,
+       * Mendeley, R y el cualitativo.
+       *
+       * Lo decide el servidor y no el navegador porque es la misma regla que
+       * aplica el resto del backend —el mapeo bibliométrico, la subida de la
+       * matriz, la de las entrevistas—, y dos sitios que deciden lo mismo
+       * acaban decidiendo distinto. Ver `productos/producto.perfil`.
+       */
+      herramientas: traeHerramientas(licencia.productCode),
       usage: {
         callsToday: counter?.dayStamp === dia ? counter.callsToday : 0,
         callsMonth: counter?.monthStamp === mes ? counter.callsMonth : 0,

@@ -26,6 +26,7 @@ const {
   ValidationError,
 } = require('../../shared/errors/AppError');
 const licenseService = require('../licensing/license.service');
+const { traeHerramientas } = require('../productos/producto.perfil');
 const enlaces = require('./r.enlaces');
 const rService = require('./r.service');
 const { ArchivoNoValido } = require('./r.formato');
@@ -74,9 +75,16 @@ function recibirArchivo(req, res, next) {
   });
 }
 
-/** El mismo criterio que el envío del análisis: licencia vigente de ese método. */
+/**
+ * El mismo criterio que el envío del análisis: licencia vigente de ese método.
+ *
+ * Y que ese método traiga las herramientas: el Humanizador académico suelto no
+ * las trae, y su comprador no tiene por qué poder subir una matriz a una sesión
+ * de R que su panel no le ofrece. Ver `productos/producto.perfil`.
+ */
 async function tieneLicenciaVigente(userId, productCode) {
   const ahora = new Date();
+  if (!traeHerramientas(productCode)) return false;
   const licencias = await licenseService.listForUser(userId);
   return licencias.some(
     (l) =>

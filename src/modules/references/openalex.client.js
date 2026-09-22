@@ -590,11 +590,26 @@ async function porIds(ids) {
  * una por fuente. El orden por fecha es el que importa aquí: la bola de nieve
  * hacia delante sirve para no quedarse en 2019, y para eso lo último es lo
  * primero.
+ *
+ * CUÁNTAS DE SUS FUENTES CITA CADA UNO
+ * ------------------------------------
+ * Va en cada ficha, en `tuyasQueCita`, porque el filtro `cites:` es un O: basta
+ * que cite a UNA. Y casi toda biblioteca de tesis lleva una fuente de método
+ * —el G*Power del cálculo de muestra, el BLAST de un trabajo prestado— que
+ * tiene decenas de miles de citas de todos los campos. Ordenado solo por fecha,
+ * eso llena la lista con lo último que se ha publicado en química o en biología
+ * molecular. Se vio con una tesis de escalas de redes sociales: los tres
+ * primeros eran estructura de alta presión del CaMg2Bi2, ácidos nucleicos
+ * PEGilados y extracción enantioselectiva.
+ *
+ * Quién decide qué hacer con el número es `propias.service`; aquí solo se
+ * cuenta, que es donde se sabe contra qué semillas se preguntó.
  */
 async function citanA(ids, { desdeAnio = null, cuantas = 10 } = {}) {
   if (ids.length === 0) return [];
 
-  const filtros = [`cites:${ids.slice(0, POR_FILTRO).map(soloElId).join('|')}`];
+  const semillas = ids.slice(0, POR_FILTRO);
+  const filtros = [`cites:${semillas.map(soloElId).join('|')}`];
   if (desdeAnio) filtros.push(`from_publication_date:${desdeAnio}-01-01`);
 
   const resultados = await consultar({
@@ -603,7 +618,14 @@ async function citanA(ids, { desdeAnio = null, cuantas = 10 } = {}) {
     'per-page': String(Math.min(Math.max(cuantas, 1), 50)),
   });
 
-  return resultados.filter((w) => w.title).map(comoFicha);
+  const suyas = new Set(semillas.map(soloElId));
+
+  return resultados
+    .filter((w) => w.title)
+    .map((w) => ({
+      ...comoFicha(w),
+      tuyasQueCita: (w.referenced_works ?? []).filter((r) => suyas.has(soloElId(r))).length,
+    }));
 }
 
 /** Lo más que se trae para un mapa. Cinco páginas de doscientas. */

@@ -157,6 +157,56 @@ const PLANES = [
     mcpDelivery: 'INSTRUCTIONS',
     sortOrder: 11,
   },
+  //
+  // ── «Preparar documento»: las dos membresías ────────────────────────────
+  //
+  // Se vende por membresía y NO por documento. Se estudió cobrar por tamaño
+  // —S/6 hasta 5.000 palabras, S/12 hasta 12.000, S/18 hasta 25.000— y se
+  // descartó: obligaba a contar las palabras y enseñar un precio antes de
+  // cobrar, a discutir por qué un documento de 12.100 palabras cuesta el
+  // siguiente tramo, y dejaba un producto que se compra una vez. La membresía
+  // se renueva.
+  //
+  // Las dos son el MISMO producto con distinta duración: diez documentos al
+  // mes, cualquier tamaño, en los tres servicios. Lo único que cambia es
+  // `durationDays`. Ver `DocPack` y `preparar.membresia`.
+  {
+    code: 'PREPARAR_MENSUAL',
+    name: 'Preparar documento · mensual',
+    description:
+      'Un mes para corregir tu inglés académico, traducir a cuatro idiomas y sacar resúmenes. ' +
+      'Hasta 10 documentos al mes, del tamaño que sean.',
+    kind: 'DOCUMENTO',
+    // Un plan de documentos no entrega palabras ni licencia el conector; los
+    // campos existen por el esquema.
+    words: 0,
+    productCode: null,
+    docsPorMes: 10,
+    priceCents: 2900,
+    // S/29 son unos $7,80. Se cobra algo más para absorber la comisión
+    // internacional de PayPal, igual que en el método.
+    priceUsdCents: 899,
+    durationDays: 30,
+    sortOrder: 20,
+  },
+  {
+    code: 'PREPARAR_TRIMESTRAL',
+    name: 'Preparar documento · trimestral',
+    description:
+      'Tres meses con lo mismo, a mejor precio. Hasta 10 documentos cada mes, del tamaño que sean.',
+    kind: 'DOCUMENTO',
+    words: 0,
+    productCode: null,
+    docsPorMes: 10,
+    // Tres meses por el precio de dos y pico: es el tiempo de un envío a
+    // revista de principio a fin, que es cuando de verdad se usan los tres
+    // servicios seguidos.
+    priceCents: 6900,
+    listPriceCents: 8700,
+    priceUsdCents: 2090,
+    durationDays: 90,
+    sortOrder: 21,
+  },
 ];
 
 async function sembrarAdmin() {
@@ -209,6 +259,7 @@ async function sembrarPlanes() {
         mcpCallsTotal: plan.mcpCallsTotal ?? 0,
         mcpCostCentsTotal: plan.mcpCostCentsTotal ?? 0,
         mcpDelivery: plan.mcpDelivery ?? 'EXECUTED',
+        docsPorMes: plan.docsPorMes ?? 0,
         priceCents: plan.priceCents,
         priceUsdCents: plan.priceUsdCents ?? null,
         listPriceCents: plan.listPriceCents ?? null,
@@ -219,7 +270,7 @@ async function sembrarPlanes() {
     });
   }
 
-  logger.info({ planes: PLANES.map((p) => p.code) }, 'Planes del humanizador listos');
+  logger.info({ planes: PLANES.map((p) => p.code) }, 'Planes del catálogo listos');
 }
 
 async function main() {

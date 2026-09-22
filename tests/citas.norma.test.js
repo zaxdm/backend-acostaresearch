@@ -211,3 +211,30 @@ test('sin URI de Zotero, la cita lleva una de Acosta que no se confunde con ning
 
   assert.equal(datos.citationItems[0].uris[0], 'https://acostaresearch.com/fuentes/AR11111111');
 });
+
+
+// ── La clave escrita en minúsculas ──────────────────────────────────────────
+//
+// El motor de normas tiene su propio camino, aparte del APA de respaldo que
+// vigila `proyecto.citas.test.js`. Había que arreglar los dos: la marca se
+// reconoce escrita como sea, y la clave con la que se busca la ficha es una
+// sola, la de mayúsculas.
+
+test('una clave en minúsculas se cita igual, en cualquier norma', () => {
+  for (const norma of ['apa', 'ieee', 'vancouver']) {
+    const mayusculas = aplicar(norma, 'Primero [AR11111111].');
+    const minusculas = aplicar(norma, 'Primero [ar11111111].');
+
+    assert.equal(cita(minusculas, 1), cita(mayusculas, 1), norma);
+    assert.equal(minusculas.textos[0], mayusculas.textos[0], norma);
+    assert.deepEqual(minusculas.perdidas, [], norma);
+  }
+});
+
+test('y la misma clave en dos capas no se cuenta dos veces en la bibliografía', () => {
+  const r = aplicar('apa', 'Uno [AR11111111] y otro [ar11111111].');
+
+  assert.equal(r.citas.size, 2, 'dos llamadas de cita');
+  assert.equal(r.bibliografia.entradas.length, 1, 'pero una sola entrada en las referencias');
+  assert.match(texto(r.bibliografia.entradas[0].tramos), /Warshaw/);
+});

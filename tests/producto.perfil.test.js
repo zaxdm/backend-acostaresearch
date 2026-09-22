@@ -8,7 +8,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { perfilDe } = require('../src/modules/productos/producto.perfil');
+const { perfilDe, traeHerramientas } = require('../src/modules/productos/producto.perfil');
 
 test('los productos de tesis siguen siendo tesis', () => {
   for (const codigo of ['METODO_9_SKILLS', 'METODO_DE_TESIS_HUMANIZADOR', 'TESISTA']) {
@@ -47,4 +47,36 @@ test('solo el informe tiene secciones aparte', () => {
 test('los perfiles no se pueden modificar por accidente', () => {
   assert.ok(Object.isFrozen(perfilDe('INFORME_ESTUDIANTIL')));
   assert.ok(Object.isFrozen(perfilDe('INFORME_ESTUDIANTIL').seccionesAparte));
+});
+
+/**
+ * Las herramientas del panel —Scopus, Zotero, Mendeley, R y el cualitativo—
+ * son de quien está investigando. Quien compra SOLO el Humanizador académico
+ * trae un texto ya escrito, y no debe ver ni poder usar ninguna.
+ */
+test('el Humanizador suelto no trae las herramientas del panel', () => {
+  for (const codigo of ['HUMANIZADOR_ACADEMICO', 'HUMANIZADOR', 'humanizador_academico', 'HUMANIZAR_TEXTO']) {
+    assert.equal(traeHerramientas(codigo), false, codigo);
+  }
+});
+
+test('los métodos de investigación sí las traen, incluido el que humaniza dentro', () => {
+  for (const codigo of [
+    'METODO_9_SKILLS',
+    'METODO_DE_TESIS_HUMANIZADOR',
+    'ARTICULO_SCIENTIFICOS',
+    'INFORME_ESTUDIANTIL',
+  ]) {
+    assert.equal(traeHerramientas(codigo), true, codigo);
+  }
+});
+
+test('un producto nuevo trae las herramientas mientras no diga lo contrario', () => {
+  for (const codigo of [null, undefined, '', 'LO_QUE_VENGA']) {
+    assert.equal(traeHerramientas(codigo), true, String(codigo));
+  }
+});
+
+test('quitar las herramientas no le cambia el perfil: lo que humaniza es una tesis', () => {
+  assert.equal(perfilDe('HUMANIZADOR_ACADEMICO').tipo, 'tesis');
 });

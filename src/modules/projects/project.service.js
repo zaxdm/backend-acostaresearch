@@ -1253,6 +1253,30 @@ async function cambiarAsesor({ userId, productCode, asesor }) {
 }
 
 /**
+ * Copia al almacén los PNG que tenga ahora la sesión de R.
+ *
+ * Se llama al guardar un análisis, que es cuando la sesión está recién usada y
+ * las figuras existen. Nunca puede hacer fallar el guardado: si el motor de R
+ * está apagado o la sesión ya no está, no se archiva nada y el análisis se
+ * guarda igual.
+ */
+async function archivarFiguras(proyectoId) {
+  try {
+    // eslint-disable-next-line global-require
+    const rService = require('../r/r.service');
+    const figuras = await rService.figurasDeSesion(proyectoId);
+    for (const [nombre, bytes] of figuras) {
+      if (!almacen.figuraValida(nombre)) continue;
+      await almacen.guardarFigura(proyectoId, nombre, bytes);
+    }
+    return figuras.size;
+  } catch (error) {
+    logger.warn({ err: error, proyectoId }, 'No se pudieron archivar las figuras de la sesión de R');
+    return 0;
+  }
+}
+
+/**
  * Las figuras que pide el texto, leídas de la sesión de R del proyecto.
  *
  * POR QUÉ DE AHÍ
@@ -1278,16 +1302,39 @@ async function figurasDeLaSesion(sesion, capitulos) {
   if (nombres.length === 0) return null;
 
   const figuras = new Map();
-  try {
-    // eslint-disable-next-line global-require
-    const rService = require('../r/r.service');
-    for (const nombre of nombres) {
-      const bytes = await rService.leerArchivoDeSesion(sesion, nombre);
-      if (bytes) figuras.set(nombre, bytes);
+
+  // 1. El archivo del proyecto. Es la fuente buena: dura lo que dura la tesis,
+  //    y no depende de que el motor de R esté encendido ni de que la sesión
+  //    siga viva. Un Word descargado hoy y otro dentro de seis meses salen
+  //    iguales, que es lo que se rompía antes.
+  for (const nombre of nombres) {
+    if (!almacen.figuraValida(nombre)) continue;
+    const bytes = await almacen.leerFigura(sesion, nombre).catch(() => null);
+    if (bytes) figuras.set(nombre, bytes);
+  }
+
+  // 2. Lo que falte, de la sesión viva; y se archiva al pasar, para que la
+  //    próxima descarga ya no dependa de ella. Cubre los análisis anteriores a
+  //    que esto existiera, mientras su sesión aguante.
+  const faltan = nombres.filter((n) => !figuras.has(n));
+  if (faltan.length > 0) {
+    try {
+      // eslint-disable-next-line global-require
+      const rService = require('../r/r.service');
+      for (const nombre of faltan) {
+        // En la raíz, o en `graficos/`, que es donde un script las suele dejar.
+        const bytes =
+          (await rService.leerArchivoDeSesion(sesion, nombre)) ??
+          (await rService.leerArchivoDeSesion(sesion, `graficos/${nombre}`));
+        if (!bytes) continue;
+        figuras.set(nombre, bytes);
+        if (almacen.figuraValida(nombre)) {
+          await almacen.guardarFigura(sesion, nombre, bytes).catch(() => {});
+        }
+      }
+    } catch (error) {
+      logger.warn({ err: error, sesion }, 'No se pudieron leer las figuras de la sesión de R');
     }
-  } catch (error) {
-    logger.warn({ err: error, sesion }, 'No se pudieron leer las figuras de la sesión de R');
-    return figuras.size > 0 ? figuras : null;
   }
 
   return figuras.size > 0 ? figuras : null;
@@ -1579,6 +1626,12 @@ async function guardarAnalisisEnSuTurno({
 
   const escritos = await almacen.guardarAnalisis(proyecto.id, capitulo, { script, salida });
 
+  // Y las figuras que dibujó R, mientras la sesión todavía existe. Es lo único
+  // del análisis que no se puede volver a sacar: el script y la consola son
+  // texto que ya está aquí, pero un PNG que se va con la sesión se pierde, y
+  // el Word de esa tesis sale con la marca en su lugar para siempre.
+  await archivarFiguras(proyecto.id);
+
   /**
    * Las cifras SE SUMAN a las que ya había; no las sustituyen.
    *
@@ -1695,8 +1748,8 @@ async function cargarAnalisis(userId, productCode, capitulo) {
 const AVISO_DE_EVIDENCIA =
   'ESTE ÍNDICE DICE DÓNDE ESTÁ CADA RESULTADO, NO CUÁL ES: no contiene ni un solo número. ' +
   'Para escribir una cifra en el capítulo, pide antes su bloque y léelo. Después guárdala ' +
-  'con "guardar_analisis". El repaso de evidencia marca cualquier número del texto que no ' +
-  'esté entre las cifras guardadas.';
+  'con "guardar_analisis". El repaso de evidencia marca los números del texto que no salgan ' +
+  'ni de las cifras guardadas ni de esta consola.';
 
 /** Las líneas de un texto, sin fingir que un archivo vacío tiene una. */
 function cuantasLineas(texto) {
@@ -1936,6 +1989,15 @@ async function auditar(userId, productCode) {
     faltan: etapas.queFalta(e.skillCode, porEtapa),
   }));
 
+  // La consola de R, como segunda fuente de respaldo para las cifras del texto.
+  // La lista de `guardar_analisis` es una curación a mano y siempre se queda
+  // corta: los mínimos y máximos de la tabla de descriptivos y los grados de
+  // libertad de las t salían marcados como inventados estando impresos aquí.
+  const claveResultados = await capituloDeResultados(productCode);
+  const consola = claveResultados
+    ? (await almacen.leerAnalisis(proyecto.id, claveResultados, 'salida')) ?? ''
+    : '';
+
   return auditoria.auditar({
     proyecto,
     catalogo,
@@ -1943,6 +2005,7 @@ async function auditar(userId, productCode) {
     capitulos,
     evidencia: informe,
     citasRotas,
+    consola,
   });
 }
 

@@ -24,6 +24,7 @@ const asesorRoutes = require('./modules/asesores/asesor.routes');
 const pedidoRoutes = require('./modules/pedidos/pedido.routes');
 const rRoutes = require('./modules/r/r.routes');
 const cualitativoRoutes = require('./modules/cualitativo/cualitativo.routes');
+const prepararRoutes = require('./modules/preparar/preparar.routes');
 
 const comprobarBase = require('./lib/comprobarBase');
 
@@ -92,5 +93,10 @@ router.use('/r', rRoutes);
 // El análisis cualitativo: subir las entrevistas desde el enlace que da Claude.
 // Sin sesión, como las de R.
 router.use('/cualitativo', cualitativoRoutes);
+// «Preparar documento»: edición de inglés académico, traducción y resúmenes
+// sobre el Word que sube el cliente. Con sesión, porque la membresía cuelga de
+// la cuenta; a diferencia de R y del cualitativo, esto no viene de una
+// conversación con Claude sino de la web. Ver `modules/preparar`.
+router.use('/preparar', prepararRoutes);
 
 module.exports = router;

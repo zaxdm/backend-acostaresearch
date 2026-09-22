@@ -852,6 +852,144 @@ function wordsReady({ firstName, planName, words, expiresAt, via }) {
   };
 }
 /**
+ * Al cliente: su membresía de «Preparar documento» está activa.
+ *
+ * Gemelo de `wordsReady` y de `licenseReady`: sale de `payment.delivery`, que
+ * es por donde pasan por igual la pasarela y la aprobación de un Yape.
+ */
+function documentosReady({ firstName, planName, docsPorMes, expiresAt, via, renovada }) {
+  const enlace = `${appUrl()}/preparar-documento`;
+  const vence = fecha(expiresAt);
+  const hasta = vence ? ` Tu membresía vale hasta el ${vence}.` : '';
+  const confirmacion = confirmacionDePago(via, planName);
+
+  const titulo = renovada
+    ? 'Tu membresía está renovada'
+    : 'Tu membresía de Preparar documento está activa';
+
+  return {
+    subject: `${titulo} · Acosta Research`,
+    text: [
+      `Hola ${firstName}:`,
+      '',
+      `${enMayuscula(confirmacion)}. Puedes preparar hasta ${docsPorMes} documentos al mes:`,
+      'corregir tu inglés académico, traducirlo o sacarle el resumen y el abstract.' + hasta,
+      '',
+      `Empezar: ${enlace}`,
+    ].join('\n'),
+    html: layout(
+      titulo,
+      `<p style="margin:0 0 20px;font-size:15px;line-height:1.6">Hola ${escapar(firstName)}:
+         ${confirmacionDePago(via, escapar(planName))}. Puedes preparar hasta
+         <strong>${docsPorMes} documentos al mes</strong>: corregir tu inglés académico,
+         traducirlo a español, inglés, portugués o chino, o sacarle el resumen y el
+         abstract.${hasta}</p>
+
+       <p style="margin:0;font-size:14px">
+         <a href="${enlace}" style="color:#1a56db">Preparar mi primer documento</a>
+       </p>`,
+      { preheader: `Hasta ${docsPorMes} documentos al mes.` },
+    ),
+  };
+}
+
+/**
+ * Al cliente: su documento está listo.
+ *
+ * El aviso de que lo hizo una IA va aquí también, y no solo en la web, porque
+ * este correo es lo que mucha gente lee antes de abrir el archivo. Repetirlo no
+ * sobra: lo que sale de aquí lo va a firmar él.
+ */
+function documentoPreparado({ firstName, servicio, nombre, idioma, intactos }) {
+  const enlace = `${appUrl()}/preparar-documento`;
+  const que = idioma ? `${servicio} al ${idioma}` : servicio;
+  const sinTocar =
+    intactos > 0
+      ? `Quedaron ${intactos} párrafo${intactos === 1 ? '' : 's'} sin tocar porque llevaban ` +
+        'algo que no se puede rehacer sin romperlo (una cita de Zotero, una nota al pie, una ' +
+        'ecuación). Los verás señalados en la web.'
+      : '';
+
+  return {
+    subject: 'Tu documento está listo · Acosta Research',
+    text: [
+      `Hola ${firstName}:`,
+      '',
+      `Terminamos «${nombre}» (${que}). Ya lo puedes descargar.`,
+      '',
+      sinTocar,
+      sinTocar ? '' : null,
+      'Lo preparó un sistema de inteligencia artificial y nadie lo revisó después:',
+      'léelo antes de entregarlo o enviarlo a una revista.',
+      '',
+      `Descargarlo: ${enlace}`,
+    ]
+      .filter((linea) => linea !== null && linea !== '')
+      .join('\n'),
+    html: layout(
+      'Tu documento está listo',
+      `<p style="margin:0 0 20px;font-size:15px;line-height:1.6">Hola ${escapar(firstName)}:
+         terminamos <strong>${escapar(nombre)}</strong> (${escapar(que)}). Ya lo puedes
+         descargar.</p>
+
+       ${sinTocar ? `<p style="margin:0 0 20px;font-size:14px;line-height:1.6;color:#4b5563">${escapar(sinTocar)}</p>` : ''}
+
+       <p style="margin:0 0 20px;font-size:14px;line-height:1.6;color:#4b5563">
+         Lo preparó un sistema de inteligencia artificial y nadie lo revisó después:
+         <strong>léelo antes de entregarlo</strong> o de enviarlo a una revista.</p>
+
+       <p style="margin:0;font-size:14px">
+         <a href="${enlace}" style="color:#1a56db">Descargar mi documento</a>
+       </p>`,
+      { preheader: `${escapar(nombre)} ya está listo.` },
+    ),
+  };
+}
+
+/**
+ * Al cliente: su documento no salió.
+ *
+ * Lo primero que dice es que no le costó nada, porque es lo primero que va a
+ * preguntar. El motivo va tal cual, sin adornar: si el documento tenía algo
+ * raro, quien lo puede arreglar es él.
+ */
+function documentoFallido({ firstName, servicio, nombre, motivo }) {
+  const enlace = `${appUrl()}/preparar-documento`;
+
+  return {
+    subject: 'No pudimos preparar tu documento · Acosta Research',
+    text: [
+      `Hola ${firstName}:`,
+      '',
+      `No pudimos terminar «${nombre}» (${servicio}).`,
+      '',
+      'NO te descontó ningún documento de tu membresía: lo que no sale, no se cobra.',
+      '',
+      `Qué pasó: ${motivo}`,
+      '',
+      `Volver a intentarlo: ${enlace}`,
+    ].join('\n'),
+    html: layout(
+      'No pudimos preparar tu documento',
+      `<p style="margin:0 0 20px;font-size:15px;line-height:1.6">Hola ${escapar(firstName)}:
+         no pudimos terminar <strong>${escapar(nombre)}</strong> (${escapar(servicio)}).</p>
+
+       <p style="margin:0 0 20px;font-size:15px;line-height:1.6">
+         <strong>No te descontó ningún documento de tu membresía</strong>: lo que no sale,
+         no se cobra.</p>
+
+       <p style="margin:0 0 20px;font-size:14px;line-height:1.6;color:#4b5563">
+         Qué pasó: ${escapar(motivo ?? 'no lo sabemos con detalle.')}</p>
+
+       <p style="margin:0;font-size:14px">
+         <a href="${enlace}" style="color:#1a56db">Volver a intentarlo</a>
+       </p>`,
+      { preheader: 'No se te descontó ningún documento.' },
+    ),
+  };
+}
+
+/**
  * Al comprador: no pudimos dar el pago por bueno.
  *
  * El motivo lo escribe el administrador y se le enseña tal cual, así que el
@@ -1281,6 +1419,11 @@ module.exports = {
   // Este no sale de una compra, sino del aviso diario de caducidades.
   licenseExpiring,
   wordsReady,
+  // «Preparar documento»: la membresía sale de `payment.delivery`; los dos de
+  // cada trabajo, de `preparar.service`.
+  documentosReady,
+  documentoPreparado,
+  documentoFallido,
   manualPaymentRejected,
   // Al comprador que pagó fuera de la web y todavía no tiene cuenta.
   activationCode,

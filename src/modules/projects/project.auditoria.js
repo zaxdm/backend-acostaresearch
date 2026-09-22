@@ -99,9 +99,10 @@ const aviso = (mensaje) => ({ nivel: 'aviso', mensaje });
  *
  * `capitulos` son los que tienen texto, con su clave y su título; `etapas` es
  * lo que hay guardado de cada una; `evidencia` es el informe de respaldo, que ya
- * se calcula aparte y no se repite aquí.
+ * se calcula aparte y no se repite aquí; `consola` es lo que imprimió R, que se
+ * usa como segunda fuente de respaldo para las cifras del texto.
  */
-function auditar({ proyecto, catalogo, etapas, capitulos, evidencia, citasRotas = [] }) {
+function auditar({ proyecto, catalogo, etapas, capitulos, evidencia, citasRotas = [], consola = '' }) {
   const hallazgos = [];
 
   const porCodigo = new Map(catalogo.map((s) => [s.code, s]));
@@ -244,11 +245,11 @@ function auditar({ proyecto, catalogo, etapas, capitulos, evidencia, citasRotas 
       // del problema viene de una fuente, no de las pruebas de este estudio.
       if (!REPORTAN_CIFRAS.has(capitulo.code)) continue;
 
-      for (const suelta of cifras.sinRespaldo(capitulo.texto, guardadas)) {
+      for (const suelta of cifras.sinRespaldo(capitulo.texto, guardadas, consola)) {
         hallazgos.push(
           grave(
-            `En «${nombre(capitulo.code)}» aparece ${suelta.bruto} y no está entre las cifras ` +
-              `guardadas del análisis. Contexto: «…${suelta.contexto}…». ` +
+            `En «${nombre(capitulo.code)}» aparece ${suelta.bruto} y no sale ni de las cifras ` +
+              `guardadas ni de la consola del análisis. Contexto: «…${suelta.contexto}…». ` +
               'O falta anotarla, o ese número no lo devolvió ninguna prueba.',
           ),
         );

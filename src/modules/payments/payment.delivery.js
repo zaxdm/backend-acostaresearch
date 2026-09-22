@@ -7,6 +7,8 @@ const billingService = require('../billing/billing.service');
 const discountService = require('../billing/discount.service');
 const licenseService = require('../licensing/license.service');
 const licenseRepository = require('../licensing/license.repository');
+const prepararService = require('../preparar/preparar.service');
+const prepararRepository = require('../preparar/preparar.repository');
 const paymentRepository = require('./payment.repository');
 const constancia = require('./payment.constancia');
 
@@ -46,6 +48,16 @@ function avisarAlComprador(payment, entrega) {
           connectorUrl: entrega.connectorUrl,
           expiresAt: entrega.license.expiresAt,
         });
+  } else if (entrega.membresia) {
+    // La membresía de «Preparar documento». Un solo correo para la compra y
+    // para la renovación: lo único que cambia es el titular, porque lo que
+    // recibe es lo mismo —no hay ninguna URL nueva que mandarle—.
+    mensaje = plantillas.documentosReady({
+      ...datos,
+      docsPorMes: entrega.membresia.docsPorMes,
+      expiresAt: entrega.membresia.expiresAt,
+      renovada: Boolean(entrega.renovada),
+    });
   } else if (entrega.pack) {
     mensaje = plantillas.wordsReady({
       ...datos,
@@ -111,6 +123,7 @@ async function adjuntarConstancia(paymentId) {
  */
 async function entregarPago({ payment, captura, estadoEsperado = 'PENDING', notaBolsa }) {
   const esLicencia = payment.plan.kind === 'LICENSE';
+  const esMembresia = payment.plan.kind === 'DOCUMENTO';
 
   const licenciaPreparada = esLicencia
     ? await licenseService.prepareForPurchase({
@@ -118,6 +131,13 @@ async function entregarPago({ payment, captura, estadoEsperado = 'PENDING', nota
         productCode: payment.plan.productCode ?? payment.plan.code,
         // La duración no se pasa: la resuelve el propio servicio desde el plan.
       })
+    : null;
+
+  // Fuera de la transacción, igual que la licencia: decidir si es compra o
+  // renovación es una LECTURA, y hacerla dentro alargaría la transacción por
+  // nada. Lo que escribe sí va dentro.
+  const membresiaPreparada = esMembresia
+    ? await prepararService.prepararParaCompra({ userId: payment.userId, plan: payment.plan })
     : null;
 
   const entrega = await paymentRepository.settle({
@@ -152,6 +172,44 @@ async function entregarPago({ payment, captura, estadoEsperado = 'PENDING', nota
           enlace: { licenseId: license.id },
           resultado: { license, connectorUrl: licenciaPreparada.connectorUrl },
         };
+      }
+
+      if (esMembresia) {
+        // El plan se adjunta a mano: `crearPack` y `extenderPack` devuelven la
+        // fila pelada, y la web enseña «ya tienes X con el plan Y». Se coge del
+        // pago y no de otra consulta, que es el mismo plan por definición.
+        const conPlan = (fila, renovada) => ({
+          enlace: { docPackId: fila.id },
+          resultado: {
+            membresia: { ...fila, plan: { code: payment.plan.code, name: payment.plan.name } },
+            ...(renovada ? { renovada: true } : {}),
+          },
+        });
+
+        // Renovar alarga la que tiene, por lo mismo que la licencia: dejarle
+        // dos membresías haría que el cupo del mes se contara sobre una de las
+        // dos y la otra no sirviera para nada.
+        if (membresiaPreparada.renovacion) {
+          const { packId, expiresAt, docsPorMes } = membresiaPreparada.renovacion;
+          const membresia = await prepararRepository.extenderPack(
+            packId,
+            { expiresAt, docsPorMes },
+            tx,
+          );
+          return conPlan(membresia, true);
+        }
+
+        const membresia = await prepararRepository.crearPack(
+          {
+            ...membresiaPreparada.data,
+            paymentMethod: payment.provider,
+            paymentRef: captura.captureId,
+            amountCents: payment.amountCents,
+            note: notaBolsa,
+          },
+          tx,
+        );
+        return conPlan(membresia, false);
       }
 
       const pack = await tx.wordPack.create({

@@ -52,6 +52,13 @@ const ERROR_CODES = Object.freeze({
   // de quince segundos en una búsqueda y la web entera se tapó con «estamos en
   // mantenimiento» mientras todo lo nuestro funcionaba.
   EXTERNAL_UNAVAILABLE: 'EXTERNAL_UNAVAILABLE',
+  // «Preparar documento»: sin clave de Gemini el servicio no está, y eso
+  // tampoco es que la web esté caída.
+  PREPARAR_UNAVAILABLE: 'PREPARAR_UNAVAILABLE',
+  // No tiene membresía, caducó, o ya gastó los documentos del mes. Tres
+  // situaciones con el mismo código porque la web hace lo mismo con las tres:
+  // enseñar el motivo y el botón de comprar o renovar. Ver `preparar.membresia`.
+  NO_DOCUMENTOS: 'NO_DOCUMENTOS',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
 });
 

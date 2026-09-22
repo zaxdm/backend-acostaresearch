@@ -63,4 +63,29 @@ function perfilDe(productCode) {
   return TESIS;
 }
 
-module.exports = { perfilDe, TESIS, ARTICULO, INFORME };
+/**
+ * Los productos que NO traen las herramientas del panel.
+ *
+ * Las herramientas son Scopus, Zotero, Mendeley, el análisis en R y el
+ * cualitativo (ATLAS.ti), con el mapa de VOSviewer detrás. Son de quien está
+ * haciendo una investigación: traer fuentes, analizar datos, codificar
+ * entrevistas. Quien compra SOLO el Humanizador académico no está haciendo
+ * nada de eso —trae un texto ya escrito y se lo devolvemos sin patrones de
+ * IA—, así que enseñarle cinco pestañas que no le sirven es venderle la idea
+ * de que compró algo más de lo que compró.
+ *
+ * Por prefijo del código, como `perfilDe`: un grupo que se cree en el panel
+ * con el código `HUMANIZADOR_ACADEMICO` —o cualquiera que empiece por
+ * HUMANIZ— nace sin herramientas, sin tocar código ni base de datos.
+ *
+ * NO cambia su perfil: sigue siendo TESIS a efectos de textos, porque lo que
+ * humaniza es un capítulo de tesis. Lo único que decide esto es si el panel le
+ * ofrece las herramientas y si el servidor las atiende para ese producto.
+ */
+const SIN_HERRAMIENTAS = /^HUMANIZ/i;
+
+function traeHerramientas(productCode) {
+  return !SIN_HERRAMIENTAS.test(String(productCode ?? '').trim());
+}
+
+module.exports = { perfilDe, traeHerramientas, TESIS, ARTICULO, INFORME };

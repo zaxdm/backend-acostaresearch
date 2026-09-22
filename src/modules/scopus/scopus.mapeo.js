@@ -42,6 +42,36 @@ const TOPE_DEL_MAPEO = 2000;
  */
 const PAGINAS_A_LA_VEZ = 5;
 
+/**
+ * SOLO ARTÍCULOS CIENTÍFICOS
+ * --------------------------
+ * Un mapeo bibliométrico describe la literatura científica de un campo, y una
+ * búsqueda de Scopus sin filtrar arrastra ponencias de congreso, capítulos de
+ * libro, editoriales, cartas, notas y fes de erratas. Eso no es ruido menor:
+ * las ponencias inflan la producción anual y desordenan la ley de Lotka, las
+ * editoriales y las cartas no traen referencias y hunden la cocitación, y las
+ * erratas duplican títulos. El asesor pregunta por el tipo de documento, y la
+ * respuesta tiene que ser una decisión, no un descuido.
+ *
+ * Se quedan `ar` (artículo) y `re` (revisión), que es el criterio corriente en
+ * los estudios bibliométricos publicados: la revisión sistemática es un
+ * artículo científico y contarla fuera dejaría fuera media literatura de
+ * algunos campos.
+ *
+ * SE FILTRA EN SCOPUS, NO EN OPENALEX. Scopus es quien elige los documentos y
+ * quien tiene el tipo curado; la cláusula viaja dentro de la ecuación, así que
+ * quien la copie y la pegue en Scopus ve exactamente el mismo corpus, que es lo
+ * que permite reproducir el estudio. Volver a filtrar por el `type` de OpenAlex
+ * quitaría además artículos de verdad: a los que su mejor copia está en un
+ * repositorio los llama a veces `preprint`.
+ */
+const CLAUSULA_DE_ARTICULOS = '(DOCTYPE(ar) OR DOCTYPE(re))';
+
+/** La ecuación del tesista, acotada a artículos y revisiones. */
+function ecuacionDeArticulos(ecuacion) {
+  return `(${String(ecuacion).trim()}) AND ${CLAUSULA_DE_ARTICULOS}`;
+}
+
 const COLUMNAS = [
   'id',
   'doi',
@@ -222,8 +252,11 @@ function origenDelMapeo(ecuacion, { total, recorridos, conDoi, documentos }, fec
     `Búsqueda en Scopus hecha desde el buscador de acostaresearch.com el ${dia}, con el botón «Hacer un ` +
       'mapeo bibliométrico con estos resultados». No es un exporte de Scopus.',
     `Ecuación: ${ecuacion}`,
-    `Resultados en Scopus: ${total}. Tomados (los más citados, hasta ${TOPE_DEL_MAPEO}): ${recorridos}. ` +
-      `Con DOI: ${conDoi}. Encontrados en OpenAlex: ${documentos}.`,
+    'Criterio de inclusión por tipo de documento: solo artículos y revisiones (DOCTYPE ar, re). Quedan ' +
+      'fuera ponencias de congreso, capítulos, libros, editoriales, cartas, notas y erratas. Dilo así en ' +
+      'la Metodología y en el PRISMA.',
+    `Resultados en Scopus con ese criterio: ${total}. Tomados (los más citados, hasta ${TOPE_DEL_MAPEO}): ` +
+      `${recorridos}. Con DOI: ${conDoi}. Encontrados en OpenAlex: ${documentos}.`,
     'Los datos de cada documento (autores, afiliaciones, países, palabras clave, resumen y referencias) ' +
       'son de OpenAlex: en los Métodos se dice «búsqueda en Scopus; metadatos de OpenAlex».',
     'Las palabras clave son las de OpenAlex, ya sin los campos generales (Psychology, Medicine…); para ' +
@@ -242,8 +275,18 @@ async function prepararMapeo({ ecuacion, accessToken, subir }) {
   const texto = String(ecuacion ?? '').trim();
   if (!texto) throw new ValidationError('Falta la búsqueda que quieres mapear.');
 
-  const { dois, total, recorridos } = await doisDeLaBusqueda({ ecuacion: texto, accessToken });
-  if (total === 0) throw new ValidationError('Esa búsqueda no tiene resultados en Scopus.');
+  // Lo que se mapea no es su búsqueda tal cual, sino su búsqueda acotada a
+  // artículos y revisiones. Es la ecuación que se le cuenta a Claude en el
+  // origen, porque es la que hay que declarar en la Metodología.
+  const soloArticulos = ecuacionDeArticulos(texto);
+
+  const { dois, total, recorridos } = await doisDeLaBusqueda({ ecuacion: soloArticulos, accessToken });
+  if (total === 0) {
+    throw new ValidationError(
+      'Esa búsqueda no tiene artículos ni revisiones en Scopus. El mapeo solo toma esos dos tipos ' +
+        'de documento; si tus resultados son ponencias o capítulos, se quedan fuera.',
+    );
+  }
   if (dois.length === 0) {
     throw new ValidationError('Ninguno de los resultados trae DOI, y sin DOI no se pueden completar sus datos.');
   }
@@ -259,7 +302,7 @@ async function prepararMapeo({ ecuacion, accessToken, subir }) {
 
   const etiquetas = await etiquetasDeReferencias(obras);
   const cifras = { total, recorridos, conDoi: dois.length, documentos: obras.length };
-  const subido = await subir(Buffer.from(csvDeOpenAlex(obras, etiquetas), 'utf8'), origenDelMapeo(texto, cifras));
+  const subido = await subir(Buffer.from(csvDeOpenAlex(obras, etiquetas), 'utf8'), origenDelMapeo(soloArticulos, cifras));
 
   return {
     total,
@@ -275,11 +318,13 @@ async function prepararMapeo({ ecuacion, accessToken, subir }) {
 
 module.exports = {
   prepararMapeo,
+  ecuacionDeArticulos,
   csvDeOpenAlex,
   filaDe,
   doisDeLaBusqueda,
   etiquetasDeReferencias,
   origenDelMapeo,
+  CLAUSULA_DE_ARTICULOS,
   TOPE_DEL_MAPEO,
   COLUMNAS,
 };

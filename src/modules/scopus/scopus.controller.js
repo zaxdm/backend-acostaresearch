@@ -159,9 +159,13 @@ const scopusController = {
     if (r.total > r.tope) partes.push(`los ${r.tope} más citados de ${r.total}`);
     const fuera = r.recorridos - r.documentos;
     if (fuera > 0) partes.push(`${fuera} quedaron fuera por no tener DOI o no estar en el catálogo abierto`);
+    // El total no es el de la lista que tiene delante: el mapeo solo toma
+    // artículos y revisiones. Decirlo aquí evita la pregunta de por qué en
+    // pantalla ponía otra cifra.
+    const criterio = `Solo entran artículos y revisiones: ${r.total} de tu búsqueda.`;
     return ok(res, r, {
       message: r.leido
-        ? `${partes.join('; ')}.`
+        ? `${partes.join('; ')}. ${criterio}`
         : 'Los datos llegaron a tu sesión de R, pero no se pudieron leer como exporte bibliográfico.',
     });
   }),

@@ -890,7 +890,10 @@ async function destinosDelMapeo(userId) {
   const destinos = [];
   const vistos = new Set();
   for (const licencia of await licenseService.listForUser(userId)) {
-    if (!vigente(licencia) || vistos.has(licencia.productCode)) continue;
+    // `herramientas` deja fuera a los productos que no las traen —el
+    // Humanizador académico suelto—, aunque algún día alguien les cuelgue el
+    // capítulo de mapeo. Ver `productos/producto.perfil`.
+    if (!vigente(licencia) || !licencia.herramientas || vistos.has(licencia.productCode)) continue;
     vistos.add(licencia.productCode);
     if (await projectService.capituloDeMapeo(licencia.productCode)) {
       destinos.push({ productCode: licencia.productCode, nombre: licencia.productName });

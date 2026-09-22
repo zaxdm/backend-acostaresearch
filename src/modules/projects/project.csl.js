@@ -412,7 +412,9 @@ function gruposDeMarcas(texto) {
   for (const marca of texto.matchAll(MARCA)) {
     const inicio = marca.index;
     const fin = inicio + marca[0].length;
-    const item = { clave: marca[1], ...modificadoresDe(marca[2]) };
+    // En mayúsculas, que es como se guarda la ficha: la marca se reconoce
+    // escrita como sea, pero la clave con la que se busca es una sola.
+    const item = { clave: marca[1].toUpperCase(), ...modificadoresDe(marca[2]) };
 
     if (actual && /^[\s;,]*$/.test(texto.slice(actual.fin, inicio))) {
       actual.items.push(item);

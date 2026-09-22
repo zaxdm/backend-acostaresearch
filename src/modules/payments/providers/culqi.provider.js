@@ -159,7 +159,10 @@ const culqiProvider = {
 
     const body = await leerRespuesta(response);
 
-    if (response.status === 200 && body?.action_code === 'REVIEW') {
+    // Por el contenido y no por el código HTTP: la API y la guía de 3DS de
+    // Culqi dicen 200 para esto, pero la página de uso de la librería dice
+    // 201. Un cargo de verdad trae `object: charge`; esto no.
+    if (body?.action_code === 'REVIEW' && body?.object !== 'charge') {
       return { requiresAuthentication: true, raw: body };
     }
 

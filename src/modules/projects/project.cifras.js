@@ -52,6 +52,30 @@ const CIFRA =
 const ANIO = /^(19|20)\d{2}$/;
 
 /**
+ * Los umbrales de significación, que son convención y no resultado.
+ *
+ * «p ≥ .05 indica que los datos no se apartan de la normal» no reporta nada:
+ * enuncia la regla con la que se lee la prueba. Marcarlo obliga al tesista a
+ * «anotar» un número que ninguna prueba devolvió, y es la clase de aviso falso
+ * que hace que se ignoren también los verdaderos.
+ *
+ * Solo cuenta como umbral si va detrás de una DESIGUALDAD —«p < .05»,
+ * «p ≥ .05»—, que es como se escribe la convención. Con el igual —«p = .05»—
+ * se está reportando un valor concreto, y ese sí tiene que salir del análisis.
+ */
+const UMBRALES = [0.05, 0.01, 0.001, 0.1];
+
+// «p <», «α ≤», «alfa >»: la etiqueta y el signo que preceden a un umbral. El
+// «=» opcional del final es para quien escribe «p >= .05» en vez de «p ≥ .05»;
+// sin él, la mitad de los capítulos seguía viendo el aviso falso. Exige un
+// signo de desigualdad antes, así que «p = .05» no entra por aquí.
+const ANTES_DE_UMBRAL = /(?:^|[\s(\[])(?:p|α|alfa)\s*[<>≤≥]=?\s*$/i;
+
+/** El nivel de un intervalo de confianza: «IC 95%», «CI 99%». Tampoco es un resultado. */
+const NIVELES_DE_CONFIANZA = [90, 95, 99];
+const ANTES_DE_NIVEL = /(?:IC|CI|intervalo de confianza|nivel de confianza)\s*(?:del?\s*)?$/i;
+
+/**
  * Un número suelto dentro de un texto, con su signo.
  *
  * Con el decimal sin cero delante —«alfa = .886», que sin espacios se leía
@@ -103,11 +127,20 @@ function cifrasDe(texto) {
     // como si fuera la fecha de una cita. Y «r = .2013», igual.
     if (!esPorcentaje && sinDecimales && ANIO.test(bruto)) continue;
 
+    // Dónde empieza el número de verdad: la coincidencia puede llevar delante
+    // el separador que lo ancla —un espacio, un paréntesis, un «=»—, y para
+    // mirar qué lo precede hay que descontarlo.
+    const inicio = coincidencia.index + (coincidencia[0].length - coincidencia[1].length);
+    const precede = texto.slice(Math.max(0, inicio - 40), inicio);
+
     const desde = Math.max(0, coincidencia.index - 60);
     encontradas.push({
       bruto: bruto.trim(),
       valor,
       esPorcentaje,
+      esUmbral:
+        (!esPorcentaje && UMBRALES.includes(Math.abs(valor)) && ANTES_DE_UMBRAL.test(precede)) ||
+        (esPorcentaje && NIVELES_DE_CONFIANZA.includes(Math.abs(valor)) && ANTES_DE_NIVEL.test(precede)),
       contexto: texto.slice(desde, coincidencia.index + bruto.length + 40).replace(/\s+/g, ' ').trim(),
     });
   }
@@ -156,6 +189,48 @@ function coincide(valor, guardados) {
 }
 
 /**
+ * TODOS los números de la consola de R, enteros incluidos.
+ *
+ * `cifrasDe` descarta los enteros sueltos porque en un texto académico casi
+ * nunca son resultados. En la consola sí lo son: `descriptivos()` imprime el
+ * máximo como «5», y el capítulo lo escribe «5.00». Descartarlo aquí dejaba esa
+ * columna sin respaldo.
+ */
+function numerosDe(salida) {
+  if (!salida) return [];
+  const encontrados = String(salida).match(NUMERO) ?? [];
+  const valores = [];
+  for (const bruto of encontrados) {
+    const n = Number.parseFloat(bruto.replace(',', '.'));
+    if (Number.isFinite(n)) valores.push(n);
+  }
+  return valores;
+}
+
+/** Cuántos decimales se escribieron: «5.00» son dos, «.511» son tres. */
+function decimalesDe(bruto) {
+  const sinSigno = String(bruto).replace('%', '').trim();
+  const punto = sinSigno.search(/[.,]/);
+  return punto === -1 ? 0 : sinSigno.length - punto - 1;
+}
+
+/**
+ * ¿Sale esta cifra de la consola, escrita con los decimales del capítulo?
+ *
+ * La comparación es por REDONDEO a lo que se escribió, no por la banda del 1 %
+ * que se usa con las cifras guardadas. La consola trae decenas de números, y
+ * una banda relativa acabaría dando por bueno casi cualquier cosa: con el
+ * redondeo, «r = .51» lo respalda el 0.5112 de la consola y «p = .041» no lo
+ * respalda nada, que es justo la distinción que hay que conservar.
+ */
+function saleDeLaConsola(valor, bruto, numeros) {
+  if (numeros.length === 0) return false;
+  const decimales = Math.min(decimalesDe(bruto), 10);
+  const escrito = valor.toFixed(decimales);
+  return numeros.some((n) => n.toFixed(decimales) === escrito);
+}
+
+/**
  * Las cifras del texto que no salen de ningún resultado guardado.
  *
  * `resultados` son los valores que el tesista pegó de su análisis. Si no hay
@@ -163,15 +238,24 @@ function coincide(valor, guardados) {
  * qué comparar, marcarlo todo sería el mismo error que comparar a un comprador
  * nuevo con un histórico que no tiene.
  */
-function sinRespaldo(texto, resultados = []) {
+function sinRespaldo(texto, resultados = [], salida = '') {
   const guardados = valoresGuardados(resultados);
   if (guardados.length === 0) return [];
+
+  // La consola de R es la prueba de origen: un número que R imprimió no se lo
+  // inventó nadie, esté o no en la lista curada de `guardar_analisis`. Antes
+  // solo contaba esa lista, y salían marcados los mínimos y los máximos de la
+  // tabla de descriptivos y los grados de libertad de las t, que estaban en la
+  // consola desde el principio.
+  const consola = numerosDe(salida);
 
   const vistas = new Set();
   const sueltas = [];
 
   for (const cifra of cifrasDe(texto)) {
+    if (cifra.esUmbral) continue;
     if (coincide(cifra.valor, guardados)) continue;
+    if (saleDeLaConsola(cifra.valor, cifra.bruto, consola)) continue;
     if (vistas.has(cifra.bruto)) continue;
     vistas.add(cifra.bruto);
     sueltas.push(cifra);
@@ -180,4 +264,13 @@ function sinRespaldo(texto, resultados = []) {
   return sueltas;
 }
 
-module.exports = { cifrasDe, sinRespaldo, coincide, normalizarNumero, valoresGuardados, CIFRA };
+module.exports = {
+  cifrasDe,
+  sinRespaldo,
+  coincide,
+  normalizarNumero,
+  valoresGuardados,
+  numerosDe,
+  saleDeLaConsola,
+  CIFRA,
+};

@@ -293,7 +293,32 @@ const manualService = {
 
     await paymentRepository.markReviewed(paymentId, adminId);
 
-    const esLicencia = payment.plan.kind === 'LICENSE';
+    /**
+     * Qué se entregó, para que el administrador lo vea en el panel.
+     *
+     * Tres formas porque hay tres productos, y cada uno se comprueba mirando
+     * una cosa distinta: la licencia por su producto, la bolsa por sus
+     * palabras y la membresía por sus documentos al mes.
+     */
+    const entregado = () => {
+      if (payment.plan.kind === 'LICENSE') {
+        return {
+          tipo: 'LICENSE',
+          licenseId: entrega.license.id,
+          productCode: entrega.license.productCode,
+        };
+      }
+      if (payment.plan.kind === 'DOCUMENTO') {
+        return {
+          tipo: 'DOCUMENTO',
+          docPackId: entrega.membresia.id,
+          docsPorMes: entrega.membresia.docsPorMes,
+          expiresAt: entrega.membresia.expiresAt,
+          renovada: Boolean(entrega.renovada),
+        };
+      }
+      return { tipo: 'WORDS', packId: entrega.pack.id, words: entrega.pack.wordsTotal };
+    };
 
     logger.info(
       { paymentId, adminId, plan: payment.plan.code, userId: payment.userId },
@@ -311,13 +336,7 @@ const manualService = {
       alreadyProcessed: false,
       payment: { id: paymentId, status: 'PAID' },
       // Solo lo que el administrador necesita ver.
-      entregado: esLicencia
-        ? {
-            tipo: 'LICENSE',
-            licenseId: entrega.license.id,
-            productCode: entrega.license.productCode,
-          }
-        : { tipo: 'WORDS', packId: entrega.pack.id, words: entrega.pack.wordsTotal },
+      entregado: entregado(),
     };
   },
 

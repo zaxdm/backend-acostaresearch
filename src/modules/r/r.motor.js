@@ -55,6 +55,18 @@ const SESION_SEGURA = /^[A-Za-z0-9][A-Za-z0-9_-]{0,80}$/;
 const ARCHIVO_SEGURO = /^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$/;
 const GRAFICO = /^grafico-\d{2,}\.png$/;
 
+/**
+ * Un PNG cualquiera de `graficos/`, no solo los automáticos.
+ *
+ * `GRAFICO` nombra los que dibuja el motor por su cuenta —«grafico-01.png»— y
+ * es el que decide cuáles se devuelven en la respuesta. Pero un script escribe
+ * `png("graficos/figura1_histogramas.png")`, que es lo natural, y ese archivo
+ * no se podía ni leer ni bajar: había que volver a dibujarlo en la raíz de la
+ * sesión para que el Word lo encontrara. Se vio en el guion de una tesis de
+ * verdad, con cada figura dibujada dos veces por eso mismo.
+ */
+const GRAFICO_LEGIBLE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,80}\.png$/i;
+
 /** Lo que usa el motor y no es del tesista: no se ofrece para bajar. */
 const INTERNOS = new Set([
   'orden.R',
@@ -675,12 +687,28 @@ function crearMotor({
       return { hayDatos, origen, ...estado, archivos: await listarArchivos(carpeta) };
     },
 
+    /**
+     * Los nombres de los PNG que hay en `graficos/`, para poder archivarlos.
+     *
+     * `estado()` lista la raíz de la sesión; esto es la otra mitad, porque un
+     * script escribe sus figuras donde le parece y las dos carpetas son
+     * legítimas.
+     */
+    async listarGraficos(sesion) {
+      try {
+        const nombres = await fs.readdir(path.join(carpetaDe(sesion), 'graficos'));
+        return nombres.filter((n) => GRAFICO_LEGIBLE.test(n)).sort();
+      } catch {
+        return [];
+      }
+    },
+
     /** Un archivo de la sesión para bajarlo, o null. Solo de la raíz o de graficos/. */
     async leerArchivo(sesion, nombre) {
       const partes = String(nombre).split('/');
       const valido =
         (partes.length === 1 && ARCHIVO_SEGURO.test(partes[0]) && !INTERNOS.has(partes[0])) ||
-        (partes.length === 2 && partes[0] === 'graficos' && GRAFICO.test(partes[1]));
+        (partes.length === 2 && partes[0] === 'graficos' && GRAFICO_LEGIBLE.test(partes[1]));
       if (!valido) return null;
 
       const carpeta = carpetaDe(sesion);

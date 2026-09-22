@@ -10,6 +10,9 @@ const planSelect = {
   kind: true,
   productCode: true,
   words: true,
+  // Solo en los planes DOCUMENTO: la tarjeta de venta anuncia «10 documentos
+  // al mes», y ese número sale de aquí y no de un texto escrito a mano.
+  docsPorMes: true,
   priceCents: true,
   currency: true,
   priceUsdCents: true,

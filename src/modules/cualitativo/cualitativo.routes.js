@@ -16,6 +16,7 @@ const { ok } = require('../../shared/http/apiResponse');
 const { ForbiddenError, NotFoundError, ValidationError } = require('../../shared/errors/AppError');
 const { mensajeEnlaceNoVale } = require('../../shared/utils/enlaceNoVale');
 const licenseService = require('../licensing/license.service');
+const { traeHerramientas } = require('../productos/producto.perfil');
 const enlaces = require('./cualitativo.enlaces');
 const cualitativoService = require('./cualitativo.service');
 const { EntrevistaNoValida, MAXIMO_BYTES } = require('./cualitativo.lectura');
@@ -42,8 +43,13 @@ function recibirArchivo(req, res, next) {
   });
 }
 
+/**
+ * Licencia vigente de ese método, y que el método traiga las herramientas: el
+ * Humanizador académico suelto no las trae. Ver `productos/producto.perfil`.
+ */
 async function tieneLicenciaVigente(userId, productCode) {
   const ahora = new Date();
+  if (!traeHerramientas(productCode)) return false;
   const licencias = await licenseService.listForUser(userId);
   return licencias.some(
     (l) =>

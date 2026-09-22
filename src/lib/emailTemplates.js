@@ -900,14 +900,23 @@ function documentosReady({ firstName, planName, docsPorMes, expiresAt, via, reno
  * este correo es lo que mucha gente lee antes de abrir el archivo. Repetirlo no
  * sobra: lo que sale de aquí lo va a firmar él.
  */
-function documentoPreparado({ firstName, servicio, nombre, idioma, intactos }) {
+function documentoPreparado({ firstName, servicio, nombre, idioma, intactos, avisos }) {
   const enlace = `${appUrl()}/preparar-documento`;
   const que = idioma ? `${servicio} al ${idioma}` : servicio;
+
+  // El motivo de verdad, no una frase fija. Antes decía siempre «llevaban una
+  // nota al pie, una ecuación o una imagen», hasta en documentos que no tienen
+  // ninguna, y el cliente no podía arreglar lo que no sabía que había pasado.
+  const porQue = (avisos ?? [])
+    .map(({ cuantos, donde, motivo }) =>
+      `${cuantos} en ${donde}, porque ${motivo}`)
+    .join('; ');
+
   const sinTocar =
     intactos > 0
-      ? `Quedaron ${intactos} párrafo${intactos === 1 ? '' : 's'} como estaban porque llevaban ` +
-        'dentro una nota al pie, una ecuación o una imagen, y rehacerlos habría roto esa pieza. ' +
-        'Tus citas de Zotero no estorban: esas viajan enteras.'
+      ? `Quedaron ${intactos} párrafo${intactos === 1 ? '' : 's'} como estaban` +
+        `${porQue ? `: ${porQue}` : ''}. Los verás en la web, con un trozo de cada uno para ` +
+        'que los encuentres en tu Word.'
       : '';
 
   return {

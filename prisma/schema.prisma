@@ -2303,8 +2303,10 @@ model Preparacion {
   /// Nombre del archivo tal y como lo subió el cliente, para devolvérselo con
   /// un nombre que reconozca.
   nombre   String @db.VarChar(255)
-  /// Palabras del cuerpo, sin bibliografía ni tablas. No decide el precio
-  /// —la membresía es de tamaño libre— pero sí se le enseña y sirve para saber
+  /// Palabras sobre las que se trabaja, sin la bibliografía ni el índice. En
+  /// traducción entran además las tablas, los rótulos, las notas al pie y el
+  /// encabezado, que es todo lo que se traduce. No decide el precio —la
+  /// membresía es de tamaño libre— pero sí se le enseña y sirve para saber
   /// cuánto cuesta de verdad cada entrega.
   palabras Int
   bytes    Int
@@ -2313,10 +2315,15 @@ model Preparacion {
   /// Por qué falló, escrito para que lo lea el cliente.
   error  String?           @db.VarChar(500)
 
-  /// Cuántos párrafos se tocaron y cuántos quedaron intactos porque llevaban
-  /// algo que no se puede rehacer (un campo de Zotero, una ecuación).
+  /// Cuántos párrafos se tocaron y cuántos quedaron intactos.
   tocados  Int @default(0)
   intactos Int @default(0)
+
+  /// POR QUÉ quedaron intactos, agrupado por motivo y por parte del documento,
+  /// como JSON: `[{ donde, motivo, cuantos, ejemplo }]`. Antes solo se guardaba
+  /// el número y la web rellenaba el motivo a mano, con lo que decía «llevaban
+  /// una nota al pie» hasta en documentos que no tienen ninguna.
+  avisos String? @db.Text
 
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt

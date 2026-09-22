@@ -10,27 +10,45 @@
  * distintas, el servicio diría «12.400 palabras» y trabajaría sobre otras, y
  * nadie sabría cuál de las dos está mal. Es la misma lista.
  *
- * QUÉ QUEDA FUERA, Y POR QUÉ
- * --------------------------
+ * QUÉ QUEDA FUERA SIEMPRE, Y POR QUÉ
+ * ----------------------------------
  * · La bibliografía. Una referencia no se edita ni se traduce: «Hernández, R.
  *   (2014). Metodología de la investigación» se queda como está en los cuatro
  *   idiomas, y traducir el título de un libro publicado en español haría
  *   imposible encontrarlo. `documento.leer` ya marca lo que cuelga del título
  *   «Referencias».
- * · Las tablas. Lo que hay dentro de una celda son datos, no prosa: cifras,
- *   siglas, rótulos de variable. Reescribirlos es estropearlos.
- * · Los rótulos de tabla y figura, y sus notas. «Tabla 3», «Nota. Elaboración
- *   propia» son andamiaje numerado; si el modelo los toca, la numeración del
- *   documento deja de cuadrar con el texto que la cita.
- * · El índice. `documento.leer` ya lo descarta.
+ * · El índice. `documento.leer` ya lo descarta: es un campo que Word rehace
+ *   solo a partir de los títulos, y basta con actualizarlo.
  * · Lo que no tiene palabras: una línea de guiones, un número suelto.
  *
- * Esto NO significa que esas partes se pierdan. Al revés: son justo las que
- * salen intactas, porque el documento se devuelve entero y solo se tocan los
+ * QUÉ QUEDA FUERA SOLO AL CORREGIR Y AL RESUMIR (`todo: false`)
+ * -------------------------------------------------------------
+ * · Las tablas. Corrigiendo el inglés, lo que hay dentro de una celda son
+ *   datos, no prosa: cifras, siglas, rótulos de variable, y reescribirlos es
+ *   estropearlos.
+ * · Los rótulos de tabla y figura, y sus notas. «Tabla 3», «Nota. Elaboración
+ *   propia» son andamiaje numerado.
+ *
+ * TRADUCIENDO ENTRA TODO (`todo: true`)
+ * -------------------------------------
+ * Porque un documento traducido a medias no le sirve a nadie, y las dos
+ * excepciones de arriba dejaban en español justo lo que en una tesis peruana
+ * está lleno de prosa: la matriz de consistencia, la de operacionalización y
+ * los anexos, que son tablas de cabo a rabo. Y con ellas entran también las
+ * notas al pie, las notas al final, el encabezado y el pie de página, que viven
+ * en otros archivos del zip. Ver `preparar.partes`.
+ *
+ * Que una celda lleve una cifra y nada más no es un problema: el modelo tiene
+ * prohibido tocar las cifras, `preparar.motor` lo comprueba, y un párrafo que
+ * vuelve igual no se escribe.
+ *
+ * Esto NO significa que lo que queda fuera se pierda. Al revés: es justo lo que
+ * sale intacto, porque el documento se devuelve entero y solo se tocan los
  * párrafos que están en esta lista.
  */
 
 const documento = require('../projects/project.documento');
+const partes = require('./preparar.partes');
 
 /** Rótulos y notas de tabla o figura. Mismo criterio que `documento.service`. */
 const ROTULO = /^((tabla|figura|gr[aá]fico|cuadro|ilustraci[oó]n)\s+\d+|nota\.\s)/i;
@@ -59,22 +77,33 @@ function palabrasDe(texto) {
 /**
  * Los párrafos sobre los que se trabaja, con su cuenta de palabras.
  *
- * `id` es el mismo que usa `project.documento`: el orden del párrafo en el
- * documento entero, contando los vacíos. Es lo que después permite escribir el
- * texto nuevo en su sitio con `project.reescritura`.
+ * `id` es el mismo que usa `project.documento`: el orden del párrafo dentro de
+ * su archivo, contando los vacíos. `parte` dice en cuál de los archivos del zip
+ * está, y `clave` es el nombre único que lo identifica ante el modelo y que
+ * permite después escribir el texto nuevo en su sitio. Ver `preparar.partes`.
+ *
+ * Con `todo` entran las tablas, los rótulos y las demás partes del .docx. Es lo
+ * que pide la traducción; la edición y el resumen se quedan con el cuerpo.
  */
-function cuerpoDe(buffer) {
+function cuerpoDe(buffer, { todo = false } = {}) {
   const parrafos = documento
     .leer(buffer)
-    .filter((parrafo) => !parrafo.enTabla && !parrafo.referencias)
-    .filter((parrafo) => !ROTULO.test(parrafo.texto.trim()))
+    .filter((parrafo) => !parrafo.referencias)
+    .filter((parrafo) => todo || (!parrafo.enTabla && !ROTULO.test(parrafo.texto.trim())))
     .map((parrafo) => ({
+      clave: String(parrafo.id),
+      parte: partes.PRINCIPAL,
       id: parrafo.id,
       texto: parrafo.texto,
       nivel: parrafo.nivel,
       palabras: palabrasDe(parrafo.texto),
     }))
     .filter((parrafo) => parrafo.palabras > 0);
+
+  if (todo) {
+    const { zip } = documento.abrir(buffer);
+    parrafos.push(...partes.parrafosDeOtrasPartes(zip, palabrasDe));
+  }
 
   return {
     parrafos,

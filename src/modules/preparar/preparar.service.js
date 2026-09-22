@@ -54,6 +54,7 @@ const repository = require('./preparar.repository');
 const membresia = require('./preparar.membresia');
 const almacen = require('./preparar.storage');
 const cuerpo = require('./preparar.cuerpo');
+const partes = require('./preparar.partes');
 const motor = require('./preparar.motor');
 const cambios = require('./preparar.cambios');
 const traduccion = require('./preparar.traduccion');
@@ -81,8 +82,8 @@ const SIN_TOCAR = Object.freeze({
     'dentro de tablas o cuadros de texto, que este servicio no toca.',
   TRADUCCION:
     'No hemos podido traducir ni un párrafo, así que no te hemos descontado ningún documento de ' +
-    'tu membresía. Suele pasar cuando el documento ya está en ese idioma, o cuando el texto está ' +
-    'dentro de tablas o cuadros de texto, que este servicio no toca.',
+    'tu membresía. Suele pasar cuando el documento ya está en ese idioma, o cuando lleva control ' +
+    'de cambios sin aceptar: acéptalo o recházalo en tu Word y vuelve a subirlo.',
 });
 
 /**
@@ -138,15 +139,26 @@ function idiomaDe(servicio, idioma) {
 }
 
 /**
+ * Hasta dónde llega cada servicio dentro del .docx.
+ *
+ * Traduciendo entra todo lo que sea prosa —las tablas, los rótulos, las notas
+ * al pie, el encabezado y el pie de página— porque un documento traducido a
+ * medias no sirve. Corrigiendo y resumiendo se trabaja solo sobre el cuerpo:
+ * ahí las celdas de una tabla son datos, no inglés que corregir. Ver
+ * `preparar.cuerpo`.
+ */
+const alcanceDe = (servicio) => ({ todo: servicio === 'TRADUCCION' });
+
+/**
  * Lee el .docx y saca su cuerpo, traduciendo los fallos a frases del cliente.
  *
  * `documento.abrir` ya escribe mensajes que se le pueden enseñar tal cual —«eso
  * es un .doc antiguo, guárdalo como .docx»—, así que se dejan pasar como están.
  */
-function cuerpoDelArchivo(buffer) {
+function cuerpoDelArchivo(buffer, servicio) {
   let leido;
   try {
-    leido = cuerpo.cuerpoDe(buffer);
+    leido = cuerpo.cuerpoDe(buffer, alcanceDe(servicio));
   } catch (error) {
     if (error instanceof documento.DocumentoNoValido) throw new ValidationError(error.message);
     throw error;
@@ -154,8 +166,10 @@ function cuerpoDelArchivo(buffer) {
 
   if (leido.parrafos.length === 0) {
     throw new ValidationError(
-      'No encontramos texto que preparar en ese documento. Si tu trabajo está dentro de ' +
-        'tablas o cuadros de texto, este servicio no los toca: sube la versión en párrafos.',
+      servicio === 'TRADUCCION'
+        ? 'No encontramos texto que traducir en ese documento. ¿Es el archivo correcto?'
+        : 'No encontramos texto que preparar en ese documento. Si tu trabajo está dentro de ' +
+          'tablas o cuadros de texto, este servicio no los toca: sube la versión en párrafos.',
     );
   }
 
@@ -171,6 +185,55 @@ function cuerpoDelArchivo(buffer) {
 }
 
 // ── Hacer el trabajo ───────────────────────────────────────────────────────
+
+/** Cuántos avisos distintos se guardan, y cuánto del párrafo se enseña para reconocerlo. */
+const MAXIMO_AVISOS = 12;
+const LARGO_EJEMPLO = 90;
+
+/**
+ * Qué quedó sin hacer y por qué, escrito para el cliente.
+ *
+ * POR QUÉ NO BASTA CON CONTARLOS
+ * ------------------------------
+ * Porque hasta ahora solo se guardaba el número, y la web rellenaba el motivo a
+ * mano: «llevaban una nota al pie, una ecuación o una imagen». Eso salía igual
+ * pasara lo que pasara, y en documentos SIN una sola nota al pie. El cliente no
+ * puede arreglar lo que no sabe que pasó, y un motivo inventado es peor que
+ * ninguno.
+ *
+ * Se agrupan por motivo y por parte del documento, no uno por párrafo: «treinta
+ * y dos párrafos del cuerpo, porque el modelo no los devolvió» se entiende;
+ * treinta y dos líneas con un número de párrafo cada una, no. De cada grupo se
+ * guarda un trozo del primero para que pueda encontrarlo en su Word.
+ */
+function motivosDe({ parrafos, malos = [], intactos = new Map() }) {
+  const porClave = new Map(parrafos.map((parrafo) => [String(parrafo.clave ?? parrafo.id), parrafo]));
+
+  const todos = [
+    ...malos.map(({ id, motivo }) => ({ clave: String(id), motivo })),
+    ...[...intactos].map(([clave, motivo]) => ({ clave: String(clave), motivo })),
+  ];
+
+  const grupos = new Map();
+  for (const { clave, motivo } of todos) {
+    const parrafo = porClave.get(clave);
+    const donde = partes.donde(parrafo?.parte ?? partes.PRINCIPAL);
+    const llave = `${donde}|${motivo}`;
+
+    if (!grupos.has(llave)) {
+      const texto = (parrafo?.texto ?? '').trim();
+      grupos.set(llave, {
+        donde,
+        motivo,
+        cuantos: 0,
+        ejemplo: texto.length > LARGO_EJEMPLO ? `${texto.slice(0, LARGO_EJEMPLO)}…` : texto,
+      });
+    }
+    grupos.get(llave).cuantos += 1;
+  }
+
+  return [...grupos.values()].sort((a, b) => b.cuantos - a.cuantos).slice(0, MAXIMO_AVISOS);
+}
 
 /** El .docx terminado, según el servicio. */
 async function producir({ preparacion, buffer, parrafos }) {
@@ -198,14 +261,21 @@ async function producir({ preparacion, buffer, parrafos }) {
   const hecho =
     preparacion.servicio === 'EDICION'
       ? cambios.aplicar(buffer, propuestos)
-      : traduccion.traducir(buffer, propuestos);
+      : traduccion.traducir(buffer, propuestos, parrafos);
 
   // Cero párrafos tocados es devolverle su propio archivo. Sale por el camino
   // del fallo a propósito: así no le gasta un documento del mes y se le explica
   // qué pasó, en vez de dejarle descargar lo mismo que subió.
   if (hecho.tocados === 0) throw new Error(SIN_TOCAR[preparacion.servicio]);
 
-  return { buffer: hecho.buffer, tocados: hecho.tocados, intactos: hecho.intactos.size + malos.length };
+  const avisos = motivosDe({ parrafos, malos, intactos: hecho.intactos });
+
+  return {
+    buffer: hecho.buffer,
+    tocados: hecho.tocados,
+    intactos: hecho.intactos.size + malos.length,
+    avisos,
+  };
 }
 
 /**
@@ -227,6 +297,7 @@ function avisar(preparacion, usuario) {
           nombre: preparacion.nombre,
           idioma: preparacion.idioma ? IDIOMAS[preparacion.idioma].nombre : null,
           intactos: preparacion.intactos,
+          avisos: paraLaWeb(preparacion).avisos,
         })
       : plantillas.documentoFallido({
           firstName: usuario.firstName,
@@ -263,7 +334,7 @@ function trabajar(preparacionId) {
       preparacion = await repository.marcar(preparacionId, { estado: 'EN_CURSO' });
 
       const buffer = await almacen.leerEntrada(preparacionId);
-      const { parrafos } = cuerpo.cuerpoDe(buffer);
+      const { parrafos } = cuerpo.cuerpoDe(buffer, alcanceDe(preparacion.servicio));
 
       const hecho = await producir({ preparacion, buffer, parrafos });
       await almacen.guardarSalida(preparacionId, hecho.buffer);
@@ -273,6 +344,7 @@ function trabajar(preparacionId) {
         entregadoAt: new Date(),
         tocados: hecho.tocados,
         intactos: hecho.intactos,
+        avisos: hecho.avisos ? JSON.stringify(hecho.avisos) : null,
         error: null,
       });
 
@@ -360,7 +432,7 @@ async function recibirEncargo({ userId, servicio, idioma, buffer, nombre }, ahor
   }
 
   const destino = idiomaDe(servicio, idioma);
-  const leido = cuerpoDelArchivo(buffer);
+  const leido = cuerpoDelArchivo(buffer, servicio);
 
   const preparacion = await repository.crear({
     userId,
@@ -385,12 +457,36 @@ async function recibirEncargo({ userId, servicio, idioma, buffer, nombre }, ahor
   trabajar(preparacion.id);
 
   return {
-    preparacion,
+    preparacion: paraLaWeb(preparacion),
     cupo: { ...cupo, usados: cupo.usados + 1, restantes: Math.max(0, cupo.restantes - 1) },
   };
 }
 
 // ── Lo que usa la web ──────────────────────────────────────────────────────
+
+/**
+ * Un trabajo, como lo recibe la web.
+ *
+ * `avisos` se guarda como JSON en una sola columna y sale como lista: la web no
+ * tiene por qué saber cómo está guardado. Un JSON que no se pueda leer —de una
+ * fila vieja, o escrito por una versión anterior— sale como lista vacía y no
+ * rompe la pantalla; el número de intactos sigue estando.
+ */
+function paraLaWeb(fila) {
+  if (!fila) return fila;
+
+  let avisos = [];
+  if (fila.avisos) {
+    try {
+      const leido = JSON.parse(fila.avisos);
+      if (Array.isArray(leido)) avisos = leido;
+    } catch {
+      avisos = [];
+    }
+  }
+
+  return { ...fila, avisos };
+}
 
 const prepararService = {
   NOMBRES,
@@ -416,7 +512,7 @@ const prepararService = {
       motivo,
       idiomas: Object.values(IDIOMAS).map(({ codigo, nombre }) => ({ codigo, nombre })),
       maxPalabras: env.PREPARAR_MAX_PALABRAS,
-      trabajos: await repository.listarDe(userId),
+      trabajos: (await repository.listarDe(userId)).map(paraLaWeb),
     };
   },
 
@@ -512,6 +608,11 @@ const prepararService = {
   cupoDe,
   trabajar,
   rescatar,
+
+  // Para las pruebas: qué quedó sin hacer y por qué, y hasta dónde llega cada
+  // servicio dentro del .docx.
+  motivosDe,
+  alcanceDe,
 };
 
 module.exports = prepararService;

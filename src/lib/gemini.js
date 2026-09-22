@@ -29,12 +29,35 @@ if (!env.asistenteEnabled) {
  * por sus filtros, que no se arregla reintentando.
  */
 class GeminiError extends Error {
-  constructor(message, { status, bloqueado = false } = {}) {
+  constructor(message, { status, bloqueado = false, esperarMs = null } = {}) {
     super(message);
     this.name = 'GeminiError';
     this.status = status;
     this.bloqueado = bloqueado;
+    // Cuánto pide el proveedor que se espere, cuando lo dice él. Ver `esperaPedida`.
+    this.esperarMs = esperarMs;
   }
+}
+
+/**
+ * Cuánto dice Google que hay que esperar antes de volver a preguntar.
+ *
+ * Cuando corta por cuota manda un `RetryInfo` con `retryDelay: "36s"`, y lo
+ * repite en el texto («Please retry in 35.72315»). Hasta ahora se tiraba: se
+ * esperaban dos segundos y se volvía a preguntar, con lo que el corte se
+ * convertía en más peticiones contra el mismo tope.
+ *
+ * Devuelve null si no lo dice, que es lo normal en un 503 pasajero.
+ */
+function esperaPedida(cuerpo, mensaje) {
+  for (const detalle of cuerpo?.error?.details ?? []) {
+    const segundos = Number.parseFloat(String(detalle?.retryDelay ?? '').replace(/s$/, ''));
+    if (Number.isFinite(segundos) && segundos > 0) return Math.round(segundos * 1000);
+  }
+
+  const enElTexto = String(mensaje ?? '').match(/retry in ([\d.]+)/i);
+  const segundos = enElTexto ? Number.parseFloat(enElTexto[1]) : NaN;
+  return Number.isFinite(segundos) && segundos > 0 ? Math.round(segundos * 1000) : null;
 }
 
 /**
@@ -82,8 +105,10 @@ async function generar({
   const cuerpo = await respuesta.json().catch(() => null);
 
   if (!respuesta.ok) {
-    throw new GeminiError(cuerpo?.error?.message ?? `Gemini respondió ${respuesta.status}`, {
+    const mensaje = cuerpo?.error?.message ?? `Gemini respondió ${respuesta.status}`;
+    throw new GeminiError(mensaje, {
       status: respuesta.status,
+      esperarMs: esperaPedida(cuerpo, mensaje),
     });
   }
 
@@ -156,8 +181,10 @@ async function generarEnGroq({
 
   const cuerpo = await respuesta.json().catch(() => null);
   if (!respuesta.ok) {
-    throw new GeminiError(cuerpo?.error?.message ?? `Groq respondió ${respuesta.status}`, {
+    const mensaje = cuerpo?.error?.message ?? `Groq respondió ${respuesta.status}`;
+    throw new GeminiError(mensaje, {
       status: respuesta.status,
+      esperarMs: esperaPedida(cuerpo, mensaje),
     });
   }
 
@@ -232,7 +259,9 @@ const esPicoPasajero = (error) =>
   error instanceof GeminiError &&
   (error.status === 503 ||
     error.status === 429 ||
-    /high demand|overloaded|try again later/i.test(error.message));
+    /high demand|overloaded|try again later|exceeded your current quota|resource.?exhausted/i.test(
+      error.message,
+    ));
 
 /** Lo que se espera entre vuelta y vuelta cuando todos los modelos están en un pico. */
 const ESPERAS_TRAS_PICO = [2_000, 4_000];
@@ -330,7 +359,14 @@ function unaVuelta(modelos, opciones, { ventajaMs, alFallar }) {
   });
 }
 
-async function generarConRespaldo({ modelos, esperar = dormir, ahora = Date.now, ventajaMs = Infinity, ...opciones }) {
+async function generarConRespaldo({
+  modelos,
+  esperar = dormir,
+  ahora = Date.now,
+  ventajaMs = Infinity,
+  esperaMaximaMs = 0,
+  ...opciones
+}) {
   let ultimoError;
   modelos = enOrdenDeConfianza(modelos, ahora());
 
@@ -355,6 +391,15 @@ async function generarConRespaldo({ modelos, esperar = dormir, ahora = Date.now,
    * reintentar ninguno, y el 21-sep a las 10:13 el tesista vio «la IA no
    * contestó» porque el principal se colgó y el respaldo dio «high demand» una
    * sola vez.
+   *
+   * CUÁNTO SE ESPERA
+   * ----------------
+   * Dos y cuatro segundos, que es lo que dura un pico. Pero cuando Google corta
+   * por cuota dice él mismo cuánto hay que esperar —«retry in 35.7»— y esperar
+   * dos segundos es volver a chocar contra el mismo tope, gastando otra
+   * petición de las que ya no hay. Quien pueda permitirse la espera larga pasa
+   * `esperaMaximaMs` y se respeta hasta ese techo; quien no —el chat, donde hay
+   * alguien mirando la pantalla— no lo pasa y se queda con los dos segundos.
    */
   for (let vuelta = 0; ; vuelta += 1) {
     const { resultado, fallos } = await unaVuelta(modelos, opciones, { ventajaMs, alFallar });
@@ -364,8 +409,15 @@ async function generarConRespaldo({ modelos, esperar = dormir, ahora = Date.now,
     const enPico = fallos.filter((f) => esPicoPasajero(f.error)).map((f) => f.modelo);
 
     if (enPico.length === 0 || vuelta >= ESPERAS_TRAS_PICO.length) break;
-    logger.info({ vuelta: vuelta + 1, modelos: enPico }, 'Gemini: modelos en un pico, se espera y se reintenta');
-    await esperar(ESPERAS_TRAS_PICO[vuelta]);
+
+    const pedida = Math.max(0, ...fallos.map((f) => f.error?.esperarMs ?? 0));
+    const espera = Math.min(Math.max(ESPERAS_TRAS_PICO[vuelta], pedida), esperaMaximaMs || ESPERAS_TRAS_PICO[vuelta]);
+
+    logger.info(
+      { vuelta: vuelta + 1, modelos: enPico, esperaMs: espera },
+      'Gemini: modelos en un pico, se espera y se reintenta',
+    );
+    await esperar(espera);
     modelos = enPico;
   }
 
@@ -498,4 +550,4 @@ async function embeber(
 /** Vaciar lo recordado. Para las pruebas: cada una empieza sin memoria. */
 const olvidarVectores = () => memoria.clear();
 
-module.exports = { generar, generarEnGroq, generarConRespaldo, modelosDeTexto, olvidarReposos, embeber, olvidarVectores, GeminiError };
+module.exports = { generar, generarEnGroq, generarConRespaldo, modelosDeTexto, olvidarReposos, embeber, olvidarVectores, esperaPedida, esPicoPasajero, GeminiError };

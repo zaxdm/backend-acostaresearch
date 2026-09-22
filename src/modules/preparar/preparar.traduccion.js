@@ -13,83 +13,132 @@
  *
  * Así que aquí se hace lo mismo que allí —el párrafo se rehace conservando su
  * `<w:p>`, su `<w:pPr>` y el formato de cada corrida, con `rehacerParrafo`—
- * pero antes se ponen a salvo los campos y los hipervínculos con
- * `preparar.campos`, y después se devuelven a su sitio.
+ * pero con dos añadidos:
  *
- * Lo que no se puede rehacer sigue sin tocarse: una imagen o una ecuación
- * dentro del párrafo lo dejan como estaba, y se cuenta y se dice.
+ * · Antes se ponen a salvo los campos y los hipervínculos con
+ *   `preparar.campos`, y después se devuelven a su sitio.
+ * · Se pide `conservarObjetos`, así que una imagen, una ecuación, un objeto
+ *   incrustado o un control de contenido ya NO dejan el párrafo sin traducir:
+ *   se guardan enteros y vuelven a su sitio. Antes se saltaban, y el cliente
+ *   recibía en español justo el párrafo que explica su figura.
+ *
+ * LAS DEMÁS PARTES DEL ZIP
+ * ------------------------
+ * No solo `word/document.xml`: las notas al pie, las notas al final, el
+ * encabezado y el pie de página viven en otros archivos y también se traducen.
+ * Cada párrafo viene con su `parte`, y se escribe una vez cada archivo. Ver
+ * `preparar.partes`.
+ *
+ * Lo que aun así no se puede rehacer —control de cambios sin aceptar, una cita
+ * que el modelo tradujo en vez de copiar— sigue sin tocarse, y se cuenta y se
+ * dice CON SU MOTIVO: quien recibe el documento tiene derecho a saber qué
+ * quedó como estaba y por qué.
  */
 
 const documento = require('../projects/project.documento');
 const reescritura = require('../projects/project.reescritura');
 const campos = require('./preparar.campos');
+const partes = require('./preparar.partes');
+
+/** Lo que se le pide a `rehacerParrafo`: aquí las figuras no bloquean nada. */
+const COMO = Object.freeze({ conservarObjetos: true });
 
 /**
  * El Word con los párrafos traducidos.
  *
- * `cambios` es `{ id: { original, texto } }`, lo que devuelve `preparar.motor`.
+ * `cambios` es `{ clave: { original, texto } }`, lo que devuelve
+ * `preparar.motor`, y `parrafos` es la lista que se le pasó, que es de donde
+ * sale a qué archivo del zip pertenece cada clave.
+ *
  * Un párrafo cuyo texto ya no coincide con `original` no se escribe: el
  * documento que se lee aquí es el mismo que se leyó al mandarlo al modelo, así
  * que eso solo pasaría por un fallo nuestro, y ante la duda se deja el del
  * cliente.
  *
  * Devuelve `{ buffer, tocados, intactos }`, con `intactos` como un mapa de
- * identificador a motivo, en las palabras que se le pueden enseñar a él.
+ * clave a motivo, en las palabras que se le pueden enseñar a él.
  */
-function traducir(buffer, cambios) {
-  const { zip, xml } = documento.abrir(buffer);
-  const parrafos = new Map(documento.parrafosDe(xml).map((parrafo) => [parrafo.id, parrafo]));
+function traducir(buffer, cambios, parrafos = []) {
+  const { zip } = documento.abrir(buffer);
+  const donde = new Map(parrafos.map((parrafo) => [String(parrafo.clave ?? parrafo.id), parrafo]));
 
-  const ediciones = [];
   const intactos = new Map();
 
+  // Por archivo del zip, porque cada uno se lee y se escribe una sola vez.
+  const porParte = new Map();
   for (const [clave, propuesta] of Object.entries(cambios ?? {})) {
-    const id = Number(clave);
-    const parrafo = parrafos.get(id);
+    const sitio = donde.get(String(clave));
+    const parte = sitio?.parte ?? partes.PRINCIPAL;
+    const id = Number(sitio?.id ?? clave);
 
-    if (!parrafo) {
-      intactos.set(id, 'ya no está en el documento');
+    if (!porParte.has(parte)) porParte.set(parte, []);
+    porParte.get(parte).push({ clave, id, propuesta });
+  }
+
+  let tocados = 0;
+
+  for (const [parte, pedidos] of porParte) {
+    const entrada = zip.getEntry(parte);
+    if (!entrada) {
+      for (const { clave } of pedidos) intactos.set(clave, 'esa parte del documento ya no está');
       continue;
     }
-    if (documento.esqueleto(parrafo.texto) !== documento.esqueleto(propuesta.original)) {
-      intactos.set(id, 'cambió mientras se preparaba');
-      continue;
-    }
 
-    try {
-      const original = xml.slice(parrafo.inicio, parrafo.fin);
-      const protegido = campos.proteger(original);
-      const hecho = reescritura.rehacerParrafo(
-        protegido.xml,
-        campos.enmascarar(propuesta.texto, protegido.campos),
-      );
-      ediciones.push({
-        desde: parrafo.inicio,
-        hasta: parrafo.fin,
-        poner: campos.restaurar(hecho.xml, protegido.campos),
-      });
-    } catch (error) {
-      if (error instanceof campos.NoProtegible || error instanceof reescritura.NoReescribible) {
-        intactos.set(id, error.message);
+    const xml = entrada.getData().toString('utf8');
+    const delXml = new Map(documento.parrafosDe(xml).map((parrafo) => [parrafo.id, parrafo]));
+    const ediciones = [];
+
+    for (const { clave, id, propuesta } of pedidos) {
+      const parrafo = delXml.get(id);
+
+      if (!parrafo) {
+        intactos.set(clave, 'ya no está en el documento');
         continue;
       }
-      throw error;
+      if (documento.esqueleto(parrafo.texto) !== documento.esqueleto(propuesta.original)) {
+        intactos.set(clave, 'cambió mientras se preparaba');
+        continue;
+      }
+
+      try {
+        const original = xml.slice(parrafo.inicio, parrafo.fin);
+        const protegido = campos.proteger(original);
+        const hecho = reescritura.rehacerParrafo(
+          protegido.xml,
+          campos.enmascarar(propuesta.texto, protegido.campos),
+          COMO,
+        );
+        ediciones.push({
+          desde: parrafo.inicio,
+          hasta: parrafo.fin,
+          poner: campos.restaurar(hecho.xml, protegido.campos),
+        });
+      } catch (error) {
+        if (error instanceof campos.NoProtegible || error instanceof reescritura.NoReescribible) {
+          intactos.set(clave, error.message);
+          continue;
+        }
+        throw error;
+      }
     }
+
+    if (ediciones.length === 0) continue;
+
+    ediciones.sort((a, b) => a.desde - b.desde);
+
+    const trozos = [];
+    let desde = 0;
+    for (const edicion of ediciones) {
+      trozos.push(xml.slice(desde, edicion.desde), edicion.poner);
+      desde = edicion.hasta;
+    }
+    trozos.push(xml.slice(desde));
+
+    zip.updateFile(parte, Buffer.from(trozos.join(''), 'utf8'));
+    tocados += ediciones.length;
   }
 
-  ediciones.sort((a, b) => a.desde - b.desde);
-
-  const trozos = [];
-  let desde = 0;
-  for (const edicion of ediciones) {
-    trozos.push(xml.slice(desde, edicion.desde), edicion.poner);
-    desde = edicion.hasta;
-  }
-  trozos.push(xml.slice(desde));
-
-  zip.updateFile('word/document.xml', Buffer.from(trozos.join(''), 'utf8'));
-
-  return { buffer: zip.toBuffer(), tocados: ediciones.length, intactos };
+  return { buffer: zip.toBuffer(), tocados, intactos };
 }
 
 module.exports = { traducir };

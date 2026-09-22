@@ -31,6 +31,16 @@ const prompt = require('./preparar.prompt');
 const { palabrasDe } = require('./preparar.cuerpo');
 
 /**
+ * Cómo se llama un párrafo ante el modelo.
+ *
+ * En el cuerpo es su número de siempre; en las notas al pie, el encabezado o el
+ * pie de página lleva delante de dónde sale («nota:3»), porque el modelo recibe
+ * los de todas las partes juntos. Ver `preparar.partes`. Quien llame sin clave
+ * —el conector, las pruebas— sigue usando el número a secas.
+ */
+const claveDe = (parrafo) => parrafo.clave ?? parrafo.id;
+
+/**
  * Los modelos, en orden, para este servicio.
  *
  * Los suyos y no los del asistente: allí se usa un flash-lite porque la espera
@@ -168,17 +178,58 @@ function comprobar(original, nuevo, opciones) {
 // ── Cuando Google está saturado ────────────────────────────────────────────
 
 /**
- * El fallo que no es culpa de nadie: el modelo está desbordado ahora mismo.
+ * El fallo que no es culpa de nadie: el proveedor no nos deja preguntar ahora.
  *
- * Google contesta «This model is currently experiencing high demand», y
- * `gemini.generarConRespaldo` ya ha probado el modelo de respaldo antes de
- * llegar aquí. Cuando los dos están ocupados no hay nada que arreglar: hay que
- * esperar unos segundos.
+ * Dos cosas distintas que se tratan igual porque se arreglan igual —esperando—:
+ * que el modelo esté desbordado («This model is currently experiencing high
+ * demand») y que hayamos llegado al tope de peticiones de nuestro plan («You
+ * exceeded your current quota», 429).
+ *
+ * EL 22-SEP-2026 ESTO NO RECONOCÍA LA CUOTA. Un manuscrito de 12.164 palabras
+ * —catorce tandas— se topó con el tope del plan gratuito (20 peticiones) y el
+ * texto de Google no encajaba aquí: dice «rate-limits» con guion y esto pedía
+ * «rate limit» con espacio. Así que no se esperaba, la tanda se daba por
+ * perdida, y cada uno de sus párrafos se volvía a pedir POR SEPARADO contra el
+ * mismo tope. El corte se multiplicaba por veinte y el cliente recibía el error
+ * de Google en inglés.
  */
-const SATURADO = /high demand|overload|unavailable|too many requests|rate limit|\b429\b|\b503\b/i;
+const SATURADO =
+  /high demand|overload|unavailable|too many requests|rate.?limit|quota|resource.?exhausted|\b429\b|\b503\b/i;
 
 const REINTENTOS = 2;
 const ESPERA_MS = 6_000;
+
+/**
+ * Y de esos, el que NO se arregla esperando un poco más: se acabó el cupo.
+ *
+ * La diferencia importa y mucho. Un 503 es este modelo y ahora mismo: se espera
+ * dos segundos, se reintenta el párrafo solo y casi siempre sale. Un 429 por
+ * cuota es NUESTRO plan contra el reloj de Google, y entonces reintentar cada
+ * párrafo por separado es pedir veinte veces lo que ya nos ha dicho que no y
+ * quedarnos sin las peticiones que faltan para el resto del documento.
+ *
+ * Por eso solo esto para las tandas que quedan y da el trabajo por fallido.
+ */
+const AGOTADO = /exceeded your current quota|quota exceeded|resource.?exhausted|\b429\b/i;
+
+const seAcaboElCupo = (error) =>
+  error?.status === 429 || AGOTADO.test(String(error?.message ?? ''));
+
+/** Lo más que se espera de una vez. Un trabajo puede aguantarlo; el chat no. */
+const ESPERA_MAXIMA_MS = 90_000;
+
+/**
+ * Lo que se le dice al cliente cuando el proveedor nos cortó a mitad.
+ *
+ * El trabajo se da por FALLIDO aunque algunas tandas hubieran salido: un
+ * manuscrito corregido a medias, cobrado como documento del mes, es peor que no
+ * haber empezado. Que falle no le gasta cupo y puede volver a mandarlo.
+ */
+const SIN_CUPO_DEL_PROVEEDOR =
+  'Nuestro proveedor de inteligencia artificial nos cortó por tope de uso mientras preparábamos ' +
+  'tu documento, así que no lo terminamos y no te hemos descontado ningún documento de tu ' +
+  'membresía. Vuelve a mandarlo en unos minutos. Si te pasa otra vez con el mismo documento, ' +
+  'escríbenos y lo miramos nosotros.';
 
 const dormir = (ms) => new Promise((listo) => setTimeout(listo, ms));
 
@@ -205,11 +256,19 @@ function conReintento(generar, opciones = {}) {
         ultimo = error;
         if (!SATURADO.test(String(error?.message ?? ''))) throw error;
         if (intento === intentos) break;
-        logger.warn(
-          { intento: intento + 1, err: error.message },
-          'Preparar documento: el modelo está saturado; se espera y se vuelve a probar',
+
+        // Cuando corta por cuota, Google dice cuánto hay que esperar («retry in
+        // 35.7»). Esperar menos es volver a chocar contra el mismo tope.
+        const espera = Math.min(
+          Math.max(esperaMs * (intento + 1), error?.esperarMs ?? 0),
+          ESPERA_MAXIMA_MS,
         );
-        await dormir(esperaMs * (intento + 1));
+
+        logger.warn(
+          { intento: intento + 1, esperaMs: espera, err: error.message },
+          'Preparar documento: el proveedor no nos deja preguntar; se espera y se vuelve a probar',
+        );
+        await dormir(espera);
       }
     }
     throw ultimo;
@@ -225,7 +284,7 @@ function conReintento(generar, opciones = {}) {
  * llamada entera se deja subir: lo atrapa quien reintenta.
  */
 async function pedirTanda(parrafos, opciones, generar) {
-  const entrada = Object.fromEntries(parrafos.map((parrafo) => [parrafo.id, parrafo.texto]));
+  const entrada = Object.fromEntries(parrafos.map((parrafo) => [claveDe(parrafo), parrafo.texto]));
   const palabras = parrafos.reduce((total, parrafo) => total + parrafo.palabras, 0);
 
   const { texto } = await generar({
@@ -234,6 +293,9 @@ async function pedirTanda(parrafos, opciones, generar) {
     modelos: modelos(),
     maxTokens: tokensPara(palabras),
     timeoutMs: TIMEOUT_MS,
+    // Aquí no hay nadie mirando la pantalla: si el proveedor pide medio minuto,
+    // se le da. Ver `gemini.generarConRespaldo`.
+    esperaMaximaMs: ESPERA_MAXIMA_MS,
     json: true,
   });
 
@@ -247,10 +309,10 @@ async function pedirTanda(parrafos, opciones, generar) {
   const buenos = {};
   const malos = [];
   for (const parrafo of parrafos) {
-    const nuevo = devuelto?.[String(parrafo.id)];
+    const nuevo = devuelto?.[String(claveDe(parrafo))];
     const motivo = comprobar(parrafo.texto, nuevo, opciones);
-    if (motivo) malos.push({ id: parrafo.id, motivo });
-    else buenos[parrafo.id] = String(nuevo).trim();
+    if (motivo) malos.push({ id: claveDe(parrafo), motivo });
+    else buenos[claveDe(parrafo)] = String(nuevo).trim();
   }
 
   return { buenos, malos };
@@ -282,16 +344,36 @@ async function prepararParrafos({
   const tandas = tandasDe(parrafos, porTanda);
   const pedir = conReintento(generar, reintento);
 
+  // El corte del proveedor, si llega. A partir de ahí no se manda ni una
+  // petición más: lo que falta es cupo, no suerte, y cada intento se lo come.
+  let cortado = null;
+
   const resultados = await enParalelo(
     tandas.map((tanda) => async () => {
+      const comoMalos = (motivo, sinCupo) => ({
+        buenos: {},
+        malos: tanda.map((parrafo) => ({ id: claveDe(parrafo), motivo, sinCupo })),
+      });
+
+      if (cortado) return comoMalos(cortado.message, true);
+
       try {
         return await pedirTanda(tanda, opciones, pedir);
       } catch (error) {
-        logger.warn(
-          { err: error.message, servicio, parrafos: tanda.length },
-          'Preparar documento: una tanda falló entera; se reintenta párrafo a párrafo',
-        );
-        return { buenos: {}, malos: tanda.map((p) => ({ id: p.id, motivo: error.message })) };
+        const sinCupo = seAcaboElCupo(error);
+        if (sinCupo && !cortado) {
+          cortado = error;
+          logger.error(
+            { err: error.message, servicio, tandas: tandas.length },
+            'Preparar documento: se acabó el cupo del proveedor; se paran las tandas que faltan',
+          );
+        } else if (!sinCupo) {
+          logger.warn(
+            { err: error.message, servicio, parrafos: tanda.length },
+            'Preparar documento: una tanda falló entera; se reintenta párrafo a párrafo',
+          );
+        }
+        return comoMalos(error.message, sinCupo);
       }
     }),
     aLaVez,
@@ -299,11 +381,19 @@ async function prepararParrafos({
 
   const buenos = Object.assign({}, ...resultados.map((r) => r.buenos));
   const primerosMalos = resultados.flatMap((r) => r.malos);
-  const porId = new Map(parrafos.map((parrafo) => [parrafo.id, parrafo]));
+  const porClave = new Map(parrafos.map((parrafo) => [String(claveDe(parrafo)), parrafo]));
+
+  // La segunda vuelta pide UNA llamada POR PÁRRAFO. Eso arregla que el modelo
+  // se dejara uno en una tanda de quince, y con un 503 suele salir a la
+  // segunda; contra un tope de peticiones es lo contrario de lo que hay que
+  // hacer —veinte llamadas donde ya sobraba una—, así que lo que cayó por
+  // quedarnos sin cupo no se reintenta.
+  const porReintentar = primerosMalos.filter((malo) => !malo.sinCupo);
+  const cortados = primerosMalos.filter((malo) => malo.sinCupo);
 
   const segundaVuelta = await enParalelo(
-    primerosMalos.map(({ id }) => async () => {
-      const parrafo = porId.get(id);
+    porReintentar.map(({ id }) => async () => {
+      const parrafo = porClave.get(String(id));
       try {
         return await pedirTanda([parrafo], opciones, pedir);
       } catch (error) {
@@ -314,7 +404,18 @@ async function prepararParrafos({
   );
 
   for (const vuelta of segundaVuelta) Object.assign(buenos, vuelta.buenos);
-  const malos = segundaVuelta.flatMap((vuelta) => vuelta.malos);
+  const malos = [...cortados, ...segundaVuelta.flatMap((vuelta) => vuelta.malos)];
+
+  // Un corte a mitad no se entrega. Con la mitad del manuscrito corregida y la
+  // otra mitad no, el cliente no sabe qué revisar y encima habría gastado un
+  // documento del mes. Falla, no le cuesta nada y lo vuelve a mandar.
+  if (cortado) {
+    logger.error(
+      { err: cortado.message, servicio, cortados: cortados.length, hechos: Object.keys(buenos).length },
+      'Preparar documento: el trabajo se da por fallido porque el proveedor nos cortó',
+    );
+    throw new Error(SIN_CUPO_DEL_PROVEEDOR);
+  }
 
   // Que TODO falle no es «un documento con párrafos intactos»: es que el
   // servicio no funcionó, y entregar el mismo Word que se subió cobrando un
@@ -325,7 +426,7 @@ async function prepararParrafos({
 
   const cambios = {};
   for (const [id, texto] of Object.entries(buenos)) {
-    const parrafo = porId.get(Number(id));
+    const parrafo = porClave.get(id);
     // Un párrafo devuelto igual no es un cambio: no hace falta tocar su XML.
     if (parrafo && texto !== parrafo.texto) cambios[id] = { original: parrafo.texto, texto };
   }
@@ -421,4 +522,8 @@ module.exports = {
   conReintento,
   modelos,
   tokensPara,
+  seAcaboElCupo,
+  SATURADO,
+  AGOTADO,
+  SIN_CUPO_DEL_PROVEEDOR,
 };

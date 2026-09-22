@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Las citas de Zotero, los hipervínculos y el índice.
+ * Las citas de Zotero, los hipervínculos, las figuras y el índice.
  *
  * Esto es lo que rompió la primera prueba real del servicio: de 23 párrafos, 8
  * volvieron en español. Cinco eran las líneas del índice —que no había que
@@ -16,6 +16,10 @@
  *     Una cita movida de sitio es peor que un párrafo sin traducir.
  *   · Las líneas del índice no se le mandan al modelo ni se le cobran al
  *     cliente, aunque el Word no declare el estilo (el nuestro no lo declara).
+ *   · Un párrafo con una figura o una ecuación dentro TAMBIÉN se traduce: la
+ *     pieza se conserva entera y vuelve a su sitio. Lo único que sigue dejando
+ *     un párrafo como estaba es el control de cambios sin aceptar, donde no hay
+ *     una pieza que conservar sino dos versiones del mismo texto.
  */
 
 const test = require('node:test');
@@ -204,16 +208,45 @@ test('si el modelo toca la cita, el párrafo se queda como estaba', async () => 
   assert.equal(veces(xml, 'ZOTERO_ITEM'), 1);
 });
 
-test('una imagen dentro del párrafo sigue dejándolo intacto', async () => {
+test('un párrafo con una imagen dentro sí se traduce, y la imagen sigue ahí', async () => {
   const conImagen =
     '<w:p>' + t('Este párrafo lleva una figura pegada ') +
     '<w:r><w:drawing><wp:inline/></w:drawing></w:r>' + t(' y sigue.') + '</w:p>';
 
   const hecho = await traducirCon(docx(conImagen), (texto) => `[EN] ${texto}`);
+  const xml = parte(hecho.buffer);
+
+  assert.equal(hecho.tocados, 1);
+  assert.equal(hecho.intactos.size, 0);
+  assert.match(xml, /\[EN\] Este párrafo lleva una figura pegada/);
+  assert.equal(veces(xml, '<w:drawing>'), 1);
+});
+
+test('una ecuación tampoco deja el párrafo sin traducir', async () => {
+  const conEcuacion =
+    '<w:p>' + t('La varianza explicada ') +
+    '<m:oMath><m:r><m:t>R²</m:t></m:r></m:oMath>' + t(' supera el umbral.') + '</w:p>';
+
+  const hecho = await traducirCon(docx(conEcuacion), (texto) => `[EN] ${texto}`);
+  const xml = parte(hecho.buffer);
+
+  assert.equal(hecho.tocados, 1);
+  assert.equal(hecho.intactos.size, 0);
+  assert.match(xml, /\[EN\] La varianza explicada/);
+  assert.match(xml, /<m:oMath><m:r><m:t>R²<\/m:t><\/m:r><\/m:oMath>/);
+});
+
+test('el control de cambios sin aceptar sí deja el párrafo como estaba', async () => {
+  const conRevision =
+    '<w:p>' + t('El resultado ') +
+    `<w:ins w:id="1" w:author="A" w:date="2026-01-01T00:00:00Z">${t('mejoró ')}</w:ins>` +
+    t('en el segundo grupo.') + '</w:p>';
+
+  const hecho = await traducirCon(docx(conRevision), (texto) => `[EN] ${texto}`);
 
   assert.equal(hecho.tocados, 0);
   assert.equal(hecho.intactos.size, 1);
-  assert.match(hecho.intactos.get(1), /imagen/);
+  assert.match([...hecho.intactos.values()][0], /control de cambios/);
 });
 
 // ── Corregir con citas ─────────────────────────────────────────────────────

@@ -20,6 +20,7 @@ const preparacionSelect = {
   error: true,
   tocados: true,
   intactos: true,
+  avisos: true,
   createdAt: true,
   entregadoAt: true,
 };

@@ -34,6 +34,23 @@
  * lo que esas piezas guardan dentro. Se dice por qué y el tesista lo cambia en
  * su Word.
  *
+ * CON `conservarObjetos`, QUE PIDE LA TRADUCCIÓN
+ * ----------------------------------------------
+ * Para humanizar, saltarse el párrafo de la figura no cuesta nada. Para
+ * TRADUCIR sí: el cliente recibe un documento medio en un idioma y medio en
+ * otro, y justo el párrafo que explica la figura es de los que más importan.
+ *
+ * Así que quien llame puede pedir que una imagen, una ecuación, un objeto
+ * incrustado o un control de contenido NO impidan rehacer el párrafo: esas
+ * piezas se guardan enteras, tal y como están, y vuelven a su sitio detrás de
+ * la última palabra que sobrevivió delante de ellas —lo mismo que ya se hacía
+ * con las llamadas a nota al pie—. No se traducen ni se tocan por dentro: se
+ * conservan. Ver `ANCLABLES`.
+ *
+ * El control de cambios sin aceptar sigue fuera, y a propósito: ahí no hay una
+ * pieza que conservar, hay dos versiones del mismo texto, y elegir una por el
+ * cliente no nos toca.
+ *
  * PARTIR UN PÁRRAFO
  * -----------------
  * El humanizador puede partir un párrafo demasiado largo en dos, con el visto
@@ -71,6 +88,36 @@ const ANCLAS_DE_CORRIDA = new Set([
 /** Lo que se descarta: marcas del corrector ortográfico y de la última paginación, que Word rehace. */
 const DESECHABLES = new Set(['w:proofErr', 'w:lastRenderedPageBreak', 'w:softHyphen']);
 
+/**
+ * Lo que, si quien llama lo pide, se conserva entero en su sitio en vez de
+ * impedir que el párrafo se rehaga. Ver `conservarObjetos`.
+ *
+ * Todas son piezas OPACAS: lo que guardan dentro no es prosa que se pueda
+ * rehacer palabra a palabra —los píxeles de una figura, la estructura de una
+ * ecuación, el identificador de un control de contenido—, así que se sacan
+ * enteras y se devuelven enteras.
+ *
+ * `w:sym` no entra aquí porque no es opaco: es UN carácter visible, y se trata
+ * como tal, igual que el guion que no parte. Ver `desmontarCorrida`.
+ */
+const ANCLABLES = new Set([
+  'w:drawing', 'w:pict', 'w:object', 'mc:AlternateContent', 'm:oMath', 'm:oMathPara', 'w:sdt',
+  'w:hyperlink', 'w:fldSimple',
+]);
+
+/**
+ * Las piezas sueltas de un campo que no enseña ningún texto.
+ *
+ * El número de página de un pie es un campo entero —`begin`, `PAGE`,
+ * `separate`, `end`— cuyo resultado está vacío, así que `preparar.campos` no
+ * tiene texto por el que reconocerlo y lo deja pasar. Aquí se conserva pieza a
+ * pieza: cada una vuelve a su sitio y el campo sigue siendo un campo.
+ */
+const CAMPO_SIN_TEXTO = new Set(['w:fldChar', 'w:instrText']);
+
+/** El carácter con el que se lee un `w:sym`, el mismo que usa `project.documento`. */
+const SIMBOLO = '□';
+
 /** Por qué no, en palabras del tesista. */
 const MOTIVOS = {
   'w:fldChar': 'lleva un campo (una cita de Zotero o Mendeley, o una referencia cruzada)',
@@ -97,8 +144,11 @@ const MOTIVOS = {
  * y las anclas con el número de caracteres que tienen delante.
  *
  * Lanza `NoReescribible` si el párrafo lleva algo que no se puede rehacer.
+ *
+ * Con `conservarObjetos`, las piezas de `ANCLABLES` dejan de impedirlo y pasan
+ * a ser anclas: se guardan enteras y vuelven a su sitio.
  */
-function desmontar(xmlDelParrafo) {
+function desmontar(xmlDelParrafo, { conservarObjetos = false } = {}) {
   const piezas = [...xmlDelParrafo.matchAll(/<[^>]*>|[^<]+/g)].map((m) => m[0]);
   const apertura = piezas[0];
   if (!apertura || documento.nombreDe(apertura) !== 'w:p' || apertura.endsWith('/>')) {
@@ -133,6 +183,15 @@ function desmontar(xmlDelParrafo) {
     }
     const nombre = documento.nombreDe(pieza);
 
+    // Una ecuación o un control de contenido cuelgan del párrafo, no de una
+    // corrida. Se guardan enteros antes de mirar si están prohibidos.
+    if (conservarObjetos && ANCLABLES.has(nombre)) {
+      const { xml, hasta } = bloque(i);
+      anclas.push({ k: unidades.length, xml });
+      i = hasta;
+      continue;
+    }
+
     if (MOTIVOS[nombre]) throw new NoReescribible(MOTIVOS[nombre]);
     if (nombre === 'w:p') throw new NoReescribible('lleva un cuadro de texto');
 
@@ -159,13 +218,13 @@ function desmontar(xmlDelParrafo) {
 
     const corrida = bloque(i);
     i = corrida.hasta;
-    desmontarCorrida(corrida.xml, unidades, anclas);
+    desmontarCorrida(corrida.xml, unidades, anclas, { conservarObjetos });
   }
 
   return { apertura, pPr, unidades, anclas };
 }
 
-function desmontarCorrida(xmlDeCorrida, unidades, anclas) {
+function desmontarCorrida(xmlDeCorrida, unidades, anclas, { conservarObjetos = false } = {}) {
   const piezas = [...xmlDeCorrida.matchAll(/<[^>]*>|[^<]+/g)].map((m) => m[0]);
   let rPr = '';
   let j = 1;
@@ -177,7 +236,9 @@ function desmontarCorrida(xmlDeCorrida, unidades, anclas) {
       continue;
     }
     const nombre = documento.nombreDe(pieza);
-    if (MOTIVOS[nombre]) throw new NoReescribible(MOTIVOS[nombre]);
+    const conservada =
+      conservarObjetos && (ANCLABLES.has(nombre) || CAMPO_SIN_TEXTO.has(nombre) || nombre === 'w:sym');
+    if (MOTIVOS[nombre] && !conservada) throw new NoReescribible(MOTIVOS[nombre]);
 
     // Hasta el cierre de esta etiqueta.
     let hasta = j + 1;
@@ -215,6 +276,16 @@ function desmontarCorrida(xmlDeCorrida, unidades, anclas) {
         break;
       case nombre === 'w:noBreakHyphen':
         unidades.push({ c: '-', rPr, xml: '<w:noBreakHyphen/>' });
+        break;
+      // Un símbolo es un carácter, no una pieza opaca: viaja como tal, y si la
+      // traducción lo conserva vuelve a salir como el `w:sym` que era.
+      case conservada && nombre === 'w:sym':
+        unidades.push({ c: SIMBOLO, rPr, xml: entero });
+        break;
+      // Una imagen, una ecuación o un trozo de campo dentro de la corrida: se
+      // guarda entero, con el formato de su corrida, y se coloca donde estaba.
+      case conservada:
+        anclas.push({ k: unidades.length, xml: `<w:r>${rPr}${entero}</w:r>` });
         break;
       case ANCLAS_DE_CORRIDA.has(nombre):
         anclas.push({ k: unidades.length, xml: `<w:r>${rPr}${entero}</w:r>`, nota: /Reference$/.test(nombre) });
@@ -367,8 +438,8 @@ function corridasDe(caracteres, anclasEn) {
  * puntos y aparte. Devuelve también si el párrafo tenía llamadas a nota, que
  * conviene que el tesista mire.
  */
-function rehacerParrafo(xmlDelParrafo, textoNuevo) {
-  const { apertura, pPr, unidades, anclas } = desmontar(xmlDelParrafo);
+function rehacerParrafo(xmlDelParrafo, textoNuevo, opciones = {}) {
+  const { apertura, pPr, unidades, anclas } = desmontar(xmlDelParrafo, opciones);
   const viejo = unidades.map((u) => u.c).join('');
   const nuevo = limpiar(textoNuevo, viejo.includes('\n'));
   if (nuevo === '') throw new NoReescribible('el texto nuevo está vacío');
@@ -467,7 +538,7 @@ function rehacerParrafo(xmlDelParrafo, textoNuevo) {
  * si se puede reescribir con ese texto (`motivo` null) o por qué no. Monta el
  * párrafo de prueba: lo que se acepta aquí es lo que se podrá descargar.
  */
-function probador(buffer) {
+function probador(buffer, opciones = {}) {
   const { xml } = documento.abrir(buffer);
   const parrafos = new Map(documento.parrafosDe(xml).map((p) => [p.id, p]));
 
@@ -475,7 +546,7 @@ function probador(buffer) {
     const parrafo = parrafos.get(Number(id));
     if (!parrafo) return { motivo: 'no hay ningún párrafo con ese número' };
     try {
-      const hecho = rehacerParrafo(xml.slice(parrafo.inicio, parrafo.fin), textoNuevo);
+      const hecho = rehacerParrafo(xml.slice(parrafo.inicio, parrafo.fin), textoNuevo, opciones);
       return { motivo: null, partes: hecho.partes, notas: hecho.notas };
     } catch (error) {
       if (error instanceof NoReescribible) return { motivo: `el párrafo ${error.message}` };
@@ -484,7 +555,7 @@ function probador(buffer) {
   };
 }
 
-const probar = (buffer, id, textoNuevo) => probador(buffer)(id, textoNuevo);
+const probar = (buffer, id, textoNuevo, opciones) => probador(buffer, opciones)(id, textoNuevo);
 
 /** «Uno. [APARTE] Dos.» → «Uno.\n\nDos.»: la marca que puede escribir Claude, como punto y aparte. */
 const conApartes = (texto) =>
@@ -498,13 +569,13 @@ const conApartes = (texto) =>
 const partesDe = (texto) => conApartes(texto).split('\n\n');
 
 /** Qué párrafos no se pueden reescribir, con su motivo, para avisarlo al leer. */
-function bloqueados(buffer) {
+function bloqueados(buffer, opciones = {}) {
   const { xml } = documento.abrir(buffer);
   const motivos = new Map();
   for (const parrafo of documento.parrafosDe(xml)) {
     if (!parrafo.texto.trim()) continue;
     try {
-      desmontar(xml.slice(parrafo.inicio, parrafo.fin));
+      desmontar(xml.slice(parrafo.inicio, parrafo.fin), opciones);
     } catch (error) {
       if (!(error instanceof NoReescribible)) throw error;
       motivos.set(parrafo.id, error.message);
@@ -644,5 +715,8 @@ module.exports = {
   comprobarReescritura,
   rehacerParrafo,
   NoReescribible,
+  ANCLABLES,
+  CAMPO_SIN_TEXTO,
+  SIMBOLO,
   APARTE,
 };

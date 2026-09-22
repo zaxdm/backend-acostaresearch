@@ -33,9 +33,19 @@
  * la lleva —porque el modelo la tradujo o se la comió—, aquí no se adivina: se
  * dice que no se puede, y quien llama deja el párrafo como estaba. Colocar una
  * cita donde no va es peor que no traducir el párrafo.
+ *
+ * LAS PIEZAS OPACAS
+ * -----------------
+ * Una figura, una ecuación o un control de contenido (`reescritura.ANCLABLES`)
+ * se sacan enteras y NO se miran por dentro, porque dentro puede haber justo
+ * otro campo. Las que enseñan texto —un control de contenido con la cita de
+ * Mendeley— se protegen como un campo más, que para eso tienen texto por el que
+ * reconocerlas; las que no enseñan ninguno se dejan donde están y las coloca
+ * `project.reescritura` por su posición.
  */
 
 const documento = require('../projects/project.documento');
+const reescritura = require('../projects/project.reescritura');
 
 /**
  * El primer carácter de marca.
@@ -50,6 +60,16 @@ const MAXIMO_CAMPOS = 64;
 
 /** Un párrafo que no se puede proteger. Quien llama lo deja intacto. */
 class NoProtegible extends Error {}
+
+/**
+ * Lo que se saca entero del párrafo sin mirarlo por dentro.
+ *
+ * Los hipervínculos y los campos de una sola etiqueta, porque lo que se ve es
+ * texto pero lo que vale está en la etiqueta; y las piezas opacas de
+ * `reescritura.ANCLABLES` —una figura, una ecuación, un control de contenido—,
+ * porque dentro puede haber justo otro campo.
+ */
+const ENTERAS = new Set(reescritura.ANCLABLES);
 
 const esMarca = (caracter) =>
   caracter.charCodeAt(0) >= PRIMERA_MARCA && caracter.charCodeAt(0) < PRIMERA_MARCA + MAXIMO_CAMPOS;
@@ -144,9 +164,23 @@ function proteger(xmlDelParrafo) {
 
     const nombre = documento.nombreDe(pieza);
 
-    if (nombre === 'w:hyperlink' || nombre === 'w:fldSimple') {
+    // Una pieza que va entera o no va: un hipervínculo, una figura, una
+    // ecuación, un control de contenido. Se saca ENTERA y NO se mira por
+    // dentro; si no, un campo de Mendeley metido dentro de un control de
+    // contenido se marcaría aquí y después la pieza volvería entera con la
+    // marca dentro, que es una cita perdida.
+    if (ENTERAS.has(nombre)) {
       const { xml, hasta } = bloque(piezas, i);
-      anotar(xml, textoVisible(xml));
+      const texto = textoVisible(xml);
+
+      // Con texto a la vista, el modelo lo vio y lo devuelve: se protege como
+      // un campo y se le reconoce por ese texto. Sin texto —una figura, una
+      // ecuación, el número de página de un pie— no hay por dónde agarrarlo en
+      // la traducción, así que se deja estar y lo coloca `project.reescritura`
+      // por su posición.
+      if (texto.trim() === '') salida.push(xml);
+      else anotar(xml, texto);
+
       i = hasta;
       continue;
     }
@@ -187,7 +221,9 @@ function proteger(xmlDelParrafo) {
     }
     if (profundidad !== 0) throw new NoProtegible('lleva un campo sin cerrar');
 
-    anotar(entero, resultadoDelCampo(entero));
+    const resultado = resultadoDelCampo(entero);
+    if (resultado.trim() === '') salida.push(entero);
+    else anotar(entero, resultado);
     i = j;
   }
 

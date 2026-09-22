@@ -2267,7 +2267,11 @@ model DocPack {
 enum PreparacionServicio {
   EDICION // inglés académico, con control de cambios
   TRADUCCION // a español, inglés, portugués o chino
-  RESUMEN // resumen, abstract y palabras clave
+  /// Retirado el 22-sep-2026. Ya no se puede encargar —ni por la web ni por la
+  /// API, ver `preparar.schema`— pero el valor se queda: hay trabajos
+  /// entregados con él y su historial tiene que poder leerse. Quitarlo del
+  /// enum dejaría esas filas sin poder cargarse.
+  RESUMEN
 }
 
 enum PreparacionEstado {

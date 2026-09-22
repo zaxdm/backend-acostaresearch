@@ -4,7 +4,15 @@ const { z } = require('zod');
 
 const { IDIOMAS } = require('./preparar.prompt');
 
-const SERVICIOS = ['EDICION', 'TRADUCCION', 'RESUMEN'];
+/**
+ * Lo que se puede pedir hoy.
+ *
+ * `RESUMEN` se retiró el 22-sep-2026: se quitó de la web y aquí deja de
+ * admitirse, así que nadie puede encargarlo ni por la API. Sigue en el enum de
+ * la base porque hay trabajos entregados con ese servicio y su historial tiene
+ * que poder leerse.
+ */
+const SERVICIOS = ['EDICION', 'TRADUCCION'];
 
 /**
  * Qué servicio y, si toca, a qué idioma.
@@ -18,7 +26,7 @@ const SERVICIOS = ['EDICION', 'TRADUCCION', 'RESUMEN'];
 const encargoSchema = z.object({
   servicio: z.enum(SERVICIOS, {
     errorMap: () => ({
-      message: 'Elige uno de los tres servicios: edición, traducción o resumen.',
+      message: 'Elige uno de los dos servicios: edición de inglés o traducción.',
     }),
   }),
   idioma: z

@@ -245,7 +245,7 @@ const dormir = (ms) => new Promise((listo) => setTimeout(listo, ms));
  * Sin esto, un resumen entero se perdía porque Google estaba ocupado en ese
  * instante. Al cliente no se le cobraba, pero tenía que volver a subirlo.
  */
-function conReintento(generar, opciones = {}) {
+function conReintento(generar, opciones = {}, seRindio = () => false) {
   const { intentos = REINTENTOS, esperaMs = ESPERA_MS } = opciones ?? {};
   return async (peticion) => {
     let ultimo = null;
@@ -255,7 +255,17 @@ function conReintento(generar, opciones = {}) {
       } catch (error) {
         ultimo = error;
         if (!SATURADO.test(String(error?.message ?? ''))) throw error;
-        if (intento === intentos) break;
+
+        // Quedarse sin cupo se reintenta UNA vez y no tres: si medio minuto
+        // después sigue sin haber, no lo va a haber a la tercera, y cada
+        // intento gasta de lo poco que quede. Un 503 sí se reintenta más:
+        // ese vuelve solo.
+        const tope = seAcaboElCupo(error) ? Math.min(intentos, 1) : intentos;
+        if (intento >= tope) break;
+
+        // Y si otra tanda ya se topó con el muro mientras esperábamos, no se
+        // vuelve a preguntar: el trabajo está perdido igual.
+        if (seRindio()) break;
 
         // Cuando corta por cuota, Google dice cuánto hay que esperar («retry in
         // 35.7»). Esperar menos es volver a chocar contra el mismo tope.
@@ -342,11 +352,14 @@ async function prepararParrafos({
 }) {
   const opciones = { servicio, idioma };
   const tandas = tandasDe(parrafos, porTanda);
-  const pedir = conReintento(generar, reintento);
 
   // El corte del proveedor, si llega. A partir de ahí no se manda ni una
   // petición más: lo que falta es cupo, no suerte, y cada intento se lo come.
+  // Se mira también DENTRO de las tandas que ya están en vuelo, porque con
+  // tres a la vez las otras dos están esperando para reintentar justo cuando
+  // la primera descubre el muro.
   let cortado = null;
+  const pedir = conReintento(generar, reintento, () => cortado !== null);
 
   const resultados = await enParalelo(
     tandas.map((tanda) => async () => {
@@ -434,82 +447,6 @@ async function prepararParrafos({
   return { cambios, malos, tandas: tandas.length };
 }
 
-// ── Resúmenes ──────────────────────────────────────────────────────────────
-
-/**
- * Qué parte del documento se le enseña al modelo para escribir el resumen.
- *
- * El principio y el final, no el documento entero. En el principio están el
- * problema, el objetivo y la justificación; en el final, los resultados y las
- * conclusiones. El marco teórico de en medio —que en una tesis es la mitad del
- * documento— no entra en un resumen de 250 palabras y costaría el triple.
- */
-function extractoPara(parrafos, presupuesto = 6000) {
-  const total = parrafos.reduce((suma, parrafo) => suma + parrafo.palabras, 0);
-  if (total <= presupuesto) return { parrafos, recortado: false };
-
-  const mitad = Math.floor(presupuesto / 2);
-  const principio = [];
-  const final = [];
-
-  let cuenta = 0;
-  for (const parrafo of parrafos) {
-    if (cuenta + parrafo.palabras > mitad) break;
-    principio.push(parrafo);
-    cuenta += parrafo.palabras;
-  }
-
-  cuenta = 0;
-  for (let i = parrafos.length - 1; i >= principio.length; i -= 1) {
-    if (cuenta + parrafos[i].palabras > mitad) break;
-    final.unshift(parrafos[i]);
-    cuenta += parrafos[i].palabras;
-  }
-
-  return { parrafos: [...principio, ...final], recortado: true };
-}
-
-/** Un campo del resumen que llegó y no está vacío. */
-function exigir(valor, campo) {
-  const texto = typeof valor === 'string' ? valor.trim() : '';
-  if (texto === '') throw new Error(`El modelo no devolvió «${campo}».`);
-  return texto;
-}
-
-/** El resumen, el abstract y las palabras clave del documento. */
-async function resumenDe({ parrafos, generar = gemini.generarConRespaldo, reintento }) {
-  const { parrafos: elegidos, recortado } = extractoPara(parrafos);
-
-  const cuerpo = elegidos.map((parrafo) => parrafo.texto).join('\n\n');
-  const aviso = recortado
-    ? '\n\n[Se te ha dado el principio y el final del trabajo, no el texto completo.]'
-    : '';
-
-  const { texto } = await conReintento(generar, reintento)({
-    sistema: prompt.RESUMEN,
-    mensajes: [{ rol: 'usuario', texto: cuerpo + aviso }],
-    modelos: modelos(),
-    maxTokens: 4_000,
-    timeoutMs: TIMEOUT_MS,
-    json: true,
-  });
-
-  let devuelto;
-  try {
-    devuelto = JSON.parse(texto);
-  } catch {
-    throw new Error('El modelo no devolvió un JSON que se pueda leer.');
-  }
-
-  return {
-    resumen: exigir(devuelto?.resumen, 'resumen'),
-    abstract: exigir(devuelto?.abstract, 'abstract'),
-    palabrasClave: exigir(devuelto?.palabrasClave, 'palabras clave'),
-    keywords: exigir(devuelto?.keywords, 'keywords'),
-    palabrasDelResumen: palabrasDe(devuelto?.resumen ?? ''),
-  };
-}
-
 module.exports = {
   tandasDe,
   enParalelo,
@@ -517,8 +454,6 @@ module.exports = {
   cifrasDe,
   margenes,
   prepararParrafos,
-  extractoPara,
-  resumenDe,
   conReintento,
   modelos,
   tokensPara,

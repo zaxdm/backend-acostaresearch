@@ -21,7 +21,6 @@ const reescritura = require('../src/modules/projects/project.reescritura');
 const cuerpo = require('../src/modules/preparar/preparar.cuerpo');
 const motor = require('../src/modules/preparar/preparar.motor');
 const cambios = require('../src/modules/preparar/preparar.cambios');
-const resumenDocx = require('../src/modules/preparar/preparar.resumen');
 
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const SECCION = '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/></w:sectPr>';
@@ -203,25 +202,3 @@ test('un párrafo que el modelo estropeó no llega al Word', async () => {
 
 // ── Resúmenes ──────────────────────────────────────────────────────────────
 
-test('el resumen sale en un .docx aparte, que se puede abrir y lleva el aviso dentro', async () => {
-  const buffer = await resumenDocx.armar({
-    resumen: 'El objetivo fue medir el rendimiento académico en 120 estudiantes.',
-    abstract: 'The aim was to measure academic performance in 120 students.',
-    palabrasClave: 'rendimiento académico; engagement; universidad',
-    keywords: 'academic performance; engagement; university',
-    nombre: 'Tesis de prueba.docx',
-  });
-
-  // Es un .docx de verdad: un zip con su document.xml dentro.
-  assert.equal(buffer.subarray(0, 2).toString(), 'PK');
-  assert.ok(entradas(buffer).includes('word/document.xml'));
-
-  const textos = documento.leer(buffer).map((x) => x.texto);
-  assert.ok(textos.includes('Resumen'));
-  assert.ok(textos.includes('Abstract'));
-  assert.ok(textos.some((t) => t.includes('120 estudiantes')));
-  assert.ok(textos.some((t) => t.includes('academic performance; engagement; university')));
-  // El aviso de la IA viaja DENTRO del archivo: se reenvía y acaba en manos de
-  // un asesor que nunca vio nuestra web.
-  assert.ok(textos.some((t) => t.includes('inteligencia artificial')));
-});

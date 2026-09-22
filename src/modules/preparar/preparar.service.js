@@ -5,16 +5,17 @@
  *
  * QUÉ ES
  * ------
- * Tres servicios sobre el Word que sube el cliente:
+ * Dos servicios sobre el Word que sube el cliente:
  *   · EDICION    — corrige el inglés académico y lo devuelve CON CONTROL DE
  *                  CAMBIOS, para que él acepte o rechace cada corrección.
  *   · TRADUCCION — lo traduce a español, inglés, portugués o chino.
- *   · RESUMEN    — escribe el resumen, el abstract y las palabras clave, en un
- *                  documento aparte.
  *
- * Los tres devuelven un .docx. En los dos primeros es SU documento: sus tablas,
- * sus figuras, su bibliografía, su portada y su formato, con solo los párrafos
- * del cuerpo tocados. Eso lo hace posible `project.documento` y
+ * Hubo un tercero, RESUMEN, que escribía el resumen, el abstract y las palabras
+ * clave en un documento aparte. Se retiró el 22-sep-2026. Lo entregado con él
+ * sigue en la base y se puede seguir descargando; encargarlo, ya no.
+ *
+ * Los dos devuelven SU documento: sus tablas, sus figuras, su bibliografía, su
+ * portada y su formato, con solo los párrafos del cuerpo tocados. Eso lo hace posible `project.documento` y
  * `project.reescritura`, que ya sabían hacerlo para el conector.
  *
  * SIN HUMANO EN MEDIO
@@ -26,7 +27,7 @@
  * CÓMO SE COBRA
  * -------------
  * Por membresía, no por documento: hasta diez documentos al mes mientras esté
- * vigente, del tamaño que sea y en cualquiera de los tres servicios. El cupo lo
+ * vigente, del tamaño que sea y en cualquiera de los dos servicios. El cupo lo
  * lleva `preparar.membresia`, contando las preparaciones de la ventana en
  * curso. Lo que falla no gasta cupo.
  *
@@ -58,14 +59,13 @@ const partes = require('./preparar.partes');
 const motor = require('./preparar.motor');
 const cambios = require('./preparar.cambios');
 const traduccion = require('./preparar.traduccion');
-const resumenDocx = require('./preparar.resumen');
+const aviso = require('./preparar.aviso');
 const { IDIOMAS } = require('./preparar.prompt');
 
 /** Nombre de cada servicio, tal y como se le dice al cliente. */
 const NOMBRES = Object.freeze({
   EDICION: 'Edición de inglés académico',
   TRADUCCION: 'Traducción',
-  RESUMEN: 'Resumen, abstract y palabras clave',
 });
 
 /**
@@ -237,15 +237,6 @@ function motivosDe({ parrafos, malos = [], intactos = new Map() }) {
 
 /** El .docx terminado, según el servicio. */
 async function producir({ preparacion, buffer, parrafos }) {
-  if (preparacion.servicio === 'RESUMEN') {
-    const resumen = await motor.resumenDe({ parrafos });
-    return {
-      buffer: await resumenDocx.armar({ ...resumen, nombre: preparacion.nombre }),
-      tocados: 0,
-      intactos: 0,
-    };
-  }
-
   const { cambios: propuestos, malos } = await motor.prepararParrafos({
     parrafos,
     servicio: preparacion.servicio,
@@ -262,6 +253,14 @@ async function producir({ preparacion, buffer, parrafos }) {
     preparacion.servicio === 'EDICION'
       ? cambios.aplicar(buffer, propuestos)
       : traduccion.traducir(buffer, propuestos, parrafos);
+
+  // Corrigiendo, el documento sale con un comentario que dice dónde ver las
+  // marcas: según cómo tenga Word el cliente, el archivo se abre limpio y
+  // parece que no hicimos nada. Traduciendo no hace falta: ahí el cambio se ve
+  // solo, el documento está en otro idioma. Ver `preparar.aviso`.
+  if (preparacion.servicio === 'EDICION' && hecho.tocados > 0) {
+    hecho.buffer = aviso.poner(hecho.buffer);
+  }
 
   // Cero párrafos tocados es devolverle su propio archivo. Sale por el camino
   // del fallo a propósito: así no le gasta un documento del mes y se le explica
@@ -560,7 +559,6 @@ const prepararService = {
   nombreDeDescarga(preparacion) {
     const base = String(preparacion.nombre).replace(/\.docx$/i, '').slice(0, 120);
 
-    if (preparacion.servicio === 'RESUMEN') return `${base} (resumen y abstract).docx`;
     if (preparacion.servicio === 'EDICION') return `${base} (inglés corregido).docx`;
     return `${base} (traducido al ${IDIOMAS[preparacion.idioma]?.nombre ?? 'idioma elegido'}).docx`;
   },

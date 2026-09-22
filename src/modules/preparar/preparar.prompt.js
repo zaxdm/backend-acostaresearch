@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Lo que se le pide al modelo en cada uno de los tres servicios.
+ * Lo que se le pide al modelo en cada uno de los dos servicios.
  *
  * POR QUÉ VIVE APARTE
  * -------------------
@@ -10,8 +10,8 @@
  * cambio aquí cambia lo que se vende sin cambiar una línea del recorrido, y
  * conviene poder leerlo entero de un tirón para saber qué se está prometiendo.
  *
- * LA REGLA QUE LAS ATRAVIESA TODAS
- * --------------------------------
+ * LA REGLA QUE ATRAVIESA A LAS DOS
+ * -------------------------------
  * Ningún servicio añade, quita ni reordena contenido. Se cambia CÓMO está
  * dicho, nunca QUÉ se dice. Un tesista que descubre un párrafo de más —o de
  * menos— en su capítulo de resultados no vuelve, y con razón: lo que entregue
@@ -35,9 +35,9 @@ const IDIOMAS = Object.freeze({
 });
 
 /**
- * Lo que no se toca nunca, en los tres servicios.
+ * Lo que no se toca nunca, en los dos servicios.
  *
- * Va literal en las tres instrucciones en vez de resumido: son justo los
+ * Va literal en las dos instrucciones en vez de resumido: son justo los
  * errores que arruinan un documento académico y que un modelo comete con toda
  * naturalidad si no se le dice que no.
  */
@@ -60,7 +60,7 @@ el párrafo. NUNCA quites una idea porque te parezca repetida. NUNCA resumas.
 NUNCA escribas notas, comentarios, advertencias ni corchetes dirigidos al autor.
 `.trim();
 
-/** Cómo se pide y cómo tiene que volver. Idéntico en los tres servicios. */
+/** Cómo se pide y cómo tiene que volver. Idéntico en los dos servicios. */
 const FORMATO = `
 ENTRADA: un objeto JSON donde cada clave es el número de un párrafo y cada valor
 es su texto.
@@ -181,53 +181,4 @@ function sistemaDe({ servicio, idioma }) {
   throw new Error(`«${servicio}» no se pide por párrafos.`);
 }
 
-/**
- * Resúmenes: resumen en español, abstract en inglés y palabras clave.
- *
- * ESTE NO VA POR PÁRRAFOS
- * -----------------------
- * Los otros dos transforman cada párrafo en su equivalente. Este LEE el
- * documento entero y escribe algo nuevo y corto, así que recibe el texto de
- * corrido y devuelve tres campos.
- *
- * Lo que se le manda no es el documento entero: son los primeros y los últimos
- * párrafos del cuerpo (ver `preparar.motor`), que es donde están el problema,
- * el objetivo, el método y las conclusiones. El marco teórico de en medio, para
- * un resumen, no aporta nada y sí costaría el triple.
- */
-const RESUMEN = `
-Eres un editor científico que escribe el resumen, el abstract y las palabras
-clave de trabajos de investigación (tesis y artículos).
-
-Recibes el texto de un trabajo. Escribe:
-
-1. «resumen»: el resumen en ESPAÑOL, en UN SOLO PÁRRAFO de entre 200 y 250
-   palabras, sin subtítulos y sin citas. Estructura IMRyD encadenada en prosa:
-   el objetivo del estudio, el enfoque y diseño, los participantes y el
-   instrumento, los resultados principales CON SUS CIFRAS, y la conclusión.
-2. «abstract»: el equivalente en INGLÉS académico. No es una traducción literal
-   del anterior: es el mismo contenido escrito en inglés de revista. Mismo
-   número de palabras aproximado.
-3. «palabrasClave»: entre 4 y 6 palabras clave en español, de lo más general a
-   lo más específico, separadas por «; ». Que no repitan literalmente palabras
-   del título si se puede evitar, y que sean términos con los que alguien
-   buscaría este trabajo.
-4. «keywords»: las mismas en inglés, en el mismo orden, separadas por «; ».
-
-REGLAS:
-- Todo lo que escribas tiene que estar en el texto que recibes. Si el trabajo no
-  dice cuántos participantes hubo, no te inventes un número: escribe el resumen
-  sin ese dato.
-- Las cifras de los resultados se copian tal cual del texto.
-- Sin citas, sin referencias, sin siglas sin desarrollar, sin «este trabajo
-  pretende» ni «el presente estudio tiene como objetivo el objetivo de».
-- Tiempo verbal: el objetivo y el método en pasado, los resultados en pasado, la
-  conclusión en presente.
-- Nada de primera persona del singular.
-
-SALIDA: un único objeto JSON con exactamente estas cuatro claves:
-{"resumen": "...", "abstract": "...", "palabrasClave": "...", "keywords": "..."}
-Nada fuera del JSON.
-`.trim();
-
-module.exports = { sistemaDe, traduccion, IDIOMAS, EDICION, RESUMEN, INTOCABLE, FORMATO };
+module.exports = { sistemaDe, traduccion, IDIOMAS, EDICION, INTOCABLE, FORMATO };

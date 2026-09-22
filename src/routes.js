@@ -93,7 +93,7 @@ router.use('/r', rRoutes);
 // El análisis cualitativo: subir las entrevistas desde el enlace que da Claude.
 // Sin sesión, como las de R.
 router.use('/cualitativo', cualitativoRoutes);
-// «Preparar documento»: edición de inglés académico, traducción y resúmenes
+// «Preparar documento»: edición de inglés académico y traducción
 // sobre el Word que sube el cliente. Con sesión, porque la membresía cuelga de
 // la cuenta; a diferencia de R y del cualitativo, esto no viene de una
 // conversación con Claude sino de la web. Ver `modules/preparar`.

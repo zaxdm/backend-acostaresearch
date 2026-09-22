@@ -263,6 +263,24 @@ const esPicoPasajero = (error) =>
       error.message,
     ));
 
+/**
+ * Y de esos, el que NO se arregla volviendo a preguntar en dos segundos.
+ *
+ * Un 503 es «este modelo, ahora»: se pregunta otra vez y contesta. Un 429 por
+ * cuota es nuestro plan contra el reloj de Google, y él mismo dice que hay que
+ * esperar medio minuto. Reintentarlo aquí gasta otra petición de las que ya no
+ * hay, y encima quien llama volverá a intentarlo por su cuenta: el 22-sep-2026
+ * un documento de dos tandas gastó TREINTA Y SEIS peticiones contra un tope de
+ * veinte, porque se reintentaba en tres sitios a la vez.
+ *
+ * Así que aquí no se reintenta. Se devuelve el error con su `esperarMs` y
+ * quien pueda esperar de verdad —`preparar.motor`— decide.
+ */
+const esCupoAgotado = (error) =>
+  error instanceof GeminiError &&
+  (error.status === 429 ||
+    /exceeded your current quota|quota exceeded|resource.?exhausted/i.test(error.message ?? ''));
+
 /** Lo que se espera entre vuelta y vuelta cuando todos los modelos están en un pico. */
 const ESPERAS_TRAS_PICO = [2_000, 4_000];
 
@@ -406,7 +424,9 @@ async function generarConRespaldo({
     if (resultado) return resultado;
 
     if (fallos.length > 0) ultimoError = fallos[fallos.length - 1].error;
-    const enPico = fallos.filter((f) => esPicoPasajero(f.error)).map((f) => f.modelo);
+    const enPico = fallos
+      .filter((f) => esPicoPasajero(f.error) && !esCupoAgotado(f.error))
+      .map((f) => f.modelo);
 
     if (enPico.length === 0 || vuelta >= ESPERAS_TRAS_PICO.length) break;
 
@@ -550,4 +570,4 @@ async function embeber(
 /** Vaciar lo recordado. Para las pruebas: cada una empieza sin memoria. */
 const olvidarVectores = () => memoria.clear();
 
-module.exports = { generar, generarEnGroq, generarConRespaldo, modelosDeTexto, olvidarReposos, embeber, olvidarVectores, esperaPedida, esPicoPasajero, GeminiError };
+module.exports = { generar, generarEnGroq, generarConRespaldo, modelosDeTexto, olvidarReposos, embeber, olvidarVectores, esperaPedida, esPicoPasajero, esCupoAgotado, GeminiError };

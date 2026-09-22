@@ -230,58 +230,17 @@ test('si no sale NI UN párrafo, se lanza: entregar el mismo Word sería estafar
   );
 });
 
-// ── Resúmenes ──────────────────────────────────────────────────────────────
-
-test('para el resumen se manda el principio y el final, no el marco teórico de en medio', () => {
-  const parrafos = Array.from({ length: 30 }, (_, i) => ({
-    id: i + 1,
-    texto: `Párrafo ${i + 1}`,
-    palabras: 10,
-  }));
-
-  const { parrafos: elegidos, recortado } = motor.extractoPara(parrafos, 100);
-
-  assert.equal(recortado, true);
-  assert.deepEqual(elegidos.map((p) => p.id), [1, 2, 3, 4, 5, 26, 27, 28, 29, 30]);
-});
-
-test('si el documento cabe entero, se manda entero', () => {
-  const parrafos = [parrafo(1, 'uno'), parrafo(2, 'dos')];
-  const { parrafos: elegidos, recortado } = motor.extractoPara(parrafos, 100);
-
-  assert.equal(recortado, false);
-  assert.equal(elegidos.length, 2);
-});
-
-test('el resumen exige las cuatro piezas: si falta una, no se entrega a medias', async () => {
-  const completo = {
-    resumen: 'El objetivo fue medir el rendimiento.',
-    abstract: 'The aim was to measure performance.',
-    palabrasClave: 'rendimiento; universidad',
-    keywords: 'performance; university',
-  };
-
-  const bien = await motor.resumenDe({
-    parrafos: [parrafo(1, 'texto')],
-    generar: async () => ({ texto: JSON.stringify(completo) }),
-  });
-  assert.equal(bien.abstract, 'The aim was to measure performance.');
-  assert.ok(bien.palabrasDelResumen > 0);
-
-  await assert.rejects(
-    motor.resumenDe({
-      parrafos: [parrafo(1, 'texto')],
-      generar: async () => ({ texto: JSON.stringify({ ...completo, keywords: '  ' }) }),
-    }),
-    /keywords/,
-  );
-});
+// ── Lo que devuelve el modelo ──────────────────────────────────────────────
 
 test('una respuesta que no es JSON se dice con esas palabras, no con un error de programa', async () => {
+  // Antes esto se comprobaba sobre los resúmenes, que se retiraron el
+  // 22-sep-2026. La garantía es la misma y el camino, el que queda.
   await assert.rejects(
-    motor.resumenDe({
-      parrafos: [parrafo(1, 'texto')],
-      generar: async () => ({ texto: 'Aquí tienes tu resumen: ...' }),
+    motor.prepararParrafos({
+      parrafos: [parrafo(1, 'The results shows an effect in the group.')],
+      servicio: 'EDICION',
+      generar: async () => ({ texto: 'Aquí tienes tu corrección: ...' }),
+      reintento: { intentos: 0 },
     }),
     /JSON/,
   );
@@ -327,25 +286,26 @@ test('si sigue saturado tras los reintentos, se rinde con el mensaje de Google',
   assert.equal(llamadas, 3, 'el primero y dos reintentos');
 });
 
-test('el resumen ya no se pierde por un pico de demanda', async () => {
-  const completo = {
-    resumen: 'El objetivo fue medir el rendimiento.',
-    abstract: 'The aim was to measure performance.',
-    palabrasClave: 'rendimiento; universidad',
-    keywords: 'performance; university',
-  };
-
+test('una tanda no se pierde por un pico de demanda: se espera y se vuelve a pedir', async () => {
   let llamadas = 0;
-  const hecho = await motor.resumenDe({
-    parrafos: [parrafo(1, 'texto')],
+  const { cambios } = await motor.prepararParrafos({
+    parrafos: [parrafo(1, 'The results shows an effect in the group of participants.')],
+    servicio: 'EDICION',
     reintento: { esperaMs: 1 },
-    generar: async () => {
+    generar: async ({ mensajes }) => {
       llamadas += 1;
       if (llamadas === 1) throw new Error('This model is currently experiencing high demand.');
-      return { texto: JSON.stringify(completo) };
+      const entrada = JSON.parse(mensajes[0].texto);
+      return {
+        texto: JSON.stringify(
+          Object.fromEntries(
+            Object.keys(entrada).map((id) => [id, 'The results show an effect in the group of participants.']),
+          ),
+        ),
+      };
     },
   });
 
   assert.equal(llamadas, 2);
-  assert.equal(hecho.abstract, 'The aim was to measure performance.');
+  assert.equal(cambios['1'].texto, 'The results show an effect in the group of participants.');
 });

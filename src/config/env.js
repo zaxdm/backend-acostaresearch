@@ -122,7 +122,7 @@ const schema = z.object({
   ASISTENTE_MAX_DIARIO: z.coerce.number().int().nonnegative().default(1500),
 
   // ── Preparar documento ──────────────────────────────────────────────────
-  // Edición de inglés académico, traducción y resúmenes. Usa la misma clave de
+  // Edición de inglés académico y traducción. Usa la misma clave de
   // Gemini que el asistente; sin ella el servicio no se ofrece.
   //
   // Aquí SÍ el modelo bueno, al revés que en el chat. Allí se contesta una

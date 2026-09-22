@@ -49,7 +49,6 @@ const { sendMail } = require('../../lib/mailer');
 const plantillas = require('../../lib/emailTemplates');
 
 const documento = require('../projects/project.documento');
-const reescritura = require('../projects/project.reescritura');
 
 const repository = require('./preparar.repository');
 const membresia = require('./preparar.membresia');
@@ -57,6 +56,7 @@ const almacen = require('./preparar.storage');
 const cuerpo = require('./preparar.cuerpo');
 const motor = require('./preparar.motor');
 const cambios = require('./preparar.cambios');
+const traduccion = require('./preparar.traduccion');
 const resumenDocx = require('./preparar.resumen');
 const { IDIOMAS } = require('./preparar.prompt');
 
@@ -65,6 +65,24 @@ const NOMBRES = Object.freeze({
   EDICION: 'Edición de inglés académico',
   TRADUCCION: 'Traducción',
   RESUMEN: 'Resumen, abstract y palabras clave',
+});
+
+/**
+ * Qué se le dice cuando no se pudo cambiar ni un párrafo.
+ *
+ * Pasa cuando el documento entero está dentro de tablas o cuadros de texto, o
+ * cuando lo que subió ya estaba hecho. No se entrega: un documento idéntico al
+ * que subió, cobrado, es lo mismo que no haber hecho nada.
+ */
+const SIN_TOCAR = Object.freeze({
+  EDICION:
+    'No hemos cambiado ni un párrafo, así que no te hemos descontado ningún documento de tu ' +
+    'membresía. Suele pasar cuando el texto ya está en inglés correcto, o cuando el trabajo está ' +
+    'dentro de tablas o cuadros de texto, que este servicio no toca.',
+  TRADUCCION:
+    'No hemos podido traducir ni un párrafo, así que no te hemos descontado ningún documento de ' +
+    'tu membresía. Suele pasar cuando el documento ya está en ese idioma, o cuando el texto está ' +
+    'dentro de tablas o cuadros de texto, que este servicio no toca.',
 });
 
 /**
@@ -171,22 +189,23 @@ async function producir({ preparacion, buffer, parrafos }) {
     idioma: preparacion.idioma,
   });
 
-  if (preparacion.servicio === 'EDICION') {
-    // Con control de cambios: es lo que distingue una corrección de lengua de
-    // un texto cambiado por detrás. Ver `preparar.cambios`.
-    const hecho = cambios.aplicar(buffer, propuestos);
-    return { buffer: hecho.buffer, tocados: hecho.tocados, intactos: hecho.intactos.size + malos.length };
-  }
-
-  // Traducción: el texto nuevo entra en el párrafo conservando su formato, sin
+  // EDICION, con control de cambios: es lo que distingue una corrección de
+  // lengua de un texto cambiado por detrás. Ver `preparar.cambios`.
+  //
+  // TRADUCCION: el texto nuevo entra en el párrafo conservando su formato, sin
   // marcas. Marcar una traducción entera como revisión no tiene sentido: no hay
   // nada que aceptar o rechazar palabra a palabra, el documento ES la traducción.
-  const hecho = reescritura.reescribir(buffer, propuestos);
-  return {
-    buffer: hecho.buffer,
-    tocados: Object.keys(propuestos).length - hecho.saltados.length,
-    intactos: hecho.saltados.length + malos.length,
-  };
+  const hecho =
+    preparacion.servicio === 'EDICION'
+      ? cambios.aplicar(buffer, propuestos)
+      : traduccion.traducir(buffer, propuestos);
+
+  // Cero párrafos tocados es devolverle su propio archivo. Sale por el camino
+  // del fallo a propósito: así no le gasta un documento del mes y se le explica
+  // qué pasó, en vez de dejarle descargar lo mismo que subió.
+  if (hecho.tocados === 0) throw new Error(SIN_TOCAR[preparacion.servicio]);
+
+  return { buffer: hecho.buffer, tocados: hecho.tocados, intactos: hecho.intactos.size + malos.length };
 }
 
 /**

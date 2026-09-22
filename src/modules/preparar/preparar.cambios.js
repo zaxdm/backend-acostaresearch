@@ -28,20 +28,29 @@
  * cursiva aunque esté tachada. Lo que se añade toma el formato del texto donde
  * se inserta.
  *
+ * LAS CITAS
+ * ---------
+ * Las citas de Zotero o Mendeley y los hipervínculos NO bloquean el párrafo: se
+ * apartan antes de comparar y vuelven a su sitio después, con su campo entero,
+ * para que Zotero siga pudiendo renumerar y rehacer la bibliografía. Ver
+ * `preparar.campos`. Si una cita acabara dentro de un tachado, el párrafo se
+ * deja como estaba: antes eso que entregar un Word con la cita movida.
+ *
  * QUÉ NO SE TOCA
  * --------------
- * Un párrafo con campos (citas de Zotero o Mendeley), hipervínculos, imágenes,
- * ecuaciones, notas al pie, símbolos, saltos de línea o control de cambios ya
- * puesto se deja EXACTAMENTE como está y se cuenta aparte. Es más estricto que
- * `project.reescritura`, que sí sabe recolocar una llamada a nota al pie, y es
- * a propósito: allí el texto nuevo es el mismo en otro orden, y aquí hay que
- * partirlo en trozos tachados y trozos puestos. Colocar mal una nota al pie
- * entre dos revisiones deja un Word que Word no abre.
+ * Un párrafo con imágenes, ecuaciones, notas al pie, símbolos, saltos de línea
+ * o control de cambios ya puesto se deja EXACTAMENTE como está y se cuenta
+ * aparte. Es más estricto que `project.reescritura`, que sí sabe recolocar una
+ * llamada a nota al pie, y es a propósito: allí el texto nuevo es el mismo en
+ * otro orden, y aquí hay que partirlo en trozos tachados y trozos puestos.
+ * Colocar mal una nota al pie entre dos revisiones deja un Word que Word no
+ * abre.
  *
  * Al cliente se le dice cuántos quedaron intactos y por qué.
  */
 
 const documento = require('../projects/project.documento');
+const campos = require('./preparar.campos');
 
 /** Lo que hace que un párrafo no se pueda marcar, con el motivo para el cliente. */
 const MOTIVOS = {
@@ -334,18 +343,39 @@ function aplicar(buffer, cambios, { autor = 'Acosta | IA & Research', fecha = ne
       continue;
     }
 
-    const xmlDelParrafo = xml.slice(parrafo.inicio, parrafo.fin);
-    const motivo = motivoDeBloqueo(xmlDelParrafo);
+    // Las citas de Zotero y los hipervínculos se apartan antes de comparar y se
+    // devuelven después. Sin esto, un párrafo con una sola cita se quedaba sin
+    // corregir, y en una tesis eso es casi todo el documento. Ver
+    // `preparar.campos`.
+    let protegido;
+    let piezas = parrafo.piezas;
+    let textoViejo = parrafo.texto;
+    let textoNuevo = cambio.texto;
+    try {
+      protegido = campos.proteger(xml.slice(parrafo.inicio, parrafo.fin));
+      if (protegido.campos.length > 0) {
+        const releido = documento.parrafosDe(protegido.xml)[0];
+        piezas = releido.piezas;
+        textoViejo = releido.texto;
+        textoNuevo = campos.enmascarar(cambio.texto, protegido.campos);
+      }
+    } catch (error) {
+      if (!(error instanceof campos.NoProtegible)) throw error;
+      intactos.set(id, error.message);
+      continue;
+    }
+
+    const motivo = motivoDeBloqueo(protegido.xml);
     if (motivo) {
       intactos.set(id, motivo);
       continue;
     }
 
     const hecho = marcarParrafo({
-      xmlDelParrafo,
-      piezas: parrafo.piezas,
-      textoViejo: parrafo.texto,
-      textoNuevo: cambio.texto,
+      xmlDelParrafo: protegido.xml,
+      piezas,
+      textoViejo,
+      textoNuevo,
       autor,
       fecha,
       siguienteId,
@@ -353,7 +383,18 @@ function aplicar(buffer, cambios, { autor = 'Acosta | IA & Research', fecha = ne
     // Null es que no había nada que marcar: el párrafo ya estaba bien escrito.
     if (!hecho) continue;
 
-    ediciones.push({ desde: parrafo.inicio, hasta: parrafo.fin, poner: hecho });
+    let puesto;
+    try {
+      puesto = campos.restaurar(hecho, protegido.campos);
+    } catch (error) {
+      // La cita acabó dentro de un tachado o desapareció al comparar. Antes de
+      // entregar un Word con una cita movida o perdida, se deja el párrafo.
+      if (!(error instanceof campos.NoProtegible)) throw error;
+      intactos.set(id, error.message);
+      continue;
+    }
+
+    ediciones.push({ desde: parrafo.inicio, hasta: parrafo.fin, poner: puesto });
   }
 
   ediciones.sort((a, b) => a.desde - b.desde);

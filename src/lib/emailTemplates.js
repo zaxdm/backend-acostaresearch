@@ -905,9 +905,9 @@ function documentoPreparado({ firstName, servicio, nombre, idioma, intactos }) {
   const que = idioma ? `${servicio} al ${idioma}` : servicio;
   const sinTocar =
     intactos > 0
-      ? `Quedaron ${intactos} párrafo${intactos === 1 ? '' : 's'} sin tocar porque llevaban ` +
-        'algo que no se puede rehacer sin romperlo (una cita de Zotero, una nota al pie, una ' +
-        'ecuación). Los verás señalados en la web.'
+      ? `Quedaron ${intactos} párrafo${intactos === 1 ? '' : 's'} como estaban porque llevaban ` +
+        'dentro una nota al pie, una ecuación o una imagen, y rehacerlos habría roto esa pieza. ' +
+        'Tus citas de Zotero no estorban: esas viajan enteras.'
       : '';
 
   return {

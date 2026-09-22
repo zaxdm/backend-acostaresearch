@@ -205,6 +205,9 @@ test('si una tanda entera revienta, sus párrafos se reintentan uno a uno', asyn
     servicio: 'EDICION',
     generar,
     porTanda: 100,
+    // Un 503 es saturación: ahora se espera antes de volver a probar, y en la
+    // prueba esa espera es de un milisegundo.
+    reintento: { esperaMs: 1 },
   });
 
   assert.deepEqual(Object.keys(cambios).sort(), ['1', '2']);
@@ -216,7 +219,13 @@ test('si no sale NI UN párrafo, se lanza: entregar el mismo Word sería estafar
   };
 
   await assert.rejects(
-    motor.prepararParrafos({ parrafos: DOS, servicio: 'EDICION', generar, porTanda: 100 }),
+    motor.prepararParrafos({
+      parrafos: DOS,
+      servicio: 'EDICION',
+      generar,
+      porTanda: 100,
+      reintento: { esperaMs: 1 },
+    }),
     /503/,
   );
 });
@@ -276,4 +285,67 @@ test('una respuesta que no es JSON se dice con esas palabras, no con un error de
     }),
     /JSON/,
   );
+});
+
+// ── Cuando Google está saturado ────────────────────────────────────────────
+
+test('si el modelo está saturado se espera y se vuelve a probar', async () => {
+  let llamadas = 0;
+  const generar = async () => {
+    llamadas += 1;
+    if (llamadas === 1) {
+      throw new Error('This model is currently experiencing high demand. Please try again later.');
+    }
+    return { texto: 'listo' };
+  };
+
+  const hecho = await motor.conReintento(generar, { esperaMs: 1 })({});
+
+  assert.equal(llamadas, 2);
+  assert.equal(hecho.texto, 'listo');
+});
+
+test('un fallo que no es saturación no se reintenta: gastaría dinero para nada', async () => {
+  let llamadas = 0;
+  const generar = async () => {
+    llamadas += 1;
+    throw new Error('La clave de la API no es válida');
+  };
+
+  await assert.rejects(motor.conReintento(generar, { esperaMs: 1 })({}), /clave/);
+  assert.equal(llamadas, 1);
+});
+
+test('si sigue saturado tras los reintentos, se rinde con el mensaje de Google', async () => {
+  let llamadas = 0;
+  const generar = async () => {
+    llamadas += 1;
+    throw new Error('503 Service Unavailable');
+  };
+
+  await assert.rejects(motor.conReintento(generar, { esperaMs: 1, intentos: 2 })({}), /Unavailable/);
+  assert.equal(llamadas, 3, 'el primero y dos reintentos');
+});
+
+test('el resumen ya no se pierde por un pico de demanda', async () => {
+  const completo = {
+    resumen: 'El objetivo fue medir el rendimiento.',
+    abstract: 'The aim was to measure performance.',
+    palabrasClave: 'rendimiento; universidad',
+    keywords: 'performance; university',
+  };
+
+  let llamadas = 0;
+  const hecho = await motor.resumenDe({
+    parrafos: [parrafo(1, 'texto')],
+    reintento: { esperaMs: 1 },
+    generar: async () => {
+      llamadas += 1;
+      if (llamadas === 1) throw new Error('This model is currently experiencing high demand.');
+      return { texto: JSON.stringify(completo) };
+    },
+  });
+
+  assert.equal(llamadas, 2);
+  assert.equal(hecho.abstract, 'The aim was to measure performance.');
 });

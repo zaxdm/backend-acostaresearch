@@ -165,6 +165,57 @@ function comprobar(original, nuevo, opciones) {
   return null;
 }
 
+// ── Cuando Google está saturado ────────────────────────────────────────────
+
+/**
+ * El fallo que no es culpa de nadie: el modelo está desbordado ahora mismo.
+ *
+ * Google contesta «This model is currently experiencing high demand», y
+ * `gemini.generarConRespaldo` ya ha probado el modelo de respaldo antes de
+ * llegar aquí. Cuando los dos están ocupados no hay nada que arreglar: hay que
+ * esperar unos segundos.
+ */
+const SATURADO = /high demand|overload|unavailable|too many requests|rate limit|\b429\b|\b503\b/i;
+
+const REINTENTOS = 2;
+const ESPERA_MS = 6_000;
+
+const dormir = (ms) => new Promise((listo) => setTimeout(listo, ms));
+
+/**
+ * El mismo `generar`, pero esperando y volviendo a probar si está saturado.
+ *
+ * Solo ante la saturación: un JSON mal formado o una respuesta que no pasa la
+ * comprobación ya tienen su propio camino —se vuelve a pedir el párrafo solo—,
+ * y reintentar lo que falla por su contenido es gastar dinero para obtener lo
+ * mismo. La espera crece en cada vuelta porque un pico de demanda dura
+ * segundos, no milisegundos.
+ *
+ * Sin esto, un resumen entero se perdía porque Google estaba ocupado en ese
+ * instante. Al cliente no se le cobraba, pero tenía que volver a subirlo.
+ */
+function conReintento(generar, opciones = {}) {
+  const { intentos = REINTENTOS, esperaMs = ESPERA_MS } = opciones ?? {};
+  return async (peticion) => {
+    let ultimo = null;
+    for (let intento = 0; intento <= intentos; intento += 1) {
+      try {
+        return await generar(peticion);
+      } catch (error) {
+        ultimo = error;
+        if (!SATURADO.test(String(error?.message ?? ''))) throw error;
+        if (intento === intentos) break;
+        logger.warn(
+          { intento: intento + 1, err: error.message },
+          'Preparar documento: el modelo está saturado; se espera y se vuelve a probar',
+        );
+        await dormir(esperaMs * (intento + 1));
+      }
+    }
+    throw ultimo;
+  };
+}
+
 // ── Pedirlo ────────────────────────────────────────────────────────────────
 
 /**
@@ -225,14 +276,16 @@ async function prepararParrafos({
   generar = gemini.generarConRespaldo,
   aLaVez = env.PREPARAR_TANDAS_A_LA_VEZ,
   porTanda = env.PREPARAR_PALABRAS_POR_TANDA,
+  reintento,
 }) {
   const opciones = { servicio, idioma };
   const tandas = tandasDe(parrafos, porTanda);
+  const pedir = conReintento(generar, reintento);
 
   const resultados = await enParalelo(
     tandas.map((tanda) => async () => {
       try {
-        return await pedirTanda(tanda, opciones, generar);
+        return await pedirTanda(tanda, opciones, pedir);
       } catch (error) {
         logger.warn(
           { err: error.message, servicio, parrafos: tanda.length },
@@ -252,7 +305,7 @@ async function prepararParrafos({
     primerosMalos.map(({ id }) => async () => {
       const parrafo = porId.get(id);
       try {
-        return await pedirTanda([parrafo], opciones, generar);
+        return await pedirTanda([parrafo], opciones, pedir);
       } catch (error) {
         return { buenos: {}, malos: [{ id, motivo: error.message }] };
       }
@@ -323,7 +376,7 @@ function exigir(valor, campo) {
 }
 
 /** El resumen, el abstract y las palabras clave del documento. */
-async function resumenDe({ parrafos, generar = gemini.generarConRespaldo }) {
+async function resumenDe({ parrafos, generar = gemini.generarConRespaldo, reintento }) {
   const { parrafos: elegidos, recortado } = extractoPara(parrafos);
 
   const cuerpo = elegidos.map((parrafo) => parrafo.texto).join('\n\n');
@@ -331,7 +384,7 @@ async function resumenDe({ parrafos, generar = gemini.generarConRespaldo }) {
     ? '\n\n[Se te ha dado el principio y el final del trabajo, no el texto completo.]'
     : '';
 
-  const { texto } = await generar({
+  const { texto } = await conReintento(generar, reintento)({
     sistema: prompt.RESUMEN,
     mensajes: [{ rol: 'usuario', texto: cuerpo + aviso }],
     modelos: modelos(),
@@ -365,6 +418,7 @@ module.exports = {
   prepararParrafos,
   extractoPara,
   resumenDe,
+  conReintento,
   modelos,
   tokensPara,
 };

@@ -168,7 +168,13 @@ test('el resto del documento no se toca, ni los párrafos de al lado', () => {
 
 // ── Lo que no se toca nunca ────────────────────────────────────────────────
 
-test('un párrafo con una cita de Zotero se queda entero como estaba, con su motivo', () => {
+/**
+ * Antes, una cita de Zotero bloqueaba el párrafo entero y se quedaba sin
+ * corregir. En una tesis eso es casi todo el documento, así que ahora la cita
+ * se aparta, se corrige el texto y la cita vuelve a su sitio con su campo
+ * intacto. Ver `preparar.campos`.
+ */
+test('un párrafo con una cita de Zotero SÍ se corrige, y la cita sigue viva', () => {
   const campo =
     '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
     '<w:r><w:instrText>ADDIN ZOTERO_ITEM CSL_CITATION</w:instrText></w:r>' +
@@ -182,10 +188,15 @@ test('un párrafo con una cita de Zotero se queda entero como estaba, con su mot
   const salida = cambios.aplicar(buffer, {
     1: { original, texto: 'The results show an effect (Pérez, 2020).' },
   });
+  const xml = parte(salida.buffer);
 
-  assert.equal(salida.tocados, 0);
-  assert.match(salida.intactos.get(1), /campo/);
-  assert.ok(parte(salida.buffer).includes(cuerpo));
+  assert.equal(salida.tocados, 1);
+  assert.equal(salida.intactos.size, 0);
+  assert.match(xml, /<w:delText xml:space="preserve">shows <\/w:delText>/);
+  assert.match(xml, /<w:ins [^>]*>[\s\S]*?show /);
+  // El campo entero, una sola vez: ni duplicado como texto ni perdido.
+  assert.equal(xml.split('ZOTERO_ITEM').length - 1, 1);
+  assert.equal(xml.split('(Pérez, 2020)').length - 1, 1);
 });
 
 test('una llamada a nota al pie bloquea el párrafo: mal colocada deja el Word sin abrir', () => {

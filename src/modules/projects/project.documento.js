@@ -306,6 +306,18 @@ function nombresDeEstilos(estilosXml) {
 }
 
 /**
+ * Una línea del índice, por el nombre del estilo o por su identificador.
+ *
+ * Por los dos y no solo por el nombre: Word llama al estilo «toc 1» («TDC 1» en
+ * español) y le pone de identificador «TOC1», pero un documento puede usar el
+ * identificador sin declarar el estilo en `styles.xml` —es lo que hacía el Word
+ * que genera este mismo sistema—, y entonces no hay nombre que mirar. Sin esto,
+ * las líneas del índice se leen como si fueran prosa: se le mandan a Claude, se
+ * cuentan como palabras del cliente y se intentan traducir.
+ */
+const ESTILO_DE_INDICE = /^(toc|tdc|[íi]ndice)\s*\d/i;
+
+/**
  * Los párrafos con texto, como los lee Claude.
  *
  * Fuera los vacíos y las líneas del índice: en ninguno de los dos va una cita,
@@ -325,7 +337,7 @@ function leer(buffer) {
     .map((parrafo) => {
       const estilo = nombres.get(parrafo.estilo) ?? '';
       const nivel = Number((estilo.match(/^heading (\d)$/i) || [])[1]) || null;
-      const indice = /^toc /i.test(estilo);
+      const indice = ESTILO_DE_INDICE.test(estilo) || ESTILO_DE_INDICE.test(parrafo.estilo ?? '');
       const titulo = !indice && !parrafo.enTabla && TITULO_DE_REFERENCIAS.test(normalizarTitulo(parrafo.texto));
       if (titulo) enReferencias = true;
       else if (nivel) enReferencias = false;

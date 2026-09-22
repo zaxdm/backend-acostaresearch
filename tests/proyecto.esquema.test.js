@@ -192,10 +192,74 @@ test('la propuesta de tema, el instrumento y la bitácora no son capítulos del 
     conTexto: new Set(CON_FASES_DE_TRABAJO.map((s) => s.code)),
   });
 
+  // Ninguna de las tres abre capítulo entre la metodología y los resultados.
   assert.deepEqual(
-    capitulos.map((c) => c.partes[0]),
+    capitulos.filter((c) => !c.anexo).map((c) => c.partes[0]),
     CATALOGO.map((s) => s.code),
   );
+  // La propuesta de tema no sale por ninguna parte: no es de la tesis.
+  assert.ok(!capitulos.some((c) => c.partes[0] === 'tema-y-delimitacion'));
+});
+
+test('sin estructura de su facultad, el instrumento y la bitácora salen como anexos', () => {
+  const { capitulos } = esquema.capitulosDelDocumento({
+    esquema: null,
+    catalogo: CON_FASES_DE_TRABAJO,
+    conTexto: new Set(CON_FASES_DE_TRABAJO.map((s) => s.code)),
+  });
+
+  assert.deepEqual(
+    capitulos.filter((c) => c.anexo).map((c) => [c.titulo, c.partes[0]]),
+    [
+      ['Anexo 1: Instrumento de recolección de datos', 'instrumento-investigacion'],
+      ['Anexo 2: Bitácora del trabajo de campo', 'recoleccion-datos'],
+    ],
+  );
+  // Y van al final, detrás de los capítulos: el Word mete las referencias entre
+  // unos y otros.
+  assert.ok(capitulos.slice(-2).every((c) => c.anexo));
+});
+
+test('los anexos por defecto se numeran por los que hay, no por su sitio en el método', () => {
+  // Sin instrumento escrito, la bitácora es el Anexo 1 y no el 2.
+  const { capitulos } = esquema.capitulosDelDocumento({
+    esquema: null,
+    catalogo: CON_FASES_DE_TRABAJO,
+    conTexto: new Set(['metodologia', 'recoleccion-datos']),
+  });
+
+  assert.deepEqual(
+    capitulos.filter((c) => c.anexo).map((c) => c.titulo),
+    ['Anexo 1: Bitácora del trabajo de campo'],
+  );
+});
+
+test('un anexo del reglamento se reconoce por su título', () => {
+  const conAnexo = normalizar(
+    [
+      { titulo: 'CAPÍTULO III: METODOLOGÍA', de: ['metodologia'] },
+      { titulo: 'ANEXO 1: INSTRUMENTO', de: ['instrumento-investigacion'] },
+    ],
+    { catalogo: CON_FASES_DE_TRABAJO },
+  );
+  const { capitulos } = esquema.capitulosDelDocumento({
+    esquema: conAnexo,
+    catalogo: CON_FASES_DE_TRABAJO,
+    conTexto: new Set(['metodologia', 'instrumento-investigacion']),
+  });
+
+  assert.deepEqual(capitulos.map((c) => c.anexo), [false, true]);
+});
+
+test('«Anexo» dentro del título no convierte el capítulo en anexo', () => {
+  assert.ok(esquema.esAnexo('Anexos'));
+  assert.ok(esquema.esAnexo('ANEXO 1: INSTRUMENTO'));
+  assert.ok(esquema.esAnexo('Apéndice A. Matriz de consistencia'));
+  assert.ok(esquema.esAnexo('7 · Anexos'));
+  assert.ok(!esquema.esAnexo('Índice de anexos'));
+  assert.ok(!esquema.esAnexo('CAPÍTULO IV: METODOLOGÍA'));
+  // Ni una palabra que solo empieza igual.
+  assert.ok(!esquema.esAnexo('Anexionismo y territorio'));
 });
 
 test('las fases de trabajo tampoco salen al final como sobrantes', () => {

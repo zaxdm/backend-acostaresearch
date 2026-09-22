@@ -783,7 +783,15 @@ async function armarWord(userId, productCode) {
         const texto = await almacen.leer(proyecto.id, clave);
         if (texto && texto.trim() !== '') partes.push(texto.trim());
       }
-      if (partes.length > 0) escritos.push({ titulo: capitulo.titulo, texto: partes.join('\n\n') });
+      // `anexo` viaja hasta el Word: los anexos se imprimen DETRÁS de la lista
+      // de referencias, no en su sitio del esquema (ver `project.esquema`).
+      if (partes.length > 0) {
+        escritos.push({
+          titulo: capitulo.titulo,
+          anexo: Boolean(capitulo.anexo),
+          texto: partes.join('\n\n'),
+        });
+      }
     }
     return escritos;
   };
@@ -914,7 +922,7 @@ async function armarEnLaNorma({ userId, proyecto, capitulos, porClave }) {
 
   return {
     documento: {
-      capitulos: capitulos.map((capitulo, i) => ({ titulo: capitulo.titulo, texto: r.textos[i] })),
+      capitulos: capitulos.map((capitulo, i) => ({ ...capitulo, texto: r.textos[i] })),
       citas: r.citas,
       referencias: r.bibliografia ?? [],
       zotero,
@@ -934,7 +942,7 @@ function armarEnApa(capitulos, porClave) {
     const resuelto = citas.resolver(capitulo.texto, porClave);
     for (const [clave, fuente] of resuelto.usadas) usadas.set(clave, fuente);
     for (const clave of resuelto.perdidas) perdidas.add(clave);
-    return { titulo: capitulo.titulo, texto: resuelto.texto };
+    return { ...capitulo, texto: resuelto.texto };
   });
 
   return {

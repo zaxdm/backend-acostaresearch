@@ -59,6 +59,7 @@ const { HUECO_RE } = require('./project.citas');
 const zoteroCampos = require('./project.zotero-campos');
 const partesDePlantilla = require('./project.plantilla-partes');
 const indice = require('./project.indice');
+const esquema = require('./project.esquema');
 
 /** Interlineado doble, en las unidades de OOXML (240 = sencillo). */
 const DOBLE = 480;
@@ -1281,32 +1282,55 @@ async function armar({
     }),
   ];
 
-  for (const capitulo of capitulos) {
+  /** Un Título 1 de los que abren página: capítulo, referencias o anexo. */
+  const tituloDeSeccion = (texto) =>
+    new Paragraph({
+      text: texto,
+      heading: HeadingLevel.HEADING_1,
+      pageBreakBefore: true,
+      // Como los subtítulos: el título de un capítulo no se sangra.
+      indent: { firstLine: 0 },
+      ...espacioDeTitulo,
+    });
+
+  /**
+   * Primero las referencias y DESPUÉS los anexos.
+   *
+   * La lista de referencias cierra el cuerpo del trabajo; lo que viene detrás
+   * —el cuestionario, la matriz de consistencia, el consentimiento informado—
+   * es material de apoyo. Hasta aquí los capítulos salían en el orden del
+   * esquema y la lista se pegaba al final de todos, así que la facultad que
+   * ponía «ANEXOS» como último capítulo recibía su tesis con las referencias
+   * detrás de los anexos, que no lo admite ningún reglamento.
+   *
+   * Quién es anexo lo decide `project.esquema` por el título; si el capítulo no
+   * lo trae dicho —otras llamadas a `armar` pasan solo título y texto—, se mira
+   * aquí con la misma regla, para que no dependa de por dónde haya entrado.
+   */
+  const esAnexo = (capitulo) => capitulo.anexo ?? esquema.esAnexo(capitulo.titulo);
+  const delCuerpo = capitulos.filter((c) => !esAnexo(c));
+  const anexos = capitulos.filter((c) => esAnexo(c));
+
+  for (const capitulo of delCuerpo) {
     cuerpo.push(
-      new Paragraph({
-        text: tituloDelCapitulo(capitulo.titulo, { sinCapitulo: numeraCapitulos }),
-        heading: HeadingLevel.HEADING_1,
-        pageBreakBefore: true,
-        // Como los subtítulos: el título de un capítulo no se sangra.
-        indent: { firstLine: 0 },
-        ...espacioDeTitulo,
-      }),
+      tituloDeSeccion(tituloDelCapitulo(capitulo.titulo, { sinCapitulo: numeraCapitulos })),
       ...comoParrafos(capitulo.texto, contexto),
     );
   }
 
   const lista = referenciasDelDocumento(referencias, zotero, plantilla, estiloCuerpo);
   if (lista.parrafos.length > 0) {
-    cuerpo.push(
-      new Paragraph({
-        text: lista.titulo,
-        heading: HeadingLevel.HEADING_1,
-        pageBreakBefore: true,
-        indent: { firstLine: 0 },
-        ...espacioDeTitulo,
-      }),
-      ...lista.parrafos,
-    );
+    cuerpo.push(tituloDeSeccion(lista.titulo), ...lista.parrafos);
+  }
+
+  /** Los títulos de los anexos, tal como salen impresos: no se numeran. */
+  const titulosDeAnexos = [];
+  for (const capitulo of anexos) {
+    // Un anexo no es el «Capítulo N» de nadie, así que su título se imprime
+    // entero aunque la plantilla numere los capítulos.
+    const titulo = tituloDelCapitulo(capitulo.titulo);
+    titulosDeAnexos.push(titulo);
+    cuerpo.push(tituloDeSeccion(titulo), ...comoParrafos(capitulo.texto, contexto));
   }
 
   /**
@@ -1397,8 +1421,9 @@ async function armar({
         portadaInforme?.ambito === 'empresa' ? (portadaInforme.preparadoPor ?? portadaInforme.nombre ?? null) : null,
       cargo: portadaInforme?.cargo ?? null,
       periodo: portadaInforme?.periodo ?? null,
-      // La lista de referencias es un Título 1, pero no se numera.
-      sinNumero: lista.parrafos.length > 0 ? [lista.titulo] : [],
+      // La lista de referencias y los anexos son Título 1, pero no se numeran:
+      // la numeración de la plantilla es la de los capítulos.
+      sinNumero: [...(lista.parrafos.length > 0 ? [lista.titulo] : []), ...titulosDeAnexos],
     });
   }
   if (zotero) buffer = zoteroCampos.coser(buffer, zotero.codigos);

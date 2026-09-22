@@ -1274,7 +1274,10 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
           'estructura por la universidad: PÍDESELA y repítesela para que la confirme ANTES de ' +
           'guardarla, porque reordena su documento entero. ' +
           'Manda SIEMPRE la lista completa de capítulos, en orden: lo que mandes sustituye a lo ' +
-          'que hubiera. Una fase con texto que no nombres sale igual, al final del Word.',
+          'que hubiera. Una fase con texto que no nombres sale igual, al final del Word. ' +
+          'LAS REFERENCIAS NO SE NOMBRAN: la lista la pone el Word solo, con la norma del ' +
+          'proyecto. Los anexos SÍ van en la lista, titulados «Anexo 1: …» o «Apéndice A: …», y ' +
+          'el Word los imprime DETRÁS de las referencias aunque los mandes antes.',
         inputSchema: fromJsonSchema({
           type: 'object',
           properties: {
@@ -1342,12 +1345,32 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
           });
 
           const nombreDe = new Map(catalogo.map((s) => [s.code, s.displayName]));
-          const lineas = esquema.capitulos.map((c, i) => {
+          /**
+           * En el orden en que saldrá impreso, no en el que llegó.
+           *
+           * Los anexos van detrás de la lista de referencias (ver
+           * `project.esquema`), así que enseñarlos en su posición del esquema
+           * le haría creer al asistente —y al tesista— que su Word acaba con
+           * las referencias después de los anexos.
+           */
+          const linea = (c, i) => {
             const origen = c.clave
               ? `capítulo propio de su facultad · guarda su texto con la clave "${c.clave}"`
               : c.de.map((f) => nombreDe.get(f) ?? f).join(' + ');
             return `${i + 1}. ${c.titulo}\n     ← ${origen}`;
-          });
+          };
+          const anexos = esquema.capitulos.filter((c) => esquemaDeCapitulos.esAnexo(c.titulo));
+          const lineas = [
+            ...esquema.capitulos.filter((c) => !esquemaDeCapitulos.esAnexo(c.titulo)),
+            ...anexos,
+          ].map(linea);
+          if (anexos.length > 0) {
+            lineas.splice(
+              lineas.length - anexos.length,
+              0,
+              '   Referencias  ← la pone el Word con la norma del proyecto',
+            );
+          }
 
           const avisos = [];
           if (sobrantes.length > 0) {

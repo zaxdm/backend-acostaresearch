@@ -78,6 +78,55 @@ const FASES_DE_TRABAJO = new Set([
   'recoleccion-datos',
 ]);
 
+/**
+ * Los anexos van DETRÁS de las referencias, siempre.
+ *
+ * Ningún reglamento pone los anexos antes de la lista de referencias: la
+ * bibliografía cierra el cuerpo del trabajo y lo que viene después —el
+ * cuestionario, la matriz de consistencia, el consentimiento informado— es
+ * material de apoyo. El Word los sacaba en el orden en que estaban en el
+ * esquema, así que una facultad que ponía «ANEXOS» como último capítulo
+ * terminaba con las referencias detrás de los anexos.
+ *
+ * Se decide por el título porque es lo único que hay: un anexo es un capítulo
+ * más del esquema que manda el asistente, sin marca propia. Un capítulo que
+ * EMPIEZA por «Anexo», «Anexos» o «Apéndice» es un anexo; «Anexos» dentro del
+ * título («Índice de anexos») no lo es, y por eso se mira solo el principio.
+ */
+const TITULO_DE_ANEXO = /^(anexos?|apendices?|annexes?|appendix|appendices)\b/;
+
+/** ¿Este capítulo es un anexo, y por tanto va detrás de las referencias? */
+function esAnexo(titulo) {
+  const limpio = String(titulo ?? '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    // «7 · Anexos» y «Fase 7 — Anexos»: el prefijo con que se nombra una fase
+    // en nuestro panel, que el Word ya quita al imprimir el título.
+    .replace(/^\s*\d+[a-z]?\s*·\s*/i, '')
+    .replace(/^\s*fase\s+\d+[a-z]?\s*[—–-]\s*/i, '')
+    .trim()
+    .toLowerCase();
+  return TITULO_DE_ANEXO.test(limpio);
+}
+
+/**
+ * Los anexos de una tesis a la que nadie le ha dicho cómo son los suyos.
+ *
+ * Sin esquema de su facultad, el documento salía con los capítulos del método y
+ * nada más: el instrumento y la bitácora del trabajo de campo quedaban fuera
+ * (ver `FASES_DE_TRABAJO`) porque como CAPÍTULO no van —«Trabajo de campo»
+ * entre la metodología y los resultados no lo lleva ninguna tesis—, y como no
+ * había dónde ponerlos, no salían en ninguna parte. Su sitio es este: detrás de
+ * las referencias, numerados, que es donde los pide cualquier reglamento.
+ *
+ * Solo cuando el tesista NO ha dictado la estructura de su facultad. Si la
+ * dictó, manda ella: los anexos que nombre y ningún otro.
+ */
+const ANEXOS_POR_DEFECTO = Object.freeze([
+  Object.freeze({ code: 'instrumento-investigacion', titulo: 'Instrumento de recolección de datos' }),
+  Object.freeze({ code: 'recoleccion-datos', titulo: 'Bitácora del trabajo de campo' }),
+]);
+
 /** Un reglamento con más de esto no es un reglamento, es un error del modelo. */
 const MAXIMO_CAPITULOS = 24;
 /** Fundir más de cuatro fases en un capítulo no lo pide ningún reglamento. */
@@ -227,11 +276,15 @@ function reconciliar(capitulos, anterior, conTexto) {
  * `partes` son las claves de donde sale el texto, en orden. Un capítulo propio
  * tiene una sola parte: él mismo.
  *
- * Las fases de trabajo (`FASES_DE_TRABAJO`) quedan fuera, salvo que el esquema
- * de su facultad las nombre: ahí manda el reglamento. Con
- * `incluirFasesDeTrabajo` entran igual, que es lo que necesita todo lo que
- * recorre lo ESCRITO y no lo impreso: el .bib, el repaso de evidencia y la
- * auditoría, que sí tienen que mirar el cuestionario.
+ * Las fases de trabajo (`FASES_DE_TRABAJO`) quedan fuera del cuerpo, salvo que
+ * el esquema de su facultad las nombre: ahí manda el reglamento. Sin esquema
+ * salen como ANEXOS al final (ver `ANEXOS_POR_DEFECTO`). Con
+ * `incluirFasesDeTrabajo` entran tal cual y sin anexos, que es lo que necesita
+ * todo lo que recorre lo ESCRITO y no lo impreso: el .bib, el repaso de
+ * evidencia y la auditoría, que sí tienen que mirar el cuestionario.
+ *
+ * Cada capítulo dice además si es `anexo`, porque el Word los imprime detrás de
+ * la lista de referencias y no en su sitio del esquema (ver `esAnexo`).
  */
 function capitulosDelDocumento({
   esquema,
@@ -243,12 +296,24 @@ function capitulosDelDocumento({
 
   const delCatalogo = catalogo
     .filter((s) => imprimible(s.code))
-    .map((s) => ({ titulo: s.displayName, partes: [s.code] }));
-  if (!tieneEsquema(esquema)) return { capitulos: delCatalogo, sobrantes: [] };
+    .map((s) => ({ titulo: s.displayName, partes: [s.code], anexo: esAnexo(s.displayName) }));
+  if (!tieneEsquema(esquema)) {
+    // La estructura por defecto: los capítulos del método, las referencias —que
+    // las pone el Word— y detrás los anexos que tengan texto, numerados.
+    const anexos = incluirFasesDeTrabajo
+      ? []
+      : ANEXOS_POR_DEFECTO.filter((a) => conTexto.has(a.code)).map((a, i) => ({
+          titulo: `Anexo ${i + 1}: ${a.titulo}`,
+          partes: [a.code],
+          anexo: true,
+        }));
+    return { capitulos: [...delCatalogo, ...anexos], sobrantes: [] };
+  }
 
   const nombradas = new Set(esquema.capitulos.flatMap((c) => c.de ?? []));
   const capitulos = esquema.capitulos.map((c) => ({
     titulo: c.titulo,
+    anexo: esAnexo(c.titulo),
     /**
      * Y de un esquema ya guardado, la propuesta de tema se cae igual.
      *
@@ -268,7 +333,14 @@ function capitulosDelDocumento({
     (s) => !nombradas.has(s.code) && conTexto.has(s.code) && imprimible(s.code),
   );
   return {
-    capitulos: [...capitulos, ...sobrantes.map((s) => ({ titulo: s.displayName, partes: [s.code] }))],
+    capitulos: [
+      ...capitulos,
+      ...sobrantes.map((s) => ({
+        titulo: s.displayName,
+        partes: [s.code],
+        anexo: esAnexo(s.displayName),
+      })),
+    ],
     sobrantes,
   };
 }
@@ -300,9 +372,18 @@ function comoTexto(esquema, catalogo = []) {
     return `  ${c.titulo}  ← ${fases}`;
   });
 
+  const conAnexos = esquema.capitulos.some((c) => esAnexo(c.titulo));
+
   return [
     'ESTRUCTURA DE CAPÍTULOS DE SU FACULTAD (así sale su Word, y no como los numera el método):',
     ...lineas,
+    ...(conAnexos
+      ? [
+          'Los capítulos que empiezan por «Anexo» o «Apéndice» los imprime el Word DETRÁS de la ' +
+            'lista de referencias, estén donde estén en esta lista: primero las referencias y ' +
+            'después los anexos.',
+        ]
+      : []),
     'Nómbrale los capítulos así al hablar con él. Las claves para guardar y leer NO cambian: ' +
       'siguen siendo las del método, salvo las que ponen "clave:" aquí arriba.',
   ].join('\n');
@@ -313,6 +394,8 @@ module.exports = {
   tieneEsquema,
   capitulosDelDocumento,
   FASES_DE_TRABAJO,
+  ANEXOS_POR_DEFECTO,
+  esAnexo,
   capituloPropio,
   comoTexto,
   claveDe,

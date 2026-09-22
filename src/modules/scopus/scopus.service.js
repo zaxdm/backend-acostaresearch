@@ -20,6 +20,7 @@ const mapper = require('./scopus.mapper');
 const oauth = require('./scopus.oauth');
 const repositorio = require('./scopus.repository');
 const gemini = require('../../lib/gemini');
+const { perfilDe } = require('../productos/producto.perfil');
 
 /**
  * Conectar Scopus, buscar, elegir e importar.
@@ -874,9 +875,13 @@ function vigente(licencia, ahora = new Date()) {
 }
 
 /**
- * A qué proyectos puede ir el mapeo: los de sus licencias vigentes cuyo método
- * trae la herramienta o la fase de mapeo bibliométrico. La sesión de R es una
- * por proyecto, así que si tiene dos, la web le pregunta a cuál.
+ * A qué proyectos puede ir el mapeo.
+ *
+ * Los de sus licencias vigentes que (1) traigan las herramientas del panel,
+ * (2) sean de la RUTA DEL ARTÍCULO —el mapeo bibliométrico es de ahí y solo de
+ * ahí, ver `producto.perfil`— y (3) tengan publicada su fase de mapeo. La
+ * sesión de R es una por proyecto, así que si tiene dos, la web le pregunta a
+ * cuál.
  *
  * Se piden aquí y no arriba: `project.service` y `r.service` tiran de medio
  * backend, y este módulo lo carga el arranque.
@@ -895,6 +900,10 @@ async function destinosDelMapeo(userId) {
     // capítulo de mapeo. Ver `productos/producto.perfil`.
     if (!vigente(licencia) || !licencia.herramientas || vistos.has(licencia.productCode)) continue;
     vistos.add(licencia.productCode);
+    // Y el mapeo solo se ofrece donde es del producto: la ruta del artículo. El
+    // método de tesis puede tener publicada su fase de mapeo y aun así no salir
+    // aquí, que es justo lo que se quiere.
+    if (!perfilDe(licencia.productCode).mapeoBibliometrico) continue;
     if (await projectService.capituloDeMapeo(licencia.productCode)) {
       destinos.push({ productCode: licencia.productCode, nombre: licencia.productName });
     }

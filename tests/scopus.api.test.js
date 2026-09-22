@@ -842,3 +842,62 @@ test('un tope largo no se espera: sale por relevancia en el momento', async () =
   assert.equal(busqueda.porRelevancia, true);
   assert.deepEqual(esperas, [], 'medio minuto cargando parece que se colgó');
 });
+
+/**
+ * A QUÉ PROYECTOS SE PUEDE MANDAR EL MAPEO BIBLIOMÉTRICO
+ *
+ * El mapeo es de la ruta del artículo y solo de ella: en una tesis, el botón
+ * invitaba a montar el análisis de un campo entero que no cabe en su capítulo
+ * de Antecedentes. Y quien compró solo el Humanizador académico no tiene
+ * ninguna de las herramientas del panel.
+ *
+ * Los dos módulos se piden DENTRO de la función, así que basta con sustituirlos
+ * antes de llamarla.
+ */
+function conLicencias(licencias, { conCapitulo = true } = {}) {
+  sustituir('../src/modules/licensing/license.service', {
+    listForUser: async () => licencias,
+  });
+  sustituir('../src/modules/projects/project.service', {
+    capituloDeMapeo: async () => (conCapitulo ? 'articulo-fase3b-mapeo-bibliometrico' : null),
+  });
+}
+
+const licencia = (productCode, extra = {}) => ({
+  productCode,
+  productName: productCode,
+  status: 'ACTIVE',
+  expiresAt: null,
+  herramientas: true,
+  ...extra,
+});
+
+test('el mapeo solo se ofrece a la ruta del artículo, no al método de tesis', async () => {
+  conLicencias([licencia('ARTICULO_SCIENTIFICOS'), licencia('METODO_DE_TESIS_HUMANIZADOR')]);
+
+  const destinos = await servicio.destinosDelMapeo('u1');
+
+  assert.deepEqual(
+    destinos.map((d) => d.productCode),
+    ['ARTICULO_SCIENTIFICOS'],
+  );
+});
+
+test('sin licencia de artículo no hay a dónde mandarlo, aunque tenga el método', async () => {
+  conLicencias([licencia('METODO_9_SKILLS'), licencia('INFORME_ESTUDIANTIL')]);
+  assert.deepEqual(await servicio.destinosDelMapeo('u1'), []);
+});
+
+test('una licencia caducada, revocada o sin herramientas no es destino', async () => {
+  conLicencias([
+    licencia('ARTICULO_SCIENTIFICOS', { status: 'REVOKED' }),
+    licencia('ARTICULO_DE_AYER', { expiresAt: '2020-01-01T00:00:00.000Z' }),
+    licencia('ARTICULO_SIN_HERRAMIENTAS', { herramientas: false }),
+  ]);
+  assert.deepEqual(await servicio.destinosDelMapeo('u1'), []);
+});
+
+test('con la fase de mapeo sin publicar, tampoco: no habría dónde guardarlo', async () => {
+  conLicencias([licencia('ARTICULO_SCIENTIFICOS')], { conCapitulo: false });
+  assert.deepEqual(await servicio.destinosDelMapeo('u1'), []);
+});

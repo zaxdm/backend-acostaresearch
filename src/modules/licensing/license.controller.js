@@ -90,6 +90,20 @@ const licenseController = {
       userId: req.user.id,
       code: req.body.code,
     });
+
+    // Un código no siempre vende una licencia del conector: también se venden
+    // así las membresías de «Preparar documento», y a esas no hay ninguna URL
+    // que pegar en Claude.
+    if (resultado.membresia) {
+      return created(
+        res,
+        resultado,
+        resultado.renovada
+          ? 'Membresía renovada. Sigue preparando tus documentos.'
+          : 'Membresía activada. Ya puedes preparar tus documentos.',
+      );
+    }
+
     return created(res, resultado, 'Licencia activada. Pega la URL en Claude para empezar.');
   }),
 

@@ -104,6 +104,38 @@ const licenseRepository = {
    * dinero son una sola cosa, y partirlas deja el agujero de una venta
    * entregada que no existe en las cuentas.
    */
+  /**
+   * Canjea un código que NO entrega una licencia del conector.
+   *
+   * Existe para las membresías de «Preparar documento», que también se venden
+   * por código: el comprador paga por WhatsApp, recibe su código y al canjearlo
+   * le tienen que quedar sus documentos al mes, no un conector vacío.
+   *
+   * Lo que se entrega lo escribe quien llama, dentro de la MISMA transacción
+   * que marca el código como gastado: si el pack fallara después de marcarlo,
+   * el comprador se quedaría sin código y sin membresía. `entregar` devuelve la
+   * fila y con qué columna se engancha el pago (`{ docPackId }`), que es lo
+   * único que cambia entre una entrega y otra.
+   *
+   * Devuelve null si otra petición canjeó el mismo código un instante antes,
+   * igual que `redeem`.
+   */
+  redeemCon({ codeId, userId, entregar, pago = null }) {
+    return prisma.$transaction(async (tx) => {
+      const { count } = await tx.activationCode.updateMany({
+        where: { id: codeId, status: 'AVAILABLE' },
+        data: { status: 'REDEEMED', redeemedById: userId, redeemedAt: new Date() },
+      });
+
+      if (count === 0) return null;
+
+      const { fila, enlace } = await entregar(tx);
+      if (pago) await tx.payment.create({ data: { ...pago, ...enlace } });
+
+      return fila;
+    });
+  },
+
   redeem({ codeId, datosLicencia, pago = null }) {
     return prisma.$transaction(async (tx) => {
       const { count } = await tx.activationCode.updateMany({

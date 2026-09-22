@@ -80,3 +80,17 @@ test('un producto nuevo trae las herramientas mientras no diga lo contrario', ()
 test('quitar las herramientas no le cambia el perfil: lo que humaniza es una tesis', () => {
   assert.equal(perfilDe('HUMANIZADOR_ACADEMICO').tipo, 'tesis');
 });
+
+/**
+ * El mapeo bibliométrico es de la ruta del artículo y solo de ella. Es una
+ * decisión de producto: en una tesis, el botón invitaba a montar un análisis de
+ * un campo entero que no cabe en su capítulo de Antecedentes.
+ */
+test('solo el artículo trae el mapeo bibliométrico', () => {
+  assert.equal(perfilDe('ARTICULO_SCIENTIFICOS').mapeoBibliometrico, true);
+  assert.equal(perfilDe('METODO_DE_TESIS_HUMANIZADOR').mapeoBibliometrico, false);
+  assert.equal(perfilDe('METODO_9_SKILLS').mapeoBibliometrico, false);
+  assert.equal(perfilDe('INFORME_ESTUDIANTIL').mapeoBibliometrico, false);
+  // Un producto nuevo no lo trae mientras no se diga: cae en tesis.
+  assert.equal(perfilDe('LO_QUE_VENGA').mapeoBibliometrico, false);
+});

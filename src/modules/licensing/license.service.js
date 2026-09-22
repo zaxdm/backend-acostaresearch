@@ -147,6 +147,89 @@ function avisarDeLaRevocacion({ userId, reason, licenseId }) {
     });
 }
 
+/**
+ * Canjea un código que vende una membresía de «Preparar documento».
+ *
+ * Hace lo mismo que el canje de una licencia y por los mismos motivos, con lo
+ * comprado cambiado: prepara la entrega FUERA de la transacción —decidir si es
+ * alta o renovación es una lectura— y escribe dentro de ella el pack, el pago y
+ * la marca del código gastado, para que no pueda quedar un código gastado sin
+ * membresía.
+ *
+ * Renovar alarga la que ya tiene en vez de crear otra, igual que en la compra
+ * por la web: con dos, el cupo del mes se contaría sobre una y la otra no
+ * serviría de nada.
+ *
+ * Los módulos de «Preparar documento» se piden aquí dentro y no arriba: este
+ * archivo lo carga el arranque entero y aquel tira de medio backend.
+ */
+async function canjearMembresia({ registro, plan, userId }) {
+  // eslint-disable-next-line global-require
+  const prepararService = require('../preparar/preparar.service');
+  // eslint-disable-next-line global-require
+  const prepararRepository = require('../preparar/preparar.repository');
+
+  const preparada = await prepararService.prepararParaCompra({ userId, plan });
+  const renovada = Boolean(preparada.renovacion);
+
+  const membresia = await licenseRepository.redeemCon({
+    codeId: registro.id,
+    userId,
+    // El cobro que se apuntó al generar el código, dentro de la misma
+    // transacción: un canje que entregue el acceso sin apuntar el dinero es el
+    // agujero que esto cierra, aquí igual que en la licencia.
+    pago: pagoDelCodigo({
+      registro,
+      contrato: { planId: plan.id, priceCents: plan.priceCents },
+      userId,
+    }),
+    entregar: async (tx) => {
+      if (preparada.renovacion) {
+        const { packId, expiresAt, docsPorMes } = preparada.renovacion;
+        const fila = await prepararRepository.extenderPack(packId, { expiresAt, docsPorMes }, tx);
+        return { fila, enlace: { docPackId: fila.id } };
+      }
+
+      const fila = await prepararRepository.crearPack(
+        {
+          ...preparada.data,
+          // De dónde salió el dinero, para poder cuadrarlo meses después.
+          paymentMethod: registro.paymentMethod,
+          paymentRef: registro.paymentRef,
+          amountCents: registro.amountCents,
+          note: registro.note,
+          grantedById: registro.createdById,
+        },
+        tx,
+      );
+      return { fila, enlace: { docPackId: fila.id } };
+    },
+  });
+
+  // Sin membresía: otra petición canjeó el mismo código un instante antes.
+  if (!membresia) throw codigoInvalido(ERROR_CODES.LICENSE_CODE_USED);
+
+  logger.info(
+    { userId, docPackId: membresia.id, plan: plan.code, renovada },
+    'Código canjeado: membresía de documentos activada',
+  );
+
+  avisarDeLaMembresia({
+    userId,
+    planName: plan.name,
+    docsPorMes: membresia.docsPorMes,
+    expiresAt: membresia.expiresAt,
+    renovada,
+  });
+
+  // Sin `connectorUrl`: una membresía no tiene nada que pegar en Claude. Se
+  // devuelve con su plan para que la web pueda decir qué se activó.
+  return {
+    membresia: { ...membresia, plan: { code: plan.code, name: plan.name } },
+    renovada,
+  };
+}
+
 /** Mismo mensaje para código inexistente, ya usado o anulado: no se filtra cuál. */
 function codigoInvalido(code = ERROR_CODES.LICENSE_CODE_INVALID) {
   return new AppError('Ese código no es válido o ya se usó.', { statusCode: 400, code });
@@ -209,6 +292,64 @@ async function contratoDelProducto(productCode) {
 }
 
 /**
+ * El plan de «Preparar documento» que vende un código, o null si no vende uno.
+ *
+ * Un código de activación guarda en `productCode` el código del grupo de
+ * licencia. Las membresías de documentos no licencian nada —no tienen conector
+ * ni capítulos, así que tampoco tienen `productCode`— y se reconocen por el
+ * `code` de su plan, que es lo que manda el panel al generarlas.
+ *
+ * Se mira SOLO cuando no hay plan de licencia para ese código, así que los
+ * productos de siempre se resuelven exactamente igual que antes.
+ *
+ * No se exige que el plan siga activo: un código vendido en enero se canjea en
+ * marzo aunque la membresía se haya retirado del catálogo entre medias. Lo que
+ * se compró, se entrega.
+ */
+function planDeMembresia(productCode) {
+  return prisma.plan.findFirst({
+    where: { code: productCode, kind: 'DOCUMENTO' },
+    select: {
+      id: true,
+      code: true,
+      name: true,
+      priceCents: true,
+      durationDays: true,
+      docsPorMes: true,
+    },
+  });
+}
+
+/**
+ * Al cliente, cuando su código le entrega una membresía de documentos.
+ *
+ * Gemelo de `avisarDeLaEntrega`: sin await, porque un fallo del correo no puede
+ * deshacer una membresía que en la base ya está activa.
+ */
+function avisarDeLaMembresia({ userId, planName, docsPorMes, expiresAt, renovada }) {
+  prisma.user
+    .findUnique({ where: { id: userId }, select: { email: true, firstName: true } })
+    .then((usuario) => {
+      if (!usuario?.email) return null;
+
+      return sendMail({
+        to: usuario.email,
+        ...plantillas.documentosReady({
+          firstName: usuario.firstName,
+          planName,
+          docsPorMes,
+          expiresAt,
+          via: 'codigo',
+          renovada,
+        }),
+      });
+    })
+    .catch((error) => {
+      logger.error({ err: error, userId }, 'No se pudo enviar el correo del canje de la membresía');
+    });
+}
+
+/**
  * Le manda el código al comprador, sin bloquear la generación.
  *
  * Solo sale si el administrador escribió un correo. Ese campo era «para tu
@@ -221,10 +362,10 @@ async function contratoDelProducto(productCode) {
  * administrador los tiene en pantalla para copiarlos. Se registra y se sigue.
  * Por eso la promesa que devuelve nunca falla.
  */
-function avisarDelCodigo({ buyerEmail, codigos, planName, expiresAt }) {
+function avisarDelCodigo({ buyerEmail, codigos, planName, expiresAt, conector = true }) {
   return sendMail({
     to: buyerEmail,
-    ...plantillas.activationCode({ codes: codigos, planName, expiresAt }),
+    ...plantillas.activationCode({ codes: codigos, planName, expiresAt, conector }),
   }).catch((error) => {
     logger.error(
       { err: error, buyerEmail },
@@ -239,9 +380,9 @@ function avisarDelCodigo({ buyerEmail, codigos, planName, expiresAt }) {
  * En fila y no todos a la vez: treinta envíos simultáneos es la forma de que
  * el SMTP empiece a rechazar, y aquí nadie espera la respuesta.
  */
-async function avisarDeLosCodigos({ envios, planName, expiresAt }) {
+async function avisarDeLosCodigos({ envios, planName, expiresAt, conector = true }) {
   for (const { email, codes } of envios) {
-    await avisarDelCodigo({ buyerEmail: email, codigos: codes, planName, expiresAt });
+    await avisarDelCodigo({ buyerEmail: email, codigos: codes, planName, expiresAt, conector });
   }
 }
 
@@ -454,10 +595,19 @@ const licenseService = {
     // precio con el que se apunta el cobro.
     const contrato = await contratoDelProducto(producto);
 
+    // ¿Lo que se vende es una membresía de «Preparar documento»? Entonces el
+    // precio y el nombre salen de SU plan: `contratoDelProducto` solo mira los
+    // de licencia, y sin esto el código se habría apuntado a cero soles y a
+    // nombre del método de tesis. Ver `planDeMembresia`.
+    const membresia = contrato.planId ? null : await planDeMembresia(producto);
+    const vendido = membresia
+      ? { planId: membresia.id, priceCents: membresia.priceCents, nombre: membresia.name }
+      : contrato;
+
     const cortesia = paymentMethod === 'CORTESIA';
     // Un regalo no cobra nada. Y si no se dijo cuánto, se cobró el precio de la
     // web: es lo que ocurre en la práctica y evita teclear la cifra dos veces.
-    const cobrado = cortesia ? null : (amountCents ?? contrato.priceCents);
+    const cobrado = cortesia ? null : (amountCents ?? vendido.priceCents);
 
     // Un correo repetido en la lista es un pegado doble, no dos ventas: quien
     // compra dos va con `cantidad`.
@@ -537,7 +687,14 @@ const licenseService = {
     if (conCorreo.length > 0) {
       // El nombre del plan sale del mismo sitio que en una compra, para que el
       // comprador lea lo mismo que vio en la web al pagar.
-      avisarDeLosCodigos({ envios: conCorreo, planName: contrato.nombre, expiresAt });
+      // Sin conector cuando lo vendido son documentos: a ese comprador no le
+      // va a llegar ninguna URL, y anunciársela es dejarlo esperando.
+      avisarDeLosCodigos({
+        envios: conCorreo,
+        planName: vendido.nombre,
+        expiresAt,
+        conector: !membresia,
+      });
     }
 
     return {
@@ -631,6 +788,15 @@ const licenseService = {
 
     // Duración y topes salen del plan del producto, igual que en una compra.
     const contrato = await contratoDelProducto(registro.productCode);
+
+    // No todo lo que se vende por código es una licencia del conector: las
+    // membresías de «Preparar documento» también, y entregan documentos al mes
+    // en vez de una URL. Solo se mira cuando no hay plan de licencia, así que
+    // los productos de siempre siguen el camino de siempre.
+    if (!contrato.planId) {
+      const plan = await planDeMembresia(registro.productCode);
+      if (plan) return canjearMembresia({ registro, plan, userId });
+    }
 
     const token = generateOpaqueToken(32);
     const licencia = await licenseRepository.redeem({

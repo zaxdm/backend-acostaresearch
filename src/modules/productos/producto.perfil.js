@@ -23,6 +23,7 @@ const TESIS = Object.freeze({
   entregarla: 'entregarla',
   revision: 'revisar_la_tesis',
   seccionesAparte: Object.freeze([]),
+  mapeoBibliometrico: false,
 });
 
 const ARTICULO = Object.freeze({
@@ -32,6 +33,19 @@ const ARTICULO = Object.freeze({
   tuObra: 'tu artículo',
   entregarla: 'entregarla',
   revision: 'revisar_el_articulo',
+  /**
+   * El mapeo bibliométrico es de la ruta del artículo, y solo de ella.
+   *
+   * Es una decisión de producto, no una limitación técnica: el mapeo describe
+   * un campo entero —producción, autores, fuentes, coocurrencia, cocitación— y
+   * eso es un artículo bibliométrico o la revisión sistemática de uno. En una
+   * tesis, el botón invitaba a montar un análisis que no le pedía nadie y que
+   * no cabe en su capítulo de Antecedentes.
+   *
+   * Decide a qué proyectos se puede mandar el mapeo desde el buscador de
+   * Scopus (`scopus.service.destinosDelMapeo`).
+   */
+  mapeoBibliometrico: true,
   seccionesAparte: Object.freeze([]),
 });
 
@@ -49,6 +63,7 @@ const INFORME = Object.freeze({
   tuObra: 'tu informe',
   entregarla: 'entregarlo',
   revision: 'revisar_el_informe',
+  mapeoBibliometrico: false,
   seccionesAparte: Object.freeze([
     Object.freeze({ clave: 'informe-resumen', titulo: 'Resumen' }),
     Object.freeze({ clave: 'informe-introduccion', titulo: 'Introducción' }),

@@ -1051,7 +1051,13 @@ function manualPaymentRejected({ firstName, planName, motivo }) {
  * Se canjea en la página de precios, que es el único sitio donde se puede. Con
  * un solo código el enlace lo lleva ya escrito en el recuadro.
  */
-function activationCode({ codes, planName, expiresAt }) {
+/**
+ * `conector` dice qué recibe al canjear: la URL que se pega en Claude, o los
+ * documentos de una membresía de «Preparar documento», que no instala nada.
+ * Prometerle un conector a quien compró documentos le deja esperando un correo
+ * que no va a llegar.
+ */
+function activationCode({ codes, planName, expiresAt, conector = true }) {
   const registro = `${appUrl()}/auth/registro`;
   const canje =
     codes.length === 1
@@ -1094,7 +1100,9 @@ function activationCode({ codes, planName, expiresAt }) {
       `  1. Crea tu cuenta en ${registro} (te pedimos un código de 6 cifras por correo para verificarla).`,
       `  2. Entra en ${canje}, pega el código en «¿Compraste por Yape o transferencia?» y pulsa Canjear.`,
       '',
-      'En cuanto lo canjees te llega otro correo con tu URL personal del conector, que es lo que se pega en Claude.',
+      conector
+        ? 'En cuanto lo canjees te llega otro correo con tu URL personal del conector, que es lo que se pega en Claude.'
+        : 'En cuanto lo canjees podrás preparar tus documentos desde la web. No hay nada que instalar.',
       '',
       'Si algo no te cuadra, respóndenos a este mensaje.',
     ].join('\n'),
@@ -1128,8 +1136,13 @@ function activationCode({ codes, planName, expiresAt }) {
        </p>
 
        <p style="margin:0 0 18px;font-size:14px;line-height:1.65;color:#52606d">
-         En cuanto lo canjees te llega otro correo con tu URL personal del conector, que es lo que
-         se pega en Claude.
+         ${
+           conector
+             ? `En cuanto lo canjees te llega otro correo con tu URL personal del conector, que es
+                lo que se pega en Claude.`
+             : `En cuanto lo canjees podrás preparar tus documentos desde la web. No hay nada que
+                instalar.`
+         }
        </p>
 
        <p style="margin:0;font-size:13.5px;line-height:1.65;color:#7b8794">

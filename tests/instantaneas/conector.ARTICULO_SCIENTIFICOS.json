@@ -662,7 +662,7 @@
   {
     "nombre": "formato_de_la_universidad",
     "titulo": "La plantilla de la revista para el Word del artículo",
-    "descripcion": "La plantilla o el formato de Word del ARTÍCULO —la plantilla de la revista a la que lo envía (template, guía de autores en Word) o el formato que le pidió su universidad—, que el Word del servidor aplica solo: títulos, fuentes, márgenes, encabezado y pie de página. ÚSALA SIEMPRE que diga «quiero subir el formato de mi artículo», «tengo la plantilla de la revista», «la revista tiene template» o «quiero que salga con el formato de la revista»: la subida es por el enlace de esta herramienta, NO adjuntando el archivo en el chat. PREGÚNTALE UNA VEZ, al elegir revista o antes de darle su Word, si la revista tiene plantilla. Sin argumentos dice si ya hay uno puesto y da un ENLACE para subirlo o cambiarlo: dáselo como enlace que se pulsa, sin escribir la dirección, y dile que vuelva cuando lo haya subido; entonces llámala otra vez para confirmar qué se tomó. NO le pidas que te pegue ni te adjunte el formato en el chat, no lo copies tú a mano y no le armes un Word con ese formato: lo aplica el servidor. Si no tiene formato, no insistas.",
+    "descripcion": "La plantilla o el formato de Word del ARTÍCULO —la plantilla de la revista a la que lo envía (template, guía de autores en Word) o el formato que le pidió su universidad—, que el Word del servidor aplica solo: títulos, fuentes, márgenes, encabezado y pie de página. ÚSALA SIEMPRE que diga «quiero subir el formato de mi artículo», «tengo la plantilla de la revista», «la revista tiene template» o «quiero que salga con el formato de la revista»: la subida es por el enlace de esta herramienta, NO adjuntando el archivo en el chat. PREGÚNTALE UNA VEZ, al elegir revista o antes de darle su Word, si la revista tiene plantilla. Sin argumentos dice si ya hay uno puesto y da un ENLACE para subirlo o cambiarlo: dáselo como enlace que se pulsa, sin escribir la dirección, y dile que vuelva cuando lo haya subido; entonces llámala otra vez para confirmar qué se tomó. NO le pidas que te pegue ni te adjunte el formato en el chat, no lo copies tú a mano y no le armes un Word con ese formato: lo aplica el servidor. Si no tiene formato, no insistas. CAMBIAR o QUITAR el formato se hace DESDE AQUÍ: en su perfil no hay ningún recuadro del formato, así que NO lo mandes a su perfil ni al panel a buscarlo. Si quiere poner otro, o quitarlo él mismo, llámala sin argumentos y dale el enlace: esa página sirve para las dos cosas. Si dice «quita el formato de mi universidad», «borra el formato que subí», «ya no quiero ese formato» o «que el Word salga con el formato por defecto», llámala con quitar en verdadero. NUNCA le digas que quedó quitado ni cambiado sin haber llamado y leído lo que devuelve: si la llamada no se hizo, el formato sigue puesto y su Word sigue saliendo con él.",
     "esquema": {
       "type": "object",
       "properties": {
@@ -672,7 +672,7 @@
         },
         "quitar": {
           "type": "boolean",
-          "description": "Verdadero para dejar de usar el formato: el Word vuelve al formato por defecto. Solo si el tesista lo pide."
+          "description": "Verdadero para dejar de usar el formato: se borra el que tenía puesto y el Word vuelve al formato por defecto. Es la ÚNICA forma de quitarlo, y hay que usarla siempre que lo pida —«quítalo», «bórralo», «ya no lo quiero», «que salga con el formato por defecto»—, antes de decirle que está hecho."
         }
       },
       "additionalProperties": false

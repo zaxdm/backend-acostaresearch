@@ -3209,6 +3209,20 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
   // El recuadro «Subir formato» del perfil se quitó: lo pregunta Claude y, si lo
   // hay, da un enlace para subirlo, como el de la matriz de R. El Word del
   // servidor lo aplica solo (ver `project.plantilla` y `project.plantilla-partes`).
+  //
+  // Cambiarlo y quitarlo también se hacen por aquí, y hay que decirlo: como la
+  // descripción solo hablaba de subirlo, a quien pedía quitar el suyo Claude le
+  // contestaba que entrara al panel —donde no hay nada— o le daba el cambio por
+  // hecho sin llamar a nadie, y el Word seguía saliendo con el formato viejo.
+  const CAMBIAR_O_QUITAR =
+    ' CAMBIAR o QUITAR el formato se hace DESDE AQUÍ: en su perfil no hay ningún recuadro del ' +
+    'formato, así que NO lo mandes a su perfil ni al panel a buscarlo. Si quiere poner otro, o ' +
+    'quitarlo él mismo, llámala sin argumentos y dale el enlace: esa página sirve para las dos ' +
+    'cosas. Si dice «quita el formato de mi universidad», «borra el formato que subí», «ya no ' +
+    'quiero ese formato» o «que el Word salga con el formato por defecto», llámala con quitar en ' +
+    'verdadero. NUNCA le digas que quedó quitado ni cambiado sin haber llamado y leído lo que ' +
+    'devuelve: si la llamada no se hizo, el formato sigue puesto y su Word sigue saliendo con él.';
+
   server.registerTool(
     'formato_de_la_universidad',
     {
@@ -3219,7 +3233,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
             ? 'La plantilla de la revista para el Word del artículo'
             : 'El formato de su universidad para el Word',
       description:
-        perfil.tipo === 'informe'
+        (perfil.tipo === 'informe'
           ? 'La plantilla de Word para el informe —la que dio su docente o su instituto, o la ' +
             'plantilla de informes de la empresa—, que el Word del servidor aplica solo: títulos, ' +
             'fuentes, márgenes, encabezado, pie de página y la portada llenada con sus datos (curso, ' +
@@ -3260,7 +3274,8 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
             'como enlace que se pulsa, sin escribir la dirección, y dile que vuelva cuando lo haya subido; entonces llámala otra vez para ' +
             'confirmar qué se tomó. ' +
             'NO le pidas que te pegue ni te adjunte el formato en el chat, no lo copies tú a mano y no ' +
-            'le armes un Word con ese formato: lo aplica el servidor. Si no tiene formato, no insistas.',
+            'le armes un Word con ese formato: lo aplica el servidor. Si no tiene formato, no insistas.') +
+        CAMBIAR_O_QUITAR,
       inputSchema: fromJsonSchema({
         type: 'object',
         properties: {
@@ -3273,8 +3288,10 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
           quitar: {
             type: 'boolean',
             description:
-              'Verdadero para dejar de usar el formato: el Word vuelve al formato por defecto. ' +
-              'Solo si el tesista lo pide.',
+              'Verdadero para dejar de usar el formato: se borra el que tenía puesto y el Word ' +
+              'vuelve al formato por defecto. Es la ÚNICA forma de quitarlo, y hay que usarla ' +
+              'siempre que lo pida —«quítalo», «bórralo», «ya no lo quiero», «que salga con el ' +
+              'formato por defecto»—, antes de decirle que está hecho.',
           },
         },
         additionalProperties: false,
@@ -3290,9 +3307,11 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         const quitado = await projectService.quitarPlantilla(userId, productCode);
         return texto(
           quitado
-            ? 'Formato quitado: su Word vuelve a salir con el formato por defecto. Si fue un error, ' +
-                'llama otra vez sin argumentos y dale el enlace para volver a subirlo.'
-            : 'No tenía ningún formato puesto.',
+            ? 'Formato quitado de verdad: su Word vuelve a salir con el formato por defecto. ' +
+                'Díselo y, si fue un error, llama otra vez sin argumentos y dale el enlace para ' +
+                'volver a subirlo.'
+            : 'No tenía ningún formato puesto: su Word ya salía con el formato por defecto. ' +
+                'Díselo tal cual, sin dar por hecho que se quitó nada.',
         );
       }
 
@@ -3364,10 +3383,11 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
             ? ''
             : ' OJO: se subió antes de que se tomaran los márgenes, el encabezado, el pie y la ' +
               'portada; pídele que lo vuelva a subir con el enlace de abajo.') +
-          `${N}${N}Si quiere cambiarlo por otro, este enlace sirve:${N}` +
-          await darEnlace({ texto: 'Haz clic aquí para cambiar tu formato', url, minutos }) +
-          `${N}${N}Si la portada salió mal, llama con "usarNuestraPortada". Para ver cómo quedó, ` +
-          'dale su Word con "enlace_del_word".',
+          `${N}${N}Si quiere cambiarlo por otro —o quitarlo desde la web—, este enlace sirve:${N}` +
+          await darEnlace({ texto: 'Haz clic aquí para cambiar o quitar tu formato', url, minutos }) +
+          `${N}${N}Si prefiere que lo quites tú, llama con "quitar" y su Word vuelve al formato por ` +
+          'defecto; no se lo des por hecho sin llamar. Si la portada salió mal, llama con ' +
+          '"usarNuestraPortada". Para ver cómo quedó, dale su Word con "enlace_del_word".',
       );
     },
   );

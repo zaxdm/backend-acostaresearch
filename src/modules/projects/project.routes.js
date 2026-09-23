@@ -249,6 +249,34 @@ router.post(
   }),
 );
 
+/**
+ * Quitar el formato desde el mismo enlace que sirve para subirlo.
+ *
+ * El perfil no tiene dónde tocarlo —el recuadro se quitó—, así que sin esto el
+ * tesista que quiere volver al formato por defecto depende de que Claude llame
+ * a la herramienta con «quitar», y Claude le decía que entrara al panel a
+ * hacerlo. La página del enlace es el sitio: quien está ahí ya venía a cambiar
+ * su formato.
+ */
+router.delete(
+  '/formato/:token',
+  exigirEnlaceDeFormato,
+  asyncHandler(async (req, res) => {
+    const { userId, productCode } = req.enlaceDeFormato;
+
+    if (!(await tieneLicenciaVigente(userId, productCode))) {
+      throw new ForbiddenError('Tu licencia de este método no está vigente, así que no se puede tocar el formato.');
+    }
+
+    const quitada = await projectService.quitarPlantilla(userId, productCode);
+    return ok(res, { quitada, formato: null }, {
+      message: quitada
+        ? 'Formato quitado. Tu próxima descarga saldrá con el formato por defecto.'
+        : 'No tenías ningún formato puesto: tu Word ya sale con el formato por defecto.',
+    });
+  }),
+);
+
 // ── El material del curso (informe estudiantil) ────────────────────────────
 //
 // Mismo esquema que el formato: un enlace firmado que da Claude, sin sesión. El

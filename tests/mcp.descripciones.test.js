@@ -365,6 +365,23 @@ test('formato_de_la_universidad: Claude lo pregunta una vez y da el enlace, no l
   assert.deepEqual(Object.keys(e.properties).sort(), ['quitar', 'usarNuestraPortada']);
 });
 
+/**
+ * Quitar el formato solo se puede desde aquí, y mientras la descripción no lo
+ * decía Claude mandaba al tesista a un recuadro del perfil que no existe, o le
+ * decía «ya está quitado» sin haber llamado a nadie.
+ */
+test('formato_de_la_universidad: quitar y cambiar se hacen aquí, no en el panel', () => {
+  const d = descripcion('formato_de_la_universidad');
+  assert.match(d, /CAMBIAR o QUITAR/);
+  assert.match(d, /NO lo mandes a su perfil ni al panel/);
+  assert.match(d, /quita el formato de mi universidad/);
+  assert.match(d, /llámala con quitar en verdadero/);
+  assert.match(d, /NUNCA le digas que quedó quitado/);
+
+  const quitar = esquema('formato_de_la_universidad').properties.quitar;
+  assert.match(quitar.description, /ÚNICA forma de quitarlo/);
+});
+
 test('guardar_capitulo explica las figuras y ya no prohíbe su marca entre corchetes', () => {
   const d = esquema('guardar_capitulo').properties.texto.description;
   assert.match(d, /LAS FIGURAS/);

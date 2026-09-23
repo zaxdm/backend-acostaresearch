@@ -68,15 +68,24 @@ const resenaService = {
    * aprobadas, también cuando se piden solo las destacadas: si se contara
    * sobre las cuatro elegidas a mano, la portada anunciaría un 5,0 que solo
    * dice a quién se eligió.
+   *
+   * SI NADIE HA DESTACADO NINGUNA, la portada recibe las últimas aprobadas.
+   * Destacar es para elegir cuáles de muchas, no un interruptor que hay que
+   * acordarse de subir: mientras nadie lo tocaba, la banda de testimonios no
+   * existía aunque hubiera reseñas publicadas en /resenas, y eso no se ve como
+   * un paso pendiente del panel, se ve como que nadie ha opinado nunca.
    */
   async publicas({ soloDestacadas = false, limite = 100 } = {}) {
-    const [filas, resumen] = await Promise.all([
+    const ultimas = (where) =>
       prisma.resenaServicio.findMany({
-        where: { estado: 'APROBADA', ...(soloDestacadas ? { destacada: true } : {}) },
+        where,
         orderBy: { createdAt: 'desc' },
         take: limite,
         select: CAMPOS_PUBLICOS,
-      }),
+      });
+
+    const [elegidas, resumen] = await Promise.all([
+      ultimas({ estado: 'APROBADA', ...(soloDestacadas ? { destacada: true } : {}) }),
       prisma.resenaServicio.aggregate({
         where: { estado: 'APROBADA' },
         _count: { _all: true },
@@ -85,6 +94,13 @@ const resenaService = {
     ]);
 
     const total = resumen._count._all;
+    // La segunda consulta solo sale cuando hay algo que encontrar: sin ninguna
+    // aprobada, el respaldo devolvería la misma lista vacía por otro camino.
+    const filas =
+      soloDestacadas && elegidas.length === 0 && total > 0
+        ? await ultimas({ estado: 'APROBADA' })
+        : elegidas;
+
     return { resenas: filas, total, nota: media(resumen._sum.estrellas ?? 0, total) };
   },
 

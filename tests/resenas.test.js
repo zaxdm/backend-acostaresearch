@@ -254,6 +254,34 @@ test('la media se cuenta sobre todas las aprobadas, no sobre las destacadas', as
   assert.equal(portada.nota, 4);
 });
 
+test('sin ninguna destacada, la portada recibe las últimas aprobadas', async () => {
+  empezar();
+  for (const userId of ['u1', 'u2']) await resenaService.guardar(userId, RESENA);
+  // Se aprueban las dos y no se destaca ninguna, que es lo que pasa siempre
+  // que nadie se acuerda de ese interruptor.
+  for (const fila of await resenaService.listar('TODAS')) {
+    await resenaService.revisar(fila.id, { estado: 'APROBADA' }, 'admin1');
+  }
+
+  const portada = await resenaService.publicas({ soloDestacadas: true });
+
+  assert.equal(portada.resenas.length, 2);
+  assert.equal(portada.total, 2);
+});
+
+test('con alguna destacada, el respaldo no se mete y manda lo elegido', async () => {
+  empezar();
+  for (const userId of ['u1', 'u2']) await resenaService.guardar(userId, RESENA);
+  const filas = await resenaService.listar('TODAS');
+  await resenaService.revisar(filas[0].id, { estado: 'APROBADA', destacada: true }, 'admin1');
+  await resenaService.revisar(filas[1].id, { estado: 'APROBADA' }, 'admin1');
+
+  const portada = await resenaService.publicas({ soloDestacadas: true });
+
+  assert.equal(portada.resenas.length, 1);
+  assert.equal(portada.resenas[0].id, filas[0].id);
+});
+
 // ── Destacar es un permiso aparte ───────────────────────────────────────────
 
 test('no se destaca lo que no está aprobado', async () => {

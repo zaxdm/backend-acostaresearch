@@ -33,11 +33,18 @@
  * que el modelo tradujo en vez de copiar— sigue sin tocarse, y se cuenta y se
  * dice CON SU MOTIVO: quien recibe el documento tiene derecho a saber qué
  * quedó como estaba y por qué.
+ *
+ * EL ÍNDICE
+ * ---------
+ * No se le manda al modelo —es un campo de Word, no prosa— pero tampoco se
+ * queda en español: cuando ya se sabe cómo quedó cada título, sus líneas se
+ * reescriben con ese texto en la misma pasada. Ver `preparar.indice`.
  */
 
 const documento = require('../projects/project.documento');
 const reescritura = require('../projects/project.reescritura');
 const campos = require('./preparar.campos');
+const indice = require('./preparar.indice');
 const partes = require('./preparar.partes');
 
 /** Lo que se le pide a `rehacerParrafo`: aquí las figuras no bloquean nada. */
@@ -55,11 +62,13 @@ const COMO = Object.freeze({ conservarObjetos: true });
  * que eso solo pasaría por un fallo nuestro, y ante la duda se deja el del
  * cliente.
  *
- * Devuelve `{ buffer, tocados, intactos }`, con `intactos` como un mapa de
- * clave a motivo, en las palabras que se le pueden enseñar a él.
+ * Devuelve `{ buffer, tocados, intactos, indice }`, con `intactos` como un mapa
+ * de clave a motivo, en las palabras que se le pueden enseñar a él, y `indice`
+ * como la cuenta de líneas de índice que se vieron y de las que se quedaron sin
+ * el título del que salen.
  */
 function traducir(buffer, cambios, parrafos = []) {
-  const { zip } = documento.abrir(buffer);
+  const { zip, estilos } = documento.abrir(buffer);
   const donde = new Map(parrafos.map((parrafo) => [String(parrafo.clave ?? parrafo.id), parrafo]));
 
   const intactos = new Map();
@@ -76,6 +85,8 @@ function traducir(buffer, cambios, parrafos = []) {
   }
 
   let tocados = 0;
+  let entradasDelIndice = 0;
+  let sinPareja = 0;
 
   for (const [parte, pedidos] of porParte) {
     const entrada = zip.getEntry(parte);
@@ -87,6 +98,9 @@ function traducir(buffer, cambios, parrafos = []) {
     const xml = entrada.getData().toString('utf8');
     const delXml = new Map(documento.parrafosDe(xml).map((parrafo) => [parrafo.id, parrafo]));
     const ediciones = [];
+
+    // Lo que de verdad quedó escrito, que es de donde se copia el índice.
+    const hechos = [];
 
     for (const { clave, id, propuesta } of pedidos) {
       const parrafo = delXml.get(id);
@@ -113,6 +127,7 @@ function traducir(buffer, cambios, parrafos = []) {
           hasta: parrafo.fin,
           poner: campos.restaurar(hecho.xml, protegido.campos),
         });
+        hechos.push({ id, original: parrafo.texto, texto: propuesta.texto });
       } catch (error) {
         if (error instanceof campos.NoProtegible || error instanceof reescritura.NoReescribible) {
           intactos.set(clave, error.message);
@@ -121,6 +136,21 @@ function traducir(buffer, cambios, parrafos = []) {
         throw error;
       }
     }
+
+    // Los párrafos traducidos cuentan como trabajo hecho; las líneas del índice
+    // no: son copia de ellos, y un documento donde solo cambió el índice no está
+    // traducido.
+    tocados += ediciones.length;
+
+    const suyas = indice.edicionesDelIndice({
+      parrafos: [...delXml.values()],
+      estilos,
+      hechos,
+      saltar: new Set(hechos.map((hecho) => hecho.id)),
+    });
+    ediciones.push(...suyas.ediciones);
+    entradasDelIndice += suyas.entradas;
+    sinPareja += suyas.sinPareja;
 
     if (ediciones.length === 0) continue;
 
@@ -135,10 +165,9 @@ function traducir(buffer, cambios, parrafos = []) {
     trozos.push(xml.slice(desde));
 
     zip.updateFile(parte, Buffer.from(trozos.join(''), 'utf8'));
-    tocados += ediciones.length;
   }
 
-  return { buffer: zip.toBuffer(), tocados, intactos };
+  return { buffer: zip.toBuffer(), tocados, intactos, indice: { entradas: entradasDelIndice, sinPareja } };
 }
 
 module.exports = { traducir };

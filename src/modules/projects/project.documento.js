@@ -314,6 +314,10 @@ function nombresDeEstilos(estilosXml) {
  * que genera este mismo sistema—, y entonces no hay nombre que mirar. Sin esto,
  * las líneas del índice se leen como si fueran prosa: se le mandan a Claude, se
  * cuentan como palabras del cliente y se intentan traducir.
+ *
+ * Que no se manden no quiere decir que se queden en su idioma al traducir: se
+ * copian de los títulos ya traducidos, que es de donde Word las saca. Ver
+ * `preparar.indice`.
  */
 const ESTILO_DE_INDICE = /^(toc|tdc|[íi]ndice)\s*\d/i;
 
@@ -794,6 +798,7 @@ module.exports = {
   nombresDeEstilos,
   normalizarTitulo,
   TITULO_DE_REFERENCIAS,
+  ESTILO_DE_INDICE,
   DocumentoNoValido,
   NormaConNotas,
   MAXIMO_BYTES,

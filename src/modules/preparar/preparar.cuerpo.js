@@ -18,7 +18,9 @@
  *   imposible encontrarlo. `documento.leer` ya marca lo que cuelga del título
  *   «Referencias».
  * · El índice. `documento.leer` ya lo descarta: es un campo que Word rehace
- *   solo a partir de los títulos, y basta con actualizarlo.
+ *   solo a partir de los títulos, no prosa que se pueda reescribir. Traduciendo
+ *   no se queda por eso en su idioma: sus líneas se copian de los títulos ya
+ *   traducidos, sin pasar por el modelo. Ver `preparar.indice`.
  * · Lo que no tiene palabras: una línea de guiones, un número suelto.
  *
  * QUÉ QUEDA FUERA SOLO AL CORREGIR Y AL RESUMIR (`todo: false`)

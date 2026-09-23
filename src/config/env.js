@@ -276,6 +276,15 @@ const schema = z.object({
   // Techo de la captura. Una foto de pantalla de móvil no pasa de 2-3 MB.
   PROOF_MAX_BYTES: z.coerce.number().int().positive().default(6 * 1024 * 1024),
 
+  // ── Videos de las reseñas ───────────────────────────────────────────────
+  // Vacío = al lado de los comprobantes, como los capítulos: así entra en el
+  // respaldo diario y un despliegue no puede llevárselo por delante.
+  RESENAS_DIR: vacioComoAusente(z.string()),
+  // Techo del video. Un testimonio grabado con el móvil de un minuto ronda los
+  // 40 MB; 80 deja aire para dos minutos sin que esto se vuelva alojamiento de
+  // video. Lo que pase de aquí se rechaza con un mensaje, no a medias.
+  RESENA_VIDEO_MAX_BYTES: z.coerce.number().int().positive().default(80 * 1024 * 1024),
+
   // Techo del export bibliográfico que sube un comprador. Un CSV de Scopus con
   // resúmenes ronda los tres kilobytes por fuente, así que ocho megas cubren de
   // sobra las mil largas que caben en el tope por usuario.
@@ -576,6 +585,9 @@ const env = Object.freeze({
     raw.CAPITULOS_DIR ?? path.join(path.dirname(raw.PROOFS_DIR), 'capitulos'),
   // Por lo mismo que los capítulos: colgado de donde vivan los comprobantes.
   pedidosDir: raw.PEDIDOS_DIR ?? path.join(path.dirname(raw.PROOFS_DIR), 'pedidos'),
+  // Los videos de los testimonios. Mismo criterio: colgados de donde estén los
+  // comprobantes, sin pedir otra variable que alguien tenga que recordar.
+  resenasDir: raw.RESENAS_DIR ?? path.join(path.dirname(raw.PROOFS_DIR), 'resenas'),
   // Los .docx de «Preparar documento», el que sube el cliente y el que se le
   // devuelve. Colgado de los comprobantes, como los anteriores, así que el
   // respaldo diario ya se lo lleva sin tocar nada.

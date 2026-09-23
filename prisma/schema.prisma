@@ -2394,7 +2394,7 @@ model ResenaServicio {
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   /// De 1 a 5.
-  estrellas Int
+  estrellas  Int
   /// Lo que quiera contar. A diferencia de la reseña al asesor, aquí no puede
   /// ir vacío: una nota suelta no es un testimonio, y la portada no tiene qué
   /// enseñar con ella.
@@ -2406,6 +2406,13 @@ model ResenaServicio {
   nombre String @db.VarChar(120)
   /// Lo que hace o estudia, si lo quiso poner. Vacío = no se enseña nada.
   oficio String @default("") @db.VarChar(120)
+
+  /// El video del testimonio, en disco. 0 = no hay video, y es lo único que
+  /// hay que mirar para saberlo. Una reseña puede ser solo video: entonces el
+  /// comentario va vacío y lo que se enseña es la grabación.
+  videoBytes Int    @default(0)
+  /// El tipo con el que se detectó al subirlo, para servirlo sin adivinar.
+  videoTipo  String @default("") @db.VarChar(60)
 
   estado ResenaEstado @default(PENDIENTE)
 

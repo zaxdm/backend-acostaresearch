@@ -2,7 +2,24 @@
 
 const asyncHandler = require('../../shared/http/asyncHandler');
 const { ok, created } = require('../../shared/http/apiResponse');
+const { NotFoundError } = require('../../shared/errors/AppError');
 const resenaService = require('./resena.service');
+
+/**
+ * Manda el archivo tal cual, con su tipo.
+ *
+ * `sendFile` ya responde a los saltos del reproductor (las peticiones por
+ * rango), que es lo que permite adelantar un video sin descargarlo entero.
+ */
+function enviarVideo(res, next, ruta, tipo) {
+  res.type(tipo);
+  // Se puede cachear: el archivo de una reseña no cambia sin cambiar de id.
+  res.set('Cache-Control', 'public, max-age=3600');
+  return res.sendFile(ruta, (error) => {
+    // Fila con video y sin archivo en disco: que caiga en el 404 de siempre.
+    if (error) next(error.status === 404 ? undefined : error);
+  });
+}
 
 const resenaController = {
   /** Público: las aprobadas, con la media. `?destacadas=1` para la portada. */
@@ -39,6 +56,64 @@ const resenaController = {
       resenaService.pendientes(),
     ]);
     return ok(res, { resenas, pendientes });
+  }),
+
+  // ── El video del testimonio ─────────────────────────────────────────────
+
+  /** El suyo: sube el video de su reseña, o cambia el que tenía. */
+  subirMiVideo: asyncHandler(async (req, res) => {
+    const suya = await resenaService.mia(req.user.id);
+    if (!suya) {
+      throw new NotFoundError('Escribe tu reseña antes de subirle el video.');
+    }
+
+    const resena = await resenaService.guardarVideo(suya.id, req.body);
+    return ok(res, { resena }, { message: 'Video subido. Lo vemos antes de publicarlo.' });
+  }),
+
+  /** El suyo: lo quita y deja el texto. */
+  quitarMiVideo: asyncHandler(async (req, res) => {
+    const suya = await resenaService.mia(req.user.id);
+    if (!suya) throw new NotFoundError('Todavía no has escrito ninguna reseña.');
+
+    const resena = await resenaService.quitarVideo(suya.id);
+    return ok(res, { resena }, { message: 'Video quitado.' });
+  }),
+
+  /**
+   * El video de una reseña APROBADA. Público y sin sesión: lo pide la etiqueta
+   * `<video>` de la portada, que no puede mandar la cabecera de nadie.
+   */
+  verVideo: asyncHandler(async (req, res, next) => {
+    const { ruta, tipo } = await resenaService.paraVer(req.params.id);
+    return enviarVideo(res, next, ruta, tipo);
+  }),
+
+  /** El suyo, en cualquier estado: para verlo antes de que lo aprobemos. */
+  verMiVideo: asyncHandler(async (req, res, next) => {
+    const suya = await resenaService.mia(req.user.id);
+    if (!suya) throw new NotFoundError('Todavía no has escrito ninguna reseña.');
+
+    const { ruta, tipo } = await resenaService.paraVer(suya.id, { soloAprobadas: false });
+    return enviarVideo(res, next, ruta, tipo);
+  }),
+
+  /** El de cualquiera, para el panel: hay que verlo antes de aprobarlo. */
+  verVideoDelPanel: asyncHandler(async (req, res, next) => {
+    const { ruta, tipo } = await resenaService.paraVer(req.params.id, { soloAprobadas: false });
+    return enviarVideo(res, next, ruta, tipo);
+  }),
+
+  /** Panel: da de alta la reseña de un cliente, con su correo. */
+  crear: asyncHandler(async (req, res) => {
+    const resena = await resenaService.crearDesdeElPanel(req.body, req.user.id);
+    return created(res, { resena }, 'Reseña guardada y publicada.');
+  }),
+
+  /** Panel: sube el video de una reseña sin devolverla a pendiente. */
+  subirVideo: asyncHandler(async (req, res) => {
+    const resena = await resenaService.guardarVideo(req.params.id, req.body, { aRevisar: false });
+    return ok(res, { resena }, { message: 'Video subido.' });
   }),
 
   /** Panel: aprobar, rechazar o destacar. */

@@ -24,10 +24,14 @@ const resenaBodySchema = z.object({
     .int()
     .min(1, 'Pon entre una y cinco estrellas.')
     .max(5, 'Pon entre una y cinco estrellas.'),
-  comentario: texto(20, 1500, 'Cuéntanos cómo te fue, con al menos una frase.'),
-  // Se rellena solo con el nombre de la cuenta, pero se puede cambiar: hay
-  // quien no quiere su apellido completo debajo de su opinión.
-  nombre: texto(2, 120, 'Escribe con qué nombre quieres que salga.'),
+  // Puede ir vacío SI la reseña ya tiene video: entonces el testimonio es la
+  // grabación y el texto sobra. Quien decide eso es el servicio, que es el
+  // único que sabe si hay video; aquí solo se comprueba el techo.
+  comentario: z.string().trim().max(1500, 'Como mucho 1500 caracteres.').default(''),
+  // El nombre ya no se pide: la reseña se firma con el correo de la cuenta
+  // tapado —«steb***@gmail.com»—, que es lo que enseña que detrás hay un
+  // cliente de verdad. Preguntarlo era pedirle al autor que se inventara una
+  // firma para algo que ya sabemos quién es.
   oficio: z.string().trim().max(120, 'Como mucho 120 caracteres.').optional().default(''),
 });
 
@@ -56,6 +60,26 @@ const idParamSchema = z.object({
 });
 
 /**
+ * Una reseña dada de alta desde el panel, a nombre de un cliente.
+ *
+ * Los testimonios llegan por WhatsApp y por correo, no por el formulario. El
+ * correo NO es decorativo: tiene que ser el de una cuenta que exista, y de ahí
+ * sale la firma pública. Sin cuenta detrás, el servicio no crea nada.
+ *
+ * El texto puede ir vacío cuando lo que se va a subir es un video.
+ */
+const altaDelPanelSchema = z.object({
+  email: z.string().trim().toLowerCase().email('Pon el correo con el que compró.'),
+  estrellas: z.coerce
+    .number()
+    .int()
+    .min(1, 'Pon entre una y cinco estrellas.')
+    .max(5, 'Pon entre una y cinco estrellas.'),
+  comentario: z.string().trim().max(1500, 'Como mucho 1500 caracteres.').default(''),
+  oficio: z.string().trim().max(120, 'Como mucho 120 caracteres.').optional().default(''),
+});
+
+/**
  * Qué pide la web pública.
  *
  * `destacadas=1` es lo que manda la portada, que enseña unas pocas elegidas a
@@ -75,6 +99,7 @@ const adminQuerySchema = z.object({
 
 module.exports = {
   resenaBodySchema,
+  altaDelPanelSchema,
   revisionSchema,
   idParamSchema,
   adminQuerySchema,

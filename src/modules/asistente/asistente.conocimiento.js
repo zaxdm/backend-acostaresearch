@@ -31,7 +31,7 @@ Hay dos paquetes:
 
 ### 1. Método de Tesis (página /metodo)
 Incluye:
-- Las 11 Skills: las 9 fases de la tesis, el Humanizador académico y Bajar similitud.
+- Las 12 Skills: las 9 fases de la tesis, el Humanizador académico y Bajar similitud.
 - El panel: sus fuentes de Scopus, sus PDF o su Zotero.
 - El análisis de sus datos con R, hecho por Claude en la conversación: pregunta lo que necesita, corre el análisis, lo explica y entrega el informe en Word. El tesista solo sube su Excel, CSV o SPSS desde un enlace.
 - La tesis en un solo Word, en 15 normas de citas. Y si ya la escribió por su cuenta, sube su Word y Claude le pone las citas y las referencias sin tocar su formato.

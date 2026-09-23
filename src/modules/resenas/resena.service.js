@@ -187,7 +187,11 @@ const resenaService = {
         ...(soloDestacadas ? { destacada: true } : {}),
       }),
       prisma.resenaServicio.aggregate({
-        where: { estado: 'APROBADA' },
+        // La misma condición que la lista: la media y el «sobre N reseñas» no
+        // pueden contar filas que no se enseñan en ningún sitio. Anunciar «5,0
+        // sobre 2 reseñas» encima de una banda sin ninguna tarjeta es peor que
+        // no anunciar nada.
+        where: { estado: 'APROBADA', ...CON_ALGO_QUE_ENSENAR },
         _count: { _all: true },
         _sum: { estrellas: true },
       }),

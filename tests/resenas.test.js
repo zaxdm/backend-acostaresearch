@@ -434,16 +434,21 @@ test('con video, la reseña puede quedarse sin una sola palabra', async () => {
   await assert.rejects(() => resenaService.quitarVideo(fila.id), /sin nada que enseñar/);
 });
 
-test('una reseña sin texto y sin video no sale en la web', async () => {
+test('una reseña sin texto y sin video no sale en la web ni cuenta para la media', async () => {
   empezar();
-  await resenaService.guardar('u1', RESENA);
-  const [fila] = await resenaService.listar('TODAS');
-  await resenaService.revisar(fila.id, { estado: 'APROBADA' }, 'admin1');
-  // Se le vacía el texto por detrás, como quedaría un alta del panel a la
+  for (const userId of ['u1', 'u2']) await resenaService.guardar(userId, RESENA);
+  const filas = await resenaService.listar('TODAS');
+  for (const fila of filas) await resenaService.revisar(fila.id, { estado: 'APROBADA' }, 'admin1');
+  // Se le vacía el texto a una por detrás, como quedaría un alta del panel a la
   // espera de su video.
-  estado.filas.get(fila.id).comentario = '';
+  estado.filas.get(filas[0].id).comentario = '';
 
-  assert.deepEqual((await resenaService.publicas()).resenas, []);
+  const { resenas, total } = await resenaService.publicas();
+
+  assert.equal(resenas.length, 1);
+  // Y el «sobre N reseñas» cuenta una, no dos: la vacía no se enseña en ningún
+  // sitio, así que tampoco puede sostener una media.
+  assert.equal(total, 1);
 });
 
 // ── El panel también da de alta ─────────────────────────────────────────────

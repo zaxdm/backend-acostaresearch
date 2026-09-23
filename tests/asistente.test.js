@@ -12,7 +12,7 @@ const {
   formatearPrecio,
 } = require('../src/modules/asistente/asistente.prompt');
 const { crearTopeDiario } = require('../src/modules/asistente/asistente.tope');
-const { generar, generarEnGroq, generarConRespaldo, olvidarReposos, GeminiError } = require('../src/lib/gemini');
+const { generar, generarEnCompatible, generarConRespaldo, olvidarReposos, GeminiError } = require('../src/lib/gemini');
 
 /**
  * El Asistente Acosta habla con cualquiera que entre a la web y le cuesta
@@ -491,7 +491,7 @@ test('Groq recibe la conversación en su formato y devuelve lo mismo que Gemini'
     return { ok: true, status: 200, json: async () => RESPUESTA_GROQ };
   };
 
-  const r = await generarEnGroq({
+  const r = await generarEnCompatible({
     modelo: 'openai/gpt-oss-120b',
     sistema: 'sé breve',
     mensajes: [
@@ -522,7 +522,7 @@ test('Groq recibe la conversación en su formato y devuelve lo mismo que Gemini'
 
 test('los fallos de Groq son GeminiError, con su estado, y el filtro de contenido es un bloqueo', async () => {
   await assert.rejects(
-    generarEnGroq({
+    generarEnCompatible({
       modelo: 'm',
       sistema: 's',
       mensajes: turnos(1),
@@ -531,7 +531,7 @@ test('los fallos de Groq son GeminiError, con su estado, y el filtro de contenid
     (e) => e instanceof GeminiError && e.status === 429 && !e.bloqueado,
   );
   await assert.rejects(
-    generarEnGroq({
+    generarEnCompatible({
       modelo: 'm',
       sistema: 's',
       mensajes: turnos(1),

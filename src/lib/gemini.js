@@ -140,32 +140,75 @@ async function generar({
   };
 }
 
-const GROQ = 'https://api.groq.com/openai/v1/chat/completions';
-const PREFIJO_GROQ = 'groq:';
+/**
+ * Los proveedores que hablan el dialecto de OpenAI: mismo cuerpo, misma
+ * respuesta, solo cambian la dirección y la clave. Se les pide por el prefijo
+ * del modelo (`groq:openai/gpt-oss-120b`).
+ *
+ * `esfuerzoBajo` es para los que aceptan `reasoning_effort`, que no es de
+ * OpenAI sino un añadido de cada casa: Groq y NVIDIA lo documentan, y en OVH no
+ * está comprobado, así que allí no se manda (un parámetro que no conocen puede
+ * volver como un 400 y tirar la petición entera). Hoy solo se activa en Groq:
+ * lo pide el modelo, no el proveedor, y el único gpt-oss que queda es el suyo
+ * (NVIDIA lo retiró el 3-sep-2026). Los demás que razonan devuelven lo pensado
+ * en `reasoning_content`, aparte del texto, así que no se nos cuela en la
+ * respuesta; pero sí cuenta contra `max_completion_tokens`, y por eso el margen
+ * de mil tokens de abajo vale para todos.
+ */
+const COMPATIBLES = {
+  groq: {
+    nombre: 'Groq',
+    url: 'https://api.groq.com/openai/v1/chat/completions',
+    clave: () => env.GROQ_API_KEY,
+    esfuerzoBajo: true,
+  },
+  nvidia: {
+    nombre: 'NVIDIA NIM',
+    url: 'https://integrate.api.nvidia.com/v1/chat/completions',
+    clave: () => env.NVIDIA_API_KEY,
+    esfuerzoBajo: true,
+  },
+  ovh: {
+    nombre: 'OVHcloud',
+    url: 'https://oai.endpoints.kepler.ai.cloud.ovh.net/v1/chat/completions',
+    // Anónimo a propósito: el tier sin clave existe y no caduca. Ver `OVH_MODEL`.
+    clave: () => null,
+    esfuerzoBajo: false,
+  },
+};
 
-/** Los motivos de parada de Groq (los de OpenAI), con el nombre de Gemini. */
-const PARADA_GROQ = { stop: 'STOP', length: 'MAX_TOKENS', content_filter: 'SAFETY' };
+/** Los motivos de parada de OpenAI, con el nombre de Gemini. */
+const PARADA_COMPATIBLE = { stop: 'STOP', length: 'MAX_TOKENS', content_filter: 'SAFETY' };
 
 /**
- * Lo mismo que `generar`, pero en Groq: mismas entradas, misma salida y el
- * mismo GeminiError, para que quien lo usa no sepa quién contestó.
+ * Lo mismo que `generar`, pero en un proveedor compatible con OpenAI: mismas
+ * entradas, misma salida y el mismo GeminiError, para que quien lo usa no sepa
+ * quién contestó.
  *
  * gpt-oss piensa antes de contestar y ese pensamiento cuenta dentro del tope
  * de salida: se le da el esfuerzo más bajo y mil tokens más de margen, o una
  * respuesta corta podría quedarse sin sitio.
  */
-async function generarEnGroq({
+async function generarEnCompatible({
   sistema,
   mensajes,
   modelo,
+  proveedor = 'groq',
   maxTokens = 900,
   timeoutMs = 20_000,
   json = false,
   fetchImpl = fetch,
 }) {
-  const respuesta = await fetchImpl(GROQ, {
+  const quien = COMPATIBLES[proveedor];
+  if (!quien) throw new GeminiError(`Proveedor desconocido: ${proveedor}`);
+  const clave = quien.clave();
+
+  const respuesta = await fetchImpl(quien.url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.GROQ_API_KEY ?? ''}` },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(clave ? { Authorization: `Bearer ${clave}` } : {}),
+    },
     body: JSON.stringify({
       model: modelo,
       messages: [
@@ -173,7 +216,7 @@ async function generarEnGroq({
         ...mensajes.map((m) => ({ role: m.rol === 'asistente' ? 'assistant' : 'user', content: m.texto })),
       ],
       max_completion_tokens: maxTokens + 1_000,
-      ...(modelo.startsWith('openai/gpt-oss') ? { reasoning_effort: 'low' } : {}),
+      ...(quien.esfuerzoBajo && modelo.includes('gpt-oss') ? { reasoning_effort: 'low' } : {}),
       ...(json ? { response_format: { type: 'json_object' } } : {}),
     }),
     signal: AbortSignal.timeout(timeoutMs),
@@ -181,7 +224,7 @@ async function generarEnGroq({
 
   const cuerpo = await respuesta.json().catch(() => null);
   if (!respuesta.ok) {
-    const mensaje = cuerpo?.error?.message ?? `Groq respondió ${respuesta.status}`;
+    const mensaje = cuerpo?.error?.message ?? `${quien.nombre} respondió ${respuesta.status}`;
     throw new GeminiError(mensaje, {
       status: respuesta.status,
       esperarMs: esperaPedida(cuerpo, mensaje),
@@ -189,10 +232,12 @@ async function generarEnGroq({
   }
 
   const eleccion = cuerpo?.choices?.[0];
-  const finishReason = PARADA_GROQ[eleccion?.finish_reason] ?? eleccion?.finish_reason ?? 'desconocido';
+  const finishReason = PARADA_COMPATIBLE[eleccion?.finish_reason] ?? eleccion?.finish_reason ?? 'desconocido';
   const texto = String(eleccion?.message?.content ?? '').trim();
   if (!texto) {
-    throw new GeminiError(`Groq no devolvió texto (${finishReason})`, { bloqueado: finishReason === 'SAFETY' });
+    throw new GeminiError(`${quien.nombre} no devolvió texto (${finishReason})`, {
+      bloqueado: finishReason === 'SAFETY',
+    });
   }
 
   const uso = cuerpo.usage;
@@ -209,27 +254,50 @@ async function generarEnGroq({
   };
 }
 
-/** Pide a quien toque: `groq:<modelo>` va a Groq, lo demás a Gemini. */
-const generarCon = (modelo, opciones) =>
-  modelo.startsWith(PREFIJO_GROQ)
-    ? generarEnGroq({ ...opciones, modelo: modelo.slice(PREFIJO_GROQ.length) })
+/**
+ * Pide a quien toque: `<proveedor>:<modelo>` va a ese proveedor, lo demás a
+ * Gemini. Un prefijo que no conocemos NO se parte: se le pasa entero a Gemini,
+ * que dirá que ese modelo no existe, en vez de irse a un sitio equivocado.
+ */
+const generarCon = (modelo, opciones) => {
+  const corte = modelo.indexOf(':');
+  const prefijo = corte > 0 ? modelo.slice(0, corte) : null;
+  return prefijo && COMPATIBLES[prefijo]
+    ? generarEnCompatible({ ...opciones, proveedor: prefijo, modelo: modelo.slice(corte + 1) })
     : generar({ ...opciones, modelo });
+};
 
 /**
- * Los modelos de texto en su orden: el Gemini principal, Groq si hay clave, y
- * el Gemini de respaldo.
+ * Los modelos de texto en su orden: el Gemini principal, los de fuera que
+ * tengan clave, el Gemini de respaldo y, si acaso, OVH.
  *
  * Groq, segundo y no primero: su plan gratuito cuenta peticiones por día, y
  * así solo se le pregunta cuando el principal falla o, con la carrera de
  * `ventajaMs`, tarda. Y segundo y no tercero: cuando Gemini se satura suelen
  * ir lentos los dos a la vez (el 21-sep-2026), y de tercero habría que esperar
  * dos ventajas antes de preguntarle.
+ *
+ * NVIDIA detrás de Groq por lo mismo, y porque su tier gratuito es más ancho
+ * (10.000 al día frente a 1.000): aguanta mejor ser el que queda cuando los
+ * demás se caen a la vez.
+ *
+ * OVH el último de todos, después incluso del respaldo de Gemini: es anónimo y
+ * cuenta 2 peticiones por minuto por IP, y la IP es la del servidor entero. Con
+ * dos personas escribiendo a la vez ya da 429, así que sirve de último recurso
+ * y no de corredor.
+ *
+ * Esto NO lo usa Preparar documento, que tiene su propia lista (`PREPARAR_MODELO`):
+ * lo que sale de ahí es el documento de un cliente y no va a proveedores gratuitos.
  */
 const modelosDeTexto = () => [
   ...new Set(
-    [env.GEMINI_MODEL, env.GROQ_API_KEY ? `${PREFIJO_GROQ}${env.GROQ_MODEL}` : null, env.GEMINI_MODEL_RESPALDO].filter(
-      Boolean,
-    ),
+    [
+      env.GEMINI_MODEL,
+      env.GROQ_API_KEY ? `groq:${env.GROQ_MODEL}` : null,
+      env.NVIDIA_API_KEY ? `nvidia:${env.NVIDIA_MODEL}` : null,
+      env.GEMINI_MODEL_RESPALDO,
+      env.OVH_MODEL ? `ovh:${env.OVH_MODEL}` : null,
+    ].filter(Boolean),
   ),
 ];
 
@@ -570,4 +638,4 @@ async function embeber(
 /** Vaciar lo recordado. Para las pruebas: cada una empieza sin memoria. */
 const olvidarVectores = () => memoria.clear();
 
-module.exports = { generar, generarEnGroq, generarConRespaldo, modelosDeTexto, olvidarReposos, embeber, olvidarVectores, esperaPedida, esPicoPasajero, esCupoAgotado, GeminiError };
+module.exports = { generar, generarEnCompatible, generarConRespaldo, modelosDeTexto, olvidarReposos, embeber, olvidarVectores, esperaPedida, esPicoPasajero, esCupoAgotado, GeminiError };

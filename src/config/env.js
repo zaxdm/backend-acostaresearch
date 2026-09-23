@@ -114,6 +114,25 @@ const schema = z.object({
   // = sin tercer modelo.
   GROQ_API_KEY: vacioComoAusente(z.string()),
   GROQ_MODEL: z.string().default('openai/gpt-oss-120b'),
+  // NVIDIA NIM: un cuarto corredor, de otra empresa más. Clave gratuita en
+  // https://build.nvidia.com (programa de desarrolladores), 40 peticiones por
+  // minuto y 10.000 al día, que es el tier gratuito más ancho de los que no
+  // prohíben el uso comercial. Habla el dialecto de OpenAI, como Groq. Sin
+  // clave = no entra en la carrera.
+  NVIDIA_API_KEY: vacioComoAusente(z.string()),
+  // glm-5.3 y NO gpt-oss-120b, aunque sea el que usa Groq: NVIDIA lo retiró el
+  // 3-sep-2026 y devuelve 410 Gone. Probados los dos el 23-sep-2026 contra el
+  // endpoint real con la clave de la casa: glm-5.3 contestó en 6 s con un
+  // prompt de mil tokens (una de cada tres vueltas, 16 s) y el JSON le sale
+  // bien; nemotron-3.5-lightning tardó 82 s la primera vez y 13 s la mejor,
+  // razonando sobre «di solo: listo». No sirve para un chat.
+  NVIDIA_MODEL: z.string().default('z-ai/glm-5.3'),
+  // OVHcloud: el ÚLTIMO recurso, para cuando no contesta nadie más. No lleva
+  // clave —es anónimo— y por eso cuenta 2 peticiones por minuto POR IP: la IP
+  // es la del servidor entero, así que no aguanta a dos personas a la vez. Está
+  // aquí porque es europeo y porque sin clave no hay nada que caducar. Vacío =
+  // fuera.
+  OVH_MODEL: vacioComoAusente(z.string()),
   // El de los vectores con los que la búsqueda semántica de Scopus ordena por
   // significado. Probado en el servidor el 19-sep-2026: los 002 y
   // text-embedding-004 ya dan 404.

@@ -38,9 +38,18 @@ const video = express.raw({
 router.get('/', validate({ query: publicasQuerySchema }), resenaController.publicas);
 
 // Escribirlas, no: hay que tener cuenta. Es lo que impide que una tarde de
-// aburrimiento llene el panel de opiniones de nadie.
-router.get('/mia', authenticate, resenaController.mia);
-router.get('/mia/video', authenticate, resenaController.verMiVideo);
+// aburrimiento llene el panel de opiniones de nadie. Van antes que `/:id/video`
+// para que «mias» no se lea como el identificador de una reseña.
+// Las suyas son varias, así que cada una se toca por su id. Todas estas rutas
+// comprueban que la reseña sea de quien la pide Y que no sea una de las que
+// publicamos nosotros a su nombre.
+router.get('/mias', authenticate, resenaController.mias);
+router.get(
+  '/mias/:id/video',
+  authenticate,
+  validate({ params: idParamSchema }),
+  resenaController.verMiVideo,
+);
 router.post(
   '/',
   authenticate,
@@ -48,8 +57,27 @@ router.post(
   validate({ body: resenaBodySchema }),
   resenaController.guardar,
 );
-router.put('/mia/video', authenticate, resenaLimiter, video, resenaController.subirMiVideo);
-router.delete('/mia/video', authenticate, resenaController.quitarMiVideo);
+router.put(
+  '/mias/:id',
+  authenticate,
+  resenaLimiter,
+  validate({ params: idParamSchema, body: resenaBodySchema }),
+  resenaController.cambiar,
+);
+router.put(
+  '/mias/:id/video',
+  authenticate,
+  resenaLimiter,
+  validate({ params: idParamSchema }),
+  video,
+  resenaController.subirMiVideo,
+);
+router.delete(
+  '/mias/:id/video',
+  authenticate,
+  validate({ params: idParamSchema }),
+  resenaController.quitarMiVideo,
+);
 
 // El video de una aprobada, sin sesión.
 router.get('/:id/video', validate({ params: idParamSchema }), resenaController.verVideo);
@@ -76,5 +104,10 @@ router.patch(
   validate({ params: idParamSchema, body: revisionSchema }),
   resenaController.revisar,
 );
+
+// Borrarla del todo. Va aquí abajo y solo para el administrador: ni su propio
+// autor la borra, que una reseña publicada no se retira sin que lo sepa quien
+// la publicó.
+router.delete('/panel/:id', validate({ params: idParamSchema }), resenaController.borrar);
 
 module.exports = router;

@@ -87,10 +87,11 @@ model User {
   docPacks      DocPack[]
   preparaciones Preparacion[]
 
-  /// Lo que opina del servicio. Como mucho una, y se va con la cuenta: un
+  /// Lo que opina del servicio. Pueden ser varias, y se van con la cuenta: un
   /// testimonio firmado por alguien que ya no está no lo puede retirar nadie.
-  /// Ver `ResenaServicio`.
-  resenaServicio ResenaServicio?
+  /// Ver `ResenaServicio`. Varias: quien vuelve con otra fase terminada tiene
+  /// algo distinto que contar.
+  resenasServicio ResenaServicio[]
 
   /// Enlace de prueba del que salió esta cuenta. Nulo en toda cuenta real.
   ///
@@ -2389,9 +2390,27 @@ enum ResenaEstado {
 model ResenaServicio {
   id String @id @default(uuid()) @db.Char(36)
 
-  /// Una por cuenta: el índice único es lo que lo garantiza.
-  userId String @unique @db.Char(36)
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// De quién es. VARIAS POR CUENTA: quien vuelve a los seis meses con otra
+  /// fase terminada tiene algo distinto que contar, y obligarle a pisar lo que
+  /// escribió la primera vez borraba media historia.
+  ///
+  /// NULO cuando la da de alta el panel a nombre de alguien que no tiene cuenta
+  /// —un testimonio que llegó por WhatsApp de quien compró por otra vía—. Eso
+  /// se avisa al darla de alta y se marca en el panel: una firma sin cuenta
+  /// detrás vale menos y hay que saberlo.
+  userId String? @db.Char(36)
+  user   User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// El correo con el que se firma en la web, siempre tapado («steb***@…»).
+  /// Se copia del de la cuenta al escribirla; en las del panel es el que se
+  /// apuntó allí. Está en la fila y no se lee del usuario para que una reseña
+  /// sin cuenta detrás siga teniendo firma.
+  correo String @default("") @db.VarChar(200)
+
+  /// La escribió el panel a nombre de otro. Su titular NO la puede tocar: no
+  /// la escribió él, así que no puede cambiarle el texto, ni el video, ni
+  /// quitárselo. Lo que sí puede es escribir la suya, que es otra fila.
+  delPanel Boolean @default(false)
 
   /// De 1 a 5.
   estrellas  Int
@@ -2430,6 +2449,8 @@ model ResenaServicio {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  /// Las de una cuenta, para su pantalla.
+  @@index([userId])
   /// La consulta pública: aprobadas, las últimas primero.
   @@index([estado, createdAt])
   /// La de la portada, que además filtra por destacada.

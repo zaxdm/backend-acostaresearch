@@ -52,7 +52,11 @@ function proyectar(fila, select) {
   const salida = {};
   for (const [campo, pedido] of Object.entries(select)) {
     if (!pedido) continue;
-    salida[campo] = pedido === true ? fila[campo] : proyectar(fila[campo] ?? {}, pedido.select);
+    if (pedido === true) {
+      salida[campo] = fila[campo];
+    } else {
+      salida[campo] = fila[campo] ? proyectar(fila[campo], pedido.select) : null;
+    }
   }
   return salida;
 }
@@ -100,25 +104,23 @@ sustituir('../src/lib/prisma', {
         _sum: { estrellas: filas.reduce((suma, f) => suma + f.estrellas, 0) },
       };
     },
-    upsert: async ({ where, create, update, select }) => {
-      const existente = [...estado.filas.values()].find((f) => f.userId === where.userId);
-      if (existente) {
-        Object.assign(existente, update, { updatedAt: new Date() });
-        return proyectar(existente, select);
-      }
+    create: async ({ data, select }) => {
       const fila = {
         id: `resena-${estado.filas.size + 1}`,
         destacada: false,
+        delPanel: false,
         videoBytes: 0,
         videoTipo: '',
         motivo: '',
         oficio: '',
+        correo: '',
         revisadaPorId: null,
         revisadaAt: null,
         createdAt: new Date(Date.now() + estado.filas.size),
         updatedAt: new Date(),
-        ...create,
-        user: usuario(create.userId),
+        ...data,
+        // Nulo cuando la dio de alta el panel a nombre de alguien sin cuenta.
+        user: data.userId ? usuario(data.userId) : null,
       };
       estado.filas.set(fila.id, fila);
       return proyectar(fila, select);
@@ -126,6 +128,11 @@ sustituir('../src/lib/prisma', {
     update: async ({ where, data, select }) => {
       const fila = estado.filas.get(where.id);
       Object.assign(fila, data, { updatedAt: new Date() });
+      return proyectar(fila, select);
+    },
+    delete: async ({ where, select }) => {
+      const fila = estado.filas.get(where.id);
+      estado.filas.delete(where.id);
       return proyectar(fila, select);
     },
   },
@@ -209,19 +216,66 @@ test('no se ve en la web hasta que se aprueba', async () => {
   assert.equal(despues.nota, 5);
 });
 
-test('reescribirla la devuelve a pendiente y le quita lo que había ganado', async () => {
+test('cambiar una la devuelve a pendiente y le quita lo que había ganado', async () => {
   empezar();
   await resenaService.guardar('u1', RESENA);
   const [fila] = await resenaService.listar('TODAS');
   await resenaService.revisar(fila.id, { estado: 'APROBADA', destacada: true }, 'admin1');
 
-  const cambiada = await resenaService.guardar('u1', { ...RESENA, estrellas: 1 });
+  const cambiada = await resenaService.guardar('u1', { ...RESENA, estrellas: 1 }, fila.id);
 
   assert.equal(cambiada.estado, 'PENDIENTE');
   assert.equal(cambiada.destacada, false);
-  // Y sigue siendo UNA: reescribir no estrena fila.
+  // Cambiar la suya no estrena fila: se cambia esa.
   assert.equal((await resenaService.listar('TODAS')).length, 1);
   assert.deepEqual((await resenaService.publicas()).resenas, []);
+});
+
+test('una misma cuenta puede dejar varias, y cada una va por su lado', async () => {
+  empezar();
+  await resenaService.guardar('u1', RESENA);
+  await resenaService.guardar('u1', { ...RESENA, comentario: 'Volví seis meses después y terminé la discusión.' });
+
+  const mias = await resenaService.mias('u1');
+  assert.equal(mias.length, 2);
+  // Las últimas primero, que es como se leen.
+  assert.match(mias[0].comentario, /seis meses/);
+
+  // Se aprueba una y la otra sigue esperando: son dos cosas distintas.
+  await resenaService.revisar(mias[0].id, { estado: 'APROBADA' }, 'admin1');
+  const despues = await resenaService.mias('u1');
+  assert.equal(despues[0].estado, 'APROBADA');
+  assert.equal(despues[1].estado, 'PENDIENTE');
+});
+
+test('pero no las que quiera: hay un tope por cuenta', async () => {
+  empezar();
+  for (let n = 0; n < 10; n += 1) await resenaService.guardar('u1', RESENA);
+
+  await assert.rejects(() => resenaService.guardar('u1', RESENA), /Ya has dejado 10/);
+  assert.equal((await resenaService.mias('u1')).length, 10);
+});
+
+test('nadie toca la reseña de otro, ni la suya si la publicamos nosotros', async () => {
+  empezar();
+  await resenaService.guardar('u1', RESENA);
+  const [suya] = await resenaService.listar('TODAS');
+
+  // De otro: ni existe, para quien pregunta.
+  await assert.rejects(() => resenaService.suya(suya.id, 'u2'), /no existe/);
+
+  // La que dio de alta el panel a su nombre: la ve, pero no la toca.
+  const delPanel = await resenaService.crearDesdeElPanel(
+    { email: 'u1@correo.test', estrellas: 5, comentario: RESENA.comentario, oficio: '' },
+    'admin1',
+  );
+  await assert.rejects(() => resenaService.suya(delPanel.id, 'u1'), /Escríbenos/);
+  await assert.rejects(
+    () => resenaService.guardar('u1', { ...RESENA, estrellas: 1 }, delPanel.id),
+    /Escríbenos/,
+  );
+  // Y sigue saliendo entre las suyas: verla sí puede.
+  assert.equal((await resenaService.mias('u1')).length, 2);
 });
 
 test('rechazarla guarda el motivo, y volver a escribirla lo borra', async () => {
@@ -286,7 +340,7 @@ test('quien la escribe ve con qué firma va a salir antes de enviarla', async ()
 
   assert.equal(suya.autor, 'ordo***@correo.test');
   assert.equal(suya.estado, 'PENDIENTE');
-  assert.equal((await resenaService.mia('ordonez')).autor, 'ordo***@correo.test');
+  assert.equal((await resenaService.mias('ordonez'))[0].autor, 'ordo***@correo.test');
 });
 
 // ── La media dice la verdad ─────────────────────────────────────────────────
@@ -426,7 +480,7 @@ test('con video, la reseña puede quedarse sin una sola palabra', async () => {
   await resenaService.guardarVideo(fila.id, MP4);
 
   // El testimonio es la grabación: el texto ya no hace falta.
-  const soloVideo = await resenaService.guardar('u1', { ...RESENA, comentario: '' });
+  const soloVideo = await resenaService.guardar('u1', { ...RESENA, comentario: '' }, fila.id);
   assert.equal(soloVideo.comentario, '');
   assert.equal(soloVideo.video, true);
 
@@ -453,17 +507,26 @@ test('una reseña sin texto y sin video no sale en la web ni cuenta para la medi
 
 // ── El panel también da de alta ─────────────────────────────────────────────
 
-test('el panel no inventa clientes: sin cuenta, no hay reseña', async () => {
+test('sin cuenta detrás se guarda igual, pero el panel lo dice', async () => {
   empezar();
-  await assert.rejects(
-    () =>
-      resenaService.crearDesdeElPanel(
-        { email: 'nadie@gmail.com', estrellas: 5, comentario: RESENA.comentario, oficio: '' },
-        'admin1',
-      ),
-    /ninguna cuenta con ese correo/,
+  const resena = await resenaService.crearDesdeElPanel(
+    { email: 'nadie@gmail.com', estrellas: 5, comentario: RESENA.comentario, oficio: '' },
+    'admin1',
   );
-  assert.equal(estado.filas.size, 0);
+
+  // Se guarda —hay quien compró por otra vía— y se firma con ese correo…
+  assert.equal(resena.autor, 'nadi***@gmail.com');
+  assert.equal(resena.estado, 'APROBADA');
+  // …pero queda marcada, porque una firma sin cuenta no se puede comprobar.
+  assert.equal(resena.sinCuenta, true);
+  assert.equal(resena.user, null);
+
+  // Con cuenta, lo contrario.
+  const conCuenta = await resenaService.crearDesdeElPanel(
+    { email: 'aldair@correo.test', estrellas: 5, comentario: RESENA.comentario, oficio: '' },
+    'admin1',
+  );
+  assert.equal(conCuenta.sinCuenta, false);
 });
 
 test('la que da de alta el panel nace publicada y firmada con el correo del cliente', async () => {
@@ -475,6 +538,8 @@ test('la que da de alta el panel nace publicada y firmada con el correo del clie
 
   assert.equal(resena.estado, 'APROBADA');
   assert.equal(resena.autor, 'alda***@correo.test');
+  // Y marcada como del panel: su titular no la escribió, así que no la toca.
+  assert.equal(resena.delPanel, true);
   assert.equal((await resenaService.publicas()).resenas.length, 1);
 });
 
@@ -497,4 +562,36 @@ test('revisar una reseña que no existe no revisa nada', async () => {
     () => resenaService.revisar('no-existe', { estado: 'APROBADA' }, 'admin1'),
     /no existe/,
   );
+});
+
+// ── Borrarla del todo ───────────────────────────────────────────────────────
+
+test('borrarla se lleva la fila, su video y lo que contaba para la media', async () => {
+  empezar();
+  await resenaService.guardar('u1', RESENA);
+  const [fila] = await resenaService.listar('TODAS');
+  await resenaService.guardarVideo(fila.id, MP4);
+  await resenaService.revisar(fila.id, { estado: 'APROBADA' }, 'admin1');
+  const { ruta } = await resenaService.paraVer(fila.id);
+
+  await resenaService.borrar(fila.id, 'admin1');
+
+  // Ni en el panel, ni en la web, ni en la media: rechazarla la escondía, esto
+  // la quita.
+  assert.equal((await resenaService.listar('TODAS')).length, 0);
+  const { resenas, total, nota } = await resenaService.publicas();
+  assert.equal(resenas.length, 0);
+  assert.equal(total, 0);
+  assert.equal(nota, null);
+  // Y el video no se queda ocupando disco a nombre de nadie.
+  assert.equal(fs.existsSync(ruta), false);
+});
+
+test('borrar una reseña que no existe no borra nada', async () => {
+  empezar();
+  await resenaService.guardar('u1', RESENA);
+
+  await assert.rejects(() => resenaService.borrar('no-existe', 'admin1'), /no existe/);
+
+  assert.equal((await resenaService.listar('TODAS')).length, 1);
 });

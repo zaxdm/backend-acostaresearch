@@ -17,11 +17,20 @@ const { NotFoundError, ValidationError } = require('../../shared/errors/AppError
  * Nace PENDIENTE y solo la mueve un administrador desde el panel. Lo que sale
  * en la portada con la marca encima lo firma la casa, no quien lo escribió.
  *
- * UNA POR CUENTA
- * --------------
- * Quien ya opinó y vuelve no estrena una fila: reescribe la suya, con `upsert`.
- * Y al reescribirla vuelve a PENDIENTE, porque si no bastaría con dejar una
- * reseña educada, esperar a que se apruebe y luego editarla.
+ * VARIAS POR CUENTA
+ * -----------------
+ * Quien vuelve a los seis meses con otra fase terminada tiene algo distinto que
+ * contar, así que escribe otra. Cambiar una que ya dejó la devuelve a
+ * PENDIENTE: si no, bastaría con dejar una reseña educada, esperar a que se
+ * apruebe y luego cambiarle el texto. Hay un tope por cuenta para que esto no
+ * se convierta en un tablón.
+ *
+ * LAS DEL PANEL NO SON SUYAS
+ * --------------------------
+ * Una reseña que dio de alta el administrador a nombre de alguien lleva
+ * `delPanel` y su titular NO la puede tocar: no la escribió él, así que no le
+ * cambia el texto, ni el video, ni se lo quita. Lo que sí puede es escribir la
+ * suya, que es otra fila.
  *
  * LO PÚBLICO LLEVA EL CORREO A MEDIAS, Y NUNCA ENTERO
  * ---------------------------------------------------
@@ -51,7 +60,7 @@ const CAMPOS_PUBLICOS = {
   createdAt: true,
   videoBytes: true,
   videoTipo: true,
-  user: { select: { email: true } },
+  correo: true,
 };
 
 /** Lo que ve su autor: lo suyo, más en qué punto está. */
@@ -60,6 +69,7 @@ const CAMPOS_PROPIOS = {
   estado: true,
   motivo: true,
   destacada: true,
+  delPanel: true,
   updatedAt: true,
 };
 
@@ -68,6 +78,7 @@ const CAMPOS_PANEL = {
   ...CAMPOS_PROPIOS,
   nombre: true,
   revisadaAt: true,
+  // Nulo en las que se dieron de alta a nombre de alguien sin cuenta.
   user: { select: { id: true, email: true, firstName: true, lastName: true } },
 };
 
@@ -93,13 +104,24 @@ function firma(email) {
  * Del video solo sale si lo hay. El peso y el tipo son cosa de quien lo sirve,
  * y la web únicamente necesita saber si tiene que pintar el reproductor.
  */
-function comoSeVe({ user, videoBytes, videoTipo, ...resto }) {
-  return { ...resto, autor: firma(user?.email), video: videoBytes > 0 };
+function comoSeVe({ user, correo, videoBytes, videoTipo, ...resto }) {
+  return { ...resto, autor: firma(correo), video: videoBytes > 0 };
 }
 
-/** Como la ve el panel: lo mismo, pero conservando de quién es. */
+/**
+ * Como la ve el panel: lo mismo, más de quién es y el correo ENTERO.
+ *
+ * Aquí sí va entero, que es lo que hace falta para saber a quién escribir. Y
+ * `sinCuenta` porque una firma sin cuenta detrás vale menos y hay que verlo de
+ * un vistazo, no deduciéndolo de que falte un nombre.
+ */
 function comoLaVeElPanel(fila) {
-  return { ...comoSeVe(fila), user: fila.user };
+  return {
+    ...comoSeVe(fila),
+    correo: fila.correo,
+    user: fila.user ?? null,
+    sinCuenta: fila.user === null || fila.user === undefined,
+  };
 }
 
 /** La media, redondeada a un decimal. Null sin ninguna: no hay media de nada. */
@@ -113,6 +135,16 @@ function media(suma, cuantas) {
 // decide dónde se escribe.
 
 const rutaDelVideo = (id) => path.join(env.resenasDir, `${id}.video`);
+
+/**
+ * Cuántas puede dejar una misma cuenta.
+ *
+ * Varias sí —quien vuelve con otra fase terminada tiene algo distinto que
+ * contar—, pero no las que quiera: cada una pasa por moderación a mano, y diez
+ * por cuenta es más de lo que nadie tiene que decir sin que esto se convierta
+ * en un tablón.
+ */
+const MAXIMO_POR_CUENTA = 10;
 
 /**
  * Que lo subido sea un video de verdad, mirando sus primeros bytes.
@@ -212,34 +244,66 @@ const resenaService = {
     };
   },
 
-  /** La suya, con su estado. Null si nunca escribió ninguna. */
-  async mia(userId) {
-    const fila = await prisma.resenaServicio.findUnique({
+  /** Las suyas, las últimas primero. Vacío si nunca escribió ninguna. */
+  async mias(userId) {
+    const filas = await prisma.resenaServicio.findMany({
       where: { userId },
+      orderBy: { createdAt: 'desc' },
       select: CAMPOS_PROPIOS,
     });
     // Con la firma ya calculada: así ve, antes de enviarla, con qué va a salir.
-    return fila && comoSeVe(fila);
+    return filas.map(comoSeVe);
   },
 
   /**
-   * Guarda la reseña de quien la escribe. Crea la suya o reescribe la que ya
-   * tenía, y en los dos casos la deja PENDIENTE.
+   * Una de las suyas, comprobando que lo sea y que la pueda tocar.
    *
-   * El motivo de un rechazo anterior se borra al reescribirla: si no, se le
+   * Lo que devuelve es la fila cruda, para quien va a escribir encima. Las del
+   * panel se paran aquí: su titular no las escribió, así que no las cambia.
+   */
+  async suya(id, userId) {
+    const fila = await prisma.resenaServicio.findUnique({
+      where: { id },
+      select: { id: true, userId: true, delPanel: true, videoBytes: true, comentario: true },
+    });
+    if (!fila || fila.userId !== userId) throw new NotFoundError('Esa reseña no existe.');
+    if (fila.delPanel) {
+      throw new ValidationError(
+        'Esa reseña la publicamos nosotros con lo que nos contaste. Escríbenos si quieres cambiarla o quitarla.',
+      );
+    }
+    return fila;
+  },
+
+  /**
+   * Escribe una reseña nueva, o cambia una que ya dejó. En los dos casos queda
+   * PENDIENTE: si no, bastaría con dejar una educada, esperar a que se apruebe
+   * y luego cambiarle el texto.
+   *
+   * El motivo de un rechazo anterior se borra al cambiarla: si no, se le
    * quedaría en pantalla al autor el «no salió porque…» de una versión que ya
    * cambió.
+   *
+   * `id` = está cambiando una suya. Sin `id`, estrena fila: varias por cuenta,
+   * porque quien vuelve a los seis meses con otra fase terminada tiene algo
+   * distinto que contar.
    */
-  async guardar(userId, { estrellas, comentario, oficio }) {
-    // Una reseña puede ser SOLO VIDEO: entonces el texto sobra, porque el
+  async guardar(userId, { estrellas, comentario, oficio }, id = null) {
+    // Solo puede quedarse sin texto la que ya tiene video: entonces el
     // testimonio es la grabación. Sin video, el texto es obligatorio, que cinco
     // estrellas sueltas no le cuentan nada a quien está decidiendo si compra.
-    const suya = await prisma.resenaServicio.findUnique({
-      where: { userId },
-      select: { videoBytes: true },
-    });
-    if (comentario.length < 20 && !(suya?.videoBytes > 0)) {
+    const actual = id ? await this.suya(id, userId) : null;
+    if (comentario.length < 20 && !(actual?.videoBytes > 0)) {
       throw new ValidationError('Cuéntanos cómo te fue, con al menos una frase, o sube tu video.');
+    }
+
+    if (!id) {
+      const cuantas = await prisma.resenaServicio.count({ where: { userId } });
+      if (cuantas >= MAXIMO_POR_CUENTA) {
+        throw new ValidationError(
+          `Ya has dejado ${MAXIMO_POR_CUENTA} reseñas. Cambia alguna de las que tienes en lugar de escribir otra.`,
+        );
+      }
     }
 
     const campos = {
@@ -253,22 +317,29 @@ const resenaService = {
       revisadaAt: null,
     };
 
-    // `nombre` ya no se pide ni se enseña: la reseña se firma con el correo
-    // tapado. Se guarda el de la cuenta porque la columna es obligatoria y
-    // porque el panel necesita saber de quién es sin ir a buscarlo, y solo al
-    // crearla: reescribirla no tiene por qué pisar lo que firmó en su día.
-    const quien = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { firstName: true, lastName: true },
-    });
-    const suNombre = [quien?.firstName, quien?.lastName].filter(Boolean).join(' ').slice(0, 120);
+    let resena;
+    if (id) {
+      resena = await prisma.resenaServicio.update({
+        where: { id },
+        data: campos,
+        select: CAMPOS_PROPIOS,
+      });
+    } else {
+      // `nombre` y `correo` se copian de la cuenta al crearla. El nombre no se
+      // enseña —la firma es el correo tapado—, pero el panel necesita saber de
+      // quién es sin ir a buscarlo, y el correo va en la fila para que la firma
+      // no dependa de que el usuario siga existiendo.
+      const quien = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { email: true, firstName: true, lastName: true },
+      });
+      const suNombre = [quien?.firstName, quien?.lastName].filter(Boolean).join(' ').slice(0, 120);
 
-    const resena = await prisma.resenaServicio.upsert({
-      where: { userId },
-      create: { userId, ...campos, nombre: suNombre },
-      update: campos,
-      select: CAMPOS_PROPIOS,
-    });
+      resena = await prisma.resenaServicio.create({
+        data: { userId, ...campos, nombre: suNombre, correo: quien?.email ?? '' },
+        select: CAMPOS_PROPIOS,
+      });
+    }
 
     // Sin el texto ni el nombre: el tópico de ntfy no es privado (ver lib/notify).
     avisarAlAdmin({
@@ -441,44 +512,83 @@ const resenaService = {
    *
    * Existe porque los testimonios llegan por WhatsApp y por correo, no por el
    * formulario: quien graba un video contando cómo le fue no vuelve luego a la
-   * web a escribirlo. Se apunta el correo del cliente, y la firma pública sale
-   * de ahí igual que las demás, así que sigue siendo verificable.
+   * web a escribirlo. Se apunta el correo y la firma pública sale de ahí, igual
+   * que en las demás.
    *
-   * NO INVENTA CLIENTES: si ese correo no tiene cuenta, no se crea nada. Un
-   * testimonio de alguien que no existe es exactamente lo que esto no es.
+   * SI ESE CORREO NO TIENE CUENTA SE GUARDA IGUAL, Y SE AVISA. Hay quien compró
+   * por otra vía y no tiene cuenta en la web, y su testimonio es tan real como
+   * el resto; pero una firma sin cuenta detrás no se puede comprobar, así que
+   * quien la publica tiene que saberlo en ese momento y no descubrirlo después.
+   * Por eso vuelve `sinCuenta`, que el panel enseña.
    *
-   * Nace APROBADA porque la escribe quien aprueba. Destacarla es aparte.
+   * Nace APROBADA porque la escribe quien aprueba, y marcada con `delPanel`:
+   * su titular no la escribió, así que no la puede tocar.
    */
   async crearDesdeElPanel({ email, estrellas, comentario, oficio }, adminId) {
     const cliente = await prisma.user.findUnique({
       where: { email },
       select: { id: true, firstName: true, lastName: true },
     });
-    if (!cliente) {
-      throw new NotFoundError('No hay ninguna cuenta con ese correo. La reseña tiene que ser de un cliente.');
-    }
 
-    const nombre = [cliente.firstName, cliente.lastName].filter(Boolean).join(' ').slice(0, 120);
-    const campos = {
-      estrellas,
-      comentario,
-      oficio,
-      estado: 'APROBADA',
-      motivo: '',
-      revisadaPorId: adminId,
-      revisadaAt: new Date(),
-    };
+    const nombre = cliente
+      ? [cliente.firstName, cliente.lastName].filter(Boolean).join(' ').slice(0, 120)
+      : '';
 
-    const resena = await prisma.resenaServicio.upsert({
-      where: { userId: cliente.id },
-      create: { userId: cliente.id, ...campos, nombre },
-      update: campos,
+    const resena = await prisma.resenaServicio.create({
+      data: {
+        userId: cliente?.id ?? null,
+        correo: email,
+        nombre,
+        delPanel: true,
+        estrellas,
+        comentario,
+        oficio,
+        estado: 'APROBADA',
+        motivo: '',
+        revisadaPorId: adminId,
+        revisadaAt: new Date(),
+      },
       select: CAMPOS_PANEL,
     });
 
-    logger.info({ id: resena.id, adminId }, 'Reseña del servicio dada de alta desde el panel');
+    logger.info(
+      { id: resena.id, adminId, sinCuenta: !cliente },
+      'Reseña del servicio dada de alta desde el panel',
+    );
 
     return comoLaVeElPanel(resena);
+  },
+
+  /**
+   * La borra del todo: la fila y su video.
+   *
+   * NO ES LO MISMO QUE RECHAZARLA
+   * -----------------------------
+   * Rechazar la retira de la web y la deja donde está, con su motivo, porque
+   * detrás hay alguien que escribió algo y puede corregirlo y volver a
+   * enviarlo. Esto es para lo que nunca fue una reseña: las de prueba, las que
+   * se dieron de alta con el correo equivocado, las que quedaron en blanco
+   * esperando un video que no llegó. Ahí no hay a quién responder ni nada que
+   * conservar, y rechazarlas solo las escondía: seguían contando en el panel y
+   * en el perfil de su supuesto autor.
+   *
+   * Primero la fila y luego el disco: al revés, si fallara el borrado de la
+   * fila quedaría una reseña prometiendo un video que ya no está, que es
+   * exactamente lo que la web no sabe pintar.
+   */
+  async borrar(id, adminId) {
+    const fila = await prisma.resenaServicio.findUnique({
+      where: { id },
+      select: { id: true, videoBytes: true },
+    });
+    if (!fila) throw new NotFoundError('Esa reseña no existe.');
+
+    await prisma.resenaServicio.delete({ where: { id } });
+    if (fila.videoBytes > 0) await borrarVideo(id);
+
+    logger.info({ id, adminId }, 'Reseña del servicio borrada desde el panel');
+
+    return { id };
   },
 };
 

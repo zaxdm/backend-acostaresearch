@@ -27,9 +27,9 @@ const resenaController = {
     return ok(res, await resenaService.publicas({ soloDestacadas: req.query.destacadas }));
   }),
 
-  /** La suya, con su estado. Null si todavía no ha escrito ninguna. */
-  mia: asyncHandler(async (req, res) => {
-    return ok(res, { resena: await resenaService.mia(req.user.id) });
+  /** Las suyas, con su estado. Vacío si todavía no ha escrito ninguna. */
+  mias: asyncHandler(async (req, res) => {
+    return ok(res, { resenas: await resenaService.mias(req.user.id) });
   }),
 
   /**
@@ -39,14 +39,16 @@ const resenaController = {
    * «se cambió lo que había», y la web lo usa para decir una cosa u otra.
    */
   guardar: asyncHandler(async (req, res) => {
-    const tenia = await resenaService.mia(req.user.id);
     const resena = await resenaService.guardar(req.user.id, req.body);
+    return created(res, { resena }, '¡Gracias! La leeremos antes de publicarla.');
+  }),
 
-    const message = tenia
-      ? 'Guardamos los cambios. Vuelve a pasar por revisión antes de publicarse.'
-      : '¡Gracias! La leeremos antes de publicarla.';
-
-    return tenia ? ok(res, { resena }, { message }) : created(res, { resena }, message);
+  /** Cambia una de las suyas. Vuelve a quedar pendiente. */
+  cambiar: asyncHandler(async (req, res) => {
+    const resena = await resenaService.guardar(req.user.id, req.body, req.params.id);
+    return ok(res, { resena }, {
+      message: 'Guardamos los cambios. Vuelve a pasar por revisión antes de publicarse.',
+    });
   }),
 
   /** Panel: todas, o las de un estado. */
@@ -60,23 +62,22 @@ const resenaController = {
 
   // ── El video del testimonio ─────────────────────────────────────────────
 
-  /** El suyo: sube el video de su reseña, o cambia el que tenía. */
+  /**
+   * El suyo: sube el video de una reseña suya, o cambia el que tenía.
+   *
+   * `suya` comprueba las dos cosas que importan: que sea de quien lo pide y que
+   * no sea una de las que publicamos nosotros a su nombre.
+   */
   subirMiVideo: asyncHandler(async (req, res) => {
-    const suya = await resenaService.mia(req.user.id);
-    if (!suya) {
-      throw new NotFoundError('Escribe tu reseña antes de subirle el video.');
-    }
-
-    const resena = await resenaService.guardarVideo(suya.id, req.body);
+    await resenaService.suya(req.params.id, req.user.id);
+    const resena = await resenaService.guardarVideo(req.params.id, req.body);
     return ok(res, { resena }, { message: 'Video subido. Lo vemos antes de publicarlo.' });
   }),
 
   /** El suyo: lo quita y deja el texto. */
   quitarMiVideo: asyncHandler(async (req, res) => {
-    const suya = await resenaService.mia(req.user.id);
-    if (!suya) throw new NotFoundError('Todavía no has escrito ninguna reseña.');
-
-    const resena = await resenaService.quitarVideo(suya.id);
+    await resenaService.suya(req.params.id, req.user.id);
+    const resena = await resenaService.quitarVideo(req.params.id);
     return ok(res, { resena }, { message: 'Video quitado.' });
   }),
 
@@ -89,12 +90,19 @@ const resenaController = {
     return enviarVideo(res, next, ruta, tipo);
   }),
 
-  /** El suyo, en cualquier estado: para verlo antes de que lo aprobemos. */
+  /**
+   * El suyo, en cualquier estado: para verlo antes de que lo aprobemos.
+   *
+   * Aquí sí valen las del panel: verlas no es tocarlas, y quien tiene una
+   * publicada a su nombre tiene derecho a mirar qué se publicó.
+   */
   verMiVideo: asyncHandler(async (req, res, next) => {
-    const suya = await resenaService.mia(req.user.id);
-    if (!suya) throw new NotFoundError('Todavía no has escrito ninguna reseña.');
+    const suyas = await resenaService.mias(req.user.id);
+    if (!suyas.some((r) => r.id === req.params.id)) {
+      throw new NotFoundError('Esa reseña no existe.');
+    }
 
-    const { ruta, tipo } = await resenaService.paraVer(suya.id, { soloAprobadas: false });
+    const { ruta, tipo } = await resenaService.paraVer(req.params.id, { soloAprobadas: false });
     return enviarVideo(res, next, ruta, tipo);
   }),
 
@@ -104,10 +112,22 @@ const resenaController = {
     return enviarVideo(res, next, ruta, tipo);
   }),
 
-  /** Panel: da de alta la reseña de un cliente, con su correo. */
+  /**
+   * Panel: da de alta la reseña de un cliente, con su correo.
+   *
+   * Si ese correo no tiene cuenta se guarda igual y se dice en el mismo aviso:
+   * el testimonio puede ser real —hay quien compró por otra vía—, pero una
+   * firma sin cuenta detrás no se puede comprobar y quien la publica tiene que
+   * saberlo ahora, no descubrirlo después.
+   */
   crear: asyncHandler(async (req, res) => {
     const resena = await resenaService.crearDesdeElPanel(req.body, req.user.id);
-    return created(res, { resena }, 'Reseña guardada y publicada.');
+
+    const message = resena.sinCuenta
+      ? `Guardada y publicada, pero OJO: no hay ninguna cuenta con ${resena.correo}. Se firma igual con ese correo, aunque nadie ha comprado con él.`
+      : 'Reseña guardada y publicada.';
+
+    return created(res, { resena }, message);
   }),
 
   /** Panel: sube el video de una reseña sin devolverla a pendiente. */
@@ -120,6 +140,18 @@ const resenaController = {
   revisar: asyncHandler(async (req, res) => {
     const resena = await resenaService.revisar(req.params.id, req.body, req.user.id);
     return ok(res, { resena });
+  }),
+
+  /**
+   * Panel: la borra del todo, con su video. No se puede deshacer.
+   *
+   * Es otra cosa que rechazarla: rechazar deja la fila y su motivo para quien
+   * la escribió, y esto es para lo que nunca fue una reseña —las de prueba, las
+   * del correo equivocado—, donde no hay a quién responder.
+   */
+  borrar: asyncHandler(async (req, res) => {
+    const { id } = await resenaService.borrar(req.params.id, req.user.id);
+    return ok(res, { id }, { message: 'Reseña borrada.' });
   }),
 };
 

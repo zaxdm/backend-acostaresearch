@@ -20,6 +20,7 @@ const scopusRoutes = require('./modules/scopus/scopus.routes');
 const mapasRoutes = require('./modules/mapas/mapas.routes');
 const asistenteRoutes = require('./modules/asistente/asistente.routes');
 const reclamoRoutes = require('./modules/reclamos/reclamo.routes');
+const resenaRoutes = require('./modules/resenas/resena.routes');
 const asesorRoutes = require('./modules/asesores/asesor.routes');
 const pedidoRoutes = require('./modules/pedidos/pedido.routes');
 const rRoutes = require('./modules/r/r.routes');
@@ -79,6 +80,10 @@ router.use('/asistente', asistenteRoutes);
 // El Libro de Reclamaciones. Presentar una hoja es público; responderla, del
 // administrador.
 router.use('/reclamos', reclamoRoutes);
+// Lo que opinan los clientes del método. Leerlas es público —están para quien
+// aún no ha comprado—, escribirlas pide cuenta, y ninguna se ve en la web hasta
+// que la aprueba un administrador. Ver `modules/resenas`.
+router.use('/resenas', resenaRoutes);
 // El registro de asesores. Postular es público —quien postula no tiene
 // cuenta—, pero solo se llega con el enlace de una convocatoria mientras no se
 // marque como pública desde el panel. Ver `modules/asesores`.

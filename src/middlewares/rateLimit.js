@@ -261,6 +261,23 @@ const reclamoLimiter = build({
 });
 
 /**
+ * Reseñas del servicio.
+ *
+ * Por persona, no por IP: la ruta ya pasó por `authenticate`, y detrás de la
+ * wifi de una universidad hay muchos tesistas que pueden opinar el mismo día.
+ *
+ * Diez por hora sobrando: una cuenta tiene UNA reseña —la suya, que reescribe—,
+ * así que el freno no está para contar opiniones sino para que nadie use el
+ * campo de texto como un martillo contra la base a base de reenvíos.
+ */
+const resenaLimiter = build({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  keyGenerator: porUsuario,
+  message: 'Has guardado tu reseña varias veces seguidas. Espera un momento.',
+});
+
+/**
  * Fichas de asesor.
  *
  * Cinco por hora: nadie postula dos veces con motivo —el correo es único—, y
@@ -355,6 +372,7 @@ module.exports = {
   mapasUmbralLimiter,
   asistenteLimiter,
   reclamoLimiter,
+  resenaLimiter,
   asesorLimiter,
   pedidoLimiter,
   mcpLimiter,

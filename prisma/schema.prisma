@@ -87,6 +87,11 @@ model User {
   docPacks      DocPack[]
   preparaciones Preparacion[]
 
+  /// Lo que opina del servicio. Como mucho una, y se va con la cuenta: un
+  /// testimonio firmado por alguien que ya no está no lo puede retirar nadie.
+  /// Ver `ResenaServicio`.
+  resenaServicio ResenaServicio?
+
   /// Enlace de prueba del que salió esta cuenta. Nulo en toda cuenta real.
   ///
   /// Con valor, NO es una persona registrada: es el titular de relleno de un
@@ -2337,4 +2342,90 @@ model Preparacion {
   @@index([docPackId, createdAt])
   @@index([estado, createdAt])
   @@map("preparaciones")
+}
+
+/// En qué punto está una reseña del servicio.
+enum ResenaEstado {
+  /// Escrita y esperando. NO se ve en ningún sitio público.
+  PENDIENTE
+  /// Aprobada desde el panel. Se ve en /resenas.
+  APROBADA
+  /// Rechazada desde el panel. No se ve, pero no se borra: su autor tiene
+  /// derecho a saber que se leyó y por qué no salió.
+  RECHAZADA
+}
+
+/// Lo que un cliente opina del servicio.
+///
+/// QUÉ NO ES
+/// ---------
+/// No es `Resena`, que es otra cosa y ya existe: aquella es la nota que el
+/// tesista le pone A SU ASESOR después de una revisión, cuelga de un pedido y
+/// sale en la ficha de ese asesor. Esta habla de Acosta | IA & Research —el
+/// método, las skills, el conector— y sale en la portada. Se llaman parecido
+/// porque son parecidas; mezclarlas habría obligado a que media tabla fuera
+/// nula en cada caso.
+///
+/// UNA POR CUENTA, Y SE PUEDE CAMBIAR
+/// ----------------------------------
+/// El índice único sobre `userId` es lo que lo garantiza. Quien ya opinó y
+/// vuelve no estrena una fila: reescribe la suya. Es lo honesto —nadie tiene
+/// dos opiniones a la vez— y evita el truco más barato para inflar la media.
+///
+/// Y cambiarla la devuelve a PENDIENTE. Si no, bastaría con dejar una reseña
+/// educada, esperar a que se apruebe y luego editarla para poner cualquier
+/// cosa ya publicada.
+///
+/// NINGUNA SE PUBLICA SOLA
+/// -----------------------
+/// Nace PENDIENTE y solo la mueve un administrador desde el panel. Es lo mismo
+/// que se hace con las fichas de asesor y por el mismo motivo: en cuanto algo
+/// que escribe un desconocido sale en la portada con tu nombre encima, lo
+/// firmas tú.
+///
+/// `destacada` es un segundo permiso, aparte del primero: aprobada quiere decir
+/// «se puede leer en /resenas» y destacada, «sale en la portada». Se separan
+/// porque la portada tiene sitio para tres o cuatro, no para todas.
+model ResenaServicio {
+  id String @id @default(uuid()) @db.Char(36)
+
+  /// Una por cuenta: el índice único es lo que lo garantiza.
+  userId String @unique @db.Char(36)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// De 1 a 5.
+  estrellas Int
+  /// Lo que quiera contar. A diferencia de la reseña al asesor, aquí no puede
+  /// ir vacío: una nota suelta no es un testimonio, y la portada no tiene qué
+  /// enseñar con ella.
+  comentario String @db.Text
+
+  /// Con qué se presenta en la portada. Se copia del nombre de la cuenta al
+  /// escribirla y se puede cambiar: hay quien no quiere su apellido completo
+  /// debajo de su opinión. Nunca sale el correo.
+  nombre String @db.VarChar(120)
+  /// Lo que hace o estudia, si lo quiso poner. Vacío = no se enseña nada.
+  oficio String @default("") @db.VarChar(120)
+
+  estado ResenaEstado @default(PENDIENTE)
+
+  /// Por qué se rechazó, escrito por el administrador. Lo lee su autor, así que
+  /// se escribe para él y no como nota interna.
+  motivo String @default("") @db.VarChar(500)
+
+  /// Si sale en la portada. Solo cuenta estando APROBADA.
+  destacada Boolean @default(false)
+
+  /// Quién la revisó y cuándo. Nulos mientras sigue pendiente.
+  revisadaPorId String?   @db.Char(36)
+  revisadaAt    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// La consulta pública: aprobadas, las últimas primero.
+  @@index([estado, createdAt])
+  /// La de la portada, que además filtra por destacada.
+  @@index([estado, destacada, createdAt])
+  @@map("resenas_servicio")
 }

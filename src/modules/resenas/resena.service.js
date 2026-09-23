@@ -61,6 +61,9 @@ const CAMPOS_PUBLICOS = {
   videoBytes: true,
   videoTipo: true,
   correo: true,
+  // Entra para saber si detrás hay una cuenta; el identificador no sale de
+  // `comoSeVe()`, solo el sí o el no.
+  userId: true,
   // Sale fuera porque /resenas la marca: son las que elegimos para la portada,
   // y no es ningún secreto —cualquiera las ve ahí—. Nada más de la moderación
   // se asoma: ni el estado, ni el motivo de un rechazo, ni quién la revisó.
@@ -106,9 +109,20 @@ function firma(email) {
  *
  * Del video solo sale si lo hay. El peso y el tipo son cosa de quien lo sirve,
  * y la web únicamente necesita saber si tiene que pintar el reproductor.
+ *
+ * `conCuenta` es lo que sostiene a la firma: dice que detrás de ese correo
+ * tapado hay una cuenta de verdad, no un testimonio apuntado a mano desde el
+ * panel. La web lo enseña al lado del correo, y por eso tiene que salir: sin
+ * él, las dos clases de reseña se verían exactamente igual. El identificador
+ * del usuario NO sale —entra aquí solo para calcular esto y se queda dentro—.
  */
-function comoSeVe({ user, correo, videoBytes, videoTipo, ...resto }) {
-  return { ...resto, autor: firma(correo), video: videoBytes > 0 };
+function comoSeVe({ user, userId, correo, videoBytes, videoTipo, ...resto }) {
+  return {
+    ...resto,
+    autor: firma(correo),
+    video: videoBytes > 0,
+    conCuenta: Boolean(userId ?? user),
+  };
 }
 
 /**

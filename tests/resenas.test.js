@@ -309,6 +309,9 @@ test('la lista pública no reparte el correo de los clientes', async () => {
   assert.deepEqual(Object.keys(resenas[0]).sort(), [
     'autor',
     'comentario',
+    // Que detrás de la firma hay una cuenta. El identificador de esa cuenta no:
+    // entra al cálculo y se queda dentro.
+    'conCuenta',
     'createdAt',
     // La marca de la portada, que /resenas enseña. De la moderación no sale
     // nada más: ni el estado, ni el motivo de un rechazo, ni quién la revisó.
@@ -321,6 +324,29 @@ test('la lista pública no reparte el correo de los clientes', async () => {
   ]);
   // Ni el correo entero ni el campo del que sale.
   assert.doesNotMatch(JSON.stringify(resenas[0]), /u1@correo\.test/);
+});
+
+test('la firma dice si detrás hay una cuenta, y no reparte el identificador', async () => {
+  empezar();
+  // Una escrita por un cliente con su cuenta…
+  await resenaService.guardar('u1', RESENA);
+  // …y otra apuntada a mano desde el panel, de quien compró por otra vía.
+  await resenaService.crearDesdeElPanel(
+    { email: 'nadie@gmail.com', estrellas: 5, comentario: RESENA.comentario, oficio: '' },
+    'admin1',
+  );
+  const [, suya] = await resenaService.listar('TODAS');
+  await resenaService.revisar(suya.id, { estado: 'APROBADA' }, 'admin1');
+
+  const { resenas } = await resenaService.publicas();
+
+  assert.equal(resenas.length, 2);
+  // La del cliente va respaldada; la del panel sin cuenta, no, y la web lo dice
+  // en vez de enseñarlas iguales.
+  assert.equal(resenas.find((r) => r.autor.startsWith('u1')).conCuenta, true);
+  assert.equal(resenas.find((r) => r.autor.startsWith('nadi')).conCuenta, false);
+  // Y el identificador de la cuenta no viaja con la reseña.
+  assert.equal('userId' in resenas[0], false);
 });
 
 test('la firma es el correo tapado: cuatro letras y el dominio', async () => {

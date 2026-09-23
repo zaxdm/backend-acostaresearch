@@ -61,6 +61,10 @@ const CAMPOS_PUBLICOS = {
   videoBytes: true,
   videoTipo: true,
   correo: true,
+  // Sale fuera porque /resenas la marca: son las que elegimos para la portada,
+  // y no es ningún secreto —cualquiera las ve ahí—. Nada más de la moderación
+  // se asoma: ni el estado, ni el motivo de un rechazo, ni quién la revisó.
+  destacada: true,
 };
 
 /** Lo que ve su autor: lo suyo, más en qué punto está. */
@@ -68,7 +72,6 @@ const CAMPOS_PROPIOS = {
   ...CAMPOS_PUBLICOS,
   estado: true,
   motivo: true,
-  destacada: true,
   delPanel: true,
   updatedAt: true,
 };

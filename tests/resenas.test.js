@@ -310,6 +310,9 @@ test('la lista pública no reparte el correo de los clientes', async () => {
     'autor',
     'comentario',
     'createdAt',
+    // La marca de la portada, que /resenas enseña. De la moderación no sale
+    // nada más: ni el estado, ni el motivo de un rechazo, ni quién la revisó.
+    'destacada',
     'estrellas',
     'id',
     'oficio',

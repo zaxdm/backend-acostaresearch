@@ -389,3 +389,44 @@ test('guardar_capitulo explica las figuras y ya no prohíbe su marca entre corch
   assert.match(d, /solo valen las claves de cita, \[FALTA FUENTE\] y la marca de una figura/);
   assert.match(d, /LAS TABLAS/, 'lo de las tablas se queda');
 });
+
+/**
+ * El Word se da EN LA CONVERSACIÓN, con «enlace_del_word».
+ *
+ * En el perfil de la web no hay ninguna descarga del documento ni ningún sitio
+ * donde subirlo, pero varias descripciones seguían diciendo «desde su perfil».
+ * Con eso Claude mandó a un autor a bajarse su artículo del perfil para volver
+ * a subirlo y poder humanizarlo: un viaje imposible, porque esa página no
+ * existe, y además innecesario, porque lo guardado con «guardar_capitulo» se
+ * humaniza leyéndolo con «ver_capitulo» y volviéndolo a guardar.
+ */
+test('ninguna herramienta manda al perfil a descargar o a subir el documento', () => {
+  for (const nombre of ['enlace_del_word', 'ver_mi_documento', 'subir_mi_documento', 'humanizar_mi_documento', 'guardar_capitulo', 'ver_capitulo']) {
+    const d = descripcion(nombre);
+    assert.ok(
+      !/(desde|en) su perfil(?!( de la web)? no hay)/i.test(d),
+      `«${nombre}» sigue mandando al perfil: allí no hay descarga ni subida`,
+    );
+  }
+  assert.match(descripcion('enlace_del_word'), /EN LA CONVERSACIÓN/);
+  assert.match(descripcion('enlace_del_word'), /no lo mandes allí ni al panel/);
+});
+
+test('lo guardado en el método se humaniza sin descargar ni volver a subir nada', () => {
+  // Las dos puertas por las que Claude llega a humanizar tienen que separar el
+  // documento del método del Word que el tesista subió por su cuenta.
+  for (const nombre of ['ver_mi_documento', 'humanizar_mi_documento', 'subir_mi_documento']) {
+    const d = descripcion(nombre);
+    assert.match(d, /ver_capitulo/, `«${nombre}» no dice por dónde se lee lo guardado`);
+    assert.match(d, /guardar_capitulo/, `«${nombre}» no dice dónde se vuelve a guardar`);
+  }
+  assert.match(descripcion('ver_mi_documento'), /NO ES EL DOCUMENTO DEL MÉTODO/);
+  assert.match(descripcion('humanizar_mi_documento'), /SOLO PARA EL WORD SUBIDO/);
+  assert.match(
+    descripcion('subir_mi_documento'),
+    /NUNCA le pidas que descargue su Word y lo vuelva a subir/,
+  );
+  // La otra mitad: desde el capítulo guardado se llega a humanizarlo.
+  assert.match(descripcion('ver_capitulo'), /HUMANIZAR/);
+  assert.match(descripcion('ver_capitulo'), /sin que tenga que descargar ni subir nada/);
+});

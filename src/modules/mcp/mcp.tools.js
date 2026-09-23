@@ -1030,7 +1030,10 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         'capítulo: "mi_proyecto" da el panorama y esta da el detalle. ' +
         'Con "texto": true devuelve en cambio el TEXTO GUARDADO del capítulo, por partes: ' +
         'LÉELO cuando un capítulo se escribe sobre otro —la Discusión sobre los Resultados, las ' +
-        'Conclusiones sobre todo lo anterior— en vez de pedirle al tesista que lo pegue.',
+        'Conclusiones sobre todo lo anterior— en vez de pedirle al tesista que lo pegue, y ' +
+        'TAMBIÉN PARA HUMANIZAR O CORREGIR lo ya escrito con vosotros: se reescribe, se vuelve a ' +
+        'guardar con "guardar_capitulo" y se le da el Word con "enlace_del_word", sin que tenga ' +
+        'que descargar ni subir nada.',
       inputSchema: ESQUEMA_VER_CAPITULO,
     },
     async ({ capitulo, texto: conTexto, parte }) => {
@@ -1227,8 +1230,10 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
 
         return texto(
           `Guardado. «${skill.displayName}» lleva ${palabras} palabras.\n\n` +
-            `Dile que ya puede descargar ${SU_OBRA} en Word desde su panel, en ` +
-            'acostaresearch.com/perfil, y que sale con todos los capítulos que llevéis.',
+            'DALE AQUÍ MISMO EL WORD con "enlace_del_word": sale con todos los capítulos que ' +
+            'llevéis, en orden, con su portada y con las referencias en la norma del proyecto. ' +
+            `En su perfil de la web NO hay ninguna descarga de ${SU_OBRA}: no lo mandes allí a ` +
+            'buscarla.',
         );
       } catch (error) {
         logger.error(
@@ -2879,14 +2884,18 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
   // ── Subir el Word que escribió por su cuenta ─────────────────────────────
   //
   // Desde la conversación, con un enlace, como el formato: quien pide «humaniza
-  // mi documento» no está en su perfil, y el que hay puede ser una versión vieja.
+  // mi documento» no está en la web, y el que hay puede ser una versión vieja.
   server.registerTool(
     'subir_mi_documento',
     {
       title: 'Enlace para subir su documento',
       description:
         `Da un ENLACE para que el tesista suba su Word (.docx) al servidor: ${SU_OBRA} escrita por su ` +
-        'cuenta, para citarla o humanizarla. Dice también si ya hay uno subido, cuál y de qué fecha. ' +
+        'cuenta FUERA de la plataforma, para citarla o humanizarla. Dice también si ya hay uno ' +
+        'subido, cuál y de qué fecha. ' +
+        'SOLO PARA UN DOCUMENTO QUE NO ESTÁ EN EL SERVIDOR: lo que ya se guardó con ' +
+        '"guardar_capitulo" NO se sube aquí; se lee con "ver_capitulo" y se descarga con ' +
+        '"enlace_del_word". NUNCA le pidas que descargue su Word y lo vuelva a subir. ' +
         'ÚSALA cuando no haya ningún documento subido, o cuando al preguntarle diga que quiere ' +
         'trabajar con uno NUEVO en vez del que está en el servidor. Dale el enlace como enlace que se ' +
         'pulsa, sin escribir la dirección, y dile que vuelva a la conversación cuando lo haya subido; ' +
@@ -2918,8 +2927,8 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
 
   // ── Citar el Word que escribió por su cuenta ─────────────────────────────
   //
-  // Quien llega con la tesis ya escrita la sube desde su perfil. Claude la lee
-  // por párrafos, busca fuentes, le enseña un resumen y guarda dónde va cada
+  // Quien llega con la tesis ya escrita la sube por el enlace de aquí. Claude la
+  // lee por párrafos, busca fuentes, le enseña un resumen y guarda dónde va cada
   // cita. Las citas se escriben DENTRO de su mismo Word al descargarlo (ver
   // `project.documento`): su formato, sus tablas y sus figuras no se tocan.
   server.registerTool(
@@ -2927,10 +2936,16 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
     {
       title: 'Leer el documento que subió',
       description:
-        `Lee el Word que el tesista SUBIÓ desde su perfil: ${SU_OBRA} ya escrita por su cuenta, ` +
-        'para ponerle las citas o para humanizarla. Devuelve los párrafos numerados (¶12) por ' +
-        'tandas. ÚSALA cuando diga «cita mi documento», «ponle las referencias», «humaniza mi ' +
-        'documento», «ya subí mi tesis», o cuando "mi_proyecto" diga que hay un documento subido. ' +
+        `Lee el Word que el tesista SUBIÓ con el enlace de "subir_mi_documento": ${SU_OBRA} ya ` +
+        'escrita por su cuenta, para ponerle las citas o para humanizarla. Devuelve los párrafos ' +
+        'numerados (¶12) por tandas. ÚSALA cuando diga «cita mi documento», «ponle las ' +
+        'referencias», «humaniza mi documento», «ya subí mi tesis», o cuando "mi_proyecto" diga ' +
+        'que hay un documento subido. ' +
+        'NO ES EL DOCUMENTO DEL MÉTODO: lo escrito con vosotros y guardado con "guardar_capitulo" ' +
+        'se lee con "ver_capitulo" ("texto": true), se humaniza reescribiéndolo y se vuelve a ' +
+        'guardar con "guardar_capitulo", y el Word se lo das con "enlace_del_word". Para eso NO ' +
+        'hace falta que descargue ni suba nada, y en su perfil de la web no hay ninguna descarga ' +
+        'ni ningún recuadro para subirlo. ' +
         'Es SU Word en el servidor: NO le pidas que te lo adjunte en el chat ni lo edites tú con ' +
         'python-docx, que le mueve el formato. ' +
         'ANTES DE CITAR O HUMANIZAR, PREGÚNTALE si trabajas con el documento que ya está en el ' +
@@ -2970,9 +2985,28 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
 
       const leido = await documentoService.ver(licencia.user.id, licencia.productCode, { desde });
       if (!leido) {
+        /**
+         * Sin documento subido, pero con capítulos guardados, el texto que quiere
+         * humanizar ya está aquí. Callándolo, el asistente mandaba a descargar el
+         * Word y a volver a subirlo —y, como en la web no hay dónde, al perfil a
+         * buscar una descarga que no existe.
+         */
+        const enElMetodo = await projectService.enlaceDelWord(
+          licencia.user.id,
+          licencia.productCode,
+        );
         return texto(
-          'El tesista no ha subido ningún documento. Llama a "subir_mi_documento" y dale el enlace ' +
-            'para que suba su Word (.docx); cuando diga que lo subió, vuelve a leerlo con esta herramienta.',
+          'El tesista no ha subido ningún documento.' +
+            (enElMetodo
+              ? `${N}${N}PERO SÍ HAY TEXTO GUARDADO EN EL MÉTODO. Si lo que quiere citar o humanizar ` +
+                'es lo que escribisteis juntos, NO es este documento y NO tiene que descargar ni ' +
+                'subir nada: léelo con "ver_capitulo" ("texto": true), reescríbelo, guárdalo con ' +
+                '"guardar_capitulo" y dale su Word aquí mismo con "enlace_del_word". ' +
+                `PREGÚNTASELO antes de darle ningún enlace de subida.${N}${N}` +
+                'Solo si trae un Word escrito FUERA de la plataforma, llama a "subir_mi_documento" ' +
+                'y dale el enlace; cuando diga que lo subió, vuelve a leerlo con esta herramienta.'
+              : ' Llama a "subir_mi_documento" y dale el enlace para que suba su Word (.docx); ' +
+                'cuando diga que lo subió, vuelve a leerlo con esta herramienta.'),
         );
       }
 
@@ -3115,6 +3149,9 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
       description:
         'Guarda el texto humanizado de párrafos del Word que el tesista SUBIÓ, leído con ' +
         '"ver_mi_documento". Manda cada párrafo con su número y su texto NUEVO completo. ' +
+        'SOLO PARA EL WORD SUBIDO: para humanizar lo que está guardado en el método, lee el ' +
+        'capítulo con "ver_capitulo" ("texto": true), reescríbelo y guárdalo con ' +
+        '"guardar_capitulo"; no le mandes descargar su Word para volver a subirlo aquí. ' +
         'NO LA USES sin haberle enseñado antes el bloque reescrito y tener su visto bueno, ni sin ' +
         'haberle preguntado al empezar si trabajas con el documento que está en el servidor o con uno ' +
         'nuevo (el nuevo lo sube con el enlace de "subir_mi_documento"). ' +
@@ -3997,7 +4034,9 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         'escritas en la norma del proyecto —en notas al pie si la norma lo pide, y ' +
         'enlazadas a Zotero si el tesista lo conectó—. ' +
         'ÚSALA cuando pida su Word, su documento o descargar, y después de guardar un ' +
-        'capítulo. NUNCA ARMES TÚ EL WORD NI ESCRIBAS TÚ LA BIBLIOGRAFÍA: el tuyo no ' +
+        'capítulo. EL ENLACE SE LO DAS AQUÍ, EN LA CONVERSACIÓN: en su perfil de la web no hay ' +
+        'ninguna descarga del documento, así que no lo mandes allí ni al panel a buscarlo. ' +
+        'NUNCA ARMES TÚ EL WORD NI ESCRIBAS TÚ LA BIBLIOGRAFÍA: el tuyo no ' +
         'llevaría la norma ni los campos de Zotero, y podría no coincidir con las fichas. ' +
         'Si el tesista SUBIÓ su propio documento, el enlace es el de ese documento con las citas ' +
         'y los párrafos humanizados puestos. ' +

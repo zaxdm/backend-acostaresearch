@@ -156,9 +156,17 @@ function comprobar(original, nuevo, opciones) {
   // el Word eso desplazaría todo lo que va detrás.
   if (/\n\s*\n/.test(limpio)) return 'el modelo partió el párrafo en dos';
 
+  // Las mismas cifras, no en el mismo orden. Las instrucciones le PIDEN al
+  // modelo que reordene dentro de la frase («reordena lo que haga falta para
+  // que se lea natural»), y compararlas en fila castigaba justo eso: el
+  // 22-sep-2026, midiendo contra un manuscrito corregido por una editorial, se
+  // vio que nuestra comprobación habría tirado un párrafo suyo por mover «3
+  // duplicates were removed» de sitio. Contadas como conjunto se sigue cazando
+  // lo que importa —una cifra cambiada, añadida o perdida— sin tirar una
+  // corrección buena.
   const antes = cifrasDe(original);
   const despues = cifrasDe(limpio);
-  if (antes.join('|') !== despues.join('|')) {
+  if ([...antes].sort().join('|') !== [...despues].sort().join('|')) {
     return `las cifras no son las mismas: «${antes.join(', ')}» → «${despues.join(', ')}»`;
   }
 

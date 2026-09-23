@@ -230,6 +230,29 @@ test('si no sale NI UN párrafo, se lanza: entregar el mismo Word sería estafar
   );
 });
 
+// ── Las cifras ─────────────────────────────────────────────────────────────
+
+test('mover una cifra de sitio dentro de la frase no tira el párrafo', () => {
+  // Las instrucciones le PIDEN al modelo que reordene para que se lea natural,
+  // y compararlas en fila castigaba justo eso. Este caso es real: se vio el
+  // 22-sep-2026 midiendo contra un manuscrito corregido por una editorial, que
+  // movió «3 duplicates were removed» de sitio. Nuestra comprobación habría
+  // tirado esa corrección buena.
+  const antes = 'After merging (97 records), the filter left 74 documents. After 3 duplicates were removed, 100 records remained.';
+  const despues = 'After 3 duplicates were removed and merging left 97 records, the filter left 74 documents, with 100 remaining.';
+
+  assert.equal(motor.comprobar(antes, despues, { servicio: 'EDICION' }), null);
+});
+
+test('pero cambiar, añadir o perder una cifra sigue tirándolo', () => {
+  const antes = 'The sample of 74 students answered 3 items in 2024.';
+  const como = { servicio: 'EDICION' };
+
+  assert.match(motor.comprobar(antes, antes.replace('74', '75'), como), /cifras/);
+  assert.match(motor.comprobar(antes, antes.replace('in 2024', 'in 2024 and 2025'), como), /cifras/);
+  assert.match(motor.comprobar(antes, antes.replace('3 items', 'some items'), como), /cifras/);
+});
+
 // ── Lo que devuelve el modelo ──────────────────────────────────────────────
 
 test('una respuesta que no es JSON se dice con esas palabras, no con un error de programa', async () => {

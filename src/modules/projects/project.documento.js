@@ -291,9 +291,26 @@ function parrafosDe(xml) {
       trozo.desde = desde;
       desde += trozo.texto.length;
     }
-    return { ...parrafo, id: n + 1, texto: parrafo.piezas.map((t) => t.texto).join('') };
+    return {
+      ...parrafo,
+      id: n + 1,
+      texto: parrafo.piezas.map((t) => t.texto).join(''),
+      alIndice: ENLACE_DEL_INDICE.test(xml.slice(parrafo.inicio, parrafo.fin)),
+    };
   });
 }
+
+/**
+ * Una línea de índice por lo que lleva dentro, no por su estilo: un enlace o
+ * un número de página que apuntan a un marcador `_Toc`.
+ *
+ * El 24-sep-2026 un Word guardado con Word en español traía las líneas del
+ * índice SIN estilo —el archivo no declaraba TOC1 ni TOC2 y Word se los quitó
+ * al guardar—, así que no se reconocieron: se mandaron a traducir como texto,
+ * fallaron las doce y el índice se quedó en español. Los marcadores `_Toc` solo
+ * los pone Word para el índice; una referencia cruzada normal usa `_Ref`.
+ */
+const ENLACE_DEL_INDICE = /w:anchor="_Toc|PAGEREF\s+_Toc/i;
 
 /** Del identificador del estilo a su nombre: «Heading1» → «heading 1». */
 function nombresDeEstilos(estilosXml) {
@@ -341,7 +358,8 @@ function leer(buffer) {
     .map((parrafo) => {
       const estilo = nombres.get(parrafo.estilo) ?? '';
       const nivel = Number((estilo.match(/^heading (\d)$/i) || [])[1]) || null;
-      const indice = ESTILO_DE_INDICE.test(estilo) || ESTILO_DE_INDICE.test(parrafo.estilo ?? '');
+      const indice =
+        ESTILO_DE_INDICE.test(estilo) || ESTILO_DE_INDICE.test(parrafo.estilo ?? '') || parrafo.alIndice;
       const titulo = !indice && !parrafo.enTabla && TITULO_DE_REFERENCIAS.test(normalizarTitulo(parrafo.texto));
       if (titulo) enReferencias = true;
       else if (nivel) enReferencias = false;

@@ -269,3 +269,52 @@ test('la entrada del índice de tablas junta el rótulo traducido con su título
   assert.match(xml, /Table 1\. Sample distribution/);
   assert.equal(hecho.indice.sinPareja, 0);
 });
+
+// ── Un índice sin estilo ───────────────────────────────────────────────────
+
+/**
+ * El 24-sep-2026: un Word guardado con Word en español traía las líneas del
+ * índice SIN estilo —el archivo no declaraba TOC1 ni TOC2 y Word se los quitó—.
+ * No se reconocieron, se mandaron a traducir como texto, fallaron las doce por
+ * su campo y el índice se quedó en español. Se reconocen por el enlace `_Toc`.
+ */
+test('un índice sin estilo se reconoce por su enlace y se traduce igual', async () => {
+  const sinEstilo = (texto, pagina, nivel = 1) => entrada(texto, pagina, nivel).replace(/<w:pStyle w:val="TOC\d"\/>/, '');
+  const buffer = docx(
+    p('Índice') +
+      sinEstilo('CAPÍTULO I: PROBLEMA Y OBJETIVOS', 3) +
+      sinEstilo('Planteamiento del problema', 3, 2) +
+      titulo('CAPÍTULO I: PROBLEMA Y OBJETIVOS') +
+      titulo('Planteamiento del problema', 2) +
+      p('El estudio parte de una necesidad concreta.'),
+  );
+
+  const hecho = await traducirTodo(buffer, DICCIONARIO);
+  const xml = leerCuerpo(hecho.buffer);
+
+  // Al modelo no le llegan: solo el título «Índice», los dos títulos y el párrafo.
+  assert.equal(hecho.parrafos.length, 4);
+  assert.equal(hecho.intactos.size, 0);
+  assert.deepEqual(hecho.indice, { entradas: 2, sinPareja: 0 });
+  assert.doesNotMatch(xml, /PROBLEMA Y OBJETIVOS/);
+  assert.doesNotMatch(xml, /Planteamiento del problema/);
+  assert.match(xml, /PAGEREF _Toc100/, 'el número de página sigue siendo un campo');
+});
+
+test('una referencia cruzada normal (_Ref) no se toma por índice', async () => {
+  const buffer = docx(
+    '<w:p>' +
+      t('Como se ve en la página ') +
+      '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+      '<w:r><w:instrText xml:space="preserve"> PAGEREF _Ref12345 \h </w:instrText></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
+      t('4') +
+      '<w:r><w:fldChar w:fldCharType="end"/></w:r>' +
+      t(', la muestra es pequeña.') +
+      '</w:p>',
+  );
+
+  const { parrafos } = cuerpo.cuerpoDe(buffer, servicio.alcanceDe('TRADUCCION'));
+
+  assert.equal(parrafos.length, 1, 'se manda a traducir como cualquier párrafo');
+});

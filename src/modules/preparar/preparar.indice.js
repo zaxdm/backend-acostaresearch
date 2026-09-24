@@ -88,11 +88,17 @@ const enUnaLinea = (texto) =>
     .replace(/\s+/g, ' ')
     .trim();
 
-/** ¿Es este párrafo una línea del índice? Por el nombre del estilo o por su identificador. */
+/**
+ * ¿Es este párrafo una línea del índice? Por el nombre del estilo, por su
+ * identificador, o porque enlaza a un título con un marcador `_Toc` aunque no
+ * tenga estilo ninguno. Ver `documento.parrafosDe`.
+ */
 function esDelIndice(parrafo, nombres) {
   const id = parrafo.estilo ?? '';
   return (
-    documento.ESTILO_DE_INDICE.test(nombres.get(id) ?? '') || documento.ESTILO_DE_INDICE.test(id)
+    documento.ESTILO_DE_INDICE.test(nombres.get(id) ?? '') ||
+    documento.ESTILO_DE_INDICE.test(id) ||
+    Boolean(parrafo.alIndice)
   );
 }
 

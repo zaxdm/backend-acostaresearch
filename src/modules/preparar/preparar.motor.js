@@ -403,7 +403,14 @@ async function pedirTanda(parrafos, opciones, generar) {
 }
 
 /**
- * Una vuelta más para lo que volvió sin traducir. Cambia `buenos` en su sitio.
+ * Una vuelta más para lo que volvió sin traducir. Cambia `buenos` y `malos` en
+ * su sitio.
+ *
+ * Entran dos cosas: lo que volvió igual o con restos de español, y lo que ya
+ * falló dos veces la comprobación. Lo segundo por la entrega del 24-sep-2026,
+ * donde un párrafo corriente —sin citas, sin tablas— se quedó entero en español
+ * entre dos traducidos: dos intentos con la misma instrucción no bastaron, y un
+ * tercero con otra sí puede.
  *
  * Van TODOS JUNTOS, en tandas como las de siempre y no uno por uno: suelen ser
  * títulos y celdas cortas, y con la cuota del proveedor contada, veinte
@@ -413,7 +420,7 @@ async function pedirTanda(parrafos, opciones, generar) {
  * o vuelve igual de mal, se queda lo que había. Es un extra, no una condición
  * para entregar, así que un fallo aquí no tumba el trabajo.
  */
-async function insistirEnLoSinTraducir({ buenos, porClave, opciones, pedir, porTanda, aLaVez }) {
+async function insistirEnLoSinTraducir({ buenos, malos, porClave, opciones, pedir, porTanda, aLaVez }) {
   if (opciones.servicio !== 'TRADUCCION') return;
 
   const dudosos = Object.entries(buenos)
@@ -423,35 +430,106 @@ async function insistirEnLoSinTraducir({ buenos, porClave, opciones, pedir, porT
     })
     .map(([clave]) => porClave.get(clave));
 
-  if (dudosos.length === 0) return;
+  const fallidos = malos.filter((malo) => !malo.sinCupo).map((malo) => porClave.get(String(malo.id))).filter(Boolean);
 
-  const conInsistencia = { ...opciones, insistir: true };
-  const vueltas = await enParalelo(
-    tandasDe(dudosos, porTanda).map((tanda) => async () => {
-      try {
-        return await pedirTanda(tanda, conInsistencia, pedir);
-      } catch (error) {
-        logger.warn(
-          { err: error.message, parrafos: tanda.length },
-          'Preparar documento: no se pudo volver a pedir lo que quedó sin traducir; se deja como vino',
-        );
-        return { buenos: {}, malos: [] };
+  const pedidos = [...dudosos, ...fallidos];
+  if (pedidos.length > 0) {
+    const conInsistencia = { ...opciones, insistir: true };
+    const vueltas = await enParalelo(
+      tandasDe(pedidos, porTanda).map((tanda) => async () => {
+        try {
+          return await pedirTanda(tanda, conInsistencia, pedir);
+        } catch (error) {
+          logger.warn(
+            { err: error.message, parrafos: tanda.length },
+            'Preparar documento: no se pudo volver a pedir lo que quedó sin traducir; se deja como vino',
+          );
+          return { buenos: {}, malos: [] };
+        }
+      }),
+      aLaVez,
+    );
+
+    for (const vuelta of vueltas) {
+      for (const [clave, texto] of Object.entries(vuelta.buenos)) {
+        const parrafo = porClave.get(String(clave));
+        const antes = buenos[clave];
+
+        // Uno que había fallado y ahora pasa la comprobación: sale de los malos.
+        if (antes === undefined) {
+          buenos[clave] = texto;
+          const donde = malos.findIndex((malo) => String(malo.id) === String(clave));
+          if (donde !== -1) malos.splice(donde, 1);
+          continue;
+        }
+
+        // Mejor es: ya no parece sin traducir, o al menos cambió respecto al
+        // original cuando antes volvía igual.
+        const mejor =
+          !sigueSinTraducir(parrafo.texto, texto, opciones.idioma) ||
+          (antes.trim() === parrafo.texto.trim() && texto.trim() !== parrafo.texto.trim());
+        if (mejor) buenos[clave] = texto;
       }
-    }),
-    aLaVez,
-  );
-
-  for (const vuelta of vueltas) {
-    for (const [clave, texto] of Object.entries(vuelta.buenos)) {
-      const parrafo = porClave.get(String(clave));
-      const antes = buenos[clave];
-      // Mejor es: ya no parece sin traducir, o al menos cambió respecto al
-      // original cuando antes volvía igual.
-      const mejor =
-        !sigueSinTraducir(parrafo.texto, texto, opciones.idioma) ||
-        (antes.trim() === parrafo.texto.trim() && texto.trim() !== parrafo.texto.trim());
-      if (mejor) buenos[clave] = texto;
     }
+  }
+
+  await traducirCorchetes({ buenos, porClave, opciones, pedir });
+}
+
+/** Una nota entre corchetes con letras. «[12]» es una cita numérica y no entra. */
+const CORCHETE = /\[([^\[\]]*\p{L}[^\[\]]*)\]/gu;
+
+/**
+ * Las notas entre corchetes que siguen en español, traducidas aparte.
+ *
+ * «[A DEFINIR EN CAP III]», «[previsto, se confirma en la Skill de
+ * Instrumento]»: el modelo las copia tal cual aunque se le insista, porque
+ * entre corchetes se parecen a una cita numérica, que las instrucciones le
+ * mandan no tocar. Sin corchetes son una frase cualquiera y las traduce.
+ *
+ * Así que se sacan, se mandan todas en UNA llamada como si fueran párrafos, y
+ * la traducción vuelve a su sitio entre sus corchetes. Solo se tocan las que
+ * están idénticas en el original y en el texto traducido, y que tienen pinta de
+ * español; lo que falle aquí se queda como estaba.
+ */
+async function traducirCorchetes({ buenos, porClave, opciones, pedir }) {
+  if (!opciones.idioma || opciones.idioma === 'es') return;
+
+  const notas = new Set();
+  for (const [clave, texto] of Object.entries(buenos)) {
+    const original = porClave.get(clave)?.texto ?? '';
+    for (const [, nota] of texto.matchAll(CORCHETE)) {
+      if (!original.includes(`[${nota}]`)) continue;
+      if (LETRAS_DEL_ESPANOL.test(nota) || restosDelEspanol(nota) > 0) notas.add(nota);
+    }
+  }
+  if (notas.size === 0) return;
+
+  const lista = [...notas];
+  const comoParrafos = lista.map((nota, i) => ({ clave: `nota_${i}`, texto: nota, palabras: palabrasDe(nota) }));
+
+  let traducidas;
+  try {
+    traducidas = await pedirTanda(comoParrafos, { ...opciones, insistir: true }, pedir);
+  } catch (error) {
+    logger.warn(
+      { err: error.message, notas: lista.length },
+      'Preparar documento: no se pudieron traducir las notas entre corchetes; se dejan como vinieron',
+    );
+    return;
+  }
+
+  const porNota = new Map();
+  lista.forEach((nota, i) => {
+    const nueva = traducidas.buenos[`nota_${i}`];
+    if (nueva && nueva !== nota && !/[\[\]]/.test(nueva)) porNota.set(nota, nueva);
+  });
+  if (porNota.size === 0) return;
+
+  for (const [clave, texto] of Object.entries(buenos)) {
+    buenos[clave] = texto.replace(CORCHETE, (entera, nota) =>
+      porNota.has(nota) ? `[${porNota.get(nota)}]` : entera,
+    );
   }
 }
 
@@ -557,14 +635,14 @@ async function prepararParrafos({
     throw new Error(SIN_CUPO_DEL_PROVEEDOR);
   }
 
+  await insistirEnLoSinTraducir({ buenos, malos, porClave, opciones, pedir, porTanda, aLaVez });
+
   // Que TODO falle no es «un documento con párrafos intactos»: es que el
   // servicio no funcionó, y entregar el mismo Word que se subió cobrando un
   // documento del cupo sería estafar al cliente.
   if (Object.keys(buenos).length === 0 && parrafos.length > 0) {
     throw new Error(malos[0]?.motivo ?? 'El modelo no devolvió ningún párrafo utilizable.');
   }
-
-  await insistirEnLoSinTraducir({ buenos, porClave, opciones, pedir, porTanda, aLaVez });
 
   const cambios = {};
   for (const [id, texto] of Object.entries(buenos)) {

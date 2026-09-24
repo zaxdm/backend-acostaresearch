@@ -270,6 +270,54 @@ test('un título devuelto en español se vuelve a pedir, todos juntos en una lla
   assert.equal(cambios['4'], undefined, 'un nombre propio que vuelve igual se acepta');
 });
 
+/**
+ * Segunda entrega del 24-sep-2026: con la insistencia, el modelo SEGUÍA
+ * copiando las notas entre corchetes, que se parecen a una cita numérica.
+ */
+test('las notas entre corchetes en español se traducen aparte y vuelven a su sitio', async () => {
+  const parrafos = [
+    parrafo(1, 'Tipo: [A DEFINIR EN CAP III]. Nivel: Descriptivo. Diseño: [A DEFINIR EN CAP III].'),
+    parrafo(2, 'Escala Likert de 5 puntos [previsto, se confirma en la Skill de Instrumento]. Ver [12].'),
+  ];
+  const { generar, llamadas } = modeloFalso((entrada) => {
+    if (entrada.nota_0 !== undefined) {
+      return Object.fromEntries(
+        Object.entries(entrada).map(([clave, nota]) => [
+          clave,
+          nota === 'A DEFINIR EN CAP III' ? 'TO BE DEFINED IN CHAPTER III' : 'planned, confirmed in the Instrument Skill',
+        ]),
+      );
+    }
+    // El modelo traduce todo menos los corchetes, también cuando se le insiste.
+    return {
+      1: 'Type: [A DEFINIR EN CAP III]. Level: Descriptive. Design: [A DEFINIR EN CAP III].',
+      2: '5-point Likert scale [previsto, se confirma en la Skill de Instrumento]. See [12].',
+    };
+  });
+
+  const { cambios } = await motor.prepararParrafos({ parrafos, ...AL_INGLES, generar, porTanda: 100 });
+
+  assert.equal(
+    cambios['1'].texto,
+    'Type: [TO BE DEFINED IN CHAPTER III]. Level: Descriptive. Design: [TO BE DEFINED IN CHAPTER III].',
+  );
+  assert.equal(cambios['2'].texto, '5-point Likert scale [planned, confirmed in the Instrument Skill]. See [12].');
+  const ultima = llamadas.at(-1);
+  assert.deepEqual(Object.values(ultima).sort(), ['A DEFINIR EN CAP III', 'previsto, se confirma en la Skill de Instrumento']);
+});
+
+test('un párrafo que falló dos veces tiene una tercera oportunidad, y sale de los malos', async () => {
+  const parrafos = [parrafo(1, 'Para responder estas preguntas, el estudio plantea un objetivo general.')];
+  const { generar } = modeloFalso((entrada, vuelta) =>
+    vuelta < 3 ? { 1: 'To answer these questions.\n\nThe study sets a general objective.' } : { 1: 'To answer these questions, the study sets a general objective.' },
+  );
+
+  const { cambios, malos } = await motor.prepararParrafos({ parrafos, ...AL_INGLES, generar, porTanda: 100 });
+
+  assert.equal(cambios['1'].texto, 'To answer these questions, the study sets a general objective.');
+  assert.deepEqual(malos, []);
+});
+
 test('si la segunda vuelta falla, se queda lo que ya había y el trabajo sigue', async () => {
   const parrafos = [parrafo(1, 'Justificación'), parrafo(2, 'La muestra fue de 120 usuarios.')];
   let vuelta = 0;

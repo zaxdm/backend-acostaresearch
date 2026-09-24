@@ -276,6 +276,11 @@ const schema = z.object({
   // separados por coma. Vacía = no la ve nadie, que es lo que tiene que pasar
   // donde no se haya encendido a propósito. Ver `modules/pedidos/beta`.
   BETA_REVISION_EMAILS: z.string().default(''),
+  // Quién usa «Preparar documento» sin tope y sin membresía: los usuarios beta
+  // que prueban el servicio. Correos separados por coma. Vacía = nadie. Sus
+  // trabajos no cuelgan de ninguna membresía, así que no gastan el cupo de una
+  // que tengan comprada. Ver `preparar.service`.
+  PREPARAR_ILIMITADO_EMAILS: z.string().default(''),
   // ¿Avisan al móvil las cosas del piloto de revisión? Apagado mientras se
   // prueba: las pruebas de uno mismo no son noticias, y un tópico lleno de
   // avisos que no hay que atender enseña a no mirarlos. Se enciende poniendo

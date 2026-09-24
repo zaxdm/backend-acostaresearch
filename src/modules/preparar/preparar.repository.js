@@ -71,6 +71,12 @@ const prepararRepository = {
    * cupo. Las que están en cola o en curso SÍ cuentan, porque si no, quien
    * mande diez a la vez se saltaría el tope mientras ninguna ha terminado.
    */
+  /** El correo de la cuenta, para saber si está en la lista de ilimitados. */
+  async correoDe(userId, tx = prisma) {
+    const user = await tx.user.findUnique({ where: { id: userId }, select: { email: true } });
+    return user?.email ?? null;
+  },
+
   usadosEn(docPackId, desde, hasta, tx = prisma) {
     return tx.preparacion.count({
       where: {

@@ -61,6 +61,7 @@ const cambios = require('./preparar.cambios');
 const traduccion = require('./preparar.traduccion');
 const aviso = require('./preparar.aviso');
 const { IDIOMAS } = require('./preparar.prompt');
+const { correosDe } = require('../pedidos/beta');
 
 /** Nombre de cada servicio, tal y como se le dice al cliente. */
 const NOMBRES = Object.freeze({
@@ -107,6 +108,20 @@ const servicioNoDisponible = () =>
 // ── El cupo ────────────────────────────────────────────────────────────────
 
 /**
+ * ¿Prepara este usuario sin tope? Los que están en `PREPARAR_ILIMITADO_EMAILS`.
+ *
+ * Va en el `.env` y no en la base, como los demás pilotos (ver
+ * `modules/pedidos/beta`): son dos o tres cuentas de prueba, y el día que no
+ * hagan falta se vacía la variable.
+ */
+async function esIlimitado(userId) {
+  const lista = correosDe(env.PREPARAR_ILIMITADO_EMAILS);
+  if (lista.length === 0) return false;
+  const correo = await repository.correoDe(userId);
+  return Boolean(correo) && lista.includes(String(correo).trim().toLowerCase());
+}
+
+/**
  * La membresía del cliente y cuántos documentos le quedan este mes.
  *
  * Devuelve siempre algo: sin membresía, `{ pack: null, cupo: null }` con el
@@ -114,6 +129,9 @@ const servicioNoDisponible = () =>
  * tarjeta de compra, así que tiene que poder preguntarlo sin haber comprado.
  */
 async function cupoDe(userId, ahora = new Date()) {
+  // Los usuarios beta, sin tope y sin membresía. Ver `PREPARAR_ILIMITADO_EMAILS`.
+  if (await esIlimitado(userId)) return { pack: null, cupo: null, motivo: null, ilimitado: true };
+
   const pack = await repository.membresiaDe(userId);
   if (!pack) return { pack: null, cupo: null, motivo: membresia.porQueNo(null, 0, ahora) };
 
@@ -435,7 +453,9 @@ async function recibirEncargo({ userId, servicio, idioma, buffer, nombre }, ahor
 
   const preparacion = await repository.crear({
     userId,
-    docPackId: pack.id,
+    // Un ilimitado no cuelga de ninguna membresía: si tiene una comprada, esto
+    // no le gasta de ella.
+    docPackId: pack?.id ?? null,
     servicio,
     idioma: destino,
     nombre: String(nombre).slice(0, 255),
@@ -457,7 +477,7 @@ async function recibirEncargo({ userId, servicio, idioma, buffer, nombre }, ahor
 
   return {
     preparacion: paraLaWeb(preparacion),
-    cupo: { ...cupo, usados: cupo.usados + 1, restantes: Math.max(0, cupo.restantes - 1) },
+    cupo: cupo ? { ...cupo, usados: cupo.usados + 1, restantes: Math.max(0, cupo.restantes - 1) } : null,
   };
 }
 
@@ -494,10 +514,11 @@ const prepararService = {
   /** Lo que la pantalla necesita para pintarse: membresía, cupo e historial. */
   async panel(userId, ahora = new Date()) {
     await rescatar(userId, ahora);
-    const { pack, cupo, motivo } = await cupoDe(userId, ahora);
+    const { pack, cupo, motivo, ilimitado = false } = await cupoDe(userId, ahora);
 
     return {
       disponible: env.prepararEnabled,
+      ilimitado,
       membresia: pack
         ? {
             plan: pack.plan,

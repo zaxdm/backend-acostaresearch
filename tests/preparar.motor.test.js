@@ -230,6 +230,88 @@ test('si no sale NI UN párrafo, se lanza: entregar el mismo Word sería estafar
   );
 });
 
+// ── Lo que vuelve sin traducir ─────────────────────────────────────────────
+
+/**
+ * El 24-sep-2026 una entrega real salió con dos títulos en español y una nota
+ * entre corchetes en español dentro de una celda en inglés. El modelo los
+ * devolvió así, y un párrafo devuelto igual se daba por bueno sin más.
+ */
+test('un título devuelto en español se vuelve a pedir, todos juntos en una llamada', async () => {
+  const parrafos = [
+    parrafo(1, 'CAPÍTULO I: PROBLEMA Y OBJETIVOS'),
+    parrafo(2, 'Justificación'),
+    parrafo(3, 'Se aplicará un cuestionario [previsto, se confirma en la Skill de Instrumento].'),
+    parrafo(4, 'Esteban Zait Dioses Muñoz'),
+  ];
+  const { generar, llamadas } = modeloFalso((entrada, vuelta) =>
+    vuelta === 1
+      ? {
+          1: entrada['1'],
+          2: entrada['2'],
+          3: 'A questionnaire will be applied [previsto, se confirma en la Skill de Instrumento].',
+          4: entrada['4'],
+        }
+      : {
+          1: 'CHAPTER I: PROBLEM AND OBJECTIVES',
+          2: 'Justification',
+          3: 'A questionnaire will be applied [planned, confirmed in the Instrument Skill].',
+          4: entrada['4'],
+        },
+  );
+
+  const { cambios } = await motor.prepararParrafos({ parrafos, ...AL_INGLES, generar, porTanda: 100 });
+
+  assert.equal(llamadas.length, 2, 'una sola llamada de más, no una por párrafo');
+  assert.deepEqual(Object.keys(llamadas[1]).sort(), ['1', '2', '3', '4']);
+  assert.equal(cambios['1'].texto, 'CHAPTER I: PROBLEM AND OBJECTIVES');
+  assert.equal(cambios['2'].texto, 'Justification');
+  assert.match(cambios['3'].texto, /\[planned, confirmed in the Instrument Skill\]/);
+  assert.equal(cambios['4'], undefined, 'un nombre propio que vuelve igual se acepta');
+});
+
+test('si la segunda vuelta falla, se queda lo que ya había y el trabajo sigue', async () => {
+  const parrafos = [parrafo(1, 'Justificación'), parrafo(2, 'La muestra fue de 120 usuarios.')];
+  let vuelta = 0;
+  const generar = async ({ mensajes }) => {
+    vuelta += 1;
+    if (vuelta > 1) throw new Error('el modelo no devolvió un JSON que se pueda leer');
+    const entrada = JSON.parse(mensajes[0].texto);
+    return { texto: JSON.stringify({ 1: entrada['1'], 2: 'The sample was 120 users.' }) };
+  };
+
+  const { cambios } = await motor.prepararParrafos({ parrafos, ...AL_INGLES, generar, porTanda: 100 });
+
+  assert.deepEqual(Object.keys(cambios), ['2']);
+});
+
+test('corrigiendo el inglés no hay segunda vuelta: devolver igual es lo normal', async () => {
+  const { generar, llamadas } = modeloFalso((entrada) => entrada);
+
+  const { cambios } = await motor.prepararParrafos({
+    parrafos: [parrafo(1, 'Justificación del estudio')],
+    ...EDICION,
+    generar,
+    porTanda: 100,
+  });
+
+  assert.equal(llamadas.length, 1);
+  assert.deepEqual(cambios, {});
+});
+
+test('lo que sigue en español se reconoce; lo traducido con un apellido, no', () => {
+  assert.equal(motor.sigueSinTraducir('Justificación', 'Justificación', 'en'), true);
+  assert.equal(motor.sigueSinTraducir('Justificación', 'Justification', 'en'), false);
+  assert.equal(
+    motor.sigueSinTraducir('Según de la Cruz (2020)', 'According to de la Cruz (2020)', 'en'),
+    false,
+  );
+  assert.equal(motor.sigueSinTraducir('ISO/IEC 25010', 'ISO/IEC 25010', 'en'), false);
+  // Al portugués, «de», «que» y «se» son suyas: solo cuenta lo que vuelve igual.
+  assert.equal(motor.sigueSinTraducir('La muestra', 'A amostra de que se fala', 'pt'), false);
+  assert.equal(motor.sigueSinTraducir('Justificación', 'Justificación', 'es'), false);
+});
+
 // ── Las cifras ─────────────────────────────────────────────────────────────
 
 test('mover una cifra de sitio dentro de la frase no tira el párrafo', () => {

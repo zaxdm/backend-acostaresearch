@@ -200,6 +200,51 @@ function comprobar(original, nuevo, opciones) {
   return null;
 }
 
+// ── Lo que volvió sin traducir ─────────────────────────────────────────────
+
+/** Letras que el español tiene y el inglés no. */
+const LETRAS_DEL_ESPANOL = /[ñ¿¡áéíóú]/i;
+
+/**
+ * Palabras gramaticales del español que no existen en inglés.
+ *
+ * Solo se miran traduciendo al inglés o al chino: en portugués «de», «que» y
+ * «se» son igual de suyas.
+ */
+const PALABRAS_DEL_ESPANOL = new Set(
+  'de la el los las que se del por para con una y en es su sus al lo como más este esta estos estas sobre entre según'.split(' '),
+);
+
+/** Cuántas palabras gramaticales del español lleva un texto. */
+const restosDelEspanol = (texto) =>
+  (String(texto).toLowerCase().match(/\p{L}+/gu) ?? []).filter((palabra) => PALABRAS_DEL_ESPANOL.has(palabra)).length;
+
+/**
+ * ¿Parece que este párrafo volvió sin traducir, entero o en parte?
+ *
+ * El 24-sep-2026 una entrega real salió con «CAPÍTULO I: PROBLEMA Y OBJETIVOS»
+ * y «Justificación» en español, y con «[previsto, se confirma en la Skill de
+ * Instrumento]» en medio de una celda en inglés. El modelo los devolvió así y
+ * aquí nadie lo miró: un párrafo devuelto igual se daba por bueno y no se
+ * contaba en ninguna parte.
+ *
+ * No es una comprobación de idioma —eso no se hace bien con código—, es un
+ * filtro barato: lo que pasa por aquí se vuelve a pedir una vez, y si el modelo
+ * lo devuelve igual otra vez, se acepta. Un apellido o una sigla vuelven igual
+ * con toda razón.
+ */
+function sigueSinTraducir(original, nuevo, idioma) {
+  if (!idioma || idioma === 'es') return false;
+  if (!/\p{L}/u.test(original)) return false;
+
+  if (nuevo.trim() === original.trim()) {
+    return LETRAS_DEL_ESPANOL.test(original) || restosDelEspanol(original) > 0;
+  }
+
+  if (idioma === 'pt') return false;
+  return restosDelEspanol(nuevo) >= 3;
+}
+
 // ── Cuando Google está saturado ────────────────────────────────────────────
 
 /**
@@ -358,6 +403,59 @@ async function pedirTanda(parrafos, opciones, generar) {
 }
 
 /**
+ * Una vuelta más para lo que volvió sin traducir. Cambia `buenos` en su sitio.
+ *
+ * Van TODOS JUNTOS, en tandas como las de siempre y no uno por uno: suelen ser
+ * títulos y celdas cortas, y con la cuota del proveedor contada, veinte
+ * llamadas para veinte títulos se comerían lo que falta para el resto.
+ *
+ * Solo se cambia lo que mejora: si esta vuelta falla, no pasa la comprobación
+ * o vuelve igual de mal, se queda lo que había. Es un extra, no una condición
+ * para entregar, así que un fallo aquí no tumba el trabajo.
+ */
+async function insistirEnLoSinTraducir({ buenos, porClave, opciones, pedir, porTanda, aLaVez }) {
+  if (opciones.servicio !== 'TRADUCCION') return;
+
+  const dudosos = Object.entries(buenos)
+    .filter(([clave, texto]) => {
+      const parrafo = porClave.get(clave);
+      return parrafo && sigueSinTraducir(parrafo.texto, texto, opciones.idioma);
+    })
+    .map(([clave]) => porClave.get(clave));
+
+  if (dudosos.length === 0) return;
+
+  const conInsistencia = { ...opciones, insistir: true };
+  const vueltas = await enParalelo(
+    tandasDe(dudosos, porTanda).map((tanda) => async () => {
+      try {
+        return await pedirTanda(tanda, conInsistencia, pedir);
+      } catch (error) {
+        logger.warn(
+          { err: error.message, parrafos: tanda.length },
+          'Preparar documento: no se pudo volver a pedir lo que quedó sin traducir; se deja como vino',
+        );
+        return { buenos: {}, malos: [] };
+      }
+    }),
+    aLaVez,
+  );
+
+  for (const vuelta of vueltas) {
+    for (const [clave, texto] of Object.entries(vuelta.buenos)) {
+      const parrafo = porClave.get(String(clave));
+      const antes = buenos[clave];
+      // Mejor es: ya no parece sin traducir, o al menos cambió respecto al
+      // original cuando antes volvía igual.
+      const mejor =
+        !sigueSinTraducir(parrafo.texto, texto, opciones.idioma) ||
+        (antes.trim() === parrafo.texto.trim() && texto.trim() !== parrafo.texto.trim());
+      if (mejor) buenos[clave] = texto;
+    }
+  }
+}
+
+/**
  * Todos los párrafos preparados, con los que no salieron aparte.
  *
  * EL REINTENTO
@@ -466,6 +564,8 @@ async function prepararParrafos({
     throw new Error(malos[0]?.motivo ?? 'El modelo no devolvió ningún párrafo utilizable.');
   }
 
+  await insistirEnLoSinTraducir({ buenos, porClave, opciones, pedir, porTanda, aLaVez });
+
   const cambios = {};
   for (const [id, texto] of Object.entries(buenos)) {
     const parrafo = porClave.get(id);
@@ -480,6 +580,7 @@ module.exports = {
   tandasDe,
   enParalelo,
   comprobar,
+  sigueSinTraducir,
   cifrasDe,
   margenes,
   prepararParrafos,

@@ -238,10 +238,38 @@ function proteger(xmlDelParrafo) {
 
 const ESCAPAR = /[.*+?^${}()|[\]\\]/g;
 
+/** Guiones y comillas que se escriben de varias formas, a una sola. */
+const EQUIVALENTES = {
+  '“': '"', '”': '"', '„': '"', '«': '"', '»': '"',
+  '‘': "'", '’': "'", '‚': "'", 'ʼ': "'",
+  '‐': '-', '‑': '-', '‒': '-', '–': '-', '—': '-', '−': '-',
+};
+
+/**
+ * El texto con lo que el modelo cambia sin querer, igualado.
+ *
+ * El 24-sep-2026 un párrafo entero se quedó en español porque el modelo
+ * escribió «Garcia‑Lopez» con el guion que no se parte (U+2011) —lo hace en
+ * todo el texto: «sub‑characteristics», «5‑point»— y la cita del Word lleva el
+ * guion de siempre. Lo mismo pasa con los apóstrofos («Ma’ruf») y con una tilde
+ * puesta o quitada en un apellido. Nada de eso cambia la cita.
+ *
+ * Carácter a carácter y de uno a uno, para que las posiciones del texto
+ * igualado sigan siendo las del texto nuevo.
+ */
+const igualar = (texto) =>
+  [...String(texto)]
+    .map((caracter) => {
+      if (EQUIVALENTES[caracter]) return EQUIVALENTES[caracter];
+      const base = caracter.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+      return base.length === caracter.length ? base : caracter;
+    })
+    .join('');
+
 /** El texto del campo, como expresión que admite que los espacios cambien. */
 const comoExpresion = (texto) =>
   new RegExp(
-    texto
+    igualar(texto)
       .trim()
       .split(/\s+/)
       .map((trozo) => trozo.replace(ESCAPAR, '\\$&'))
@@ -274,7 +302,8 @@ function enmascarar(textoNuevo, campos) {
 
   for (const campo of campos) {
     const expresion = comoExpresion(campo.texto);
-    const candidatos = [...texto.matchAll(expresion)].filter((encaje) => encaje.index >= desde);
+    // Se busca en el texto igualado y se corta en el de verdad: miden lo mismo.
+    const candidatos = [...igualar(texto).matchAll(expresion)].filter((encaje) => encaje.index >= desde);
 
     if (candidatos.length === 0) {
       throw new NoProtegible(`el texto nuevo no trae «${campo.texto.slice(0, 40)}» tal cual`);

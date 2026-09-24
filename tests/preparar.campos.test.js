@@ -142,6 +142,25 @@ test('si la cita no vuelve tal cual del modelo, no se adivina dónde va', () => 
 });
 
 /**
+ * El 24-sep-2026 el primer párrafo de una tesis se quedó entero en español
+ * porque el modelo escribió «Garcia‑Lopez» con el guion que no se parte
+ * (U+2011). Lo hace en todo el texto. Un guion, un apóstrofo o una tilde no
+ * cambian la cita.
+ */
+test('un guion, un apóstrofo o una tilde distintos no dejan el párrafo sin traducir', () => {
+  const { campos: apartados } = campos.proteger(
+    `<w:p>${t('Apps turísticas ')}${cita('(Garcia-Lopez et al., 2021; Ma’ruf et al., 2023)')}${t(' y más.')}</w:p>`,
+  );
+
+  const puesto = campos.enmascarar(
+    'Tourist apps (García‑López et al., 2021; Ma\'ruf et al., 2023) and more.',
+    apartados,
+  );
+
+  assert.equal(puesto, `Tourist apps ${apartados[0].marca} and more.`);
+});
+
+/**
  * El caso que apareció en la primera tesis de verdad: citas narrativas, donde
  * Zotero deja en el campo solo el año. «(2024)» aparece tantas veces como citas
  * de ese año tenga el párrafo, así que no se puede exigir que sea única.

@@ -93,7 +93,9 @@ test('al modelo solo le llega la prosa: ni la tabla, ni el rótulo, ni la biblio
     porTanda: 1000,
   });
 
-  assert.deepEqual(vistos, [
+  // Sin repetidos: este modelo lo devuelve todo igual, y lo que vuelve en
+  // español se le pide una segunda vez. Lo que se mira aquí es QUÉ le llega.
+  assert.deepEqual([...new Set(vistos)], [
     'Planteamiento del problema',
     'El rendimiento académico shows una relación con el engagement de los estudiantes.',
     'La muestra fue de 120 estudiantes de una universidad privada de Lima.',

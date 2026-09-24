@@ -158,6 +158,15 @@ CÓMO TRADUCIR:
   sigue destacado.
 - Mantén la misma traducción para el mismo término en todo el documento.
 
+TODO LO DEMÁS SE TRADUCE, sin excepción y de principio a fin del párrafo:
+- Los títulos y rótulos, aunque estén en mayúsculas o sean de una palabra
+  («CAPÍTULO I: PROBLEMA Y OBJETIVOS», «Justificación», «Anexo 2»).
+- Las notas entre corchetes que ya trae el documento («[previsto, se confirma
+  en el instrumento]», «[POR DEFINIR]»): se traducen dejando los corchetes.
+- Las celdas de tabla, por cortas que sean.
+Un párrafo devuelto con una parte en el idioma original es un párrafo sin
+traducir.
+
 QUÉ NO SE TRADUCE:
 - Los apellidos de las citas ni las referencias bibliográficas.
 - Los nombres de instrumentos, escalas, softwares y bases de datos.
@@ -174,10 +183,26 @@ ${FORMATO}
 `.trim();
 }
 
+/**
+ * Lo que se añade cuando un párrafo volvió sin traducir o traducido a medias.
+ *
+ * Va aparte porque en esa vuelta el modelo solo ve esos párrafos, y la causa
+ * casi siempre es que decidió que no había que traducirlos: un título en
+ * mayúsculas, una nota entre corchetes. Ver `preparar.motor`.
+ */
+const insistencia = (idioma) => `
+ATENCIÓN: estos párrafos ya se pidieron y volvieron sin traducir o con partes
+en el idioma original. Tradúcelos ENTEROS al ${IDIOMAS[idioma].nombre}. Solo se
+quedan como están un nombre propio, una sigla o una cita; todo lo demás cambia
+de idioma, también los títulos y lo que va entre corchetes.
+`.trim();
+
 /** La instrucción que toca, según el servicio. */
-function sistemaDe({ servicio, idioma }) {
+function sistemaDe({ servicio, idioma, insistir = false }) {
   if (servicio === 'EDICION') return EDICION;
-  if (servicio === 'TRADUCCION') return traduccion(idioma);
+  if (servicio === 'TRADUCCION') {
+    return insistir ? `${traduccion(idioma)}\n\n${insistencia(idioma)}` : traduccion(idioma);
+  }
   throw new Error(`«${servicio}» no se pide por párrafos.`);
 }
 

@@ -305,12 +305,13 @@ const resenaService = {
    * porque quien vuelve a los seis meses con otra fase terminada tiene algo
    * distinto que contar.
    */
-  async guardar(userId, { estrellas, comentario, oficio }, id = null) {
-    // Solo puede quedarse sin texto la que ya tiene video: entonces el
-    // testimonio es la grabación. Sin video, el texto es obligatorio, que cinco
-    // estrellas sueltas no le cuentan nada a quien está decidiendo si compra.
+  async guardar(userId, { estrellas, comentario, oficio, conVideo = false }, id = null) {
+    // Solo puede quedarse sin texto la que ya tiene video, o la que lo trae
+    // detrás (`conVideo`): entonces el testimonio es la grabación. Sin video, el
+    // texto es obligatorio, que cinco estrellas sueltas no le cuentan nada a
+    // quien está decidiendo si compra.
     const actual = id ? await this.suya(id, userId) : null;
-    if (comentario.length < 20 && !(actual?.videoBytes > 0)) {
+    if (comentario.length < 20 && !(actual?.videoBytes > 0) && !conVideo) {
       throw new ValidationError('Cuéntanos cómo te fue, con al menos una frase, o sube tu video.');
     }
 

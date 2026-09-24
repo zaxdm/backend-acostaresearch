@@ -517,6 +517,18 @@ test('con video, la reseña puede quedarse sin una sola palabra', async () => {
   await assert.rejects(() => resenaService.quitarVideo(fila.id), /sin nada que enseñar/);
 });
 
+test('la que trae el video detrás puede nacer sin texto', async () => {
+  empezar();
+  // El formulario deja elegir el video antes de enviar: primero se crea la
+  // reseña y después se sube la grabación, así que al crearla aún no la tiene.
+  const nueva = await resenaService.guardar('u1', { ...RESENA, comentario: '', conVideo: true });
+  assert.equal(nueva.comentario, '');
+  assert.equal(nueva.estado, 'PENDIENTE');
+
+  const conGrabacion = await resenaService.guardarVideo(nueva.id, MP4);
+  assert.equal(conGrabacion.video, true);
+});
+
 test('una reseña sin texto y sin video no sale en la web ni cuenta para la media', async () => {
   empezar();
   for (const userId of ['u1', 'u2']) await resenaService.guardar(userId, RESENA);

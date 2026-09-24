@@ -33,6 +33,11 @@ const resenaBodySchema = z.object({
   // cliente de verdad. Preguntarlo era pedirle al autor que se inventara una
   // firma para algo que ya sabemos quién es.
   oficio: z.string().trim().max(120, 'Como mucho 120 caracteres.').optional().default(''),
+  // La web avisa de que el video va detrás, en la petición siguiente: el
+  // formulario deja elegirlo antes de enviar, y una reseña de solo video tiene
+  // que poder nacer sin texto. No se guarda; si el video no llega a subir, la
+  // reseña queda pendiente y en blanco, y en blanco no sale en la web.
+  conVideo: z.boolean().optional().default(false),
 });
 
 /**

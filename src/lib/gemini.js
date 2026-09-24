@@ -172,7 +172,7 @@ async function generar({
  * (NVIDIA lo retiró el 3-sep-2026). Los demás que razonan devuelven lo pensado
  * en `reasoning_content`, aparte del texto, así que no se nos cuela en la
  * respuesta; pero sí cuenta contra `max_completion_tokens`, y por eso el margen
- * de mil tokens de abajo vale para todos.
+ * de abajo vale para todos. Ver `margenParaPensar`.
  */
 const COMPATIBLES = {
   groq: {
@@ -195,6 +195,18 @@ const COMPATIBLES = {
     esfuerzoBajo: false,
   },
 };
+
+/**
+ * Cuánto se deja de más para lo que el modelo piensa antes de contestar.
+ *
+ * Mil tokens bastan para una respuesta corta del chat. No para una tanda de
+ * «Preparar documento»: el 24-sep-2026 `glm-5.3` de NVIDIA, que razona largo,
+ * se comió el tope pensando y devolvió vacío (MAX_TOKENS) o un JSON cortado a
+ * la mitad, y esos párrafos se quedaron sin traducir. En las peticiones
+ * grandes el margen es el doble de lo pedido, con techo: es un tope, no un
+ * gasto, y lo que no se usa no se paga.
+ */
+const margenParaPensar = (maxTokens) => (maxTokens >= 2_000 ? Math.min(maxTokens * 2, 24_000) : 1_000);
 
 /** Los motivos de parada de OpenAI, con el nombre de Gemini. */
 const PARADA_COMPATIBLE = { stop: 'STOP', length: 'MAX_TOKENS', content_filter: 'SAFETY' };
@@ -234,7 +246,7 @@ async function generarEnCompatible({
         { role: 'system', content: sistema },
         ...mensajes.map((m) => ({ role: m.rol === 'asistente' ? 'assistant' : 'user', content: m.texto })),
       ],
-      max_completion_tokens: maxTokens + 1_000,
+      max_completion_tokens: maxTokens + margenParaPensar(maxTokens),
       ...(quien.esfuerzoBajo && modelo.includes('gpt-oss') ? { reasoning_effort: 'low' } : {}),
       ...(json ? { response_format: { type: 'json_object' } } : {}),
     }),

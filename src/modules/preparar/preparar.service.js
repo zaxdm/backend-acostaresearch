@@ -270,7 +270,7 @@ async function producir({ preparacion, buffer, parrafos }) {
   const hecho =
     preparacion.servicio === 'EDICION'
       ? cambios.aplicar(buffer, propuestos)
-      : traduccion.traducir(buffer, propuestos, parrafos);
+      : traduccion.traducir(buffer, propuestos, parrafos, { idioma: preparacion.idioma });
 
   // Corrigiendo, el documento sale con un comentario que dice dónde ver las
   // marcas: según cómo tenga Word el cliente, el archivo se abre limpio y

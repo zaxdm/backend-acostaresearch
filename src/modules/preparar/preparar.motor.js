@@ -154,9 +154,15 @@ function margenes({ servicio, idioma }) {
   return { minimo: 0.45, maximo: 2.2 };
 }
 
-/** Frases con las que un modelo se niega o comenta. Ninguna es texto académico. */
+/**
+ * Frases con las que un modelo se niega o comenta. Ninguna es texto académico.
+ *
+ * «[Nota: …]» entre corchetes sí es un comentario; «Nota: Paradigma
+ * pedagógico (PP)…» sin ellos es la nota de una tabla traducida, y hasta el
+ * 24-sep-2026 se tomaba por excusa y el párrafo se quedaba en inglés.
+ */
 const EXCUSAS =
-  /^(i (cannot|can't|am unable|apologize)|lo siento|no puedo|as an ai|i'm sorry|nota( del| de la)? (traductor|editor)|\[?nota:)/i;
+  /^(i (cannot|can't|am unable|apologize)|lo siento|no puedo|as an ai|i'm sorry|nota( del| de la)? (traductor|editor)|\[nota:)/i;
 
 /** Palabras de cuatro letras o más, que son las que llevan el contenido. */
 const llenas = (texto) => (String(texto).toLowerCase().match(/\p{L}{4,}/gu) ?? []);

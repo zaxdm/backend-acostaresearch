@@ -630,3 +630,14 @@ test('las instrucciones del asistente llevan la promoción', () => {
   });
   assert.match(sistema, /S\/ 159 con el código TESIS11/);
 });
+
+test('una petición grande a un compatible deja margen para pensar: el doble, con techo', async () => {
+  const gemini = require('../src/lib/gemini');
+  let cuerpo;
+  const fetchImpl = async (_url, { body }) => {
+    cuerpo = JSON.parse(body);
+    return { ok: true, json: async () => ({ choices: [{ message: { content: '{}' }, finish_reason: 'stop' }] }) };
+  };
+  await gemini.generarEnCompatible({ sistema: 's', mensajes: [{ rol: 'usuario', texto: 'x' }], modelo: 'z-ai/glm-5.3', proveedor: 'nvidia', maxTokens: 4_400, fetchImpl });
+  assert.equal(cuerpo.max_completion_tokens, 4_400 + 8_800);
+});

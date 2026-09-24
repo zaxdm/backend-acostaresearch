@@ -46,6 +46,7 @@
 
 const documento = require('../projects/project.documento');
 const reescritura = require('../projects/project.reescritura');
+const citas = require('./preparar.citas');
 
 /**
  * El primer carácter de marca.
@@ -236,8 +237,6 @@ function proteger(xmlDelParrafo) {
 
 // ── Poner la marca en el texto nuevo ───────────────────────────────────────
 
-const ESCAPAR = /[.*+?^${}()|[\]\\]/g;
-
 /** Guiones y comillas que se escriben de varias formas, a una sola. */
 const EQUIVALENTES = {
   '“': '"', '”': '"', '„': '"', '«': '"', '»': '"',
@@ -266,16 +265,13 @@ const igualar = (texto) =>
     })
     .join('');
 
-/** El texto del campo, como expresión que admite que los espacios cambien. */
+/**
+ * El texto del campo, como expresión que admite que los espacios cambien, y
+ * que el conector entre autores o el «n.d.» cambien de idioma al traducir
+ * («Xiong & Zhang» → «Xiong y Zhang»). Ver `preparar.citas`.
+ */
 const comoExpresion = (texto) =>
-  new RegExp(
-    igualar(texto)
-      .trim()
-      .split(/\s+/)
-      .map((trozo) => trozo.replace(ESCAPAR, '\\$&'))
-      .join('\\s+'),
-    'g',
-  );
+  new RegExp(igualar(texto).trim().split(/\s+/).map(citas.formasDe).join('\\s+'), 'g');
 
 /**
  * El texto nuevo con cada cita sustituida por su marca.

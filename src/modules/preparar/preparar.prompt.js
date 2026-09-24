@@ -185,6 +185,14 @@ TODO LO DEMÁS SE TRADUCE, sin excepción y de principio a fin del párrafo:
 Un párrafo devuelto con una parte en el idioma original es un párrafo sin
 traducir.
 
+LAS CITAS, al ${destino.nombre} solo en sus palabras de estilo: el conector entre
+autores («&», «y», «and»), «n.d.» / «s.f.», «in press» / «en prensa», «cited
+in» / «citado en», «e.g.» / «p. ej.». Los apellidos, los años, las páginas, los
+signos y «et al.» se copian EXACTAMENTE igual. «(Xiong & Zhang, 2025)» al
+español es «(Xiong y Zhang, 2025)»; nunca «(Xiong y Zhang, 2024)» ni «(Zhang y
+Xiong, 2025)». Esto manda sobre lo que se dice abajo de copiar las citas tal
+cual.
+
 QUÉ NO SE TRADUCE:
 - Los apellidos de las citas ni las referencias bibliográficas.
 - Los nombres de instrumentos, escalas, softwares y bases de datos.

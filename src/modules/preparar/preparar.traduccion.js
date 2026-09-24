@@ -44,6 +44,7 @@
 const documento = require('../projects/project.documento');
 const reescritura = require('../projects/project.reescritura');
 const campos = require('./preparar.campos');
+const citas = require('./preparar.citas');
 const indice = require('./preparar.indice');
 const partes = require('./preparar.partes');
 
@@ -67,7 +68,7 @@ const COMO = Object.freeze({ conservarObjetos: true });
  * como la cuenta de líneas de índice que se vieron y de las que se quedaron sin
  * el título del que salen.
  */
-function traducir(buffer, cambios, parrafos = []) {
+function traducir(buffer, cambios, parrafos = [], { idioma = null } = {}) {
   const { zip, estilos } = documento.abrir(buffer);
   const donde = new Map(parrafos.map((parrafo) => [String(parrafo.clave ?? parrafo.id), parrafo]));
 
@@ -117,6 +118,15 @@ function traducir(buffer, cambios, parrafos = []) {
       try {
         const original = xml.slice(parrafo.inicio, parrafo.fin);
         const protegido = campos.proteger(original);
+        // Las citas de Zotero, con sus conectores en el idioma de destino: «&»
+        // pasa a «y», «n.d.» a «s.f.». Apellidos y años, igual. Ver
+        // `preparar.citas`.
+        for (const campo of protegido.campos) {
+          campo.xml = citas.localizarCampo(campo.xml, idioma, {
+            escapar: documento.escaparXml,
+            desescapar: documento.desescapar,
+          });
+        }
         const hecho = reescritura.rehacerParrafo(
           protegido.xml,
           campos.enmascarar(propuesta.texto, protegido.campos),

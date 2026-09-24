@@ -197,7 +197,8 @@ test('si una tanda entera revienta, sus párrafos se reintentan uno a uno', asyn
       throw new Error('Gemini respondió 503');
     }
     const entrada = JSON.parse(mensajes[0].texto);
-    return { texto: JSON.stringify(Object.fromEntries(Object.keys(entrada).map((id) => [id, 'Corregido.']))) };
+    const corregido = (texto) => texto.replace('shows', 'show').replace('was', 'were');
+    return { texto: JSON.stringify(Object.fromEntries(Object.entries(entrada).map(([id, texto]) => [id, corregido(texto)]))) };
   };
 
   const { cambios } = await motor.prepararParrafos({
@@ -228,6 +229,44 @@ test('si no sale NI UN párrafo, se lanza: entregar el mismo Word sería estafar
     }),
     /503/,
   );
+});
+
+// ── Una frase borrada ──────────────────────────────────────────────────────
+
+/** El 24-sep-2026 una edición borró una frase corta del autor por parecerle repetida. */
+test('corrigiendo el inglés, quitar una frase entera se rechaza', () => {
+  const original =
+    'These are field observations, not measurements. There are no figures behind them. ' +
+    'A general positive assessment does not indicate whether each facet is perceived equally well.';
+  const sinFrase =
+    'These are field observations, not measurements. ' +
+    'A general positive assessment does not indicate whether each facet is perceived equally well.';
+
+  assert.match(motor.comprobar(original, sinFrase, EDICION), /quitó una frase entera/);
+});
+
+test('juntar dos frases o cambiar unas palabras no es quitar una frase', () => {
+  assert.equal(
+    motor.comprobar(
+      'The data was collected in 2024. It were analysed with the SPSS software.',
+      'The data were collected in 2024 and analysed with SPSS software.',
+      EDICION,
+    ),
+    null,
+  );
+});
+
+test('la edición arregla los símbolos aunque el modelo devuelva el párrafo igual', async () => {
+  const { generar } = modeloFalso((entrada) => entrada);
+
+  const { cambios } = await motor.prepararParrafos({
+    parrafos: [parrafo(1, '## Annex 1. Table 1.1** *Consistency matrix for the 18-22 group')],
+    ...EDICION,
+    generar,
+    porTanda: 100,
+  });
+
+  assert.equal(cambios['1'].texto, 'Annex 1. Table 1.1 Consistency matrix for the 18–22 group');
 });
 
 // ── Lo que vuelve sin traducir ─────────────────────────────────────────────

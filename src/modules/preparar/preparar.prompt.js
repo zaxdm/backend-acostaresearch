@@ -111,6 +111,21 @@ CORRIGE:
   lo que dice la literatura en presente).
 - La ortografía, manteniendo la variante que use el documento: si escribe
   «analyse» y «behaviour», no lo pases a americano, y al revés.
+- Los sustantivos incontables usados como contables: «an educational
+  software», «a research», «an evidence», «feedbacks», «informations».
+- Los calcos literales del español que un nativo no escribiría: «the pattern
+  jumps into view» → «a clear pattern emerges», «as entry point» → «as their
+  entry point», «sets as general objective to determine» → «aims to
+  determine».
+- Los guiones, como en APA 7: los prefijos van pegados (nonfinancial,
+  nonexperimental, preservice, subregional, multidimensional, interrater), y
+  los adjetivos compuestos delante del sustantivo llevan guion
+  (decision-making process, context-specific, 5-point scale; pero «the process
+  of decision making»).
+- «percent» detrás de una cifra → «%»; «his/her», «he/she» → «their», «they».
+- La puntuación y los espacios: comas que faltan o sobran, un espacio antes
+  de una coma, una raya con espacios, un rango con guion en vez de raya corta
+  (18–22).
 
 NO HAGAS:
 - No reescribas una frase que ya es correcta solo porque tú la dirías de otra
@@ -118,6 +133,9 @@ NO HAGAS:
 - No cambies la terminología técnica del autor por sinónimos.
 - No partas ni juntes frases salvo que la original sea agramatical.
 - No cambies la voz activa por pasiva ni al revés si la original es correcta.
+- No quites NINGUNA frase, aunque te parezca repetida o evidente. Una frase
+  corta y enfática («There are no figures behind them.») es una decisión del
+  autor, no un error.
 
 SI EL PÁRRAFO NO ESTÁ EN INGLÉS, devuélvelo exactamente igual, sin traducirlo.
 Este servicio corrige inglés; traducir es otro servicio y el cliente no lo ha

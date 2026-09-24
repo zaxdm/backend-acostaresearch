@@ -29,6 +29,7 @@ const logger = require('../../config/logger');
 const gemini = require('../../lib/gemini');
 const prompt = require('./preparar.prompt');
 const { palabrasDe } = require('./preparar.cuerpo');
+const tipografia = require('./preparar.tipografia');
 
 /**
  * Cómo se llama un párrafo ante el modelo.
@@ -156,6 +157,34 @@ function margenes({ servicio, idioma }) {
 const EXCUSAS =
   /^(i (cannot|can't|am unable|apologize)|lo siento|no puedo|as an ai|i'm sorry|nota( del| de la)? (traductor|editor)|\[?nota:)/i;
 
+/** Palabras de cuatro letras o más, que son las que llevan el contenido. */
+const llenas = (texto) => (String(texto).toLowerCase().match(/\p{L}{4,}/gu) ?? []);
+
+/**
+ * La primera frase del original que ya no está en el texto nuevo, o null.
+ *
+ * El 24-sep-2026 una edición borró «There are no figures behind them.» por
+ * parecerle repetida, y las instrucciones lo prohíben: un editor de lengua no
+ * decide qué ideas sobran. Nada lo comprobaba, porque el párrafo seguía siendo
+ * largo.
+ *
+ * Una frase cuenta como perdida si no queda ni la mitad de sus palabras con
+ * contenido en el texto nuevo. Juntar dos frases o cambiar un par de palabras
+ * no la pierde; quitarla entera, sí. Solo para frases de tres palabras llenas o
+ * más: con menos, cambiar una sola ya sería «la mitad».
+ */
+function frasePerdida(original, nuevo) {
+  const quedan = new Set(llenas(nuevo));
+  const frases = String(original).split(/(?<=[.!?])\s+(?=[\p{Lu}"“(])/u);
+  for (const frase of frases) {
+    const suyas = llenas(frase);
+    if (suyas.length < 3) continue;
+    const siguen = suyas.filter((palabra) => quedan.has(palabra)).length;
+    if (siguen * 2 < suyas.length) return frase.trim();
+  }
+  return null;
+}
+
 /**
  * Null si el texto nuevo sirve; si no, por qué no.
  *
@@ -185,6 +214,11 @@ function comprobar(original, nuevo, opciones) {
   const despues = cifrasDe(limpio);
   if ([...antes].sort().join('|') !== [...despues].sort().join('|')) {
     return `las cifras no son las mismas: «${antes.join(', ')}» → «${despues.join(', ')}»`;
+  }
+
+  if (opciones?.servicio === 'EDICION') {
+    const perdida = frasePerdida(original, limpio);
+    if (perdida) return `el modelo quitó una frase entera: «${perdida.slice(0, 60)}»`;
   }
 
   const { minimo, maximo } = margenes(opciones);
@@ -644,6 +678,10 @@ async function prepararParrafos({
     throw new Error(malos[0]?.motivo ?? 'El modelo no devolvió ningún párrafo utilizable.');
   }
 
+  // Los símbolos, igual en todos: espacios dobles, restos de Markdown, rangos
+  // con guion. Ver `preparar.tipografia`.
+  for (const [clave, texto] of Object.entries(buenos)) buenos[clave] = tipografia.arreglar(texto);
+
   const cambios = {};
   for (const [id, texto] of Object.entries(buenos)) {
     const parrafo = porClave.get(id);
@@ -658,6 +696,7 @@ module.exports = {
   tandasDe,
   enParalelo,
   comprobar,
+  frasePerdida,
   sigueSinTraducir,
   cifrasDe,
   margenes,

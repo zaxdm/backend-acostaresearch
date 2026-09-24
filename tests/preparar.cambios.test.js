@@ -77,6 +77,21 @@ test('solo se marca lo que cambió, no el párrafo entero', () => {
   assert.ok(!xml.includes('<w:delText xml:space="preserve">significant effect.</w:delText>'));
 });
 
+/**
+ * El 24-sep-2026: comparando solo palabras, un espacio doble que se quedó en
+ * uno no se veía, y el Word seguía con el espacio doble sin decir nada.
+ */
+test('un espacio doble que se queda en uno se marca, sin tachar las palabras', () => {
+  const salida = corregir(p(r('constituted 68.5%  of the students.')), 'constituted 68.5% of the students.');
+  const xml = parte(salida.buffer);
+
+  assert.equal(salida.tocados, 1);
+  assert.match(xml, /<w:delText xml:space="preserve"> <\/w:delText>/);
+  assert.ok(!xml.includes('<w:delText xml:space="preserve">68.5%'), 'la cifra no se tacha');
+  assert.equal(documento.parrafosDe(aceptandoTodo(xml))[0].texto, 'constituted 68.5% of the students.');
+  assert.equal(documento.parrafosDe(rechazandoTodo(xml))[0].texto, 'constituted 68.5%  of the students.');
+});
+
 test('lo tachado usa w:delText y lo puesto w:t, que es lo que Word sabe abrir', () => {
   const xml = parte(corregir(p(r('An investigation about students.')), 'A study on students.').buffer);
 

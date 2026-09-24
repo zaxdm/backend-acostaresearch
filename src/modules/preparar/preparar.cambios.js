@@ -212,7 +212,28 @@ function operaciones(textoViejo, textoNuevo) {
 
   for (const [posicionA, posicionB] of pares) {
     alcanzar(posicionA, posicionB);
-    empujar('igual', a.lista[i].desde, a.lista[i].hasta, b.lista[j].desde, b.lista[j].hasta);
+    const viejo = a.lista[i];
+    const nuevo = b.lista[j];
+    const finViejo = viejo.desde + viejo.palabra.length;
+    const finNuevo = nuevo.desde + nuevo.palabra.length;
+    empujar('igual', viejo.desde, finViejo, nuevo.desde, finNuevo);
+
+    // La misma palabra con otro espacio detrás: un espacio doble que se quedó
+    // en uno. Comparando solo palabras eso no se veía, y el espacio doble
+    // seguía en el Word aunque el texto nuevo ya no lo tuviera. Se marca solo
+    // el espacio, no la palabra.
+    const espacioViejo = String(textoViejo).slice(finViejo, viejo.hasta);
+    const espacioNuevo = String(textoNuevo).slice(finNuevo, nuevo.hasta);
+    if (espacioViejo === espacioNuevo) {
+      empujar('igual', finViejo, viejo.hasta, finNuevo, nuevo.hasta);
+    } else {
+      // Lo que tienen en común se queda; se tacha solo lo que sobra.
+      let comun = 0;
+      while (comun < espacioViejo.length && espacioViejo[comun] === espacioNuevo[comun]) comun += 1;
+      empujar('igual', finViejo, finViejo + comun, finNuevo, finNuevo + comun);
+      empujar('quitar', finViejo + comun, viejo.hasta, finNuevo + comun, finNuevo + comun);
+      empujar('poner', viejo.hasta, viejo.hasta, finNuevo + comun, nuevo.hasta);
+    }
     i += 1;
     j += 1;
   }

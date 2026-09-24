@@ -30,6 +30,7 @@ const gemini = require('../../lib/gemini');
 const prompt = require('./preparar.prompt');
 const { palabrasDe } = require('./preparar.cuerpo');
 const tipografia = require('./preparar.tipografia');
+const campos = require('./preparar.campos');
 
 /**
  * Cómo se llama un párrafo ante el modelo.
@@ -191,12 +192,19 @@ function frasePerdida(original, nuevo) {
  * Los motivos se escriben para el log y para el informe que ve el cliente, así
  * que dicen qué pasó y no «no válido».
  */
-function comprobar(original, nuevo, opciones) {
+function comprobar(original, nuevo, opciones, citas = null) {
   if (typeof nuevo !== 'string') return 'el modelo no devolvió este párrafo';
 
   const limpio = nuevo.trim();
   if (limpio === '') return 'el modelo devolvió el párrafo vacío';
   if (EXCUSAS.test(limpio)) return 'el modelo contestó con una excusa en vez de con el texto';
+
+  // Las citas de Zotero y los enlaces tienen que volver tal cual: es por su
+  // texto como el campo vuelve a su sitio. Antes esto se descubría al escribir
+  // el Word, cuando ya no había reintento y el párrafo entero se perdía; aquí
+  // el párrafo se vuelve a pedir. Ver `preparar.campos.citaQueFalta`.
+  const cita = campos.citaQueFalta(limpio, citas);
+  if (cita) return `el texto nuevo no trae la cita «${cita.slice(0, 40)}» tal cual`;
 
   // Una línea en blanco en medio es el modelo partiendo el párrafo en dos. En
   // el Word eso desplazaría todo lo que va detrás.
@@ -428,7 +436,7 @@ async function pedirTanda(parrafos, opciones, generar) {
   const malos = [];
   for (const parrafo of parrafos) {
     const nuevo = devuelto?.[String(claveDe(parrafo))];
-    const motivo = comprobar(parrafo.texto, nuevo, opciones);
+    const motivo = comprobar(parrafo.texto, nuevo, opciones, parrafo.citas);
     if (motivo) malos.push({ id: claveDe(parrafo), motivo });
     else buenos[claveDe(parrafo)] = String(nuevo).trim();
   }
@@ -687,6 +695,28 @@ async function prepararParrafos({
     const parrafo = porClave.get(id);
     // Un párrafo devuelto igual no es un cambio: no hace falta tocar su XML.
     if (parrafo && texto !== parrafo.texto) cambios[id] = { original: parrafo.texto, texto };
+  }
+
+  // Lo que no salió se queda como estaba, pero no sin nada: los espacios y los
+  // signos se arreglan igual, que no dependen del modelo ni tocan las citas.
+  // Y se dice, para que el cliente no busque correcciones que no hay.
+  for (const malo of malos) {
+    const parrafo = porClave.get(String(malo.id));
+    if (!parrafo) continue;
+
+    // La causa que sí puede arreglar él: una cita escrita a mano pegada a una
+    // de Zotero. Mientras esté, ningún reintento la va a salvar.
+    if (parrafo.citaRota) {
+      malo.motivo =
+        `tiene una cita escrita a mano pegada a una de Zotero («${parrafo.citaRota}»): ` +
+        'arréglala en tu Word y vuelve a mandarlo';
+    }
+
+    const arreglado = tipografia.arreglar(parrafo.texto);
+    if (arreglado !== parrafo.texto) {
+      cambios[malo.id] = { original: parrafo.texto, texto: arreglado };
+      malo.motivo = `${malo.motivo}; solo se arreglaron los espacios y los signos`;
+    }
   }
 
   return { cambios, malos, tandas: tandas.length };

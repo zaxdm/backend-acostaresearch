@@ -51,6 +51,7 @@
 
 const documento = require('../projects/project.documento');
 const partes = require('./preparar.partes');
+const campos = require('./preparar.campos');
 
 /** Rótulos y notas de tabla o figura. Mismo criterio que `documento.service`. */
 const ROTULO = /^((tabla|figura|gr[aá]fico|cuadro|ilustraci[oó]n)\s+\d+|nota\.\s)/i;
@@ -88,6 +89,16 @@ function palabrasDe(texto) {
  * que pide la traducción; la edición y el resumen se quedan con el cuerpo.
  */
 function cuerpoDe(buffer, { todo = false } = {}) {
+  // Las citas de cada párrafo, para que `preparar.motor` rechace ya una
+  // respuesta que cambió una cita —y la vuelva a pedir— en vez de descubrirlo
+  // al escribir el Word, cuando el párrafo solo puede quedarse como estaba.
+  const { xml } = documento.abrir(buffer);
+  const porId = new Map(documento.parrafosDe(xml).map((parrafo) => [parrafo.id, parrafo]));
+  const citasDelParrafo = (id) => {
+    const suyo = porId.get(id);
+    return suyo ? campos.citasDe(xml.slice(suyo.inicio, suyo.fin)) : { citas: null, rota: null };
+  };
+
   const parrafos = documento
     .leer(buffer)
     .filter((parrafo) => !parrafo.referencias)
@@ -99,6 +110,10 @@ function cuerpoDe(buffer, { todo = false } = {}) {
       texto: parrafo.texto,
       nivel: parrafo.nivel,
       palabras: palabrasDe(parrafo.texto),
+      ...(() => {
+        const { citas, rota } = citasDelParrafo(parrafo.id);
+        return { citas, citaRota: rota };
+      })(),
     }))
     .filter((parrafo) => parrafo.palabras > 0);
 

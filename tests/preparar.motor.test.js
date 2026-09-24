@@ -231,6 +231,57 @@ test('si no sale NI UN párrafo, se lanza: entregar el mismo Word sería estafar
   );
 });
 
+// ── Las citas ──────────────────────────────────────────────────────────────
+
+/** Un párrafo que sale bien: si no sale ninguno, el trabajo entero falla. */
+const OTRO = parrafo(9, 'The data was collected.');
+
+test('una cita cambiada se rechaza y el párrafo se vuelve a pedir, no se pierde', async () => {
+  const conCita = { ...parrafo(1, 'The results shows an effect (Ong et al., 2022) in homes.'), citas: ['(Ong et al., 2022)'] };
+  const { generar, llamadas } = modeloFalso((entrada, vuelta) =>
+    vuelta === 1
+      ? { 1: 'The results show an effect (Ong and colleagues, 2022) in homes.' }
+      : { 1: 'The results show an effect (Ong et al., 2022) in homes.' },
+  );
+
+  const { cambios, malos } = await motor.prepararParrafos({ parrafos: [conCita], ...EDICION, generar, porTanda: 100 });
+
+  assert.equal(llamadas.length, 2);
+  assert.equal(cambios['1'].texto, 'The results show an effect (Ong et al., 2022) in homes.');
+  assert.deepEqual(malos, []);
+});
+
+test('si la cita no vuelve nunca, al menos se arregla la tipografía y se dice', async () => {
+  const conCita = {
+    ...parrafo(1, 'Critical gaps persist in AI(Ismaniati et al., 2025) , and more.'),
+    citas: ['(Ismaniati et al., 2025)'],
+  };
+  const { generar } = modeloFalso(() => ({ 1: 'Critical gaps persist in AI (Ismaniati and others, 2025), and more.', 9: 'The data were collected.' }));
+
+  const { cambios, malos } = await motor.prepararParrafos({ parrafos: [conCita, OTRO], ...EDICION, generar, porTanda: 100 });
+
+  assert.equal(cambios['1'].texto, 'Critical gaps persist in AI (Ismaniati et al., 2025), and more.');
+  assert.equal(malos.length, 1);
+  assert.match(malos[0].motivo, /no trae la cita/);
+  assert.match(malos[0].motivo, /solo se arreglaron los espacios y los signos/);
+});
+
+test('una cita rota del original se le dice al cliente con su texto', async () => {
+  const roto = {
+    ...parrafo(1, 'Such as critical thinking (Acosta-Enriquez,(Ballesteros, 2024), but not here.'),
+    citas: ['(Ballesteros, 2024)'],
+    citaRota: '(Acosta-Enriquez,(Ballesteros, 2024)',
+  };
+  const { generar } = modeloFalso(() => ({ 1: 'Such as critical thinking (Acosta-Enriquez; Ballesteros, 2024), but not here.', 9: 'The data were collected.' }));
+
+  const { malos } = await motor.prepararParrafos({ parrafos: [roto, OTRO], ...AL_INGLES, generar, porTanda: 100 });
+
+  assert.equal(malos.length, 1);
+  assert.match(malos[0].motivo, /cita escrita a mano pegada a una de Zotero «?\(?/);
+  assert.match(malos[0].motivo, /\(Acosta-Enriquez,\(Ballesteros, 2024\)/);
+  assert.match(malos[0].motivo, /arréglala en tu Word/);
+});
+
 // ── Una frase borrada ──────────────────────────────────────────────────────
 
 /** El 24-sep-2026 una edición borró una frase corta del autor por parecerle repetida. */

@@ -306,7 +306,9 @@ function enmascarar(textoNuevo, campos) {
     const candidatos = [...igualar(texto).matchAll(expresion)].filter((encaje) => encaje.index >= desde);
 
     if (candidatos.length === 0) {
-      throw new NoProtegible(`el texto nuevo no trae «${campo.texto.slice(0, 40)}» tal cual`);
+      const error = new NoProtegible(`el texto nuevo no trae «${campo.texto.slice(0, 40)}» tal cual`);
+      error.cita = campo.texto;
+      throw error;
     }
 
     const elegido =
@@ -392,7 +394,67 @@ function restaurar(xml, campos) {
   return hecho;
 }
 
+// ── Mirarlo antes de pedirlo ───────────────────────────────────────────────
+
+/**
+ * Una cita escrita a mano y pegada a una de Zotero: «(Acosta-Enriquez,» y
+ * detrás el campo. Es el resto de una cita que se borró a medias, y un editor
+ * —o el modelo— la arregla, con lo que el campo ya no vuelve tal cual.
+ *
+ * Paréntesis abierto, uno o varios apellidos con mayúscula y una coma, y la
+ * marca del campo justo detrás. «(e.g., [cita])» no entra: no es un apellido.
+ */
+const CITA_ROTA = /\(\s*\p{Lu}[\p{L}'’-]+(?:\s+(?:&|y|and)?\s*\p{Lu}[\p{L}'’-]+)*,\s*([\u{E000}-\u{E03F}])/u;
+
+/**
+ * Las citas y enlaces de un párrafo, por su texto visible, y la cita rota si
+ * la hay. Es lo que `preparar.motor` usa para rechazar una respuesta que
+ * cambió una cita ANTES de escribir el Word, cuando aún se puede volver a
+ * pedir.
+ *
+ * `citas` es null si el párrafo no se puede proteger: ese ya se quedará como
+ * estaba por su cuenta, y no tiene sentido comprobar nada.
+ */
+function citasDe(xmlDelParrafo) {
+  let protegido;
+  try {
+    protegido = proteger(xmlDelParrafo);
+  } catch (error) {
+    if (error instanceof NoProtegible) return { citas: null, rota: null };
+    throw error;
+  }
+  if (protegido.campos.length === 0) return { citas: [], rota: null };
+
+  const texto = documento.parrafosDe(protegido.xml)[0]?.texto ?? '';
+  const encaje = CITA_ROTA.exec(texto);
+  let rota = null;
+  if (encaje) {
+    const campo = protegido.campos.find((c) => c.marca === encaje[1]);
+    rota = `${encaje[0].slice(0, -1)}${campo?.texto ?? ''}`.slice(0, 70);
+  }
+
+  return { citas: protegido.campos.map((campo) => campo.texto), rota };
+}
+
+/**
+ * La primera cita que no está tal cual en el texto nuevo, o null. Con la misma
+ * manga ancha que al escribir: guiones, apóstrofos, tildes y espacios.
+ */
+function citaQueFalta(texto, citas) {
+  if (!citas || citas.length === 0) return null;
+  const falsos = citas.map((cita, i) => ({ texto: cita, marca: String.fromCharCode(PRIMERA_MARCA + i), relativo: 0 }));
+  try {
+    enmascarar(texto, falsos);
+    return null;
+  } catch (error) {
+    if (error instanceof NoProtegible) return error.cita ?? citas[0];
+    throw error;
+  }
+}
+
 module.exports = {
+  citasDe,
+  citaQueFalta,
   proteger,
   enmascarar,
   restaurar,

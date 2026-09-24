@@ -94,14 +94,14 @@ const modeloQue = (transformar) => async ({ mensajes }) => {
 
 const traducirCon = async (buffer, transformar) => {
   const { parrafos } = cuerpo.cuerpoDe(buffer);
-  const { cambios: propuestos } = await motor.prepararParrafos({
+  const { cambios: propuestos, malos } = await motor.prepararParrafos({
     parrafos,
     servicio: 'TRADUCCION',
     idioma: 'en',
     generar: modeloQue(transformar),
     porTanda: 1000,
   });
-  return traduccion.traducir(buffer, propuestos);
+  return { ...traduccion.traducir(buffer, propuestos), malos };
 };
 
 // ── Apartar y devolver ─────────────────────────────────────────────────────
@@ -217,12 +217,15 @@ test('el párrafo traducido se puede volver a leer, con la cita en su sitio', as
 });
 
 test('si el modelo toca la cita, el párrafo se queda como estaba', async () => {
-  const buffer = docx(PARRAFO_CON_CITA);
-  const hecho = await traducirCon(buffer, (texto) => texto.replace('(Ong et al., 2022)', '(Ong y otros, 2022)'));
+  // Con otro párrafo que sí sale: si no sale ninguno, el trabajo entero falla.
+  const buffer = docx(PARRAFO_CON_CITA + '<w:p>' + t('Otro párrafo sin citas.') + '</w:p>');
+  const hecho = await traducirCon(buffer, (texto) => `[EN] ${texto.replace('(Ong et al., 2022)', '(Ong y otros, 2022)')}`);
   const xml = parte(hecho.buffer);
 
-  assert.equal(hecho.tocados, 0);
-  assert.equal(hecho.intactos.size, 1);
+  // Ahora se ve en el motor, antes de escribir el Word, y se dice con su cita.
+  assert.equal(hecho.tocados, 1);
+  assert.equal(hecho.malos.length, 1);
+  assert.match(hecho.malos[0].motivo, /no trae la cita «\(Ong et al\., 2022\)»/);
   assert.match(xml, /El acceso a la tecnología dejó de ser el problema principal/);
   assert.equal(veces(xml, 'ZOTERO_ITEM'), 1);
 });
@@ -329,4 +332,32 @@ test('el índice se queda tal cual en el documento entregado', async () => {
   assert.match(xml, /PAGEREF _TocAR0002/);
   assert.match(xml, />Planteamiento del problema</);
   assert.match(xml, /\[EN\] El acceso a la tecnología cambió\./);
+});
+
+// ── Mirar las citas antes de pedirlas ──────────────────────────────────────
+
+/**
+ * El 24-sep-2026 un párrafo con diez citas se quedó entero sin corregir por
+ * una: «(Acosta-Enriquez,» escrita a mano, pegada a un campo de Zotero. El
+ * modelo la arregló, el campo ya no volvía tal cual y se perdió el párrafo.
+ */
+test('una cita escrita a mano pegada a una de Zotero se reconoce, para avisar', () => {
+  const { citas, rota } = campos.citasDe(
+    `<w:p>${t('such as critical thinking (Acosta-Enriquez,')}${cita('(Ballesteros & Acosta Enriquez, 2024; Zhang et al., 2024)')}${t(', but these findings')}</w:p>`,
+  );
+
+  assert.deepEqual(citas, ['(Ballesteros & Acosta Enriquez, 2024; Zhang et al., 2024)']);
+  assert.match(rota, /^\(Acosta-Enriquez,\(Ballesteros/);
+});
+
+test('«(e.g., cita)» o una cita normal no se toman por rotas', () => {
+  assert.equal(campos.citasDe(`<w:p>${t('as shown (e.g., ')}${cita('Ong et al., 2022')}${t(').')}</w:p>`).rota, null);
+  assert.equal(campos.citasDe(PARRAFO_CON_CITA).rota, null);
+});
+
+test('la cita que falta en el texto nuevo se dice; si están todas, null', () => {
+  const citas = ['(Ong et al., 2022)', '(Garcia-Lopez et al., 2021)'];
+  assert.equal(campos.citaQueFalta('Access improved (Ong et al., 2022) and (García‑López et al., 2021).', citas), null);
+  assert.equal(campos.citaQueFalta('Access improved (Ong and others, 2022) and (Garcia-Lopez et al., 2021).', citas), '(Ong et al., 2022)');
+  assert.equal(campos.citaQueFalta('Sin citas.', []), null);
 });

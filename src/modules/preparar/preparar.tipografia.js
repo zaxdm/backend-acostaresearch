@@ -66,6 +66,11 @@ const REGLAS = [
   // La raya larga va pegada en inglés académico (APA, Chicago): «trend—not».
   [/\s+—\s+/g, '—'],
 
+  // Una cita pegada a la palabra de delante: «AI(Ismaniati et al., 2025)».
+  // Solo si lo de dentro tiene forma de cita —apellido y año—, para no partir
+  // una fórmula («Ca(OH)2») ni una función («f(x)»).
+  [/(?<=[\p{L}\p{N}])\((?=\p{Lu}[\p{L}'’-]+[^()]*?\b(?:1[89]|20)\d{2}[a-z]?\b[^()]*\))/gu, ' ('],
+
   // Espacio antes de la puntuación y dentro de paréntesis.
   [/(?<=\S)[  ]+(?=[,;])/g, ''],
   [/(?<=\S)[  ]+(?=[.:](?:\s|$))/g, ''],

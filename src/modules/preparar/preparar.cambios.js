@@ -104,6 +104,15 @@ function motivoDeBloqueo(xmlDelParrafo) {
 // ── Comparar palabra a palabra ─────────────────────────────────────────────
 
 /**
+ * Una palabra con el espacio que la sigue, o la marca de una cita sola. Las
+ * marcas son los caracteres de uso privado que pone `preparar.campos`
+ * (U+E000 a U+E03F); se escriben por su código para que se vean.
+ */
+const DESDE = String.fromCharCode(0xe000);
+const HASTA = String.fromCharCode(0xe03f);
+const PALABRA_O_MARCA = new RegExp(`[${DESDE}-${HASTA}]\\s*|[^\\s${DESDE}-${HASTA}]+\\s*`, 'g');
+
+/**
  * El texto en trozos de «una palabra y los espacios que la siguen».
  *
  * Los espacios van PEGADOS a la palabra de delante, no sueltos: así, al quitar
@@ -114,7 +123,11 @@ function trozos(texto) {
   const cadena = String(texto);
   const prefijo = (cadena.match(/^\s*/) || [''])[0];
   const lista = [];
-  for (const encaje of cadena.matchAll(/\S+\s*/g)) {
+  // La marca de una cita de Zotero es una palabra ella sola aunque vaya pegada
+  // a otra («AI(Ismaniati…)», «2025) ,»). Si no, corregir cualquier cosa pegada
+  // a la cita la metía en el tachado y el párrafo entero se quedaba sin
+  // corregir: 38 párrafos de un manuscrito real, el 24-sep-2026.
+  for (const encaje of cadena.matchAll(PALABRA_O_MARCA)) {
     lista.push({
       desde: encaje.index,
       hasta: encaje.index + encaje[0].length,

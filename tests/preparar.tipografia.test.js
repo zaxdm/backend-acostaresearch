@@ -51,3 +51,13 @@ test('las cifras no cambian nunca', () => {
   const cifras = (t) => (t.match(/\d+/g) ?? []).join('|');
   assert.equal(cifras(arreglar(texto)), cifras(texto));
 });
+
+test('una cita pegada a la palabra de delante se separa; una fórmula no', () => {
+  assert.equal(
+    arreglar('to use AI(Ismaniati et al., 2025; Xiong & Zhang, 2025) , the'),
+    'to use AI (Ismaniati et al., 2025; Xiong & Zhang, 2025), the',
+  );
+  for (const intacto of ['cal viva Ca(OH)2 al 5%', 'la función f(x) y g(Y)', 'Hernández (2014)']) {
+    assert.equal(arreglar(intacto), intacto);
+  }
+});

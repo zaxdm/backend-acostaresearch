@@ -78,12 +78,31 @@ async function generar({
   timeoutMs = 20_000,
   json = false,
   fetchImpl = fetch,
+  /**
+   * Con qué clave se pregunta. Vacío = la de la casa.
+   *
+   * La cuota de Google se cuenta POR CLAVE, así que dos servicios con la misma
+   * clave se quitan las peticiones el uno al otro: el 23-sep-2026 la del
+   * asistente estaba agotada (429 en todos los modelos) y con ella se caía
+   * también «Preparar documento», que es lo único de los dos por lo que alguien
+   * pagó. Ver `PREPARAR_GEMINI_API_KEY`.
+   */
+  clave = env.GEMINI_API_KEY,
+  /**
+   * Cuánto se le deja pensar. `auto` = no se manda y decide el modelo.
+   *
+   * No todos aceptan todos los niveles, y el que no acepta NO avisa de otra
+   * forma que con un 400: `gemini-3.8-flash` —el modelo principal de «Preparar
+   * documento»— rechaza `minimal`, que es justo lo que mandaba esto para todo
+   * el mundo. Comprobado contra la API el 23-sep-2026. Ver `PREPARAR_THINKING`.
+   */
+  thinking = env.GEMINI_THINKING,
 }) {
   const url = `${BASE}/models/${encodeURIComponent(modelo)}:generateContent`;
 
   const respuesta = await fetchImpl(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY ?? '' },
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': clave ?? '' },
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: sistema }] },
       contents: mensajes.map((mensaje) => ({
@@ -92,7 +111,7 @@ async function generar({
       })),
       generationConfig: {
         maxOutputTokens: maxTokens,
-        thinkingConfig: { thinkingLevel: env.GEMINI_THINKING },
+        ...(thinking && thinking !== 'auto' ? { thinkingConfig: { thinkingLevel: thinking } } : {}),
         // Con `json`, Google garantiza que la respuesta sea JSON bien formado.
         // Sin esto, de vez en cuando llegaba con texto alrededor o cortado, y
         // quien lo leía se quedaba sin nada que enseñar.

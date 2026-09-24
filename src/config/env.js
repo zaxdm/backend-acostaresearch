@@ -153,8 +153,32 @@ const schema = z.object({
   // Dónde viven los .docx. Vacío = al lado de los comprobantes, igual que los
   // capítulos y los pedidos, para que el respaldo diario ya los recoja.
   PREPARAR_DIR: vacioComoAusente(z.string()),
+  // Su PROPIA clave de Gemini, distinta de la del asistente. Vacío = comparte
+  // la de arriba, como hasta el 23-sep-2026.
+  //
+  // La cuota de Google se cuenta por clave, no por servicio: con una sola, el
+  // chat de la web —gratis, y que cualquiera puede usar mil veces— se come las
+  // peticiones que necesita el documento de quien pagó la membresía. El
+  // 23-sep-2026 la clave de la casa daba 429 en todos los modelos y con ella
+  // caían los dos. Separadas, el chat puede agotarse sin llevarse por delante
+  // una entrega.
+  PREPARAR_GEMINI_API_KEY: vacioComoAusente(z.string()),
   PREPARAR_MODELO: z.string().default('gemini-3.8-flash'),
+  // Admite VARIOS separados por comas, y se prueban en ese orden. Los de otra
+  // casa (groq:… , nvidia:…) los últimos y a propósito: son planes gratuitos
+  // que se guardan lo que se les manda, y lo que sale de aquí es la tesis
+  // inédita de quien pagó. Solo se llega a ellos cuando Google no contesta.
   PREPARAR_MODELO_RESPALDO: vacioComoAusente(z.string()).default('gemini-3.5-flash'),
+  // Cuánto se le deja pensar aquí. `auto` = no se le dice nada y decide él.
+  //
+  // Y `auto` por defecto porque `minimal` —lo que mandaba el código para todo
+  // el mundo, pensando en el chat— NO lo acepta `gemini-3.8-flash`: contesta
+  // «Thinking level MINIMAL is not supported for this model» con un 400, que no
+  // se arregla esperando. Comprobado contra la API el 23-sep-2026: con el nivel
+  // quitado, el mismo modelo y la misma clave contestan. El fallo no se veía
+  // porque el respaldo recogía todas las tandas, así que el modelo bueno que se
+  // eligió a propósito no había llegado a traducir nunca una línea.
+  PREPARAR_THINKING: z.enum(['auto', 'minimal', 'low', 'medium', 'high']).default('auto'),
   // Palabras por tanda. Más grande = menos llamadas y más contexto para que el
   // modelo mantenga el mismo registro, pero también más que rehacer si una
   // tanda sale mal y más riesgo de que la respuesta se corte.
@@ -593,9 +617,9 @@ const env = Object.freeze({
   // respaldo diario ya se lo lleva sin tocar nada.
   preparacionesDir:
     raw.PREPARAR_DIR ?? path.join(path.dirname(raw.PROOFS_DIR), 'preparaciones'),
-  // El servicio necesita la clave de Gemini. Sin ella la web no enseña la
-  // pestaña y las rutas contestan 503, igual que el asistente.
-  prepararEnabled: Boolean(raw.GEMINI_API_KEY),
+  // El servicio necesita una clave de Gemini: la suya, o la de la casa si no
+  // tiene. Sin ninguna, la web no enseña la pestaña y las rutas contestan 503.
+  prepararEnabled: Boolean(raw.PREPARAR_GEMINI_API_KEY || raw.GEMINI_API_KEY),
   // R en la conversación (ver R_MOTOR): la jaula en producción, apagado fuera.
   rMotor: raw.R_MOTOR ?? (raw.NODE_ENV === 'production' ? 'systemd' : 'apagado'),
   // Fuera de /var/lib/acostaresearch a propósito: la jaula tapa /var entero y

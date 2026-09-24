@@ -45,9 +45,26 @@ const claveDe = (parrafo) => parrafo.clave ?? parrafo.id;
  *
  * Los suyos y no los del asistente: allí se usa un flash-lite porque la espera
  * se nota más que la calidad, y aquí es al revés. Ver `PREPARAR_MODELO`.
+ *
+ * `PREPARAR_MODELO_RESPALDO` admite VARIOS separados por comas, y el orden es
+ * el que se sigue. Importa cuál va antes: un respaldo de otra casa
+ * —`groq:openai/gpt-oss-120b`, `nvidia:z-ai/glm-5.3`— es lo único que salva el
+ * documento cuando lo que se agota es la cuota de Google, porque dos Gemini con
+ * la misma clave se caen a la vez; pero son planes GRATUITOS, que se guardan lo
+ * que se les manda y pueden entrenar con ello, y lo que se les mandaría aquí es
+ * la tesis inédita de quien pagó. Así que van los últimos: primero el otro
+ * Gemini, y a ellos solo se llega cuando Google ya no contesta a nada.
+ *
+ * El prefijo lo entiende `gemini.generarCon`.
  */
 const modelos = () =>
-  [...new Set([env.PREPARAR_MODELO, env.PREPARAR_MODELO_RESPALDO].filter(Boolean))];
+  [
+    ...new Set(
+      [env.PREPARAR_MODELO, ...String(env.PREPARAR_MODELO_RESPALDO ?? '').split(',')]
+        .map((modelo) => String(modelo).trim())
+        .filter(Boolean),
+    ),
+  ];
 
 /** Tiempo por tanda. Largo a propósito: son novecientas palabras de salida. */
 const TIMEOUT_MS = 180_000;
@@ -311,6 +328,10 @@ async function pedirTanda(parrafos, opciones, generar) {
     modelos: modelos(),
     maxTokens: tokensPara(palabras),
     timeoutMs: TIMEOUT_MS,
+    // Su propia clave y su propio nivel de pensamiento, no los del chat. Ver
+    // `PREPARAR_GEMINI_API_KEY` y `PREPARAR_THINKING`.
+    clave: env.PREPARAR_GEMINI_API_KEY || env.GEMINI_API_KEY,
+    thinking: env.PREPARAR_THINKING,
     // Aquí no hay nadie mirando la pantalla: si el proveedor pide medio minuto,
     // se le da. Ver `gemini.generarConRespaldo`.
     esperaMaximaMs: ESPERA_MAXIMA_MS,

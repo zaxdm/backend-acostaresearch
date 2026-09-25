@@ -23,15 +23,26 @@ const CADUCIDAD_MARGEN_MS = 60 * 1000; // se renueva el token un minuto antes
 
 let tokenCache = null; // { valor, expiraEn }
 
-/** Error de la pasarela con el detalle que devolvió, para poder diagnosticar. */
+/**
+ * Error de la pasarela con el detalle que devolvió, para poder diagnosticar.
+ *
+ * `reintentable` marca el rechazo del medio de pago (el banco no aprobó la
+ * tarjeta): la orden sigue viva y el botón de PayPal deja al comprador elegir
+ * otra tarjeta sin empezar la compra de nuevo, como recomienda PayPal.
+ */
 class PaypalError extends Error {
-  constructor(message, { status, body } = {}) {
+  constructor(message, { status, body, reintentable = false, userMessage = null } = {}) {
     super(message);
     this.name = 'PaypalError';
     this.status = status;
     this.body = body;
+    this.reintentable = reintentable;
+    this.userMessage = userMessage;
   }
 }
+
+/** Rechazos que se arreglan eligiendo otro medio de pago en la ventana de PayPal. */
+const RECHAZOS_DEL_MEDIO = new Set(['INSTRUMENT_DECLINED', 'PAYER_ACTION_REQUIRED']);
 
 /** Primer `issue` que reporta PayPal, que es el que explica el rechazo. */
 function primerIssue(body) {
@@ -212,6 +223,16 @@ const paypalProvider = {
       const datos = consulta.ok ? extraerCaptura(consulta.body) : null;
 
       if (datos) return { ...datos, raw: consulta.body };
+    }
+
+    if (RECHAZOS_DEL_MEDIO.has(primerIssue(captura.body))) {
+      throw new PaypalError('PayPal rechazó el medio de pago.', {
+        status: captura.status,
+        body: captura.body,
+        reintentable: true,
+        userMessage:
+          'Tu banco no aprobó el pago con esa tarjeta. Elige otra tarjeta o cuenta en PayPal, o paga por Yape.',
+      });
     }
 
     throw new PaypalError('PayPal no pudo completar el cobro.', {

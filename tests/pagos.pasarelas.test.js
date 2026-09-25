@@ -437,6 +437,34 @@ test('PayPal confirma sin token, como siempre', async () => {
   assert.equal(llamadas.entregas[0].captura.captureId, 'CAP-1');
 });
 
+test('PayPal: tarjeta rechazada deja el pago abierto para elegir otra', async () => {
+  respuestasFetch = [{ status: 201, body: { id: 'PAYPAL-ORDEN-3', links: [] } }];
+  const orden = await paymentService.createOrder({
+    userId: 'user-1',
+    planCode: 'BASICO',
+    providerCode: 'PAYPAL',
+  });
+  respuestasFetch = [
+    {
+      status: 422,
+      body: { name: 'UNPROCESSABLE_ENTITY', details: [{ issue: 'INSTRUMENT_DECLINED' }] },
+    },
+  ];
+
+  await assert.rejects(
+    paymentService.captureOrder({
+      userId: 'user-1',
+      orderId: orden.orderId,
+      providerCode: 'PAYPAL',
+      datosDelCobro: {},
+    }),
+    (error) => error.statusCode === 402 && error.code === 'PAYMENT_DECLINED',
+  );
+  assert.equal(llamadas.entregas.length, 0);
+  assert.equal(llamadas.fail.length, 0);
+  assert.equal(llamadas.noteAttempt.at(-1).errorCode, 'INSTRUMENT_DECLINED');
+});
+
 // ── Lo que acepta la ruta ──────────────────────────────────────────────────
 
 test('la confirmación acepta cuerpo vacío (PayPal) y rechaza tokens raros', () => {

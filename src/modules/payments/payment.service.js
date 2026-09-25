@@ -193,7 +193,12 @@ const paymentService = {
       // con otra sin empezar la compra de nuevo. Solo se anota el motivo.
       if (error.reintentable) {
         await paymentRepository.noteAttempt(payment.id, {
-          errorCode: error.body?.decline_code ?? error.body?.code ?? error.body?.type ?? 'DECLINED',
+          errorCode:
+            error.body?.decline_code ??
+            error.body?.code ??
+            error.body?.type ??
+            error.body?.details?.[0]?.issue ??
+            'DECLINED',
           rawResponse: error.body,
         });
         logger.warn(

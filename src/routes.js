@@ -6,6 +6,7 @@ const userRoutes = require('./modules/users/user.routes');
 const rewriteRoutes = require('./modules/rewrite/rewrite.routes');
 const billingRoutes = require('./modules/billing/billing.routes');
 const paymentRoutes = require('./modules/payments/payment.routes');
+const ventasRoutes = require('./modules/ventas/ventas.routes');
 const licenseRoutes = require('./modules/licensing/license.routes');
 const skillRoutes = require('./modules/skills/skill.routes');
 const referenceRoutes = require('./modules/references/reference.routes');
@@ -54,6 +55,8 @@ router.use('/users', userRoutes);
 router.use('/rewrites', rewriteRoutes);
 router.use('/billing', billingRoutes);
 router.use('/payments', paymentRoutes);
+// Cierres de ventas mensuales en PDF (solo ADMIN).
+router.use('/ventas', ventasRoutes);
 router.use('/licenses', licenseRoutes);
 router.use('/skills', skillRoutes);
 // Antes que el módulo del administrador: aquel monta authorize(ADMIN) para

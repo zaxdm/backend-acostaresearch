@@ -521,6 +521,33 @@ model Payment {
   @@map("payments")
 }
 
+/// Cierre de ventas de un mes (hora de Lima), guardado cuando el mes termina.
+///
+/// Es una FOTO: el PDF y el detalle se congelan al cerrar, y lo que se borre
+/// o cambie después en `payments` o en los códigos no lo reescribe. Es lo que
+/// se entrega al contador y, más adelante, la base para declarar a SUNAT:
+/// `detalle` guarda cada venta ya normalizada (fecha, cliente, vía, moneda,
+/// importe) para que esa integración no tenga que volver a reconstruirla.
+model CierreMensual {
+  id    String @id @default(uuid()) @db.Char(36)
+  anio  Int
+  mes   Int
+  /// Número de ventas y total en céntimos de sol (los dólares, al tipo de referencia).
+  ventas          Int
+  totalSolesCents Int
+  /// `{ "PEN": 12345, "USD": 6789 }`: lo cobrado en cada moneda, sin convertir.
+  totalesPorMoneda Json
+  /// Cada venta del mes, en el orden del PDF.
+  detalle          Json
+  /// Tipo de cambio usado para pasar los dólares a soles en `totalSolesCents`.
+  solesPorDolar    Decimal @db.Decimal(6, 3)
+  pdf              Bytes   @db.MediumBlob
+  creadoEn         DateTime @default(now())
+
+  @@unique([anio, mes])
+  @@map("cierres_mensuales")
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Licencias del conector MCP
 // ─────────────────────────────────────────────────────────────────────────────

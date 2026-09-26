@@ -8,6 +8,10 @@ const { verifyTransport } = require('./lib/mailer');
 const { avisarAlAdmin } = require('./lib/notify');
 const comprobarBase = require('./lib/comprobarBase');
 const { INTERVALO_MS, crearVigia } = require('./lib/vigiaBase');
+const ventasService = require('./modules/ventas/ventas.service');
+
+/** Cada cuánto se mira si terminó un mes de ventas que haya que cerrar. */
+const CIERRE_DE_MES_MS = 3 * 60 * 60 * 1000;
 
 async function bootstrap() {
   // Fallar aquí y no en la primera petición si la BD no responde.
@@ -31,10 +35,22 @@ async function bootstrap() {
   }, INTERVALO_MS);
   vigia.unref();
 
+  // El cierre de ventas del mes: en cuanto termina un mes (hora de Lima), su
+  // PDF queda guardado. Mirar cada tres horas basta; el panel también cierra
+  // lo pendiente al abrir «Ventas mensuales».
+  const cerrarMeses = () =>
+    ventasService
+      .cerrarPendientes()
+      .catch((error) => logger.error({ err: error }, 'No se pudo cerrar el mes de ventas'));
+  const cierreDeMes = setInterval(cerrarMeses, CIERRE_DE_MES_MS);
+  cierreDeMes.unref();
+  setTimeout(cerrarMeses, 60_000).unref();
+
   // Apagado ordenado: se dejan terminar las peticiones en curso.
   const shutdown = (signal) => async () => {
     logger.info(`${signal} recibido, cerrando servidor…`);
     clearInterval(vigia);
+    clearInterval(cierreDeMes);
     server.close(async () => {
       await prisma.$disconnect();
       logger.info('Servidor cerrado correctamente');

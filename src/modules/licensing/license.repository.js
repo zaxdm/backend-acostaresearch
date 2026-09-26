@@ -64,7 +64,8 @@ const licenseRepository = {
     return prisma.activationCode.findUnique({ where: { codeHash } });
   },
 
-  listCodes({ productCode, status, limit = 100 } = {}) {
+  /** Todos, salvo que se pida un límite: el panel suma sus ventas en los ingresos. */
+  listCodes({ productCode, status, limit } = {}) {
     return prisma.activationCode.findMany({
       where: { ...(productCode && { productCode }), ...(status && { status }) },
       // `productCode` de la licencia además del del código: son cosas distintas

@@ -261,7 +261,11 @@ const paymentRepository = {
     return prisma.payment.count({ where: { status: 'IN_REVIEW' } });
   },
 
-  listRecent({ limit = 50 } = {}) {
+  /**
+   * Todos los pagos, del más reciente al más antiguo. Antes eran los últimos
+   * 50 y los gráficos de ingresos del panel se quedaban cortos.
+   */
+  listRecent({ limit } = {}) {
     return prisma.payment.findMany({
       select: {
         ...paymentSelect,

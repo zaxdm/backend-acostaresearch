@@ -111,7 +111,9 @@ const idParamSchema = z.object({
 const listQuerySchema = z.object({
   status: z.enum(['ACTIVE', 'SUSPENDED', 'REVOKED']).optional(),
   productCode: z.string().trim().toUpperCase().max(40).optional(),
-  limit: z.coerce.number().int().positive().max(200).default(100),
+  // Sin límite pedido, cada lista aplica el suyo: los códigos van enteros
+  // porque los gráficos de ingresos del panel los suman todos.
+  limit: z.coerce.number().int().positive().max(200).optional(),
 });
 
 /** Encender o apagar que esa licencia pueda abrir varias tesis. */

@@ -162,12 +162,12 @@ const licenseController = {
   }),
 
   revoke: asyncHandler(async (req, res) => {
-    const license = await licenseService.revoke(req.params.id, req.body.reason);
+    const license = await licenseService.revoke(req.params.id, req.body.reason, req.user.id);
     return ok(res, { license }, { message: 'Licencia revocada.' });
   }),
 
   reactivate: asyncHandler(async (req, res) => {
-    const license = await licenseService.reactivate(req.params.id);
+    const license = await licenseService.reactivate(req.params.id, req.user.id);
     return ok(res, { license }, { message: 'Licencia reactivada.' });
   }),
 

@@ -691,6 +691,7 @@ model License {
 
   usages   LicenseUsage[]
   alerts   LicenseAlert[]
+  eventos  LicenseEvent[]
   sessions McpSession[]
   counter  LicenseCounter?
   /// Los cobros que la pagaron: la compra y cada renovación. Vacío si se
@@ -884,6 +885,36 @@ model LicenseAlert {
 
   @@index([licenseId, createdAt])
   @@map("license_alerts")
+}
+
+/// Cada vez que una licencia se revocó o se reactivó, con el motivo y quién.
+///
+/// `revokedAt` y `revokedReason` solo guardan la ÚLTIMA revocación, y reactivar
+/// los borra: una licencia que el detector cortó dos veces y el administrador
+/// devolvió otras dos quedaba sin rastro de nada. Esto es su historial.
+model LicenseEvent {
+  id String @id @default(uuid()) @db.Char(36)
+
+  licenseId String  @db.Char(36)
+  license   License @relation(fields: [licenseId], references: [id], onDelete: Cascade)
+
+  tipo   LicenseEventKind
+  /// Quién lo hizo: ADMIN, DETECTOR, CUENTA_BORRADA (la borró su dueño) o
+  /// CATALOGO (el producto se retiró; solo licencias del administrador).
+  origen String           @db.VarChar(20)
+  motivo String?          @db.VarChar(255)
+  /// El administrador que pulsó el botón, si fue él.
+  adminId String? @db.Char(36)
+
+  createdAt DateTime @default(now())
+
+  @@index([licenseId, createdAt])
+  @@map("license_events")
+}
+
+enum LicenseEventKind {
+  REVOCADA
+  REACTIVADA
 }
 
 /// Código promocional que rebaja el precio de una compra.

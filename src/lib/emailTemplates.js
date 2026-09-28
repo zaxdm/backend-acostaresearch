@@ -1332,6 +1332,73 @@ function reclamoRegistrado({ reclamo, proveedor, fechaTexto, limiteTexto }) {
  * El plazo va en el asunto porque es lo único que no espera: se ve en la bandeja
  * sin abrir el correo.
  */
+/**
+ * Al administrador, cuando el detector corta o avisa a una licencia sin que
+ * nadie lo haya pedido. Lleva el reporte entero —señales y cifras— para decidir
+ * desde el correo si fue una falsa alarma y hay que reactivarla.
+ */
+function licenciaVigiladaAdmin({ comprador, producto, licenseId, accion, motivos, metricas }) {
+  const enlace = `${appUrl()}/admin/licencias`;
+  const titulos = {
+    REVOCADA: 'El detector revocó una licencia',
+    AVISADA: 'El detector avisó a un comprador',
+    REVISAR: 'Sospecha alta sin tocar la licencia',
+  };
+  const explicaciones = {
+    REVOCADA:
+      'El comprador ya no puede usar el conector y le llegó un correo con el motivo. Si es una ' +
+      'falsa alarma, reactívala desde el panel: su URL no cambia.',
+    AVISADA:
+      'Primera advertencia: la licencia sigue activa y al comprador le llegó un aviso. Si ' +
+      'vuelve a saltar pasadas 12 horas, se revoca sola.',
+    REVISAR:
+      'Solo hay volumen o muchas conversaciones, que un tesista que trabaja mucho produce sin ' +
+      'compartir nada. No se revocó ni se avisó al comprador: míralo tú.',
+  };
+  const cifras = metricas
+    ? [
+        ['Llamadas en 24 h', String(metricas.llamadas24)],
+        ['Mediana diaria', String(metricas.medianaDiaria)],
+        ['Conversaciones en 24 h', String(metricas.sesionesDistintas24)],
+        ['Solapes entre conversaciones', String(metricas.solapes)],
+        ['Consultas incoherentes', String(metricas.incoherentes)],
+      ]
+    : [];
+
+  return {
+    subject: `${titulos[accion]}: ${comprador.nombre}`,
+    text: [
+      titulos[accion],
+      '',
+      `Comprador: ${comprador.nombre} <${comprador.email}>`,
+      `Producto:  ${producto}`,
+      `Licencia:  ${licenseId}`,
+      '',
+      explicaciones[accion],
+      '',
+      'Lo que vio el detector:',
+      ...motivos.map((m) => `  · ${m}`),
+      ...(cifras.length ? ['', ...cifras.map(([k, v]) => `${k}: ${v}`)] : []),
+      '',
+      `Panel: ${enlace}`,
+    ].join('\n'),
+    html: layout(
+      titulos[accion],
+      `<p style="margin:0 0 14px;font-size:15px;line-height:1.6">
+         <strong>${escapar(comprador.nombre)}</strong> (${escapar(comprador.email)}) ·
+         ${escapar(producto)}
+       </p>
+       <p style="margin:0 0 14px;font-size:15px;line-height:1.6">${escapar(explicaciones[accion])}</p>
+       ${bloqueDeDatos('LO QUE VIO EL DETECTOR', motivos.map((m, i) => [`Señal ${i + 1}`, m]))}
+       ${cifras.length ? bloqueDeDatos('CIFRAS', cifras) : ''}
+       <p style="margin:22px 0 0;font-size:13px;color:#52606d">Licencia ${escapar(licenseId)}</p>
+       <p style="margin:8px 0 0;font-size:14px">
+         <a href="${enlace}" style="color:#1a56db">Abrir las licencias en el panel</a>
+       </p>`,
+    ),
+  };
+}
+
 function reclamoRecibidoAdmin({ reclamo, fechaTexto, limiteTexto }) {
   const enlace = `${appUrl()}/admin`;
   const tipo = TIPO_DE_HOJA[reclamo.tipo];
@@ -1431,6 +1498,8 @@ module.exports = {
   licenseAlert,
   // Al revocar a mano desde el panel. La vigilancia usa `licenseAlert`.
   licenseRevoked,
+  // Al administrador, con el reporte de lo que hizo la vigilancia.
+  licenciaVigiladaAdmin,
   manualPaymentReceived,
   // Los tres de entrega salen de `payment.delivery`, que es el punto por donde
   // pasan por igual la pasarela y la aprobación de un Yape.

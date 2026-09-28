@@ -313,8 +313,12 @@ const licenseRepository = {
    *
    * Sin los conectores de prueba: no son clientes, tienen su propia sección, y
    * treinta invitados de un taller enterrarían a los compradores de verdad.
+   *
+   * Todas, salvo que se pida un límite. Eran las 100 últimas y el panel no
+   * encontraba a nadie más antiguo: con 647 licencias, una revocada del 9-sep
+   * no salía ni buscándola por su correo.
    */
-  listAll({ status, limit = 100 } = {}) {
+  listAll({ status, limit } = {}) {
     return prisma.license.findMany({
       where: { ...(status && { status }), user: { trialLinkId: null } },
       select: {
@@ -330,18 +334,74 @@ const licenseRepository = {
     return prisma.license.findUnique({ where: { id }, select: licenseSelect });
   },
 
-  setStatus(id, { status, revokedReason }) {
-    return prisma.license.update({
-      where: { id },
-      data: {
-        status,
-        revokedAt: status === 'ACTIVE' ? null : new Date(),
-        revokedReason: status === 'ACTIVE' ? null : (revokedReason ?? null),
-        // Desde aquí la vigilancia empieza de cero. Ver `license.watch`.
-        ...(status === 'ACTIVE' && { reactivatedAt: new Date() }),
-      },
-      select: licenseSelect,
-    });
+  /**
+   * Revoca o reactiva, y lo deja escrito en el historial en la misma operación.
+   * `origen` y `adminId` dicen quién fue; ver `LicenseEvent`.
+   */
+  async setStatus(id, { status, revokedReason, origen = 'ADMIN', adminId = null }) {
+    const [licencia] = await prisma.$transaction([
+      prisma.license.update({
+        where: { id },
+        data: {
+          status,
+          revokedAt: status === 'ACTIVE' ? null : new Date(),
+          revokedReason: status === 'ACTIVE' ? null : (revokedReason ?? null),
+          // Desde aquí la vigilancia empieza de cero. Ver `license.watch`.
+          ...(status === 'ACTIVE' && { reactivatedAt: new Date() }),
+        },
+        select: licenseSelect,
+      }),
+      prisma.licenseEvent.create({
+        data: {
+          licenseId: id,
+          tipo: status === 'ACTIVE' ? 'REACTIVADA' : 'REVOCADA',
+          origen,
+          motivo: status === 'ACTIVE' ? null : (revokedReason ?? null)?.slice(0, 255),
+          adminId,
+        },
+      }),
+    ]);
+    return licencia;
+  },
+
+  /**
+   * Lo que hace falta para contar la vida de una licencia: sus cobros, lo que
+   * vio el detector y cada revocación y reactivación.
+   */
+  historial(id) {
+    return Promise.all([
+      prisma.payment.findMany({
+        where: { licenseId: id, status: 'PAID' },
+        select: {
+          provider: true,
+          amountCents: true,
+          currency: true,
+          paidAt: true,
+          createdAt: true,
+          plan: { select: { name: true } },
+        },
+        orderBy: { createdAt: 'asc' },
+      }),
+      prisma.licenseAlert.findMany({
+        where: { licenseId: id },
+        select: { kind: true, level: true, action: true, detalle: true, createdAt: true },
+        orderBy: { createdAt: 'asc' },
+      }),
+      prisma.licenseEvent.findMany({
+        where: { licenseId: id },
+        select: { tipo: true, origen: true, motivo: true, adminId: true, createdAt: true },
+        orderBy: { createdAt: 'asc' },
+      }),
+      prisma.license.findUnique({
+        where: { id },
+        select: {
+          createdAt: true,
+          revokedAt: true,
+          revokedReason: true,
+          activationCode: { select: { id: true } },
+        },
+      }),
+    ]);
   },
 
   // ── Uso ──────────────────────────────────────────────────────────────────

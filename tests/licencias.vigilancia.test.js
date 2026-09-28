@@ -30,7 +30,21 @@ const hace = (horas) => new Date(Date.now() - horas * HORA);
 
 // ── Lo que se sustituye ─────────────────────────────────────────────────────
 
-const estado = { licencia: null, alertas: [], usosDesde: null, correos: [] };
+const estado = {
+  licencia: null,
+  alertas: [],
+  usosDesde: null,
+  correos: [],
+  eventos: [],
+  ntfy: [],
+  senales: null,
+};
+
+const TESISTA = 'tesista@unitru.edu.pe';
+const ADMIN = 'admin@acostaresearch.com';
+/** Lo último que le llegó al tesista, sin los reportes al administrador. */
+const alTesista = () => estado.correos.filter((c) => c.to === TESISTA).at(-1);
+const alAdmin = () => estado.correos.filter((c) => c.to === ADMIN);
 
 /** Aplica a una fecha las condiciones `gte`, `gt` y `lte` de un `where` de Prisma. */
 const cumple = (fecha, cond = {}) =>
@@ -44,6 +58,14 @@ const encaja = (alerta, where) =>
   cumple(alerta.createdAt, where.createdAt);
 
 sustituir('../src/lib/prisma', {
+  $transaction: (operaciones) => Promise.all(operaciones),
+  user: { findFirst: async () => ({ email: ADMIN }) },
+  licenseEvent: {
+    create: async ({ data }) => {
+      estado.eventos.push(data);
+      return data;
+    },
+  },
   license: {
     findUnique: async () => estado.licencia,
     update: async ({ data }) => Object.assign(estado.licencia, data),
@@ -77,19 +99,23 @@ sustituir('../src/config/logger', { info: () => {}, warn: () => {}, error: () =>
 sustituir('../src/lib/mailer', { sendMail: async (correo) => estado.correos.push(correo) });
 sustituir('../src/lib/emailTemplates', {
   licenseAlert: ({ revocada }) => ({ subject: revocada ? 'revocada' : 'aviso', html: '' }),
+  licenciaVigiladaAdmin: ({ accion, motivos }) => ({ subject: `admin:${accion}`, motivos, html: '' }),
 });
+sustituir('../src/lib/notify', { avisarAlAdmin: (aviso) => estado.ntfy.push(aviso) });
 
 // El detector tiene su propia prueba. Aquí siempre ve la misma sospecha alta:
 // la de aquel día.
 const NIVELES = { NORMAL: 'NORMAL', ALERTA: 'ALERTA', SOSPECHA_ALTA: 'SOSPECHA_ALTA' };
+const DE_AQUEL_DIA = [
+  { codigo: 'MUCHAS_SESIONES', detalle: '9 conversaciones distintas en 24 h.', peso: 'alto' },
+  { codigo: 'CONSULTAS_INCOHERENTES', detalle: '5 pares de consultas.', peso: 'alto' },
+];
 sustituir('../src/modules/licensing/license.detector', {
   NIVELES,
   analizar: () => ({
     nivel: NIVELES.SOSPECHA_ALTA,
-    senales: [
-      { codigo: 'MUCHAS_SESIONES', detalle: '9 conversaciones distintas en 24 h.', peso: 'alto' },
-      { codigo: 'CONSULTAS_INCOHERENTES', detalle: '5 pares de consultas.', peso: 'alto' },
-    ],
+    senales: estado.senales ?? DE_AQUEL_DIA,
+    metricas: { llamadas24: 271, medianaDiaria: 73 },
   }),
 });
 
@@ -101,11 +127,15 @@ function empezar({ reactivatedAt = null, alertas = [] } = {}) {
     status: 'ACTIVE',
     lastCheckedAt: null,
     reactivatedAt,
-    user: { email: 'tesista@unitru.edu.pe', firstName: 'Tesista', role: 'USER', trialLinkId: null },
+    productCode: 'TESIS',
+    user: { email: TESISTA, firstName: 'Tesista', lastName: 'Uno', role: 'USER', trialLinkId: null },
   };
   estado.alertas = alertas.map((a, i) => ({ id: `a${i}`, licenseId: 'L1', ...a }));
   estado.usosDesde = null;
   estado.correos = [];
+  estado.eventos = [];
+  estado.ntfy = [];
+  estado.senales = null;
 }
 
 const avisoDeHace = (horas) => ({
@@ -125,7 +155,65 @@ test('con un aviso de hace más de doce horas, a la segunda se revoca', async ()
   assert.equal(resultado.revocada, true);
   assert.equal(estado.licencia.status, 'REVOKED');
   assert.equal(estado.alertas[0].action, 'REVOCADO', 'el aviso que la habilitó queda gastado');
-  assert.equal(estado.correos.at(-1).subject, 'revocada');
+  assert.equal(alTesista().subject, 'revocada');
+});
+
+test('al revocar queda en el historial y le llega el reporte al administrador', async () => {
+  empezar({ alertas: [avisoDeHace(13)] });
+
+  await evaluar('L1');
+
+  assert.deepEqual(
+    estado.eventos.map((e) => [e.tipo, e.origen]),
+    [['REVOCADA', 'DETECTOR']],
+  );
+  // Con todos los motivos, no solo el primero.
+  assert.match(estado.licencia.revokedReason, /9 conversaciones.*5 pares/);
+  assert.equal(alAdmin().at(-1).subject, 'admin:REVOCADA');
+  assert.deepEqual(alAdmin().at(-1).motivos, DE_AQUEL_DIA.map((s) => s.detalle));
+  assert.equal(estado.ntfy.at(-1).prioridad, 5);
+});
+
+// ── El 28 de septiembre: mucho trabajo no es compartir ─────────────────────
+
+const SOLO_VOLUMEN = [
+  { codigo: 'VOLUMEN_DISPARADO', detalle: '271 llamadas en 24 h; su mediana diaria es 73.', peso: 'alto' },
+  { codigo: 'MUCHAS_SESIONES', detalle: '7 conversaciones distintas en 24 h.', peso: 'alto' },
+];
+
+test('volumen y muchas conversaciones, sin solapes: ni se revoca ni se avisa al tesista', async () => {
+  empezar({ alertas: [avisoDeHace(13)] });
+  estado.senales = SOLO_VOLUMEN;
+
+  const resultado = await evaluar('L1');
+
+  assert.notEqual(resultado.revocada, true);
+  assert.equal(estado.licencia.status, 'ACTIVE');
+  assert.equal(alTesista(), undefined, 'al tesista no se le escribe');
+  assert.equal(estado.eventos.length, 0);
+  // Pero el administrador se entera y decide.
+  assert.equal(alAdmin().at(-1).subject, 'admin:REVISAR');
+  assert.equal(estado.ntfy.length, 1);
+});
+
+test('la misma sospecha sin señal de reparto no se repite cada quince minutos', async () => {
+  empezar();
+  estado.senales = SOLO_VOLUMEN;
+
+  await evaluar('L1', { forzar: true });
+  await evaluar('L1', { forzar: true });
+
+  assert.equal(alAdmin().length, 1);
+  assert.equal(estado.ntfy.length, 1);
+});
+
+test('el primer aviso al tesista también se le cuenta al administrador', async () => {
+  empezar();
+
+  await evaluar('L1');
+
+  assert.equal(alTesista().subject, 'aviso');
+  assert.equal(alAdmin().at(-1).subject, 'admin:AVISADA');
 });
 
 test('sin aviso previo no se revoca: se avisa y queda anotado', async () => {
@@ -136,7 +224,7 @@ test('sin aviso previo no se revoca: se avisa y queda anotado', async () => {
   assert.notEqual(resultado.revocada, true);
   assert.equal(estado.licencia.status, 'ACTIVE');
   assert.ok(estado.alertas.some((a) => a.action === 'NOTIFICADO'));
-  assert.equal(estado.correos.at(-1).subject, 'aviso');
+  assert.equal(alTesista().subject, 'aviso');
 });
 
 // ── Lo que se arregló ───────────────────────────────────────────────────────
@@ -149,7 +237,7 @@ test('reactivada: el aviso de antes de reactivar ya no revoca, se vuelve a avisa
 
   assert.notEqual(resultado.revocada, true, 'reactivar tiene que servir para algo');
   assert.equal(estado.licencia.status, 'ACTIVE');
-  assert.equal(estado.correos.at(-1).subject, 'aviso');
+  assert.equal(alTesista().subject, 'aviso');
   // Y se anota una alerta nueva: la de antes no la tapa como «ya avisada».
   assert.ok(estado.alertas.some((a) => a.createdAt >= reactivatedAt && a.action === 'NOTIFICADO'));
 });
@@ -179,7 +267,7 @@ test('un aviso de hace más de treinta días ya no sirve para revocar sin avisar
 
   assert.notEqual(resultado.revocada, true);
   assert.equal(estado.licencia.status, 'ACTIVE');
-  assert.equal(estado.correos.at(-1).subject, 'aviso');
+  assert.equal(alTesista().subject, 'aviso');
 });
 
 test('la licencia del administrador sigue sin vigilarse', async () => {

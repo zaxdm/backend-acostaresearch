@@ -2,8 +2,10 @@
 
 const prisma = require('../../lib/prisma');
 const logger = require('../../config/logger');
+const env = require('../../config/env');
 const { sendMail } = require('../../lib/mailer');
-const { licenseAlert } = require('../../lib/emailTemplates');
+const { avisarAlAdmin } = require('../../lib/notify');
+const { licenseAlert, licenciaVigiladaAdmin } = require('../../lib/emailTemplates');
 const { analizar, NIVELES } = require('./license.detector');
 
 /**
@@ -54,6 +56,20 @@ const TIPOS = {
   SESIONES_SOLAPADAS: 'SESIONES_SOLAPADAS',
   CONSULTAS_INCOHERENTES: 'CONSULTAS_INCOHERENTES',
 };
+
+/**
+ * Las señales que dicen que hay MÁS DE UNA PERSONA, y no solo alguien que
+ * trabaja mucho. Sin al menos una de ellas no se avisa ni se revoca a nadie.
+ *
+ * El 28-sep-2026 el detector revocó a un tesista con 2 888 llamadas en 19 días
+ * por «271 llamadas en 24 h; su mediana diaria es 73» y otra señal de volumen o
+ * de conversaciones: justo lo que hace quien se sienta una tarde entera con su
+ * tesis. El volumen y el número de conversaciones se quedan como alertas para
+ * el panel; cortar el acceso exige que dos conversaciones se pisen, que lleguen
+ * consultas incoherentes en el mismo minuto o que intenten sacar las
+ * instrucciones.
+ */
+const SENALES_DE_REPARTO = new Set(['SESIONES_SOLAPADAS', 'CONSULTAS_INCOHERENTES', 'EXTRACCION']);
 
 function hace(horas) {
   return new Date(Date.now() - horas * HORA_MS);
@@ -118,6 +134,64 @@ async function avisar(licencia, motivos, revocada) {
   }
 }
 
+/** El mismo criterio que el aviso de Yape: la variable, o el primer administrador activo. */
+async function correoDelAdministrador() {
+  if (env.ADMIN_NOTIFY_EMAIL) return env.ADMIN_NOTIFY_EMAIL;
+
+  const admin = await prisma.user.findFirst({
+    where: { role: 'ADMIN', status: 'ACTIVE' },
+    orderBy: { createdAt: 'asc' },
+    select: { email: true },
+  });
+  return admin?.email ?? null;
+}
+
+/**
+ * Le cuenta al administrador lo que hizo la vigilancia: al móvil por ntfy y el
+ * reporte completo por correo. Nunca lanza.
+ *
+ * Antes no se enteraba nadie: una licencia revocada solo se veía si alguien
+ * entraba al panel a buscarla, y el primero en saberlo era el comprador.
+ *
+ * ntfy va sin el correo del comprador —su tópico no es privado, ver
+ * `lib/notify`—; el correo sí lo lleva.
+ */
+async function avisarAlAdministrador(licencia, accion, motivos, metricas) {
+  const nombre =
+    `${licencia.user?.firstName ?? ''} ${licencia.user?.lastName ?? ''}`.trim() || 'Sin nombre';
+  const titulos = {
+    REVOCADA: 'Licencia revocada por el detector',
+    AVISADA: 'Aviso de uso compartido enviado',
+    REVISAR: 'Sospecha alta: revisar a mano',
+  };
+
+  avisarAlAdmin({
+    titulo: titulos[accion],
+    mensaje: [`${licencia.user?.firstName ?? 'Un comprador'} · ${licencia.productCode}`, ...motivos].join('\n'),
+    etiquetas: [accion === 'REVOCADA' ? 'rotating_light' : 'warning'],
+    prioridad: accion === 'REVOCADA' ? 5 : 4,
+    enlace: `${env.APP_URL}/admin/licencias`,
+  });
+
+  try {
+    const destino = await correoDelAdministrador();
+    if (!destino) return;
+    await sendMail({
+      to: destino,
+      ...licenciaVigiladaAdmin({
+        comprador: { nombre, email: licencia.user?.email ?? '' },
+        producto: licencia.productCode,
+        licenseId: licencia.id,
+        accion,
+        motivos,
+        metricas,
+      }),
+    });
+  } catch (error) {
+    logger.error({ err: error, licenseId: licencia.id }, 'No se pudo avisar al administrador');
+  }
+}
+
 /** Cuenta intentos de extracción recientes, que es una señal por sí sola. */
 async function contarExtracciones(licenseId, reactivadaAt) {
   return prisma.licenseUsage.count({
@@ -136,7 +210,9 @@ async function evaluar(licenseId, { forzar = false } = {}) {
     const licencia = await prisma.license.findUnique({
       where: { id: licenseId },
       include: {
-        user: { select: { email: true, firstName: true, role: true, trialLinkId: true } },
+        user: {
+          select: { email: true, firstName: true, lastName: true, role: true, trialLinkId: true },
+        },
       },
     });
 
@@ -189,11 +265,13 @@ async function evaluar(licenseId, { forzar = false } = {}) {
     if (señales.length === 0) return diagnostico;
 
     // ── Se anota lo encontrado ──────────────────────────────────────────────
+    let nuevas = 0;
     for (const señal of señales) {
       const kind = señal.codigo === 'EXTRACCION' ? 'EXTRACCION' : TIPOS[señal.codigo];
       if (!kind) continue;
       if (await alertaReciente(licenseId, kind, reactivadaAt)) continue;
 
+      nuevas += 1;
       await prisma.licenseAlert.create({
         data: {
           licenseId,
@@ -208,6 +286,17 @@ async function evaluar(licenseId, { forzar = false } = {}) {
 
     // ── Sospecha alta: avisar primero, revocar a la segunda ─────────────────
     const motivos = señales.map((s) => s.detalle);
+
+    // Sin señal de reparto no se toca al comprador: se le cuenta al
+    // administrador, una vez por cada alerta nueva, y él decide.
+    if (!señales.some((s) => SENALES_DE_REPARTO.has(s.codigo))) {
+      if (nuevas > 0) {
+        await avisarAlAdministrador(licencia, 'REVISAR', motivos, diagnostico.metricas);
+      }
+      logger.warn({ licenseId, motivos }, 'Sospecha alta sin señal de reparto: solo se avisa al admin');
+      return diagnostico;
+    }
+
     const previo = await avisoPrevio(licenseId, reactivadaAt);
 
     if (!previo) {
@@ -216,18 +305,23 @@ async function evaluar(licenseId, { forzar = false } = {}) {
         data: { action: 'NOTIFICADO' },
       });
       await avisar(licencia, motivos, false);
+      await avisarAlAdministrador(licencia, 'AVISADA', motivos, diagnostico.metricas);
       logger.warn({ licenseId, motivos }, 'Sospecha alta: comprador avisado, sin revocar');
       return diagnostico;
     }
 
-    await prisma.license.update({
-      where: { id: licenseId },
-      data: {
-        status: 'REVOKED',
-        revokedAt: new Date(),
-        revokedReason: `Uso compartido detectado: ${motivos[0] ?? 'patrón anómalo'}`.slice(0, 255),
-      },
-    });
+    // Todos los motivos, no solo el primero: el 28-sep solo quedó escrito el
+    // del volumen, y no se supo qué otra señal había cortado la licencia.
+    const motivo = `Uso compartido detectado: ${motivos.join(' ') || 'patrón anómalo'}`.slice(0, 255);
+    await prisma.$transaction([
+      prisma.license.update({
+        where: { id: licenseId },
+        data: { status: 'REVOKED', revokedAt: new Date(), revokedReason: motivo },
+      }),
+      prisma.licenseEvent.create({
+        data: { licenseId, tipo: 'REVOCADA', origen: 'DETECTOR', motivo },
+      }),
+    ]);
     await prisma.licenseAlert.updateMany({
       where: { licenseId, createdAt: { gte: hace(1) } },
       data: { action: 'REVOCADO' },
@@ -236,6 +330,7 @@ async function evaluar(licenseId, { forzar = false } = {}) {
     // para siempre y, en el panel, parecía una alerta pendiente.
     await prisma.licenseAlert.update({ where: { id: previo.id }, data: { action: 'REVOCADO' } });
     await avisar(licencia, motivos, true);
+    await avisarAlAdministrador(licencia, 'REVOCADA', motivos, diagnostico.metricas);
 
     logger.warn({ licenseId, motivos }, 'Licencia revocada automáticamente tras el aviso previo');
     return { ...diagnostico, revocada: true };

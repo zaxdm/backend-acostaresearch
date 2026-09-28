@@ -132,6 +132,93 @@ function avisarDelCambioDeProducto({ userId, planName, productCode }) {
  * base y un SMTP caído no puede hacer que el panel diga que falló. Devuelve la
  * promesa solo para que las pruebas puedan esperarla.
  */
+/** Quién hizo una revocación o una reactivación, en palabras del panel. */
+const ORIGENES = {
+  ADMIN: 'un administrador',
+  DETECTOR: 'el detector de uso compartido',
+  CUENTA_BORRADA: 'su dueño, al borrar la cuenta',
+  CATALOGO: 'el sistema, al retirar el producto',
+};
+
+/**
+ * La vida de una licencia, de la más reciente a la más antigua: cuándo se
+ * emitió, cada cobro, cada alerta del detector y cada revocación y
+ * reactivación, con su motivo y quién la hizo.
+ *
+ * Las revocaciones que no pasan por `setStatus` —borrar la cuenta, retirar un
+ * producto— no dejan evento; si la licencia está revocada y su historial no lo
+ * cuenta, se añade a partir de lo que guarda la propia licencia.
+ */
+async function historialDe(id) {
+  const [pagos, alertas, eventos, licencia] = await licenseRepository.historial(id);
+  if (!licencia) return [];
+
+  const adminIds = [...new Set(eventos.map((e) => e.adminId).filter(Boolean))];
+  const admins = adminIds.length
+    ? await prisma.user.findMany({
+        where: { id: { in: adminIds } },
+        select: { id: true, firstName: true, lastName: true },
+      })
+    : [];
+  const nombreDe = (adminId) => {
+    const admin = admins.find((a) => a.id === adminId);
+    return admin ? `${admin.firstName} ${admin.lastName}`.trim() : null;
+  };
+
+  const entradas = [
+    {
+      fecha: licencia.createdAt,
+      tipo: 'EMITIDA',
+      titulo: 'Licencia emitida',
+      detalle: licencia.activationCode ? 'Con un código de activación.' : null,
+    },
+    ...pagos.map((pago, i) => ({
+      fecha: pago.paidAt ?? pago.createdAt,
+      tipo: 'PAGO',
+      titulo: i === 0 ? 'Compra' : 'Renovación',
+      detalle:
+        `${pago.plan?.name ?? 'Plan'} · ${(pago.amountCents / 100).toFixed(2)} ${pago.currency}` +
+        ` · ${pago.provider}`,
+    })),
+    ...alertas.map((alerta) => ({
+      fecha: alerta.createdAt,
+      tipo: 'ALERTA',
+      titulo:
+        alerta.level === 'SOSPECHA_ALTA' ? 'Sospecha alta del detector' : 'Aviso del detector',
+      detalle:
+        (alerta.detalle ?? alerta.kind) +
+        (alerta.action === 'NOTIFICADO'
+          ? ' Se avisó al comprador.'
+          : alerta.action === 'REVOCADO'
+            ? ' Terminó en revocación.'
+            : ''),
+    })),
+    ...eventos.map((evento) => {
+      const quien = nombreDe(evento.adminId) ?? ORIGENES[evento.origen] ?? evento.origen;
+      return {
+        fecha: evento.createdAt,
+        tipo: evento.tipo,
+        titulo: `${evento.tipo === 'REVOCADA' ? 'Revocada' : 'Reactivada'} por ${quien}`,
+        detalle: evento.motivo,
+      };
+    }),
+  ];
+
+  const revocacionContada =
+    licencia.revokedAt &&
+    eventos.some((e) => e.tipo === 'REVOCADA' && e.createdAt >= licencia.revokedAt);
+  if (licencia.revokedAt && !revocacionContada) {
+    entradas.push({
+      fecha: licencia.revokedAt,
+      tipo: 'REVOCADA',
+      titulo: 'Revocada',
+      detalle: licencia.revokedReason,
+    });
+  }
+
+  return entradas.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+}
+
 function avisarDeLaRevocacion({ userId, reason, licenseId }) {
   return prisma.user
     .findUnique({ where: { id: userId }, select: { email: true, firstName: true } })
@@ -1349,6 +1436,7 @@ const licenseService = {
       license: licencia,
       diagnostico: analizar(usos),
       usosRecientes: await licenseRepository.recentUsages(id),
+      historial: await historialDe(id),
     };
   },
 
@@ -1379,13 +1467,14 @@ const licenseService = {
     return hallazgos;
   },
 
-  async revoke(id, reason) {
+  async revoke(id, reason, adminId = null) {
     const licencia = await licenseRepository.findById(id);
     if (!licencia) throw new NotFoundError('No encontramos esa licencia.');
 
     const actualizada = await licenseRepository.setStatus(id, {
       status: 'REVOKED',
       revokedReason: reason,
+      adminId,
     });
 
     logger.warn({ licenseId: id, reason }, 'Licencia revocada');
@@ -1434,12 +1523,12 @@ const licenseService = {
 
     return { id };
   },
-  async reactivate(id) {
+  async reactivate(id, adminId = null) {
     const licencia = await licenseRepository.findById(id);
     if (!licencia) throw new NotFoundError('No encontramos esa licencia.');
 
-    logger.info({ licenseId: id }, 'Licencia reactivada');
-    return licenseRepository.setStatus(id, { status: 'ACTIVE' });
+    logger.info({ licenseId: id, adminId }, 'Licencia reactivada');
+    return licenseRepository.setStatus(id, { status: 'ACTIVE', adminId });
   },
 
   listCodes(filtros) {

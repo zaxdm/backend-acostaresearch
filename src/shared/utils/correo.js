@@ -232,7 +232,15 @@ const SIN_CORREO = new Set(['ENODATA', 'ENOTFOUND']);
  * que entonces se intenta la dirección de la web, pero en la práctica ningún
  * proveedor de correo personal funciona así, y es justo el caso de `hou.com`.
  */
-async function dominioRecibeCorreo(
+async function dominioRecibeCorreo(dominio, opciones) {
+  return (await consultarMx(dominio, opciones)).recibe;
+}
+
+/**
+ * Lo mismo, pero con los servidores de correo del dominio ordenados por
+ * prioridad: son a los que después se les pregunta por el buzón.
+ */
+async function consultarMx(
   dominio,
   {
     resolverMx = (d) => resolverPorDefecto.resolveMx(d),
@@ -241,28 +249,211 @@ async function dominioRecibeCorreo(
   } = {},
 ) {
   const guardado = cache.get(dominio);
-  if (guardado && guardado.hasta > ahora()) return guardado.recibe;
+  if (guardado && guardado.hasta > ahora()) {
+    return { recibe: guardado.recibe, servidores: guardado.servidores ?? [] };
+  }
 
-  let recibe;
+  let servidores;
   try {
     const registros = await resolverMx(dominio);
     // Un MX vacío o «.» (RFC 7505) dice expresamente que ahí no se acepta correo.
-    recibe = (registros ?? []).some((r) => r.exchange && r.exchange !== '.');
+    servidores = (registros ?? [])
+      .filter((r) => r.exchange && r.exchange !== '.')
+      .sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0))
+      .map((r) => r.exchange);
   } catch (error) {
-    if (!SIN_CORREO.has(error.code)) return null;
-    recibe = false;
+    if (!SIN_CORREO.has(error.code)) return { recibe: null, servidores: [] };
+    servidores = [];
   }
 
-  cache.set(dominio, { recibe, hasta: ahora() + DURACION_CACHE_MS });
-  return recibe;
+  const recibe = servidores.length > 0;
+  cache.set(dominio, { recibe, servidores, hasta: ahora() + DURACION_CACHE_MS });
+  return { recibe, servidores };
+}
+
+// ── ¿Existe el buzón? ──────────────────────────────────────────────────────
+//
+// Un dígito cambiado —`ana1990@gmail.com` por `ana1909@gmail.com`— pasa todo lo
+// anterior: forma perfecta, dominio real con buzones. El código se cobraba y
+// salía hacia una cuenta que no es de nadie, o peor, que es de otra persona.
+//
+// Lo único que sabe si la cuenta existe es el servidor de correo del dominio.
+// Se le abre una conversación SMTP como si se fuera a mandar algo, se le dice
+// el destinatario y se cuelga antes de enviar nada: Gmail, Outlook o Yahoo
+// contestan ahí mismo «esa cuenta no existe» (550 5.1.1).
+//
+// Solo se bloquea con un «no existe» explícito. Todo lo demás —un servidor que
+// acepta cualquier dirección, uno que rechaza la IP del VPS por política, el
+// puerto 25 cerrado por el proveedor— es «no se sabe» y la venta sigue, con el
+// aviso en el panel de que no se pudo comprobar.
+
+const net = require('node:net');
+
+/** 8 s por conversación: el panel espera la respuesta mientras se escribe. */
+const TIEMPO_SONDEO_MS = 8000;
+
+/** Si el puerto 25 no responde, no se vuelve a intentar en diez minutos. */
+const PAUSA_PUERTO_CERRADO_MS = 10 * 60 * 1000;
+let puertoCerradoHasta = 0;
+
+const cacheBuzones = new Map();
+
+/**
+ * Respuestas que dicen «esa cuenta no existe» y no «no te dejo preguntar».
+ *
+ * Los códigos ampliados 5.1.x son de destinatario; los 5.7.x son de política
+ * (IP en lista negra, remitente sin permiso) y nunca cuentan como inexistente.
+ */
+const CUENTA_INEXISTENTE =
+  /\b5\.1\.(0|1|10)\b|does not exist|doesn'?t have an? .*account|no such (user|mailbox)|user unknown|unknown user|recipient (address )?rejected|invalid recipient|mailbox unavailable|mailbox (is )?disabled|address not found|no mailbox/i;
+
+/** La dirección de `Nombre <a@b.com>` o de `a@b.com`. */
+function direccionDe(remitente) {
+  const entre = /<([^>]+)>/.exec(remitente);
+  return (entre ? entre[1] : remitente).trim();
 }
 
 /**
- * Revisa una lista entera: forma y erratas, y después el DNS.
+ * Una conversación SMTP hasta el RCPT TO, sin llegar a mandar nada.
+ *
+ * Devuelve `{ etapa, codigo, texto }`: `etapa` es hasta dónde se llegó
+ * («conexion» si nunca contestó), `codigo` y `texto` la última respuesta.
+ */
+function conversarSmtp(servidor, correo, { remitente, tiempo = TIEMPO_SONDEO_MS, puerto = 25 }) {
+  const dominioPropio = remitente.split('@')[1] || 'localhost';
+  const pasos = [
+    { etapa: 'saludo', comando: `EHLO ${dominioPropio}` },
+    { etapa: 'remitente', comando: `MAIL FROM:<${remitente}>` },
+    { etapa: 'destinatario', comando: `RCPT TO:<${correo}>` },
+  ];
+
+  return new Promise((resolve) => {
+    const socket = net.connect({ host: servidor, port: puerto });
+    let etapa = 'conexion';
+    let pendiente = '';
+    let lineas = [];
+    let terminado = false;
+
+    const fin = (codigo, texto) => {
+      if (terminado) return;
+      terminado = true;
+      // Se despide con educación si llegó a hablar; si no, se corta y ya.
+      if (etapa !== 'conexion') socket.end('QUIT\r\n');
+      socket.destroy();
+      resolve({ etapa, codigo, texto });
+    };
+
+    socket.setTimeout(tiempo, () => fin(null, 'tiempo agotado'));
+    socket.on('error', (error) => fin(null, error.code || error.message));
+
+    socket.on('data', (trozo) => {
+      pendiente += trozo.toString('utf8');
+      const partes = pendiente.split(/\r?\n/);
+      pendiente = partes.pop();
+
+      for (const linea of partes) {
+        lineas.push(linea);
+        // Una respuesta de varias líneas lleva guion tras el código («250-»);
+        // la última, un espacio o nada.
+        const cierre = /^(\d{3})(?: |$)/.exec(linea);
+        if (!cierre) continue;
+
+        const codigo = Number(cierre[1]);
+        const texto = lineas.join(' ');
+        lineas = [];
+
+        if (etapa === 'destinatario' || codigo >= 400) return fin(codigo, texto);
+
+        const siguiente = pasos.shift();
+        etapa = siguiente.etapa;
+        socket.write(`${siguiente.comando}\r\n`);
+      }
+    });
+  });
+}
+
+/** Lo que significa la respuesta: true existe, false no existe, null no se sabe. */
+function veredicto({ etapa, codigo, texto }) {
+  if (etapa !== 'destinatario' || !codigo) return null;
+  if (codigo >= 200 && codigo < 300) return true;
+  if (codigo >= 500 && !/\b5\.7\.\d+/.test(texto) && CUENTA_INEXISTENTE.test(texto)) return false;
+  return null;
+}
+
+/** Sondeo real por la red. Apagado en las pruebas y con CORREO_SONDEAR_BUZON=false. */
+async function sondearPorSmtp(correo, servidores) {
+  // Perezoso: esta utilidad también se usa sin configuración cargada.
+  const env = require('../../config/env');
+  if (env.NODE_ENV === 'test' || process.env.NODE_TEST_CONTEXT || !env.CORREO_SONDEAR_BUZON) {
+    return null;
+  }
+  if (Date.now() < puertoCerradoHasta) return null;
+
+  const remitente = direccionDe(env.MAIL_FROM);
+
+  // El de más prioridad, y uno de reserva si el primero no contesta.
+  for (const servidor of servidores.slice(0, 2)) {
+    const respuesta = await conversarSmtp(servidor, correo, { remitente });
+    if (respuesta.etapa !== 'conexion') return veredicto(respuesta);
+  }
+
+  // Ninguno contestó: casi seguro el proveedor del VPS cierra el puerto 25.
+  // Se deja de intentar un rato para no hacer esperar 16 s cada comprobación.
+  puertoCerradoHasta = Date.now() + PAUSA_PUERTO_CERRADO_MS;
+  require('../../config/logger').warn(
+    { servidores },
+    'No se pudo abrir el puerto 25 para comprobar un buzón; se sigue sin comprobar',
+  );
+  return null;
+}
+
+/**
+ * true si el buzón existe, false si su servidor dice que no, null si no se sabe.
+ * Solo se recuerdan las respuestas firmes, una hora.
+ */
+async function buzonExiste(
+  correo,
+  servidores,
+  { sondearBuzon = sondearPorSmtp, cacheBuzon = cacheBuzones, ahora = Date.now } = {},
+) {
+  const guardado = cacheBuzon.get(correo);
+  if (guardado && guardado.hasta > ahora()) return guardado.existe;
+
+  let existe;
+  try {
+    existe = await sondearBuzon(correo, servidores);
+  } catch {
+    existe = null;
+  }
+
+  if (existe !== null) cacheBuzon.set(correo, { existe, hasta: ahora() + DURACION_CACHE_MS });
+  return existe;
+}
+
+/** `fn` sobre cada elemento, como mucho `cuantos` a la vez. */
+async function deAPocos(elementos, cuantos, fn) {
+  const resultados = new Array(elementos.length);
+  let siguiente = 0;
+  const trabajar = async () => {
+    while (siguiente < elementos.length) {
+      const i = siguiente;
+      siguiente += 1;
+      resultados[i] = await fn(elementos[i]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(cuantos, elementos.length) }, trabajar));
+  return resultados;
+}
+
+/**
+ * Revisa una lista entera: forma y erratas, después el DNS y al final el buzón.
  *
  * Solo se pregunta por los correos que ya pasaron lo primero —una errata se
  * corta antes y conserva su sugerencia— y una sola vez por dominio: cien
- * compradores de gmail son una consulta.
+ * compradores de gmail son una consulta al DNS.
+ *
+ * Cada revisión lleva `buzon`: true si su servidor confirmó que existe, false
+ * si dijo que no, null si no se pudo saber. El panel lo enseña.
  */
 async function revisarCorreos(correos, opciones) {
   const revisiones = correos.map((correo) => revisarCorreo(correo));
@@ -272,19 +463,42 @@ async function revisarCorreos(correos, opciones) {
   ];
   const respuestas = new Map(
     await Promise.all(
-      dominios.map(async (dominio) => [dominio, await dominioRecibeCorreo(dominio, opciones)]),
+      dominios.map(async (dominio) => [dominio, await consultarMx(dominio, opciones)]),
     ),
   );
 
-  return revisiones.map((r) => {
-    if (r.problema) return r;
+  // De cuatro en cuatro: una lista de treinta no abre treinta conexiones a la vez.
+  return deAPocos(revisiones, 4, async (r) => {
+    if (r.problema) return { ...r, buzon: null };
     const dominio = r.correo.split('@')[1];
-    if (respuestas.get(dominio) !== false) return r;
+    const { recibe, servidores } = respuestas.get(dominio);
+
+    if (recibe === false) {
+      return {
+        ...r,
+        buzon: false,
+        problema: `«@${dominio}» no recibe correos: ese dominio no existe o no tiene buzones.`,
+      };
+    }
+    if (recibe === null) return { ...r, buzon: null };
+
+    const buzon = await buzonExiste(r.correo, servidores, opciones);
+    if (buzon !== false) return { ...r, buzon };
     return {
       ...r,
-      problema: `«@${dominio}» no recibe correos: ese dominio no existe o no tiene buzones.`,
+      buzon,
+      problema:
+        `Esa cuenta no existe: el servidor de @${dominio} dice que no hay ningún buzón ` +
+        'con ese nombre. Revísalo letra por letra con el comprador.',
     };
   });
 }
 
-module.exports = { revisarCorreo, revisarCorreos, dominioRecibeCorreo };
+module.exports = {
+  revisarCorreo,
+  revisarCorreos,
+  dominioRecibeCorreo,
+  buzonExiste,
+  veredicto,
+  conversarSmtp,
+};

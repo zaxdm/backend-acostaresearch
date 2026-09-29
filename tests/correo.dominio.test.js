@@ -24,7 +24,8 @@ function dns(tabla) {
     if (respuesta instanceof Error) throw respuesta;
     return respuesta;
   };
-  return { resolverMx, consultas, cache: new Map() };
+  // El buzón no se sondea aquí: eso es `correo.buzon.test.js`.
+  return { resolverMx, consultas, cache: new Map(), sondearBuzon: async () => null };
 }
 
 test('un dominio con servidores de correo los recibe', async () => {

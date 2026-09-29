@@ -70,6 +70,11 @@ const schema = z.object({
   // A dónde responde el tesista. Vacío = responde al remitente.
   // Sirve para poner un buzón que sí se lee sin sacrificar la entrega.
   MAIL_REPLY_TO: vacioComoAusente(z.string().email()),
+  // Antes de venderle un código a un correo se le pregunta a su servidor de
+  // correo si ese buzón existe (ver `shared/utils/correo.js`). Necesita el
+  // puerto 25 de salida; si el proveedor del VPS lo tiene cerrado no bloquea
+  // nada, solo deja de comprobar. `false` lo apaga.
+  CORREO_SONDEAR_BUZON: booleanish.default('true'),
 
   // ── Reescritor académico (Claude) ───────────────────────────────────────
   ANTHROPIC_API_KEY: vacioComoAusente(z.string()),

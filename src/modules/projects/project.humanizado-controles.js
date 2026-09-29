@@ -37,7 +37,8 @@ const VOCABULARIO = [
 const MULETILLAS = [
   'vale decir que', 'por lo que', 'es así que', 'por eso', 'por ello', ', entonces,', 'ante ello',
   'pese a ello', 'de ahí que', 'asimismo', 'del mismo modo', 'de igual forma', 'finalmente',
-  'tiene que', 'no es', 'sino', 'el reto', 'el desafío',
+  'tiene que', 'no es', 'sino', 'el reto', 'el desafío', 'en conjunto', 'de manera similar',
+  'por su parte', 'en contraste',
 ];
 
 const ABREVIATURA = /\b(et al|p|pp|vol|núm|n\.°|N|Dr|Dra|Sr|Sra|Ed|eds|art|arts|inc|[A-Z])\.(?=\s)/g;
@@ -114,4 +115,86 @@ function muletillas(textos) {
     .sort((a, b) => b.veces - a.veces);
 }
 
-module.exports = { oraciones, identicas, avisosDelParrafo, muletillas, VOCABULARIO, MULETILLAS };
+/** Las dos primeras palabras de un párrafo, sin la clave de cita: «asimismo se», «por su». */
+const apertura = (parrafo) =>
+  String(parrafo)
+    .replace(/\[AR[0-9A-F]{8}(?::[^\]\n]{1,40})?\]/gi, '')
+    .toLowerCase()
+    .split(/\s+/)
+    .map((w) => w.replace(/[^\p{L}\p{N}]/gu, ''))
+    .filter(Boolean)
+    .slice(0, 2)
+    .join(' ');
+
+/** Conectores con que el modelo abre párrafo tras párrafo. */
+const CONECTOR_DE_ENTRADA =
+  /^(asimismo|además|finalmente|por último|del mismo modo|de igual (?:forma|modo|manera)|igualmente|por su parte|en ese sentido|en este sentido|en consecuencia|por consiguiente|por ello|por otro lado|de manera similar|en contraste|en esa línea|en esta línea|siguiendo esta línea|a la par|paralelamente)\b/;
+
+/** «Apellido [AR…:n]», «Apellido (2024)» o «Apellido et al. (2024)» abriendo el párrafo. */
+const ABRE_CON_AUTOR = /^[A-ZÁÉÍÓÚÑ][\p{L}-]+(?:\s+(?:y|et al\.|e)\s*[A-ZÁÉÍÓÚÑ]?[\p{L}.-]*)*\s*(?:\[AR[0-9A-F]{8}:n\]|\(\d{4}\))/u;
+
+/**
+ * Lo que se ve en un capítulo entero ya guardado, sin original con que
+ * comparar: vocabulario de modelo, rayas y el molde de apertura entre párrafos,
+ * que es lo que más marcó Turnitin en el capítulo de prueba. Lista de líneas.
+ *
+ * Recibe los párrafos de prosa (sin títulos ni tablas).
+ */
+function avisosDeCapitulo(parrafos) {
+  const avisos = [];
+  const texto = parrafos.join('\n');
+
+  const vocabulario = VOCABULARIO.map((v) => [v, cuantas(texto, v)]).filter(([, n]) => n > 0);
+  if (vocabulario.length > 0) {
+    avisos.push(
+      `Vocabulario de modelo: ${vocabulario.map(([v, n]) => `«${v.replace('*', '…')}» ${n}`).join(', ')}. ` +
+        'Cámbialo por la palabra corriente.',
+    );
+  }
+
+  const rayas = (texto.match(/—/g) ?? []).length;
+  if (rayas > 0) avisos.push(`${rayas} rayas (—): cámbialas por coma, punto o paréntesis.`);
+
+  const aperturas = new Map();
+  for (const p of parrafos) {
+    const a = apertura(p);
+    if (a) aperturas.set(a, (aperturas.get(a) ?? 0) + 1);
+  }
+  for (const [a, n] of aperturas) {
+    if (n >= 3 && n >= parrafos.length * 0.2) {
+      avisos.push(`${n} párrafos abren igual («${a}…»): que cada uno entre de una forma distinta.`);
+    }
+  }
+
+  // «Asimismo, el…», «Asimismo, la…»: las dos primeras palabras cambian y el
+  // molde es el mismo. Se cuenta el conector de entrada por su cuenta.
+  const conectores = new Map();
+  for (const p of parrafos) {
+    const c = CONECTOR_DE_ENTRADA.exec(p.trim().toLowerCase())?.[1];
+    if (c) conectores.set(c, (conectores.get(c) ?? 0) + 1);
+  }
+  const conConector = [...conectores.values()].reduce((a, b) => a + b, 0);
+  if (conConector >= 4 && conConector >= parrafos.length * 0.3) {
+    const lista = [...conectores].sort((x, y) => y[1] - x[1]).map(([c, n]) => `«${c}» ${n}`).join(', ');
+    avisos.push(
+      `${conConector} de ${parrafos.length} párrafos abren con un conector (${lista}): la mayoría no lo ` +
+        'necesita; empieza por lo que el párrafo afirma.',
+    );
+  }
+
+  let seguidos = 0;
+  let maximo = 0;
+  for (const p of parrafos) {
+    seguidos = ABRE_CON_AUTOR.test(p.trim()) ? seguidos + 1 : 0;
+    maximo = Math.max(maximo, seguidos);
+  }
+  if (maximo >= 4) {
+    avisos.push(
+      `${maximo} párrafos seguidos abren con el autor y su cita, con la misma plantilla: en unos empieza por el ` +
+        'hallazgo o por el contexto, y deja la cita dentro de la oración.',
+    );
+  }
+  return avisos;
+}
+
+module.exports = { oraciones, identicas, avisosDelParrafo, avisosDeCapitulo, muletillas, VOCABULARIO, MULETILLAS };

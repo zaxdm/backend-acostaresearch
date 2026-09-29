@@ -26,6 +26,7 @@ const documento = require('./project.documento');
 const reescritura = require('./project.reescritura');
 const reporteIa = require('./project.reporte-ia');
 const controles = require('./project.humanizado-controles');
+const redaccion = require('./redaccion.service');
 const normas = require('./project.normas');
 const citas = require('./project.citas');
 const descarga = require('./project.descarga');
@@ -214,12 +215,20 @@ async function subirReporteEnSuTurno({ userId, productCode, buffer, nombre }) {
   const proyecto = await proyectoConLicencia(userId, productCode);
   if (!proyecto) return null;
 
-  const reporte = { nombre: nombre || 'reporte-ia.pdf', subidoAt: new Date().toISOString(), ...leido };
-  await almacen.guardarReporteIaDeDocumento(proyecto.id, reporte);
+  // Los reportes de antes de leer el de similitud no traían el tipo: eran de IA.
+  const tipo = leido.tipo ?? 'ia';
+  const reporte = { nombre: nombre || `reporte-${tipo}.pdf`, subidoAt: new Date().toISOString(), ...leido, tipo };
+  if (tipo === 'similitud') await almacen.guardarReporteSimilitud(proyecto.id, reporte);
+  else await almacen.guardarReporteIaDeDocumento(proyecto.id, reporte);
 
   const word = await almacen.leerDocumento(proyecto.id);
-  const marcados = word ? parrafosMarcados(documento.leer(word), reporte, word).length : null;
-  return { nombre: reporte.nombre, porcentaje: reporte.porcentaje, marcados, hayDocumento: Boolean(word) };
+  let marcados = null;
+  if (word) {
+    const parrafos = documento.leer(word);
+    marcados = parrafosMarcados(parrafos, reporte, word).length;
+    if (tipo === 'ia') await redaccion.recordarVozDelReporte(proyecto, parrafos, reporteIa.cruzar(reporte, parrafos));
+  }
+  return { tipo, nombre: reporte.nombre, porcentaje: reporte.porcentaje ?? null, marcados, hayDocumento: Boolean(word) };
 }
 
 /** Lo que se puede humanizar: ni títulos, ni tablas, ni referencias, ni rótulos, ni lo bloqueado. */
@@ -247,6 +256,7 @@ async function fichaDelPanel(proyecto) {
   const citados = await almacen.leerCitasDeDocumento(proyecto.id).catch(() => ({}));
   const reescritos = await almacen.leerReescritosDeDocumento(proyecto.id).catch(() => ({}));
   const reporte = await almacen.leerReporteIaDeDocumento(proyecto.id).catch(() => null);
+  const similitud = await almacen.leerReporteSimilitud(proyecto.id).catch(() => null);
   return {
     nombre: ficha.nombre,
     subidoAt: ficha.subidoAt,
@@ -255,11 +265,19 @@ async function fichaDelPanel(proyecto) {
     citados: Object.keys(citados).length,
     humanizados: Object.keys(reescritos).length,
     reporteIa: fichaDelReporte(reporte),
+    reporteSimilitud: fichaDelReporte(similitud),
   };
 }
 
 const fichaDelReporte = (reporte) =>
-  reporte ? { nombre: reporte.nombre, subidoAt: reporte.subidoAt, porcentaje: reporte.porcentaje } : null;
+  reporte
+    ? {
+        nombre: reporte.nombre,
+        subidoAt: reporte.subidoAt,
+        porcentaje: reporte.porcentaje ?? null,
+        ...(reporte.tipo === 'similitud' ? { desglose: reporte.desglose ?? null, fuentes: reporte.fuentes ?? [] } : {}),
+      }
+    : null;
 
 /** La ficha del documento subido sin leer el Word: para decir cuál hay. Null si no hay. */
 async function fichaDe(userId, productCode) {
@@ -274,7 +292,7 @@ async function fichaDe(userId, productCode) {
  * y la segunda ronda del humanizador audita lo que escribió la primera. Un
  * párrafo partido en dos sale con [APARTE] donde va el corte.
  */
-async function ver(userId, productCode, { desde = 1, soloMarcados = false } = {}) {
+async function ver(userId, productCode, { desde = 1, soloMarcados = false, reporte: tipoReporte = 'ia' } = {}) {
   const cargado = await cargar(userId, productCode);
   if (!cargado) return null;
 
@@ -283,6 +301,7 @@ async function ver(userId, productCode, { desde = 1, soloMarcados = false } = {}
   const citados = await almacen.leerCitasDeDocumento(proyecto.id);
   const reescritos = await almacen.leerReescritosDeDocumento(proyecto.id);
   const reporte = await almacen.leerReporteIaDeDocumento(proyecto.id);
+  const similitud = await almacen.leerReporteSimilitud(proyecto.id);
   const parrafos = documento.leer(buffer);
   const bloqueados = reescritura.bloqueados(buffer);
 
@@ -296,10 +315,13 @@ async function ver(userId, productCode, { desde = 1, soloMarcados = false } = {}
     humanizados: Object.keys(reescritos).length,
     norma: normaDe(proyecto),
     reporteIa: fichaDelReporte(reporte),
+    reporteSimilitud: fichaDelReporte(similitud),
   };
 
-  if (soloMarcados && reporte) {
-    return { ...comun, ...verMarcados(parrafos, reporte, { citados, reescritos, bloqueados, desde }) };
+  // El de similitud se lee igual que el de IA: lo que marcó y aún no se reescribió.
+  const elegido = tipoReporte === 'similitud' ? similitud : reporte;
+  if (soloMarcados && elegido) {
+    return { ...comun, tipoReporte, ...verMarcados(parrafos, elegido, { citados, reescritos, bloqueados, desde }) };
   }
 
   const lineas = [];
@@ -736,6 +758,10 @@ async function aviso(userId, productCode) {
     (ficha.reporteIa
       ? ` Tiene subido su reporte de IA de Turnitin (${ficha.reporteIa.porcentaje ?? 'menos de 20'} % IA): para ` +
         'humanizar, "ver_mi_documento" con "solo_marcados": true.'
+      : '') +
+    (ficha.reporteSimilitud
+      ? ` Tiene subido su reporte de similitud (${ficha.reporteSimilitud.porcentaje ?? '?'} %): para bajarla, ` +
+        '"ver_lo_marcado" con "reporte": "similitud".'
       : '')
   );
 }

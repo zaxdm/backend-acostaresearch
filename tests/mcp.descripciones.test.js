@@ -286,7 +286,7 @@ test('el esquema de TODAS las herramientas es uno que el servidor de verdad acep
   }
 });
 
-test('siguen registradas las mismas 26 herramientas', () => {
+test('siguen registradas las mismas 28 herramientas', () => {
   // 17 desde que existe «enlace_del_word»: el Word lo arma el servidor, en la
   // norma del proyecto, y Claude da el enlace en vez de fabricarlo él.
   // 18 desde «mis_fuentes»: ver su biblioteca y su Zotero sin tener un tema.
@@ -299,7 +299,9 @@ test('siguen registradas las mismas 26 herramientas', () => {
   //    Es la única que NO tienen todos los productos: solo la tesis tiene
   //    reglamento de capítulos (ver la prueba del informe, más abajo).
   // 26 desde «analisis_cualitativo»: entrevistas codificadas y comprobadas.
-  assert.equal(registradas.size, 26);
+  // 28 desde «reescribir_parrafos» y «ver_lo_marcado»: cambiar párrafos sueltos de
+  //    un capítulo y trabajar solo lo que marcó un reporte de Turnitin.
+  assert.equal(registradas.size, 28);
   for (const nombre of [
     'listar_capitulos',
     'mi_proyecto',
@@ -316,6 +318,8 @@ test('siguen registradas las mismas 26 herramientas', () => {
     'subir_mi_documento',
     'estructura_de_la_tesis',
     'analisis_cualitativo',
+    'reescribir_parrafos',
+    'ver_lo_marcado',
   ]) {
     assert.ok(registradas.has(nombre), `falta ${nombre}`);
   }
@@ -346,7 +350,7 @@ test('listar_capitulos sigue sin admitir argumentos', () => {
 
 test('ver_capitulo ofrece leer el texto guardado, por partes, y dice para qué', () => {
   const e = esquema('ver_capitulo');
-  assert.deepEqual(Object.keys(e.properties).sort(), ['capitulo', 'parte', 'texto']);
+  assert.deepEqual(Object.keys(e.properties).sort(), ['capitulo', 'desde', 'numerado', 'parte', 'texto']);
   assert.deepEqual(e.required, ['capitulo']);
   const d = descripcion('ver_capitulo');
   assert.match(d, /TEXTO GUARDADO/);

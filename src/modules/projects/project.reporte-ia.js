@@ -1,7 +1,8 @@
 'use strict';
 
 /**
- * El reporte de IA de Turnitin, en PDF, cruzado con el Word que subió el tesista.
+ * Los reportes de Turnitin en PDF —el de IA y el de similitud—, cruzados con el
+ * Word que subió el tesista o con los capítulos guardados.
  *
  * Para qué: el humanizador trabajaba sobre el documento entero y el Claude del
  * tesista reescribía también lo que Turnitin no había marcado. Con el reporte se
@@ -43,6 +44,19 @@ class ReporteNoValido extends Error {
 
 const esPdf = (buffer) => Buffer.isBuffer(buffer) && buffer.subarray(0, 5).toString('latin1') === '%PDF-';
 
+/**
+ * El reporte de similitud pinta cada fuente de un color. Cuenta cualquier color
+ * saturado, menos el amarillo puro, que es el resaltador del propio Word del
+ * tesista y sale igual en el PDF.
+ */
+function esColorDeCoincidencia(hex) {
+  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(hex ?? ''));
+  if (!m) return false;
+  const [r, g, b] = m.slice(1).map((x) => parseInt(x, 16));
+  const amarilloDelWord = r > 230 && g > 230 && b < 90;
+  return Math.max(r, g, b) - Math.min(r, g, b) >= 60 && !amarilloDelWord;
+}
+
 /** «Sólo generado con IA» es celeste; «parafraseado con IA», morado. Los dos cuentan. */
 function esColorDeIa(hex) {
   const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(hex ?? ''));
@@ -70,7 +84,7 @@ const aplicar = ([a, b, c, d, e, f], x, y) => [a * x + c * y + e, b * x + d * y 
  * Recibe la lista de operaciones de pdfjs tal cual (`getOperatorList`) y la
  * tabla OPS, para poder probarlo sin abrir ningún PDF.
  */
-function resaltados(fnArray, argsArray, OPS) {
+function resaltados(fnArray, argsArray, OPS, esColor = esColorDeIa) {
   let ctm = [1, 0, 0, 1, 0, 0];
   let relleno = null;
   const pila = [];
@@ -83,7 +97,7 @@ function resaltados(fnArray, argsArray, OPS) {
     else if (op === OPS.restore) ({ ctm, relleno } = pila.pop() ?? { ctm, relleno });
     else if (op === OPS.transform) ctm = multiplicar(args, ctm);
     else if (op === OPS.setFillRGBColor) relleno = args?.[0];
-    else if (op === OPS.constructPath && esColorDeIa(relleno)) {
+    else if (op === OPS.constructPath && esColor(relleno)) {
       const caja = Array.from(args?.at(-1) ?? []);
       if (caja.length !== 4 || caja.some((n) => !Number.isFinite(n))) continue;
       const esquinas = [
@@ -125,6 +139,42 @@ function palabrasDelRenglon(item) {
 
 const dentro = (cajas, { x, y }) => cajas.some(([x0, y0, x1, y1]) => x >= x0 && x <= x1 && y >= y0 && y <= y1);
 
+/** De qué reporte se trata, por lo que dice la portada. Null si no es de Turnitin. */
+function tipoDe(portada) {
+  if (/detectado como IA|detected as AI/i.test(portada)) return 'ia';
+  if (/similitud general|overall similarity|[ií]ndice de similitud|similarity report|informe de similitud/i.test(portada)) {
+    return 'similitud';
+  }
+  return null;
+}
+
+const numero = (m) => (m ? Number(m[1]) : null);
+
+/**
+ * La cabecera del reporte de similitud: el total, el desglose por tipo de fuente
+ * y las fuentes principales con su porcentaje. Lo que no aparezca queda en null
+ * o vacío: Turnitin cambia de maqueta y es mejor no inventar nada.
+ */
+function cabeceraDeSimilitud(texto) {
+  const porcentaje = numero(/(\d{1,3})\s*%\s*(?:similitud general|overall similarity)/i.exec(texto));
+  const desglose = {
+    internet: numero(/(\d{1,3})\s*%\s*(?:\S+\s+)?(?:fuentes de internet|internet sources)/i.exec(texto)),
+    publicaciones: numero(/(\d{1,3})\s*%\s*(?:\S+\s+)?(?:publicaciones|publications)/i.exec(texto)),
+    trabajos: numero(
+      /(\d{1,3})\s*%\s*(?:\S+\s+)?(?:trabajos entregados|trabajos del estudiante|submitted works|student papers)/i.exec(texto),
+    ),
+  };
+  const fuentes = [];
+  const principales = /(?:fuentes principales|top sources)([\s\S]*)$/i.exec(texto)?.[1] ?? '';
+  const fila =
+    /^\s*(\d{1,3})\s+(internet|publicaci[oó]n|publication|trabajos? (?:entregados?|del estudiante)|student papers?|submitted works?)\s+(.{3,120}?)\s+(<\s*1|\d{1,2})\s*%\s*$/gim;
+  for (const m of principales.matchAll(fila)) {
+    fuentes.push({ n: Number(m[1]), tipo: m[2], nombre: m[3].trim(), porcentaje: m[4].replace(/\s/g, '') });
+    if (fuentes.length >= 15) break;
+  }
+  return { porcentaje, desglose, fuentes };
+}
+
 /** «¿Qué?», «Ley.» y «30364,» → «qué», «ley», «30364». */
 const normalizar = (palabra) =>
   String(palabra)
@@ -141,7 +191,9 @@ function porcentajeDe(texto) {
 
 /**
  * Lee el PDF y devuelve lo que se guarda:
- * `{ porcentaje, palabras: 'una dos tres…', ia: '0110…' }`.
+ * `{ tipo, porcentaje, palabras: 'una dos tres…', ia: '0110…' }`, y en el de
+ * similitud además `desglose` y `fuentes`. `ia` es la marca de cada palabra:
+ * se llama así por el primer reporte que se leyó, y en el de similitud es «coincide».
  */
 async function leer(buffer) {
   let pdf;
@@ -154,38 +206,47 @@ async function leer(buffer) {
     throw new ReporteNoValido('No se pudo abrir el PDF. ¿Está completo o tiene contraseña?');
   }
 
-  const palabras = [];
-  const ia = [];
-  let portada = '';
-
+  const paginas = [];
   for (let n = 1; n <= pdf.numPages; n += 1) {
     const pagina = await pdf.getPage(n);
     const contenido = await pagina.getTextContent();
-    if (n <= 3) portada += ` ${contenido.items.map((i) => i.str).join(' ')}`;
     const { fnArray, argsArray } = await pagina.getOperatorList();
-    const cajas = resaltados(fnArray, argsArray, OPS);
+    paginas.push({ contenido, fnArray, argsArray });
+  }
+
+  // Los renglones con su salto, para que la cabecera se lea por líneas.
+  const textoDe = (p) => p.contenido.items.map((i) => `${i.str}${i.hasEOL ? '\n' : ' '}`).join('');
+  const portada = paginas.slice(0, 3).map(textoDe).join('\n');
+  const tipo = tipoDe(portada);
+  if (!tipo) {
+    throw new ReporteNoValido(
+      'Ese PDF no parece un reporte de Turnitin: no dice «% detectado como IA» ni «Similitud general». ' +
+        'En Turnitin, abre la entrega y descarga el reporte de IA o el de similitud en PDF.',
+    );
+  }
+
+  const esColor = tipo === 'ia' ? esColorDeIa : esColorDeCoincidencia;
+  const palabras = [];
+  const marcas = [];
+  for (const { contenido, fnArray, argsArray } of paginas) {
+    const cajas = resaltados(fnArray, argsArray, OPS, esColor);
     for (const item of contenido.items) {
       for (const palabra of palabrasDelRenglon(item)) {
         const limpia = normalizar(palabra.texto);
         if (!limpia) continue;
         palabras.push(limpia);
-        ia.push(cajas.length > 0 && dentro(cajas, palabra) ? '1' : '0');
+        marcas.push(cajas.length > 0 && dentro(cajas, palabra) ? '1' : '0');
       }
     }
   }
 
-  const porcentaje = porcentajeDe(portada);
-  if (porcentaje === undefined) {
-    throw new ReporteNoValido(
-      'Ese PDF no parece el reporte de IA de Turnitin: no dice «% detectado como IA». En Turnitin, ' +
-        'abre la entrega, entra en el indicador de IA y descarga ese reporte en PDF.',
-    );
-  }
   if (palabras.length < 50) {
-    throw new ReporteNoValido('Ese PDF no tiene el texto de la entrega. Descarga el reporte de IA completo, no solo la portada.');
+    throw new ReporteNoValido('Ese PDF no tiene el texto de la entrega. Descarga el reporte completo, no solo la portada.');
   }
 
-  return { porcentaje, palabras: palabras.join(' '), ia: ia.join('') };
+  const base = { tipo, palabras: palabras.join(' '), ia: marcas.join('') };
+  if (tipo === 'ia') return { ...base, porcentaje: porcentajeDe(portada) ?? null };
+  return { ...base, ...cabeceraDeSimilitud(paginas.map(textoDe).join('\n')) };
 }
 
 /** Primera posición de `lista` (ordenada) mayor que `desde`, o -1. */
@@ -263,6 +324,9 @@ module.exports = {
   UMBRAL_MARCADO,
   esPdf,
   esColorDeIa,
+  esColorDeCoincidencia,
+  tipoDe,
+  cabeceraDeSimilitud,
   resaltados,
   palabrasDelRenglon,
   porcentajeDe,

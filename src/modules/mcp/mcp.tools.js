@@ -13,6 +13,7 @@ const referenceService = require('../references/reference.service');
 const propiasService = require('../references/propias.service');
 const projectService = require('../projects/project.service');
 const documentoService = require('../projects/documento.service');
+const redaccion = require('../projects/redaccion.service');
 const subidaFormato = require('../projects/project.subida-formato');
 const subidaMaterial = require('../projects/project.subida-material');
 const subidaDocumento = require('../projects/project.subida-documento');
@@ -72,6 +73,51 @@ const SIN_ARGUMENTOS = fromJsonSchema({ type: 'object', properties: {}, addition
  * apertura y cierre en todo el capítulo. Lo que se puede contar (oraciones que
  * siguen iguales, muletillas, rayas) lo cuenta el servidor al guardar.
  */
+/**
+ * Cómo bajar la similitud con el reporte subido. Sale de la skill
+ * bajar-similitud: lo que no se negocia (las citas textuales) y la doble
+ * restricción (alejarse de la fuente sin caer en prosa de modelo).
+ */
+const REGLAS_DE_SIMILITUD = [
+  'CÓMO BAJAR LA SIMILITUD CON EL REPORTE. Ya pidió bajarla: trabaja tanda a tanda sin enseñarle cada ' +
+    'párrafo, salvo lo que haya que consultarle.',
+  '1. Clasifica cada párrafo antes de tocarlo: INTOCABLE (cita textual entre comillas, definición normada, ' +
+    'nombre de variable o de instrumento), ESTRUCTURAL (enunciados del problema, objetivos e hipótesis: se ' +
+    'varían solo con permiso de su asesor; pregúntaselo una vez) o REESCRIBIBLE. Lo que no se toca pásalo en ' +
+    '"saltar" para que no vuelva a salir.',
+  '2. Nunca parafrasees una cita textual para que deje de coincidir. Si un tramo parece copiado sin comillas, ' +
+    'pregúntale si es textual: si lo es, va entre comillas y con página, aunque la coincidencia suba.',
+  '3. En lo reescribible cambia la ESTRUCTURA, no palabras sueltas: el orden de la oración, el sujeto, dónde ' +
+    'va la cita, dónde se corta. Los términos técnicos se quedan como están.',
+  '4. Sin patrones de IA: nada de vocabulario culto, gerundios colgados, «no es X, sino Y», cierres que ' +
+    'resumen ni la misma apertura en cada párrafo. Si viene la VOZ DEL AUTOR, imítala.',
+  '5. No se tocan cifras, años, autores, claves [AR…] ni [FALTA FUENTE]. No añadas ni quites ideas.',
+  'RITMO: guarda cada tanda y vuelve a llamar hasta que no quede nada. Al final: "enlace_del_word" y un ' +
+    'informe breve: qué se reescribió, qué quedó intocable o estructural, y las palancas que no son ' +
+    'reescribir (excluir coincidencias pequeñas, la bibliografía y el texto citado; y avisar de la ' +
+    'autocoincidencia si ya entregó una versión antes). No prometas ningún porcentaje.',
+].join(N);
+
+/**
+ * Lo que recibe una skill que redacta, en su primer tramo: escribir de entrada
+ * sin los moldes que después hay que humanizar. La auditoría la hace el servidor
+ * al guardar (ver `redaccion.avisosDeRedaccion`), no Claude en el chat.
+ */
+const REGLAS_DE_REDACCION = [
+  'REDACTAR SIN QUE SUENE A IA. El servidor lo revisa al guardar: NO imprimas auditorías de patrones ni ' +
+    'métricas en el chat, aunque la skill lo pida.',
+  '- Escribe llano, con las palabras del tesista. Si abajo viene su VOZ, imítala: su largo de oración, sus ' +
+    'conectores, su vocabulario.',
+  '- Varía la forma entre párrafos parecidos. En antecedentes, no abras todos con «Apellido (año) se ' +
+    'propuso…»: unos empiezan por el hallazgo, otros por el contexto o el método, y no todos llevan sus ' +
+    'partes en el mismo orden ni miden lo mismo. Lo mismo en bases teóricas y dimensiones.',
+  '- Evita: vocabulario de modelo (crucial, fundamental, dogmático, estriba, «juega un papel», «cabe ' +
+    'destacar», «en estrecha relación»), gerundios colgados, «no es X, sino Y», cierres «En conjunto…» ' +
+    'y rayas (—).',
+  '- Al guardar con "guardar_capitulo" llegan AVISOS DE REDACCIÓN: corrige esos párrafos con ' +
+    '"reescribir_parrafos" antes de darle el Word.',
+].join(N);
+
 const REGLAS_CON_REPORTE = [
   'CÓMO HUMANIZAR CON EL REPORTE. El tesista ya pidió humanizarlo entero: NO le enseñes los párrafos ni ' +
     'le pidas aprobación por bloques; trabaja tanda a tanda hasta el final.',
@@ -700,6 +746,17 @@ const ESQUEMA_VER_CAPITULO = fromJsonSchema({
         'Con "texto": qué parte leer. Un capítulo largo sale por partes; la respuesta dice ' +
         'cuántas hay y cuál pedir después. Por omisión, la primera.',
     },
+    numerado: {
+      type: 'boolean',
+      description:
+        'Con "texto": true, el texto sale con cada párrafo numerado (¶7), para cambiar párrafos sueltos ' +
+        'con "reescribir_parrafos" sin volver a guardar el capítulo entero.',
+    },
+    desde: {
+      type: 'integer',
+      minimum: 1,
+      description: 'Con "numerado": el número de párrafo desde el que seguir leyendo.',
+    },
   },
   required: ['capitulo'],
   additionalProperties: false,
@@ -1072,7 +1129,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         'que descargar ni subir nada.',
       inputSchema: ESQUEMA_VER_CAPITULO,
     },
-    async ({ capitulo, texto: conTexto, parte }) => {
+    async ({ capitulo, texto: conTexto, parte, numerado, desde }) => {
       await licenseService.recordUsage({ licenseId: licencia.id, tool: 'ver_capitulo' });
 
       // Mismo filtro que en guardar_capitulo: leer el acuerdo de un capítulo
@@ -1090,6 +1147,23 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
 
       // El texto guardado, cuando se pide. Es lo que Claude necesita para
       // escribir un capítulo sobre otro sin que el tesista tenga que pegarlo.
+      if (conTexto && numerado && !aparte) {
+        const numerados = await redaccion.capituloNumerado(licencia.user.id, licencia.productCode, capitulo, { desde });
+        if (!numerados) {
+          return texto(`«${skill.displayName}» todavía no tiene texto guardado.`);
+        }
+        return texto(
+          `Texto guardado de «${skill.displayName}», por párrafos · ${numerados.total} bloques · ` +
+            `${numerados.palabras} palabras.${N}${N}${numerados.lineas.join(N + N)}${N}${N}` +
+            (numerados.siguiente
+              ? `SIGUE: pide "desde": ${numerados.siguiente} para el resto.`
+              : 'Es el final del capítulo.') +
+            `${N}${N}Lo que va entre corchetes al principio NO es del texto: [titulo], [tabla], [figura], ` +
+            '[lista] y [rotulo] no se reescriben. Para cambiar párrafos sueltos usa "reescribir_parrafos" ' +
+            'con su número; NO vuelvas a guardar el capítulo entero para eso.',
+        );
+      }
+
       if (conTexto) {
         const leido = await projectService.textoDeCapitulo(
           licencia.user.id,
@@ -1264,8 +1338,27 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
           ...entrada,
         });
 
+        // La revisión de redacción que antes imprimía cada skill en el chat. Si
+        // falla, el capítulo ya está guardado y eso es lo que importa.
+        const avisos = aparte
+          ? []
+          : await redaccion
+              .avisosDeRedaccion(licencia.user.id, licencia.productCode, entrada.capitulo)
+              .catch((error) => {
+                logger.error({ err: error, licenseId: licencia.id }, 'No se pudo revisar la redacción');
+                return [];
+              });
+        const revision =
+          avisos.length > 0
+            ? `AVISOS DE REDACCIÓN (el servidor ya revisó el capítulo; no hagas otra auditoría en el chat):${N}` +
+              `${avisos.map((a) => `- ${a}`).join(N)}${N}` +
+              'Léelo con "ver_capitulo" ("texto": true, "numerado": true), corrige esos párrafos con ' +
+              `"reescribir_parrafos" y después dale el Word.${N}${N}`
+            : '';
+
         return texto(
           `Guardado. «${skill.displayName}» lleva ${palabras} palabras.\n\n` +
+            revision +
             'DALE AQUÍ MISMO EL WORD con "enlace_del_word": sale con todos los capítulos que ' +
             'llevéis, en orden, con su portada y con las referencias en la norma del proyecto. ' +
             `En su perfil de la web NO hay ninguna descarga de ${SU_OBRA}: no lo mandes allí a ` +
@@ -1285,6 +1378,159 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
             '. AVÍSALE de que este capítulo no ha quedado guardado en el servidor y que ' +
             'no cierre la conversación sin copiarlo.',
         );
+      }
+    },
+  );
+
+  // ── Cambiar párrafos sueltos de un capítulo guardado ─────────────────────
+  //
+  // Humanizar o bajar la similitud de tres párrafos obligaba a reenviar el
+  // capítulo entero con guardar_capitulo: miles de palabras de salida por un
+  // cambio pequeño. Aquí van solo los párrafos, y el servidor los pone en su
+  // sitio con las mismas comprobaciones que el Word subido.
+  server.registerTool(
+    'reescribir_parrafos',
+    {
+      title: 'Cambiar párrafos de un capítulo guardado',
+      description:
+        'Reemplaza párrafos sueltos de un capítulo ya guardado en el proyecto, por su número (¶7), sin ' +
+        'reenviar el capítulo entero. Los números salen de "ver_capitulo" con "texto": true y "numerado": ' +
+        'true, o de "ver_lo_marcado". ÚSALA para humanizar, bajar la similitud o corregir los AVISOS DE ' +
+        'REDACCIÓN de "guardar_capitulo". Manda el texto NUEVO completo de cada párrafo. El servidor ' +
+        'rechaza el párrafo si cambian las cifras o los años, si lo que va entre comillas no se copió tal ' +
+        'cual, si desaparece un apellido citado o si las claves [AR…] y [FALTA FUENTE] no son las mismas. ' +
+        'Títulos, tablas, figuras, listas y rótulos no se aceptan. Un párrafo sale como un párrafo. Hasta 40 ' +
+        'por llamada.',
+      inputSchema: fromJsonSchema({
+        type: 'object',
+        properties: {
+          capitulo: { type: 'string', description: 'Clave del capítulo, como en mi_proyecto: "marco-teorico".' },
+          parrafos: {
+            type: 'array',
+            minItems: 1,
+            maxItems: 40,
+            items: {
+              type: 'object',
+              properties: {
+                p: { type: 'integer', minimum: 1, description: 'El número del párrafo: 7 para ¶7.' },
+                texto: { type: 'string', minLength: 1, maxLength: 16000, description: 'El párrafo nuevo entero.' },
+              },
+              required: ['p', 'texto'],
+              additionalProperties: false,
+            },
+          },
+        },
+        required: ['capitulo', 'parrafos'],
+        additionalProperties: false,
+      }),
+    },
+    async ({ capitulo, parrafos }) => {
+      await licenseService.recordUsage({ licenseId: licencia.id, tool: 'reescribir_parrafos' });
+      const skill = await skillService.findByCode(capitulo);
+      if (!skill || !skillService.perteneceAlGrupo(skill, licencia.productCode)) {
+        return texto(`No existe ningún capítulo con la clave "${capitulo}". Usa mi_proyecto para ver las claves.`);
+      }
+      try {
+        const r = await redaccion.reescribirParrafos({
+          userId: licencia.user.id,
+          productCode: licencia.productCode,
+          capitulo,
+          parrafos,
+        });
+        if (!r) return texto(`«${skill.displayName}» no tiene texto guardado: no hay párrafos que cambiar.`);
+        const rechazos =
+          r.rechazados.length > 0
+            ? `${N}${N}RECHAZADOS (${r.rechazados.length}), NO se guardaron:${N}` +
+              r.rechazados.map((x) => `¶${x.p}: ${x.motivo}`).join(N)
+            : '';
+        const avisos =
+          r.avisos.length > 0 ? `${N}${N}AVISOS (ya guardados; rehazlos si hace falta):${N}${r.avisos.join(N)}` : '';
+        return texto(
+          `Guardados ${r.guardados} párrafos en «${skill.displayName}», que lleva ${r.palabras} palabras.` +
+            `${rechazos}${avisos}${N}${N}Cuando termines, dale su Word con "enlace_del_word".`,
+        );
+      } catch (error) {
+        logger.error({ err: error, licenseId: licencia.id }, 'No se pudieron reescribir los párrafos');
+        return texto('NO se pudieron guardar los párrafos: error del servidor. Vuelve a intentarlo.');
+      }
+    },
+  );
+
+  // ── Lo que marcó Turnitin ────────────────────────────────────────────────
+  //
+  // Una sola entrada para los dos reportes (IA y similitud) y los dos sitios
+  // donde puede estar la tesis (su Word subido o los capítulos del proyecto).
+  server.registerTool(
+    'ver_lo_marcado',
+    {
+      title: 'Lo que marcó Turnitin',
+      description:
+        'Devuelve SOLO los párrafos que marcó un reporte de Turnitin que el tesista subió por el enlace de ' +
+        '"subir_mi_documento": el de IA ("reporte": "ia") para humanizar, o el de similitud ("reporte": ' +
+        '"similitud") para bajar la similitud. Los cruza con su Word subido o, si no subió ninguno, con los ' +
+        'capítulos guardados en el proyecto. Trae las reglas para reescribirlos y la voz del tesista: no ' +
+        'hace falta cargar la skill entera ni leer la tesis completa. Lo ya reescrito no vuelve a salir; la ' +
+        'tanda siguiente se pide volviendo a llamar. Si no hay reporte, dile que lo suba por ese enlace.',
+      inputSchema: fromJsonSchema({
+        type: 'object',
+        properties: {
+          reporte: { type: 'string', enum: ['ia', 'similitud'], description: 'Qué reporte leer.' },
+          saltar: {
+            type: 'array',
+            maxItems: 300,
+            items: { type: 'string', maxLength: 80 },
+            description:
+              'Párrafos que decidiste no tocar (citas textuales, objetivos sin permiso del asesor), tal ' +
+              'como salen entre corchetes: "marco-teorico ¶3" o "¶12".',
+          },
+        },
+        required: ['reporte'],
+        additionalProperties: false,
+      }),
+    },
+    async ({ reporte, saltar }) => {
+      await licenseService.recordUsage({ licenseId: licencia.id, tool: 'ver_lo_marcado' });
+      const userId = licencia.user.id;
+      const { productCode } = licencia;
+      const fuera = (saltar ?? []).map((x) => String(x).replace(/[[\]]/g, '').trim());
+      try {
+        const enWord = await documentoService.ver(userId, productCode, { soloMarcados: true, reporte });
+        if (enWord?.tipoReporte && enWord.marcados > 0) {
+          const saltados = new Set(fuera.map((x) => x.replace(/^¶/, '')));
+          const lineas = enWord.lineas.filter((l) => !saltados.has(/^¶(\d+)/.exec(l)?.[1]));
+          return texto(respuestaLoMarcado({ ...enWord, lineas, modo: 'documento', tipo: reporte }));
+        }
+        const enCapitulos = await redaccion.loMarcadoEnCapitulos(userId, productCode, {
+          tipo: reporte,
+          saltar: fuera.map((x) => x.replace(/\s*¶\s*/, '#')),
+        });
+        if (enCapitulos.sinReporte && !enWord?.tipoReporte) {
+          return texto(
+            `No hay ningún reporte de ${reporte === 'ia' ? 'IA' : 'similitud'} subido. Llama a "subir_mi_documento" ` +
+              'y dile que suba el PDF que descargó de Turnitin por ese enlace; si su tesis no está en el proyecto, ' +
+              'que suba también su Word.',
+          );
+        }
+        if (enCapitulos.sinTexto) {
+          return texto(
+            'El reporte está subido, pero no coincide con ningún texto: ni con su Word subido ni con capítulos ' +
+              'guardados. Pídele que suba por el mismo enlace el Word que pasó por Turnitin.',
+          );
+        }
+        const vozGuardada = await redaccion.voz(userId, productCode).catch(() => null);
+        return texto(
+          respuestaLoMarcado({
+            ...enCapitulos,
+            modo: 'capitulos',
+            tipo: reporte,
+            voz: vozGuardada?.parrafos ?? [],
+            reporteIa: reporte === 'ia' ? enCapitulos.reporte : null,
+            reporteSimilitud: reporte === 'similitud' ? enCapitulos.reporte : null,
+          }),
+        );
+      } catch (error) {
+        logger.error({ err: error, licenseId: licencia.id }, 'No se pudo leer lo marcado por Turnitin');
+        return texto('No se pudo leer el reporte: error del servidor. Vuelve a intentarlo.');
       }
     },
   );
@@ -1966,7 +2212,14 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
               return null;
             });
 
-          const partes = [falta, memoria, contenido.texto, consejo].filter(Boolean);
+          // Cómo escribe él y si esta fase ya trae texto de su avance: lo que la
+          // skill no puede saber y hace que no empiece de cero ni escriba con moldes.
+          const redaccionPrevia = await bloqueDeRedaccion(skill.code).catch((error) => {
+            logger.error({ err: error, licenseId: licencia.id }, 'No se pudo preparar la redacción');
+            return null;
+          });
+
+          const partes = [falta, memoria, redaccionPrevia, contenido.texto, consejo].filter(Boolean);
           if (partes.length > 1) return texto(partes.join('\n\n───────────\n\n'));
         }
 
@@ -2925,38 +3178,84 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
    * queda solo lo que hay que saber para reescribir. Sale en la primera tanda.
    */
   function respuestaMarcados(leido) {
-    if (!leido.reporteIa) {
-      return (
-        `«${leido.nombre}» no tiene subido el reporte de IA de Turnitin. Si lo tiene, llama a ` +
-        '"subir_mi_documento" y dile que lo suba (PDF) por ese enlace; si no lo tiene, humaniza con la ' +
-        'skill del humanizador leyendo sin "solo_marcados".'
+    return respuestaLoMarcado({ ...leido, modo: 'documento', tipo: 'ia' });
+  }
+
+  /**
+   * Lo que "redactar" pone delante de la skill: si la fase ya trae texto del
+   * avance, las reglas para no escribir con moldes y la voz del tesista.
+   */
+  async function bloqueDeRedaccion(capitulo) {
+    const { avance, voz } = await redaccion.contextoDeRedaccion(licencia.user.id, licencia.productCode, capitulo);
+    const partes = [];
+    if (avance) {
+      partes.push(
+        `ESTA FASE YA TIENE TEXTO: ${avance.palabras} palabras que vinieron de su avance («${avance.nombre}»). ` +
+          'Antes de redactar nada, léelo con "ver_capitulo" ("texto": true) y pregúntale si lo continúas, lo ' +
+          'revisas o lo humanizas. No empieces de cero ni lo reemplaces sin que lo diga.',
       );
     }
-    const cuanto = leido.reporteIa.porcentaje ?? 'menos de 20';
+    partes.push(REGLAS_DE_REDACCION);
+    if (voz) {
+      partes.push(
+        `VOZ DEL TESISTA (${voz.origen === 'reporte-ia' ? 'párrafos suyos que Turnitin dio 0 % IA' : 'párrafos de su avance'}; ` +
+          `escribe como él):${N}${voz.parrafos.map((v) => `> ${v}`).join(N)}`,
+      );
+    }
+    return partes.join(N + N);
+  }
+
+  /** Lo marcado por un reporte, con sus reglas y la voz, para el Word subido o los capítulos. */
+  function respuestaLoMarcado(leido) {
+    const similitud = leido.tipo === 'similitud';
+    const ficha = similitud ? leido.reporteSimilitud : leido.reporteIa;
+    if (!ficha) {
+      return (
+        `No hay reporte de ${similitud ? 'similitud' : 'IA'} de Turnitin subido. Si lo tiene, llama a ` +
+        '"subir_mi_documento" y dile que lo suba (PDF) por ese enlace.'
+      );
+    }
+    const guardar =
+      leido.modo === 'capitulos'
+        ? '"reescribir_parrafos" (un capítulo por llamada, con el número de cada párrafo)'
+        : '"humanizar_mi_documento" (con el número de cada párrafo)';
+    const cabecera = similitud
+      ? `Reporte de similitud: ${ficha.porcentaje ?? '?'} %` +
+        (ficha.desglose
+          ? ` (internet ${ficha.desglose.internet ?? '?'} %, publicaciones ${ficha.desglose.publicaciones ?? '?'} %, ` +
+            `trabajos entregados ${ficha.desglose.trabajos ?? '?'} %)`
+          : '') +
+        (ficha.fuentes?.length
+          ? `${N}Fuentes principales: ${ficha.fuentes.slice(0, 8).map((f) => `${f.n}. ${f.nombre} ${f.porcentaje} %`).join(' · ')}`
+          : '')
+      : `Reporte: ${ficha.porcentaje ?? 'menos de 20'} % IA`;
     if (leido.lineas.length === 0) {
       return (
-        `Reporte: ${cuanto} % IA · ${leido.marcados} párrafos marcados · NO QUEDA NINGUNO SIN HUMANIZAR.${N}${N}` +
-        'Dale su Word con "enlace_del_word" y el informe final: cuántos párrafos se humanizaron, las ' +
-        'oraciones del original que no se entendían y las ideas repetidas que notaste. Dile que lo pase ' +
-        'otra vez por Turnitin y, si algo sigue marcado, suba el reporte nuevo por el mismo enlace de ' +
-        '"subir_mi_documento". No le prometas ningún porcentaje.'
+        `${cabecera} · ${leido.marcados} párrafos marcados · NO QUEDA NINGUNO POR TRABAJAR.${N}${N}` +
+        'Dale su Word con "enlace_del_word" y el informe final. Dile que lo pase otra vez por Turnitin y, si ' +
+        'algo sigue marcado, suba el reporte nuevo por el mismo enlace. No le prometas ningún porcentaje.'
       );
     }
     // Las reglas y la voz van en TODAS las tandas: puede retomar en otra conversación.
     const reglas =
-      `${REGLAS_CON_REPORTE}${N}${N}` +
-      (leido.voz.length > 0
-        ? `VOZ DEL AUTOR (párrafos suyos que Turnitin dio 0 %; imita esto):${N}` +
-          `${leido.voz.map((v) => `> ${v}`).join(N)}${N}${N}`
+      `${similitud ? REGLAS_DE_SIMILITUD : REGLAS_CON_REPORTE}${N}${N}` +
+      (leido.voz?.length > 0
+        ? `VOZ DEL AUTOR (párrafos suyos; imita esto):${N}${leido.voz.map((v) => `> ${v}`).join(N)}${N}${N}`
         : '');
+    const porCapitulo = leido.porCapitulo
+      ? ` · por capítulo: ${Object.entries(leido.porCapitulo).map(([c, n]) => `${c} ${n}`).join(', ')}`
+      : '';
     return (
-      `Reporte: ${cuanto} % IA · ${leido.marcados} párrafos marcados · faltan ${leido.pendientes} · en ` +
-      `esta tanda ${leido.lineas.length}.${N}${N}` +
+      `${cabecera} · ${leido.marcados} párrafos marcados · faltan ${leido.pendientes} · en esta tanda ` +
+      `${leido.lineas.length}${porCapitulo}.${N}${N}` +
       reglas +
       `PÁRRAFOS (lo que va entre paréntesis y corchetes al principio NO es del texto):${N}` +
       `${leido.lineas.join(N)}${N}${N}` +
-      'Reescríbelos TODOS y mándalos juntos a "humanizar_mi_documento". Después vuelve a llamar a ' +
-      '"ver_mi_documento" con "solo_marcados": true hasta que no quede ninguno.'
+      `Reescríbelos y guárdalos con ${guardar}. Después vuelve a llamar a ` +
+      (leido.modo === 'capitulos' || similitud
+        ? `"ver_lo_marcado" con "reporte": "${leido.tipo}"`
+        : '"ver_mi_documento" con "solo_marcados": true') +
+      ' hasta que no quede ninguno.'
     );
   }
 
@@ -2980,9 +3279,10 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         'pulsa, sin escribir la dirección, y dile que vuelva a la conversación cuando lo haya subido; ' +
         'entonces léelo con "ver_mi_documento". Subir uno nuevo reemplaza al anterior, pero conserva ' +
         'las citas y lo humanizado de los párrafos que sigan igual. ' +
-        'EL MISMO ENLACE RECIBE EL REPORTE DE IA DE TURNITIN (PDF): si quiere humanizar, dile que suba ' +
-        'ahí también ese reporte. Con él se reescribe SOLO lo que Turnitin marcó, de una vez y gastando ' +
-        'mucho menos.',
+        'EL MISMO ENLACE RECIBE LOS REPORTES DE TURNITIN EN PDF, el de IA y el de similitud, también sin ' +
+        'Word si su tesis ya está guardada en el proyecto. Si quiere humanizar o bajar la similitud, dile que ' +
+        'suba ahí el reporte: con él se trabaja SOLO lo que Turnitin marcó ("ver_lo_marcado"), de una vez y ' +
+        'gastando mucho menos.',
       inputSchema: SIN_ARGUMENTOS,
     },
     async () => {
@@ -2999,16 +3299,20 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
           `con ${ficha.citados} párrafos citados y ${ficha.humanizados} humanizados. Si sube otro, ` +
           'reemplaza a ese: se conservan las citas y lo humanizado de los párrafos que sigan igual.'
         : 'Todavía no hay ningún documento subido.';
-      const reporte = ficha?.reporteIa
-        ? ` También tiene subido su reporte de IA de Turnitin (${ficha.reporteIa.porcentaje ?? 'menos de 20'} %).`
-        : '';
+      const reporte =
+        (ficha?.reporteIa
+          ? ` También tiene subido su reporte de IA de Turnitin (${ficha.reporteIa.porcentaje ?? 'menos de 20'} %).`
+          : '') +
+        (ficha?.reporteSimilitud
+          ? ` Y su reporte de similitud (${ficha.reporteSimilitud.porcentaje ?? '?'} %).`
+          : '');
 
       return texto(
-        `${hayUno}${reporte}${N}${N}Enlace para subir su Word (.docx, hasta 40 MB) y, si lo tiene, el ` +
-          `reporte de IA de Turnitin en PDF:${N}${enlace}${N}${N}` +
-          'Si lo que quiere es humanizar, dile que suba los DOS archivos: con el reporte se trabaja solo ' +
-          'lo que Turnitin marcó. Dile que vuelva aquí y te avise cuando los haya subido; entonces léelo ' +
-          'con "ver_mi_documento" ("solo_marcados": true si subió el reporte).',
+        `${hayUno}${reporte}${N}${N}Enlace para subir su Word (.docx, hasta 40 MB) y, si los tiene, los ` +
+          `reportes de Turnitin en PDF (de IA o de similitud):${N}${enlace}${N}${N}` +
+          'Si lo que quiere es humanizar o bajar la similitud, dile que suba el reporte (y su Word, si la tesis ' +
+          'no está guardada en el proyecto): con él se trabaja solo lo que Turnitin marcó. Dile que vuelva ' +
+          'aquí y te avise cuando lo haya subido; entonces llama a "ver_lo_marcado" con el reporte que subió.',
       );
     },
   );
@@ -3140,6 +3444,10 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
           (leido.reporteIa
             ? `Tiene subido su reporte de IA de Turnitin (${leido.reporteIa.porcentaje ?? 'menos de 20'} %): ` +
               `para HUMANIZAR no leas así, llama con "solo_marcados": true.${N}`
+            : '') +
+          (leido.reporteSimilitud
+            ? `Tiene subido su reporte de similitud (${leido.reporteSimilitud.porcentaje ?? '?'} %): para BAJARLA, ` +
+              `llama a "ver_lo_marcado" con "reporte": "similitud".${N}`
             : '') +
           N +
           `${tanda}${N}${N}` +

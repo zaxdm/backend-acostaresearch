@@ -141,6 +141,7 @@ sustituir('../src/modules/projects/project.repository', {
   guardarEtapa: async (id, code, datos) => etapas.push({ code, ...datos }),
 });
 sustituir('../src/modules/skills/skill.service', { listCatalog: async () => TESIS });
+let voz = null;
 sustituir('../src/modules/projects/project.storage', {
   palabrasDe: (t) => t.replace(/^#+\s+/gm, '').trim().split(/\s+/).length,
   guardar: async (id, code, texto) => {
@@ -152,6 +153,10 @@ sustituir('../src/modules/projects/project.storage', {
   },
   leerFichaDeAvance: async () => ficha,
   borrarFichaDeAvance: async () => true,
+  leerVoz: async () => voz,
+  guardarVoz: async (id, v) => {
+    voz = v;
+  },
 });
 
 const servicio = require('../src/modules/projects/avance.service');

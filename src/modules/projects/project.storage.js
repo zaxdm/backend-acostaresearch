@@ -394,6 +394,8 @@ function rutaDeDocumento(projectId, que) {
     citas: 'documento-citas.json',
     reescritos: 'documento-reescritos.json',
     reporteIa: 'documento-reporte-ia.json',
+    reporteSimilitud: 'documento-reporte-similitud.json',
+    voz: 'voz-del-tesista.json',
   };
   return path.join(env.capitulosDir, projectId, nombres[que]);
 }
@@ -449,9 +451,24 @@ const leerReporteIaDeDocumento = (projectId) => leerJson(rutaDeDocumento(project
 const guardarReporteIaDeDocumento = (projectId, reporte) =>
   escribirJson(rutaDeDocumento(projectId, 'reporteIa'), reporte);
 
+/** El reporte de similitud de Turnitin, igual que el de IA. Null si no subió ninguno. */
+const leerReporteSimilitud = (projectId) => leerJson(rutaDeDocumento(projectId, 'reporteSimilitud'));
+
+const guardarReporteSimilitud = (projectId, reporte) =>
+  escribirJson(rutaDeDocumento(projectId, 'reporteSimilitud'), reporte);
+
+/**
+ * Dos o tres párrafos que escribió el tesista sin ayuda: los que Turnitin dio
+ * limpios en su reporte de IA, o, si no hay reporte, los de su avance. Todas las
+ * skills que redactan los reciben para escribir como él. Null si no hay.
+ */
+const leerVoz = (projectId) => leerJson(rutaDeDocumento(projectId, 'voz'));
+
+const guardarVoz = (projectId, voz) => escribirJson(rutaDeDocumento(projectId, 'voz'), voz);
+
 async function borrarDocumento(projectId) {
   let habia = false;
-  for (const que of ['original', 'ficha', 'citas', 'reescritos', 'reporteIa']) {
+  for (const que of ['original', 'ficha', 'citas', 'reescritos', 'reporteIa', 'reporteSimilitud']) {
     try {
       await fs.unlink(rutaDeDocumento(projectId, que));
       habia = true;
@@ -543,6 +560,10 @@ module.exports = {
   guardarReescritosDeDocumento,
   leerReporteIaDeDocumento,
   guardarReporteIaDeDocumento,
+  leerReporteSimilitud,
+  guardarReporteSimilitud,
+  leerVoz,
+  guardarVoz,
   borrarDocumento,
   guardarFichaDeAvance,
   leerFichaDeAvance,

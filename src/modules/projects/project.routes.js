@@ -912,13 +912,19 @@ router.post(
   }),
 );
 
-/** Lo que se le dice al subir el reporte de IA de Turnitin por el enlace de Claude. */
+/** Lo que se le dice al subir un reporte de Turnitin (de IA o de similitud) por el enlace de Claude. */
 function mensajeDeReporte(reporte) {
-  const cuanto = reporte.porcentaje === null ? 'menos del 20 %' : `${reporte.porcentaje} %`;
+  const similitud = reporte.tipo === 'similitud';
+  const cuanto =
+    reporte.porcentaje === null
+      ? similitud
+        ? 'sin porcentaje legible'
+        : 'menos del 20 % detectado como IA'
+      : `${reporte.porcentaje} % ${similitud ? 'de similitud' : 'detectado como IA'}`;
   const marcados = reporte.hayDocumento
     ? ` Turnitin marcó ${reporte.marcados} párrafos de tu documento.`
-    : ' Sube también tu Word para que se crucen.';
-  return `Reporte guardado: ${cuanto} detectado como IA.${marcados} Vuelve a tu conversación y di «ya lo subí».`;
+    : ' Si tu tesis está guardada en tu proyecto, Claude la cruza con tus capítulos; si es un Word aparte, súbelo también.';
+  return `Reporte ${similitud ? 'de similitud' : 'de IA'} guardado: ${cuanto}.${marcados} Vuelve a tu conversación y di «ya lo subí».`;
 }
 
 /** Lo que se le dice al subir el documento, desde el perfil o desde el enlace de Claude. */

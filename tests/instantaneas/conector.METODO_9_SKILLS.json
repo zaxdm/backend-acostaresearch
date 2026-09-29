@@ -48,6 +48,15 @@
           "type": "integer",
           "minimum": 1,
           "description": "Con \"texto\": qué parte leer. Un capítulo largo sale por partes; la respuesta dice cuántas hay y cuál pedir después. Por omisión, la primera."
+        },
+        "numerado": {
+          "type": "boolean",
+          "description": "Con \"texto\": true, el texto sale con cada párrafo numerado (¶7), para cambiar párrafos sueltos con \"reescribir_parrafos\" sin volver a guardar el capítulo entero."
+        },
+        "desde": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Con \"numerado\": el número de párrafo desde el que seguir leyendo."
         }
       },
       "required": [
@@ -166,6 +175,82 @@
       "required": [
         "capitulo",
         "texto"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "nombre": "reescribir_parrafos",
+    "titulo": "Cambiar párrafos de un capítulo guardado",
+    "descripcion": "Reemplaza párrafos sueltos de un capítulo ya guardado en el proyecto, por su número (¶7), sin reenviar el capítulo entero. Los números salen de \"ver_capitulo\" con \"texto\": true y \"numerado\": true, o de \"ver_lo_marcado\". ÚSALA para humanizar, bajar la similitud o corregir los AVISOS DE REDACCIÓN de \"guardar_capitulo\". Manda el texto NUEVO completo de cada párrafo. El servidor rechaza el párrafo si cambian las cifras o los años, si lo que va entre comillas no se copió tal cual, si desaparece un apellido citado o si las claves [AR…] y [FALTA FUENTE] no son las mismas. Títulos, tablas, figuras, listas y rótulos no se aceptan. Un párrafo sale como un párrafo. Hasta 40 por llamada.",
+    "esquema": {
+      "type": "object",
+      "properties": {
+        "capitulo": {
+          "type": "string",
+          "description": "Clave del capítulo, como en mi_proyecto: \"marco-teorico\"."
+        },
+        "parrafos": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 40,
+          "items": {
+            "type": "object",
+            "properties": {
+              "p": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "El número del párrafo: 7 para ¶7."
+              },
+              "texto": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 16000,
+                "description": "El párrafo nuevo entero."
+              }
+            },
+            "required": [
+              "p",
+              "texto"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "capitulo",
+        "parrafos"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "nombre": "ver_lo_marcado",
+    "titulo": "Lo que marcó Turnitin",
+    "descripcion": "Devuelve SOLO los párrafos que marcó un reporte de Turnitin que el tesista subió por el enlace de \"subir_mi_documento\": el de IA (\"reporte\": \"ia\") para humanizar, o el de similitud (\"reporte\": \"similitud\") para bajar la similitud. Los cruza con su Word subido o, si no subió ninguno, con los capítulos guardados en el proyecto. Trae las reglas para reescribirlos y la voz del tesista: no hace falta cargar la skill entera ni leer la tesis completa. Lo ya reescrito no vuelve a salir; la tanda siguiente se pide volviendo a llamar. Si no hay reporte, dile que lo suba por ese enlace.",
+    "esquema": {
+      "type": "object",
+      "properties": {
+        "reporte": {
+          "type": "string",
+          "enum": [
+            "ia",
+            "similitud"
+          ],
+          "description": "Qué reporte leer."
+        },
+        "saltar": {
+          "type": "array",
+          "maxItems": 300,
+          "items": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "description": "Párrafos que decidiste no tocar (citas textuales, objetivos sin permiso del asesor), tal como salen entre corchetes: \"marco-teorico ¶3\" o \"¶12\"."
+        }
+      },
+      "required": [
+        "reporte"
       ],
       "additionalProperties": false
     }
@@ -590,7 +675,7 @@
   {
     "nombre": "subir_mi_documento",
     "titulo": "Enlace para subir su documento",
-    "descripcion": "Da un ENLACE para que el tesista suba su Word (.docx) al servidor: su tesis escrita por su cuenta FUERA de la plataforma, para citarla o humanizarla. Dice también si ya hay uno subido, cuál y de qué fecha. SOLO PARA UN DOCUMENTO QUE NO ESTÁ EN EL SERVIDOR: lo que ya se guardó con \"guardar_capitulo\" NO se sube aquí; se lee con \"ver_capitulo\" y se descarga con \"enlace_del_word\". NUNCA le pidas que descargue su Word y lo vuelva a subir. ÚSALA cuando no haya ningún documento subido, o cuando al preguntarle diga que quiere trabajar con uno NUEVO en vez del que está en el servidor. Dale el enlace como enlace que se pulsa, sin escribir la dirección, y dile que vuelva a la conversación cuando lo haya subido; entonces léelo con \"ver_mi_documento\". Subir uno nuevo reemplaza al anterior, pero conserva las citas y lo humanizado de los párrafos que sigan igual. EL MISMO ENLACE RECIBE EL REPORTE DE IA DE TURNITIN (PDF): si quiere humanizar, dile que suba ahí también ese reporte. Con él se reescribe SOLO lo que Turnitin marcó, de una vez y gastando mucho menos.",
+    "descripcion": "Da un ENLACE para que el tesista suba su Word (.docx) al servidor: su tesis escrita por su cuenta FUERA de la plataforma, para citarla o humanizarla. Dice también si ya hay uno subido, cuál y de qué fecha. SOLO PARA UN DOCUMENTO QUE NO ESTÁ EN EL SERVIDOR: lo que ya se guardó con \"guardar_capitulo\" NO se sube aquí; se lee con \"ver_capitulo\" y se descarga con \"enlace_del_word\". NUNCA le pidas que descargue su Word y lo vuelva a subir. ÚSALA cuando no haya ningún documento subido, o cuando al preguntarle diga que quiere trabajar con uno NUEVO en vez del que está en el servidor. Dale el enlace como enlace que se pulsa, sin escribir la dirección, y dile que vuelva a la conversación cuando lo haya subido; entonces léelo con \"ver_mi_documento\". Subir uno nuevo reemplaza al anterior, pero conserva las citas y lo humanizado de los párrafos que sigan igual. EL MISMO ENLACE RECIBE LOS REPORTES DE TURNITIN EN PDF, el de IA y el de similitud, también sin Word si su tesis ya está guardada en el proyecto. Si quiere humanizar o bajar la similitud, dile que suba ahí el reporte: con él se trabaja SOLO lo que Turnitin marcó (\"ver_lo_marcado\"), de una vez y gastando mucho menos.",
     "esquema": {
       "type": "object",
       "properties": {},

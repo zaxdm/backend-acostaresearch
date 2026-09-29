@@ -26,6 +26,7 @@ const { repartir } = require('./project.avance');
 const skillService = require('../skills/skill.service');
 const { perfilDe } = require('../productos/producto.perfil');
 const { enSerie } = require('../../shared/utils/enSerie');
+const redaccion = require('./redaccion.service');
 
 /** El mismo turno que `guardar_capitulo`: los dos escriben el texto de las fases. */
 const claveDeProyecto = (userId, productCode) => `proyecto:${userId}:${productCode}`;
@@ -110,6 +111,9 @@ async function subirEnSuTurno({ userId, productCode, buffer, nombre }) {
     fases,
   };
   await almacen.guardarFichaDeAvance(proyecto.id, ficha);
+  // Lo que escribió por su cuenta es la mejor muestra de su voz mientras no
+  // haya un reporte de IA que diga qué párrafos son suyos de verdad.
+  await redaccion.recordarVozDelAvance(proyecto.id, [...porFase.values()]);
   return ficha;
 }
 

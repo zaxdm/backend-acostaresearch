@@ -45,6 +45,10 @@ sustituir('../src/modules/projects/project.storage', {
   guardarReescritosDeDocumento: async (id, reescritos) => disco.set(`${id}:reescritos`, reescritos),
   leerReporteIaDeDocumento: async (id) => disco.get(`${id}:reporteIa`) ?? null,
   guardarReporteIaDeDocumento: async (id, reporte) => disco.set(`${id}:reporteIa`, reporte),
+  leerReporteSimilitud: async (id) => disco.get(`${id}:reporteSimilitud`) ?? null,
+  guardarReporteSimilitud: async (id, reporte) => disco.set(`${id}:reporteSimilitud`, reporte),
+  leerVoz: async (id) => disco.get(`${id}:voz`) ?? null,
+  guardarVoz: async (id, v) => disco.set(`${id}:voz`, v),
   borrarDocumento: async (id) =>
     ['original', 'ficha', 'citas', 'reescritos', 'reporteIa'].map((q) => disco.delete(`${id}:${q}`)).some(Boolean),
 });
@@ -292,7 +296,9 @@ test('con el reporte de Turnitin: lee solo lo marcado, da la voz limpia y cuenta
   });
   try {
     const subido = await servicio.subirReporte({ userId: 'u1', productCode: 'METODO', buffer: Buffer.from('%PDF-'), nombre: 'ia.pdf' });
-    assert.deepEqual(subido, { nombre: 'ia.pdf', porcentaje: 60, marcados: 2, hayDocumento: true });
+    assert.deepEqual(subido, { tipo: 'ia', nombre: 'ia.pdf', porcentaje: 60, marcados: 2, hayDocumento: true });
+    // Lo que Turnitin dio limpio queda como voz del tesista para las demás skills.
+    assert.deepEqual(disco.get('p1:voz').parrafos, [limpio]);
   } finally {
     reporteIa.leer = leerReal;
   }

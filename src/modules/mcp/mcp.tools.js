@@ -1482,8 +1482,8 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         'hace falta cargar la skill entera ni leer la tesis completa. Lo ya reescrito no vuelve a salir; la ' +
         'tanda siguiente se pide volviendo a llamar. Si no hay reporte, dile que lo suba por ese enlace. ' +
         'SIN REPORTE, CON SU PROPIO RESALTADO: si el tesista dice que marcó en rojo en su Word lo que hay ' +
-        'que humanizar, usa "reporte": "rojo": devuelve solo lo resaltado en rojo del Word subido, y de los ' +
-        'párrafos con solo una parte en rojo, qué parte es.',
+        'que humanizar (con el resaltador o con la letra en rojo), usa "reporte": "rojo": devuelve solo lo rojo ' +
+        'del Word subido, y de los párrafos con solo una parte en rojo, qué parte es.',
       inputSchema: fromJsonSchema({
         type: 'object',
         properties: {
@@ -1521,8 +1521,9 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
           }
           if (enWord.marcados === 0) {
             return texto(
-              `En «${enWord.nombre}» no hay nada resaltado en rojo que se pueda humanizar. Se lee el RESALTADOR ` +
-                'de Word (o el sombreado) rojo, no el color de la letra, y no cuentan títulos, tablas ni referencias. ' +
+              `En «${enWord.nombre}» no hay nada en rojo que se pueda humanizar. Se lee el resaltador, el ` +
+                'sombreado y el color de la letra en rojo (no el naranja ni el rosado), y no cuentan títulos, tablas ' +
+                'ni referencias. ' +
                 'Pregúntale si lo marcó así y, si subió otra versión, que la suba por el enlace de "subir_mi_documento".',
             );
           }

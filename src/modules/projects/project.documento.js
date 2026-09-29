@@ -340,25 +340,42 @@ const ESTILO_DE_INDICE = /^(toc|tdc|[íi]ndice)\s*\d/i;
 
 // ── El resaltador del tesista ──────────────────────────────────────────────
 //
-// Hay quien sube su Word con lo que quiere humanizar resaltado en rojo y lo que
-// escribió él en amarillo. El rojo hace de reporte de Turnitin hecho a mano: se
+// Hay quien sube su Word con lo que quiere humanizar en rojo (resaltado o con la
+// letra roja) y lo que escribió él resaltado en amarillo. El rojo hace de reporte de Turnitin hecho a mano: se
 // reescribe solo eso. El amarillo es su voz, la muestra que hay que imitar.
 
-/** «rojo», «amarillo» o null, por el resaltador de la corrida o, si no tiene, por su sombreado. */
+/** «rojo», «amarillo» o null, de un color #RRGGBB. */
+function tonoDe(hex) {
+  if (!/^[0-9a-f]{6}$/i.test(hex ?? '')) return null;
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  if (r >= 170 && g <= 110 && b <= 110) return 'rojo';
+  if (r >= 200 && g >= 200 && b <= 130) return 'amarillo';
+  return null;
+}
+
+/**
+ * «rojo», «amarillo» o null: el resaltador de la corrida, su sombreado o el
+ * color de su letra.
+ *
+ * La letra roja cuenta igual que el resaltador rojo: el 29-sep-2026 el primer
+ * tesista que lo usó marcó lo suyo con el resaltador amarillo y lo que había
+ * que humanizar con la letra en rojo, y no se encontró nada. El rojo gana si
+ * una corrida trae los dos: es lo que pide trabajo.
+ */
 function colorDeResaltado(rPr) {
   // El formato de antes de un cambio controlado no es el que se ve.
   const vigente = String(rPr ?? '').replace(/<w:rPrChange\b[\s\S]*?<\/w:rPrChange>/g, '');
   const marcador = (/<w:highlight\b[^>]*w:val="([^"]+)"/.exec(vigente) || [])[1];
-  if (marcador && marcador !== 'none') {
-    if (/^(red|darkRed)$/i.test(marcador)) return 'rojo';
-    if (/^(yellow|darkYellow)$/i.test(marcador)) return 'amarillo';
-    return null;
-  }
-  const fondo = (/<w:shd\b[^>]*w:fill="([0-9a-f]{6})"/i.exec(vigente) || [])[1];
-  if (!fondo) return null;
-  const [r, g, b] = [0, 2, 4].map((i) => parseInt(fondo.slice(i, i + 2), 16));
-  if (r >= 170 && g <= 110 && b <= 110) return 'rojo';
-  if (r >= 200 && g >= 200 && b <= 130) return 'amarillo';
+  const resaltador = /^(red|darkRed)$/i.test(marcador ?? '')
+    ? 'rojo'
+    : /^(yellow|darkYellow)$/i.test(marcador ?? '')
+      ? 'amarillo'
+      : null;
+  const fondo = marcador && marcador !== 'none' ? null : tonoDe((/<w:shd\b[^>]*w:fill="([^"]+)"/.exec(vigente) || [])[1]);
+  const letra = tonoDe((/<w:color\b[^>]*w:val="([^"]+)"/.exec(vigente) || [])[1]) === 'rojo' ? 'rojo' : null;
+  const colores = [resaltador, fondo, letra];
+  if (colores.includes('rojo')) return 'rojo';
+  if (colores.includes('amarillo')) return 'amarillo';
   return null;
 }
 

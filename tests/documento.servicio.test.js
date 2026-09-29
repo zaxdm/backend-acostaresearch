@@ -393,6 +393,24 @@ test('lo resaltado en rojo se trabaja como un reporte: solo eso, por tramos, con
   assert.ok(p3.rojo.length > 0 && p3.amarillo.length > 0);
 });
 
+test('la letra roja cuenta como rojo, como en el primer Word real que llegó así', async () => {
+  const run = (t, rPr) => `<w:r><w:rPr>${rPr}</w:rPr><w:t xml:space="preserve">${t}</w:t></w:r>`;
+  const cuerpo = [
+    `<w:p>${run('Esto lo escribí yo.', '<w:highlight w:val="yellow"/>')}</w:p>`,
+    `<w:p>${run('Esto lo hizo la IA y hay que humanizarlo.', '<w:color w:val="FF0000"/>')}</w:p>`,
+    `<w:p>${run('Rojo oscuro también.', '<w:color w:val="C00000"/>')}</w:p>`,
+    `<w:p>${run('Letra automática.', '<w:color w:val="auto"/>')}${run(' Letra azul.', '<w:color w:val="0070C0"/>')}</w:p>`,
+  ].join('');
+  const zip = new AdmZip();
+  zip.addFile('[Content_Types].xml', Buffer.from('<Types/>'));
+  zip.addFile('word/document.xml', Buffer.from(`<w:document xmlns:w="${W}"><w:body>${cuerpo}<w:sectPr/></w:body></w:document>`));
+  await servicio.subir({ userId: 'u1', productCode: 'METODO', buffer: zip.toBuffer(), nombre: 'letra.docx' });
+
+  const leido = await servicio.ver('u1', 'METODO', { soloMarcados: true, reporte: 'rojo' });
+  assert.equal(leido.marcados, 2);
+  assert.deepEqual(leido.lineas.map((l) => l.slice(0, 17)), ['¶2 (todo en rojo)', '¶3 (todo en rojo)']);
+});
+
 test('pedir lo rojo de un Word sin rojo no devuelve nada que trabajar', async () => {
   await servicio.subir({ userId: 'u1', productCode: 'METODO', buffer: docx(['Uno.', 'Dos.']), nombre: 't.docx' });
   const leido = await servicio.ver('u1', 'METODO', { soloMarcados: true, reporte: 'rojo' });

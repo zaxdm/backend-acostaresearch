@@ -318,8 +318,16 @@ async function ver(userId, productCode, { desde = 1, soloMarcados = false, repor
     reporteSimilitud: fichaDelReporte(similitud),
   };
 
+  // Lo resaltado en rojo se trabaja como un reporte más. Sin reporte de IA, lo
+  // marcado es lo rojo: es lo único que el tesista dejó dicho.
+  const enRojo = parrafos.filter((p) => p.rojo.length > 0 && humanizable(p, bloqueados)).length;
+  comun.enRojo = enRojo;
+  if (soloMarcados && (tipoReporte === 'rojo' || (tipoReporte === 'ia' && !reporte && enRojo > 0))) {
+    return { ...comun, tipoReporte: 'rojo', ...verRojo(parrafos, { citados, reescritos, bloqueados, desde }) };
+  }
+
   // El de similitud se lee igual que el de IA: lo que marcó y aún no se reescribió.
-  const elegido = tipoReporte === 'similitud' ? similitud : reporte;
+  const elegido = tipoReporte === 'similitud' ? similitud : tipoReporte === 'ia' ? reporte : null;
   if (soloMarcados && elegido) {
     return { ...comun, tipoReporte, ...verMarcados(parrafos, elegido, { citados, reescritos, bloqueados, desde }) };
   }
@@ -341,6 +349,7 @@ async function ver(userId, productCode, { desde = 1, soloMarcados = false, repor
       reescritos[parrafo.id] ? '[humanizado]' : null,
       citados[parrafo.id] ? '[citado]' : null,
       bloqueados.has(parrafo.id) && !parrafo.nivel && !parrafo.enTabla ? '[no se reescribe]' : null,
+      parrafo.rojo.length > 0 ? (todoEnRojo(parrafo) ? '[en rojo]' : '[en parte en rojo]') : null,
     ].filter(Boolean);
     const vigente = (citados[parrafo.id] ?? textoVigente(parrafo, reescritos)).replace(/\s*\n\s*\n\s*/g, ' [APARTE] ');
     const linea = `¶${parrafo.id}${marca.length ? ` ${marca.join(' ')}` : ''} ${vigente}`;
@@ -382,6 +391,53 @@ function verMarcados(parrafos, reporte, { citados, reescritos, bloqueados, desde
     .filter((p) => cruce.get(p.id)?.porcentaje === 0 && humanizable(p, bloqueados) && p.texto.trim().split(/\s+/).length >= 50)
     .slice(0, 2)
     .map((p) => p.texto.slice(0, 1200));
+
+  return { lineas, siguiente, voz, marcados: marcados.length, pendientes: pendientes.length };
+}
+
+/** Letras y cifras de un texto: lo que cuenta para saber cuánto del párrafo está en rojo. */
+const letras = (texto) => String(texto).replace(/[^\p{L}\p{N}]/gu, '').length;
+
+/** Casi todo el párrafo en rojo: se reescribe entero, sin fijarse en los tramos. */
+const todoEnRojo = (parrafo) =>
+  parrafo.rojo.reduce((suma, [a, b]) => suma + letras(parrafo.texto.slice(a, b)), 0) >= 0.9 * letras(parrafo.texto);
+
+/** Los tramos en rojo de un párrafo, como los lee Claude: «…» · «…». */
+const tramosEnRojo = (parrafo) => parrafo.rojo.map(([a, b]) => `«${parrafo.texto.slice(a, b).trim()}»`).join(' · ');
+
+/**
+ * Lo que el tesista resaltó en rojo en su Word y todavía no se humanizó.
+ *
+ * Es su reporte de Turnitin hecho a mano, y se lee igual que el de verdad. Si
+ * solo una parte del párrafo está en rojo, la línea dice cuál: se reescribe
+ * eso y el resto se copia tal cual. La voz sale de lo que resaltó en amarillo,
+ * que es lo que escribió él.
+ */
+function verRojo(parrafos, { citados, reescritos, bloqueados, desde }) {
+  const marcados = parrafos.filter((p) => p.rojo.length > 0 && humanizable(p, bloqueados));
+  const pendientes = marcados.filter((p) => !reescritos[p.id] && p.id >= desde);
+
+  const lineas = [];
+  let largo = 0;
+  let siguiente = null;
+  for (const parrafo of pendientes) {
+    if (largo >= POR_TANDA_MARCADOS) {
+      siguiente = parrafo.id;
+      break;
+    }
+    const cuanto = todoEnRojo(parrafo) ? '(todo en rojo)' : `(en rojo SOLO: ${tramosEnRojo(parrafo)})`;
+    const cita = citados[parrafo.id] ? ' [citado]' : '';
+    const linea = `¶${parrafo.id} ${cuanto}${cita} ${citados[parrafo.id] ?? parrafo.texto}`;
+    lineas.push(linea);
+    largo += linea.length;
+  }
+
+  const voz = parrafos
+    .filter((p) => p.rojo.length === 0 && p.amarillo.length > 0 && humanizable(p, bloqueados))
+    .map((p) => p.amarillo.map(([a, b]) => p.texto.slice(a, b).trim()).join(' '))
+    .filter((t) => t.split(/\s+/).length >= 40)
+    .slice(0, 2)
+    .map((t) => t.slice(0, 1200));
 
   return { lineas, siguiente, voz, marcados: marcados.length, pendientes: pendientes.length };
 }
@@ -581,7 +637,9 @@ async function humanizarEnSuTurno(userId, productCode, cambios, deshacer) {
     reescritos[id] = { original: parrafo.texto, texto: limpio };
     if (antes.length > 0) citados[id] = texto;
     guardados += 1;
-    avisos.push(...controles.avisosDelParrafo(id, parrafo.texto, limpio));
+    // En rojo solo una parte: lo demás se copia tal cual y no cuenta como sin reescribir.
+    const aCambiar = parrafo.rojo.length > 0 && !todoEnRojo(parrafo) ? parrafo.rojo : null;
+    avisos.push(...controles.avisosDelParrafo(id, parrafo.texto, limpio, aCambiar));
     if (prueba.notas) {
       avisos.push(`¶${id} tiene llamadas a nota al pie: que compruebe en su Word que siguen detrás de la palabra correcta`);
     }
@@ -592,7 +650,14 @@ async function humanizarEnSuTurno(userId, productCode, cambios, deshacer) {
 
   const todos = Object.values(reescritos);
   const reporte = await almacen.leerReporteIaDeDocumento(proyecto.id);
-  const marcados = reporte ? parrafosMarcados([...parrafos.values()], reporte, buffer) : null;
+  const bloqueados = reescritura.bloqueados(buffer);
+  const enRojo = [...parrafos.values()].filter((p) => p.rojo.length > 0 && humanizable(p, bloqueados));
+  // Como en `ver`: sin reporte de IA, lo marcado es lo que resaltó en rojo.
+  const marcados = reporte
+    ? parrafosMarcados([...parrafos.values()], reporte, buffer)
+    : enRojo.length > 0
+      ? enRojo
+      : null;
   return {
     guardados,
     deshechos,
@@ -603,6 +668,7 @@ async function humanizarEnSuTurno(userId, productCode, cambios, deshacer) {
     // Sobre todo lo humanizado, no sobre esta tanda: el tic aparece entre tandas.
     muletillas: guardados > 0 ? controles.muletillas(todos.map((r) => r.texto)) : [],
     marcadosPendientes: marcados ? marcados.filter((p) => !reescritos[p.id]).length : null,
+    marcadosPor: reporte ? 'turnitin' : marcados ? 'rojo' : null,
   };
 }
 

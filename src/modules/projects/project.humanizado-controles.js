@@ -54,9 +54,29 @@ function oraciones(texto) {
 
 const esqueleto = (texto) => String(texto).toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
 
-/** Cuántas oraciones del texto nuevo son las mismas del original, letra por letra. */
-function identicas(original, nuevo) {
-  const antes = new Set(oraciones(original).map(esqueleto));
+/**
+ * Las oraciones del original que tocan algún tramo [desde, hasta]: las que el
+ * tesista resaltó para reescribir. Sin tramos, todas.
+ */
+function oracionesACambiar(original, tramos) {
+  const todas = oraciones(original);
+  if (!tramos) return todas;
+  let desde = 0;
+  return todas.filter((o) => {
+    const inicio = String(original).indexOf(o, desde);
+    if (inicio < 0) return true;
+    const fin = inicio + o.length;
+    desde = fin;
+    return tramos.some(([a, b]) => a < fin && b > inicio);
+  });
+}
+
+/**
+ * Cuántas oraciones del texto nuevo son las mismas del original, letra por
+ * letra. Con `tramos`, solo cuentan las que había que cambiar.
+ */
+function identicas(original, nuevo, tramos = null) {
+  const antes = new Set(oracionesACambiar(original, tramos).map(esqueleto));
   const despues = oraciones(nuevo);
   return { iguales: despues.filter((o) => antes.has(esqueleto(o))).length, total: despues.length };
 }
@@ -80,11 +100,12 @@ const cuantas = (texto, patron) => {
 
 /**
  * Los avisos de un párrafo: oraciones que siguen iguales, vocabulario de la
- * lista que el original no traía, y rayas nuevas.
+ * lista que el original no traía, y rayas nuevas. Con `tramos` (lo que el
+ * tesista resaltó en rojo), solo avisa de las oraciones de esos tramos.
  */
-function avisosDelParrafo(id, original, nuevo) {
+function avisosDelParrafo(id, original, nuevo, tramos = null) {
   const avisos = [];
-  const { iguales, total } = identicas(original, nuevo);
+  const { iguales, total } = identicas(original, nuevo, tramos);
   if (iguales > 0 && total > 0) {
     avisos.push(
       `¶${id}: ${iguales} de ${total} oraciones siguen idénticas al original. Si no es un párrafo que ` +

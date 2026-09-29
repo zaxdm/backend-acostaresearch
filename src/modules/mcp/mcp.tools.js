@@ -145,6 +145,16 @@ const REGLAS_CON_REPORTE = [
     'breve. No prometas ningún porcentaje.',
 ].join(N);
 
+/**
+ * Lo que el tesista resaltó en rojo en su Word: su reporte hecho a mano. Van
+ * delante de las reglas del reporte, que valen igual para lo rojo.
+ */
+const REGLAS_DEL_ROJO =
+  'LO RESALTADO EN ROJO. El tesista marcó en rojo, en su propio Word, lo que quiere humanizar; lo demás ' +
+  '(lo que resaltó en amarillo es lo que escribió él) NO se toca. Donde la línea dice «en rojo SOLO: «…»», ' +
+  'reescribe SOLO esos tramos y copia el resto del párrafo palabra por palabra, pero manda el párrafo ' +
+  'entero. Donde dice «todo en rojo», reescríbelo entero. Las reglas de abajo valen para lo rojo.';
+
 /** «16 de septiembre de 2026», para que el tesista reconozca qué versión subió. */
 const fechaCorta = (iso) =>
   iso
@@ -1470,11 +1480,18 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         '"similitud") para bajar la similitud. Los cruza con su Word subido o, si no subió ninguno, con los ' +
         'capítulos guardados en el proyecto. Trae las reglas para reescribirlos y la voz del tesista: no ' +
         'hace falta cargar la skill entera ni leer la tesis completa. Lo ya reescrito no vuelve a salir; la ' +
-        'tanda siguiente se pide volviendo a llamar. Si no hay reporte, dile que lo suba por ese enlace.',
+        'tanda siguiente se pide volviendo a llamar. Si no hay reporte, dile que lo suba por ese enlace. ' +
+        'SIN REPORTE, CON SU PROPIO RESALTADO: si el tesista dice que marcó en rojo en su Word lo que hay ' +
+        'que humanizar, usa "reporte": "rojo": devuelve solo lo resaltado en rojo del Word subido, y de los ' +
+        'párrafos con solo una parte en rojo, qué parte es.',
       inputSchema: fromJsonSchema({
         type: 'object',
         properties: {
-          reporte: { type: 'string', enum: ['ia', 'similitud'], description: 'Qué reporte leer.' },
+          reporte: {
+            type: 'string',
+            enum: ['ia', 'similitud', 'rojo'],
+            description: 'Qué reporte leer; "rojo" es lo que el tesista resaltó en rojo en su Word subido.',
+          },
           saltar: {
             type: 'array',
             maxItems: 300,
@@ -1495,6 +1512,21 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
       const fuera = (saltar ?? []).map((x) => String(x).replace(/[[\]]/g, '').trim());
       try {
         const enWord = await documentoService.ver(userId, productCode, { soloMarcados: true, reporte });
+        if (reporte === 'rojo') {
+          if (!enWord) {
+            return texto(
+              'No hay ningún Word subido. Llama a "subir_mi_documento" y dile que suba por ese enlace su Word con ' +
+                'lo que quiere humanizar resaltado en rojo; cuando diga que lo subió, vuelve a llamar aquí.',
+            );
+          }
+          if (enWord.marcados === 0) {
+            return texto(
+              `En «${enWord.nombre}» no hay nada resaltado en rojo que se pueda humanizar. Se lee el RESALTADOR ` +
+                'de Word (o el sombreado) rojo, no el color de la letra, y no cuentan títulos, tablas ni referencias. ' +
+                'Pregúntale si lo marcó así y, si subió otra versión, que la suba por el enlace de "subir_mi_documento".',
+            );
+          }
+        }
         if (enWord?.tipoReporte && enWord.marcados > 0) {
           const saltados = new Set(fuera.map((x) => x.replace(/^¶/, '')));
           const lineas = enWord.lineas.filter((l) => !saltados.has(/^¶(\d+)/.exec(l)?.[1]));
@@ -3178,7 +3210,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
    * queda solo lo que hay que saber para reescribir. Sale en la primera tanda.
    */
   function respuestaMarcados(leido) {
-    return respuestaLoMarcado({ ...leido, modo: 'documento', tipo: 'ia' });
+    return respuestaLoMarcado({ ...leido, modo: 'documento', tipo: leido.tipoReporte === 'rojo' ? 'rojo' : 'ia' });
   }
 
   /**
@@ -3208,7 +3240,8 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
   /** Lo marcado por un reporte, con sus reglas y la voz, para el Word subido o los capítulos. */
   function respuestaLoMarcado(leido) {
     const similitud = leido.tipo === 'similitud';
-    const ficha = similitud ? leido.reporteSimilitud : leido.reporteIa;
+    const rojo = leido.tipo === 'rojo';
+    const ficha = rojo ? {} : similitud ? leido.reporteSimilitud : leido.reporteIa;
     if (!ficha) {
       return (
         `No hay reporte de ${similitud ? 'similitud' : 'IA'} de Turnitin subido. Si lo tiene, llama a ` +
@@ -3219,16 +3252,25 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
       leido.modo === 'capitulos'
         ? '"reescribir_parrafos" (un capítulo por llamada, con el número de cada párrafo)'
         : '"humanizar_mi_documento" (con el número de cada párrafo)';
-    const cabecera = similitud
-      ? `Reporte de similitud: ${ficha.porcentaje ?? '?'} %` +
-        (ficha.desglose
-          ? ` (internet ${ficha.desglose.internet ?? '?'} %, publicaciones ${ficha.desglose.publicaciones ?? '?'} %, ` +
-            `trabajos entregados ${ficha.desglose.trabajos ?? '?'} %)`
-          : '') +
-        (ficha.fuentes?.length
-          ? `${N}Fuentes principales: ${ficha.fuentes.slice(0, 8).map((f) => `${f.n}. ${f.nombre} ${f.porcentaje} %`).join(' · ')}`
-          : '')
-      : `Reporte: ${ficha.porcentaje ?? 'menos de 20'} % IA`;
+    const cabecera = rojo
+      ? 'Resaltado en rojo en su Word'
+      : similitud
+        ? `Reporte de similitud: ${ficha.porcentaje ?? '?'} %` +
+          (ficha.desglose
+            ? ` (internet ${ficha.desglose.internet ?? '?'} %, publicaciones ${ficha.desglose.publicaciones ?? '?'} %, ` +
+              `trabajos entregados ${ficha.desglose.trabajos ?? '?'} %)`
+            : '') +
+          (ficha.fuentes?.length
+            ? `${N}Fuentes principales: ${ficha.fuentes.slice(0, 8).map((f) => `${f.n}. ${f.nombre} ${f.porcentaje} %`).join(' · ')}`
+            : '')
+        : `Reporte: ${ficha.porcentaje ?? 'menos de 20'} % IA`;
+    if (leido.lineas.length === 0 && rojo) {
+      return (
+        `${cabecera} · ${leido.marcados} párrafos · NO QUEDA NINGUNO POR TRABAJAR.${N}${N}` +
+        'Dale su Word con "enlace_del_word" y un informe breve. El resaltado rojo sigue en su Word: que lo ' +
+        'quite él cuando lo revise. No le prometas ningún porcentaje.'
+      );
+    }
     if (leido.lineas.length === 0) {
       return (
         `${cabecera} · ${leido.marcados} párrafos marcados · NO QUEDA NINGUNO POR TRABAJAR.${N}${N}` +
@@ -3238,6 +3280,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
     }
     // Las reglas y la voz van en TODAS las tandas: puede retomar en otra conversación.
     const reglas =
+      (rojo ? `${REGLAS_DEL_ROJO}${N}${N}` : '') +
       `${similitud ? REGLAS_DE_SIMILITUD : REGLAS_CON_REPORTE}${N}${N}` +
       (leido.voz?.length > 0
         ? `VOZ DEL AUTOR (párrafos suyos; imita esto):${N}${leido.voz.map((v) => `> ${v}`).join(N)}${N}${N}`
@@ -3252,7 +3295,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
       `PÁRRAFOS (lo que va entre paréntesis y corchetes al principio NO es del texto):${N}` +
       `${leido.lineas.join(N)}${N}${N}` +
       `Reescríbelos y guárdalos con ${guardar}. Después vuelve a llamar a ` +
-      (leido.modo === 'capitulos' || similitud
+      (leido.modo === 'capitulos' || similitud || rojo
         ? `"ver_lo_marcado" con "reporte": "${leido.tipo}"`
         : '"ver_mi_documento" con "solo_marcados": true') +
       ' hasta que no quede ninguno.'
@@ -3359,7 +3402,8 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         '6) Dale el enlace con "enlace_del_word". ' +
         'NUNCA inventes una fuente: lo que no tenga respaldo va [FALTA FUENTE]. ' +
         'CON EL REPORTE DE IA DE TURNITIN SUBIDO, para humanizar pide "solo_marcados": true: devuelve ' +
-        'solo lo que Turnitin marcó y las reglas para reescribirlo de una vez, sin cargar la skill entera.',
+        'solo lo que Turnitin marcó y las reglas para reescribirlo de una vez, sin cargar la skill entera. ' +
+        'Si el tesista resaltó en rojo lo que hay que humanizar, usa "ver_lo_marcado" con "reporte": "rojo".',
       inputSchema: fromJsonSchema({
         type: 'object',
         properties: {
@@ -3445,6 +3489,10 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
             ? `Tiene subido su reporte de IA de Turnitin (${leido.reporteIa.porcentaje ?? 'menos de 20'} %): ` +
               `para HUMANIZAR no leas así, llama con "solo_marcados": true.${N}`
             : '') +
+          (leido.enRojo > 0
+            ? `Tiene ${leido.enRojo} párrafos resaltados en rojo ([en rojo], [en parte en rojo]). Si lo rojo es lo ` +
+              `que quiere humanizar, no leas así: llama a "ver_lo_marcado" con "reporte": "rojo".${N}`
+            : '') +
           (leido.reporteSimilitud
             ? `Tiene subido su reporte de similitud (${leido.reporteSimilitud.porcentaje ?? '?'} %): para BAJARLA, ` +
               `llama a "ver_lo_marcado" con "reporte": "similitud".${N}`
@@ -3457,7 +3505,8 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
           'Los marcados [citado] ya tienen sus marcas guardadas; los [humanizado] salen con su ' +
           'texto nuevo, y [APARTE] es donde se partió un párrafo. Lo que va entre corchetes al ' +
           'principio de cada línea NO es del texto: no lo copies. [Título], [tabla] y ' +
-          '[referencias] no se humanizan, y [no se reescribe] lleva algo (un campo de Zotero, un ' +
+          '[referencias] no se humanizan, [en rojo] y [en parte en rojo] son lo que resaltó en rojo en su Word, y ' +
+          '[no se reescribe] lleva algo (un campo de Zotero, un ' +
           'enlace, una imagen) que solo puede cambiar el tesista en su Word. ' +
           'No guardes nada hasta haberle enseñado lo que vas a guardar y tener su visto bueno.',
       );
@@ -3566,7 +3615,8 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         'haberle preguntado al empezar si trabajas con el documento que está en el servidor o con uno ' +
         'nuevo (el nuevo lo sube con el enlace de "subir_mi_documento"). ' +
         'EXCEPCIÓN: si subió el reporte de IA de Turnitin y pidió humanizarlo entero, se guarda cada ' +
-        'tanda de "ver_mi_documento" ("solo_marcados": true) sin enseñársela, como dicen sus reglas. ' +
+        'tanda de "ver_mi_documento" ("solo_marcados": true) sin enseñársela, como dicen sus reglas; y lo ' +
+        'mismo con lo que resaltó en rojo ("ver_lo_marcado" con "reporte": "rojo"). ' +
         'El Word subido no se sobrescribe: el servidor escribe los párrafos nuevos al descargarlo, ' +
         'con el mismo estilo de párrafo, la misma letra, y las cursivas y notas al pie de las ' +
         'palabras que siguen. Reglas que el servidor comprueba y por las que rechaza el párrafo: ' +
@@ -3646,11 +3696,17 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
           r.marcadosPendientes === null
             ? `Cuando termine el bloque, dale su Word con "enlace_del_word" para que lo revise: ` +
               'es su mismo documento con su formato. No le armes tú otro Word.'
-            : r.marcadosPendientes > 0
-              ? `Quedan ${r.marcadosPendientes} párrafos marcados por Turnitin sin humanizar: pide la tanda ` +
-                'siguiente con "ver_mi_documento" ("solo_marcados": true).'
-              : 'Ya no queda ningún párrafo marcado por Turnitin sin humanizar. Dale su Word con ' +
-                '"enlace_del_word" y el informe final.';
+            : r.marcadosPor === 'rojo'
+              ? r.marcadosPendientes > 0
+                ? `Quedan ${r.marcadosPendientes} párrafos resaltados en rojo sin humanizar: pide la tanda ` +
+                  'siguiente con "ver_lo_marcado" ("reporte": "rojo").'
+                : 'Ya no queda ningún párrafo resaltado en rojo sin humanizar. Dale su Word con ' +
+                  '"enlace_del_word" y el informe final.'
+              : r.marcadosPendientes > 0
+                ? `Quedan ${r.marcadosPendientes} párrafos marcados por Turnitin sin humanizar: pide la tanda ` +
+                  'siguiente con "ver_mi_documento" ("solo_marcados": true).'
+                : 'Ya no queda ningún párrafo marcado por Turnitin sin humanizar. Dale su Word con ' +
+                  '"enlace_del_word" y el informe final.';
 
         return texto(
           `Guardados ${r.guardados} párrafos` +

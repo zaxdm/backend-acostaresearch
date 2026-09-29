@@ -66,6 +66,7 @@ sustituir('../src/modules/references/reference.service', {
 });
 
 const servicio = require('../src/modules/projects/documento.service');
+const documento = require('../src/modules/projects/project.documento');
 
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 function docx(parrafos) {
@@ -326,6 +327,79 @@ test('con el reporte de Turnitin: lee solo lo marcado, da la voz limpia y cuenta
   const sinReporte = await servicio.ver('u1', 'METODO', { soloMarcados: true });
   assert.equal(sinReporte.reporteIa, null);
   assert.equal(sinReporte.lineas.length, 3);
+});
+
+test('lo resaltado en rojo se trabaja como un reporte: solo eso, por tramos, con la voz del amarillo', async () => {
+  const run = (t, color) =>
+    `<w:r>${color ? `<w:rPr>${color}</w:rPr>` : ''}<w:t xml:space="preserve">${t}</w:t></w:r>`;
+  const ROJO = '<w:highlight w:val="red"/>';
+  const AMARILLO = '<w:highlight w:val="yellow"/>';
+  const suyo =
+    'Este párrafo lo escribí yo con mis palabras y lo marqué en amarillo para que se sepa, con oraciones ' +
+    'largas y los conectores que uso siempre, por lo que el tono es llano y la redacción es mía de principio ' +
+    'a fin, sin ayuda de nadie y sin que nadie me diga cómo tengo que escribir mi propia tesis.';
+  const cuerpo = [
+    // ¶1 amarillo entero: la voz.
+    `<w:p>${run(suyo, AMARILLO)}</w:p>`,
+    // ¶2 rojo entero, partido en dos corridas con un espacio sin color en medio.
+    `<w:p>${run('El verdadero desafío estriba en el equilibrio.', ROJO)}${run(' ')}${run('La norma exige filtros.', ROJO)}</w:p>`,
+    // ¶3 rojo solo en la segunda oración, con sombreado en vez de resaltador.
+    `<w:p>${run('Lo escribí yo y se queda así. ', AMARILLO)}${run('Cabe destacar que resulta indispensable el control.', '<w:shd w:val="clear" w:fill="FF0000"/>')}</w:p>`,
+    // ¶4 sin color.
+    `<w:p>${run('Un párrafo sin color.')}</w:p>`,
+  ].join('');
+  const zip = new AdmZip();
+  zip.addFile('[Content_Types].xml', Buffer.from('<Types/>'));
+  zip.addFile('word/document.xml', Buffer.from(`<w:document xmlns:w="${W}"><w:body>${cuerpo}<w:sectPr/></w:body></w:document>`));
+  await servicio.subir({ userId: 'u1', productCode: 'METODO', buffer: zip.toBuffer(), nombre: 'rojo.docx' });
+
+  // Leído entero, cada párrafo en rojo lo dice.
+  const entero = await servicio.ver('u1', 'METODO');
+  assert.equal(entero.enRojo, 2);
+  assert.match(entero.lineas[1], /^¶2 \[en rojo\] /);
+  assert.match(entero.lineas[2], /^¶3 \[en parte en rojo\] /);
+
+  // Sin reporte de Turnitin, "solo lo marcado" es lo rojo.
+  const leido = await servicio.ver('u1', 'METODO', { soloMarcados: true });
+  assert.equal(leido.tipoReporte, 'rojo');
+  assert.equal(leido.marcados, 2);
+  assert.match(leido.lineas[0], /^¶2 \(todo en rojo\) El verdadero/);
+  assert.match(leido.lineas[1], /^¶3 \(en rojo SOLO: «Cabe destacar que resulta indispensable el control\.»\) Lo escribí/);
+  assert.deepEqual(leido.voz, [suyo]);
+
+  // Reescribir solo el tramo rojo no avisa de la oración amarilla que sigue igual.
+  const r = await servicio.humanizar('u1', 'METODO', [
+    { p: 3, texto: 'Lo escribí yo y se queda así. Sin ese control no se sostiene nada.' },
+  ]);
+  assert.equal(r.guardados, 1);
+  assert.equal(r.marcadosPor, 'rojo');
+  assert.equal(r.marcadosPendientes, 1);
+  assert.ok(!r.avisos.some((a) => /idénticas/.test(a)), r.avisos.join('\n'));
+
+  // Dejar igual la oración roja sí avisa.
+  const igual = await servicio.humanizar('u1', 'METODO', [
+    { p: 2, texto: 'Hace falta equilibrio y cuesta. La norma exige filtros.' },
+  ]);
+  assert.ok(igual.avisos.some((a) => /1 de 2 oraciones siguen idénticas/.test(a)), igual.avisos.join('\n'));
+
+  const despues = await servicio.ver('u1', 'METODO', { soloMarcados: true, reporte: 'rojo' });
+  assert.equal(despues.pendientes, 0);
+  assert.deepEqual(despues.lineas, []);
+
+  // En el Word descargado, lo humanizado sigue en rojo: el resaltado lo quita el tesista.
+  const armado = await servicio.armar('u1', 'METODO');
+  const [, , p3] = documento.leer(armado.buffer);
+  assert.equal(p3.texto, 'Lo escribí yo y se queda así. Sin ese control no se sostiene nada.');
+  assert.ok(p3.rojo.length > 0 && p3.amarillo.length > 0);
+});
+
+test('pedir lo rojo de un Word sin rojo no devuelve nada que trabajar', async () => {
+  await servicio.subir({ userId: 'u1', productCode: 'METODO', buffer: docx(['Uno.', 'Dos.']), nombre: 't.docx' });
+  const leido = await servicio.ver('u1', 'METODO', { soloMarcados: true, reporte: 'rojo' });
+  assert.equal(leido.tipoReporte, 'rojo');
+  assert.equal(leido.marcados, 0);
+  // Y sin rojo ni reporte, "solo lo marcado" lee como siempre.
+  assert.equal((await servicio.ver('u1', 'METODO', { soloMarcados: true })).lineas.length, 2);
 });
 
 test('partirCitado deja cada marca con su parte', () => {

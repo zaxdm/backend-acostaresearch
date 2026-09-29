@@ -338,6 +338,58 @@ function nombresDeEstilos(estilosXml) {
  */
 const ESTILO_DE_INDICE = /^(toc|tdc|[íi]ndice)\s*\d/i;
 
+// ── El resaltador del tesista ──────────────────────────────────────────────
+//
+// Hay quien sube su Word con lo que quiere humanizar resaltado en rojo y lo que
+// escribió él en amarillo. El rojo hace de reporte de Turnitin hecho a mano: se
+// reescribe solo eso. El amarillo es su voz, la muestra que hay que imitar.
+
+/** «rojo», «amarillo» o null, por el resaltador de la corrida o, si no tiene, por su sombreado. */
+function colorDeResaltado(rPr) {
+  // El formato de antes de un cambio controlado no es el que se ve.
+  const vigente = String(rPr ?? '').replace(/<w:rPrChange\b[\s\S]*?<\/w:rPrChange>/g, '');
+  const marcador = (/<w:highlight\b[^>]*w:val="([^"]+)"/.exec(vigente) || [])[1];
+  if (marcador && marcador !== 'none') {
+    if (/^(red|darkRed)$/i.test(marcador)) return 'rojo';
+    if (/^(yellow|darkYellow)$/i.test(marcador)) return 'amarillo';
+    return null;
+  }
+  const fondo = (/<w:shd\b[^>]*w:fill="([0-9a-f]{6})"/i.exec(vigente) || [])[1];
+  if (!fondo) return null;
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(fondo.slice(i, i + 2), 16));
+  if (r >= 170 && g <= 110 && b <= 110) return 'rojo';
+  if (r >= 200 && g >= 200 && b <= 130) return 'amarillo';
+  return null;
+}
+
+/**
+ * Los tramos resaltados en rojo y en amarillo de un párrafo, como pares
+ * [desde, hasta] sobre su texto. Un espacio entre dos corridas del mismo color
+ * no corta el tramo: Word parte las corridas por cualquier cosa.
+ */
+function resaltadoDe(piezas, texto) {
+  const tramos = { rojo: [], amarillo: [] };
+  const abiertos = { rojo: null, amarillo: null };
+  for (const pieza of piezas ?? []) {
+    if (pieza.tipo === 'espacio') continue;
+    const corrida = pieza.tipo === 'texto' ? pieza.nodo.corrida : pieza.corrida;
+    const color = colorDeResaltado(corrida?.rPr);
+    const fin = pieza.desde + pieza.texto.length;
+    for (const c of ['rojo', 'amarillo']) {
+      if (c !== color) {
+        abiertos[c] = null;
+      } else if (abiertos[c]) {
+        abiertos[c][1] = fin;
+      } else {
+        abiertos[c] = [pieza.desde, fin];
+        tramos[c].push(abiertos[c]);
+      }
+    }
+  }
+  const conLetras = ([a, b]) => /[\p{L}\p{N}]/u.test(String(texto).slice(a, b));
+  return { rojo: tramos.rojo.filter(conLetras), amarillo: tramos.amarillo.filter(conLetras) };
+}
+
 /**
  * Los párrafos con texto, como los lee Claude.
  *
@@ -370,6 +422,7 @@ function leer(buffer) {
         indice,
         enTabla: parrafo.enTabla,
         referencias: enReferencias && !titulo,
+        ...resaltadoDe(parrafo.piezas, parrafo.texto),
       };
     })
     .filter((parrafo) => parrafo.texto.trim() !== '' && !parrafo.indice)

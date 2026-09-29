@@ -65,9 +65,19 @@ const paymentRepository = {
     return prisma.payment.findFirst({ where: { id, userId }, select: paymentSelect });
   },
 
+  /**
+   * «Mis compras». Cada clic en el botón de PayPal o Culqi abre una orden
+   * PENDING aunque luego no se pague, y el comprador las veía como compras
+   * «Pendiente» repetidas; además le empujaban las reales fuera del límite.
+   * Las órdenes de pasarela abiertas o canceladas no son compras: no se listan.
+   * Los Yape pendientes sí, porque ahí falta el comprobante del comprador.
+   */
   listForUser(userId, { limit = 20 } = {}) {
     return prisma.payment.findMany({
-      where: { userId },
+      where: {
+        userId,
+        NOT: { provider: { in: ['PAYPAL', 'CULQI'] }, status: { in: ['PENDING', 'CANCELLED'] } },
+      },
       select: paymentSelect,
       orderBy: { createdAt: 'desc' },
       take: limit,

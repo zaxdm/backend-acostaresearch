@@ -452,6 +452,31 @@ async function borrarDocumento(projectId) {
   return habia;
 }
 
+// ── El avance que subió desde el panel ─────────────────────────────────────
+
+/**
+ * Solo la ficha: cómo se llamaba y a qué fases fue cada capítulo. El texto ya
+ * está en los capítulos (ver `avance.service`), y el Word no hace falta
+ * guardarlo: no se descarga ni se cita, eso es el documento de arriba.
+ */
+function rutaDeAvance(projectId) {
+  if (!SEGURO.test(projectId)) throw new Error('Identificador de proyecto no válido');
+  return path.join(env.capitulosDir, projectId, 'avance.json');
+}
+
+const guardarFichaDeAvance = (projectId, ficha) => escribirJson(rutaDeAvance(projectId), ficha);
+const leerFichaDeAvance = (projectId) => leerJson(rutaDeAvance(projectId));
+
+async function borrarFichaDeAvance(projectId) {
+  try {
+    await fs.unlink(rutaDeAvance(projectId));
+    return true;
+  } catch (error) {
+    if (error.code === 'ENOENT') return false;
+    throw error;
+  }
+}
+
 // ── El material del curso (informe estudiantil) ────────────────────────────
 
 /** La consigna, la rúbrica o el índice, ya en texto. Ver `material.service`. */
@@ -507,6 +532,9 @@ module.exports = {
   leerReescritosDeDocumento,
   guardarReescritosDeDocumento,
   borrarDocumento,
+  guardarFichaDeAvance,
+  leerFichaDeAvance,
+  borrarFichaDeAvance,
   guardar,
   leer,
   borrar,

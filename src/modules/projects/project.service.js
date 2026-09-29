@@ -41,6 +41,7 @@ const partesDePlantilla = require('./project.plantilla-partes');
 const portadaAuto = require('./project.portada-auto');
 const auditoria = require('./project.auditoria');
 const documentoService = require('./documento.service');
+const avanceService = require('./avance.service');
 const skillService = require('../skills/skill.service');
 const referenceService = require('../references/reference.service');
 const { guardarAvanceSchema, guardarCapituloSchema } = require('./project.schema');
@@ -2301,6 +2302,8 @@ async function deUsuario(userId, { esAdmin = false } = {}) {
         plantilla: proyecto.plantillaAt ? await plantillaDelPanel(proyecto) : null,
         /** El Word que subió para que Claude lo cite, o null. */
         documento: await documentoService.fichaDelPanel(proyecto),
+        /** El avance que subió desde el panel y a qué fases fue, o null. */
+        avanceSubido: await avanceService.fichaDelPanel(proyecto),
         updatedAt: proyecto.updatedAt,
         etapas,
         avance: { listos, total: fases.length },

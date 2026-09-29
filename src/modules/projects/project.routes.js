@@ -22,6 +22,7 @@ const {
 const descarga = require('./project.descarga');
 const { PlantillaNoValida, MAXIMO_BYTES } = require('./project.plantilla');
 const documentoService = require('./documento.service');
+const avanceService = require('./avance.service');
 const {
   DocumentoNoValido,
   NormaConNotas,
@@ -111,7 +112,7 @@ router.get(
         return res
           .status(404)
           .type('text/plain; charset=utf-8')
-          .send('Ya no hay ningún documento subido en esta tesis. Súbelo otra vez desde tu perfil.');
+          .send('Ya no hay ningún documento subido en esta tesis. Pídele a Claude el enlace para subirlo otra vez.');
       }
       res.setHeader('Content-Type', TIPO_DOCX);
       res.setHeader('Content-Disposition', `attachment; filename="${citado.nombreArchivo}"`);
@@ -916,6 +917,50 @@ router.delete(
     const quitado = await documentoService.quitar(req.user.id, req.params.productCode);
     return ok(res, { quitado }, {
       message: quitado ? 'Documento quitado, con sus citas.' : 'No había ningún documento subido.',
+    });
+  }),
+);
+
+/**
+ * El avance de su tesis, su artículo o su informe, desde el panel: cada capítulo
+ * que se reconoce pasa a su fase (ver `avance.service`). No es el documento que
+ * Claude cita o humaniza, que se sube por el enlace de la conversación.
+ */
+router.post(
+  '/:productCode/avance',
+  express.raw({ type: [TIPO_DOCX, 'application/octet-stream'], limit: MAXIMO_DOCUMENTO }),
+  asyncHandler(async (req, res) => {
+    let ficha;
+    try {
+      ficha = await avanceService.subir({
+        userId: req.user.id,
+        productCode: req.params.productCode,
+        buffer: req.body,
+        nombre: decodificar(req.get('X-Nombre-Archivo')),
+      });
+    } catch (error) {
+      if (error instanceof DocumentoNoValido || error instanceof avanceService.AvanceSinCapitulos) {
+        throw new ValidationError(error.message);
+      }
+      throw error;
+    }
+
+    if (!ficha) {
+      throw new ForbiddenError('Necesitas una licencia vigente de este método para subir tu avance.');
+    }
+
+    return ok(res, ficha, { message: avanceService.mensajeDeSubida(ficha) });
+  }),
+);
+
+router.delete(
+  '/:productCode/avance',
+  asyncHandler(async (req, res) => {
+    const quitado = await avanceService.quitar(req.user.id, req.params.productCode);
+    return ok(res, { quitado }, {
+      message: quitado
+        ? 'Quitamos el aviso de tu avance. Lo que ya pasó a tus fases se queda.'
+        : 'No había ningún avance subido.',
     });
   }),
 );

@@ -67,7 +67,8 @@ Ningún paquete incluye asesoría personalizada ni redacción por encargo. Por W
 ## Qué lo hace distinto
 - Solo fuentes que existen: las que trae el tesista (exports de Scopus, Web of Science, SciELO o PubMed, sus PDF o su Zotero) y las que Claude encuentra en la literatura publicada, siempre con DOI real. Cero autores inventados.
 - Zotero conectado: se elige una colección y sus referencias quedan listas para citar, actualizadas cada noche.
-- Citar lo ya escrito: se sube la tesis o el artículo en Word, sin referencias, desde «Mi tesis» en el perfil, y se le dice a Claude «cita mi documento». Claude pone cada cita y la lista de referencias dentro del mismo documento, con fuentes de su Zotero, Scopus y OpenAlex, y enseña un resumen antes de aplicarlas. Su formato, tablas y figuras no se tocan.
+- Citar o humanizar lo ya escrito: se le dice a Claude «cita mi documento» o «humaniza mi documento», y Claude da un enlace para subir el Word. Claude pone cada cita y la lista de referencias dentro del mismo documento, con fuentes de su Zotero, Scopus y OpenAlex, y enseña un resumen antes de aplicarlas. Su formato, tablas y figuras no se tocan.
+- Avance escrito por fuera: desde «Mi tesis» en el perfil se sube el Word con lo que ya se tiene. Cada capítulo que se reconoce pasa a su fase, que queda «En curso», y Claude sigue desde ese texto.
 - 15 normas de citas: APA 7, IEEE, Vancouver, AMA, Chicago, Harvard, MLA y más, en español o inglés. Claude pregunta cuál pide la universidad; si luego piden otra, se le dice a Claude y no se reescribe nada.
 - Un repaso antes de entregar: variables sin objetivo, objetivos sin conclusión, citas rotas y afirmaciones sin fuente.
 - El tesista decide: la Skill pregunta, explica el porqué metodológico y pone opciones; el diseño, la muestra y la interpretación las elige él o ella, y por eso las puede defender.

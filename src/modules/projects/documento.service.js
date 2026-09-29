@@ -24,6 +24,8 @@ const projectRepository = require('./project.repository');
 const almacen = require('./project.storage');
 const documento = require('./project.documento');
 const reescritura = require('./project.reescritura');
+const reporteIa = require('./project.reporte-ia');
+const controles = require('./project.humanizado-controles');
 const normas = require('./project.normas');
 const citas = require('./project.citas');
 const descarga = require('./project.descarga');
@@ -32,6 +34,13 @@ const { enSerie } = require('../../shared/utils/enSerie');
 
 /** Caracteres de texto por cada respuesta de `ver`: lo que cabe holgado en una llamada del conector. */
 const POR_TANDA = 24000;
+
+/**
+ * Con el reporte de Turnitin, Claude lee solo lo marcado y lo reescribe en la
+ * misma vuelta: la tanda es más corta porque lo que escribe de vuelta ocupa lo
+ * mismo que lo que lee.
+ */
+const POR_TANDA_MARCADOS = 12000;
 
 /**
  * Subir, citar y quitar el documento van de uno en uno por proyecto. Las citas
@@ -189,6 +198,47 @@ async function quitarEnSuTurno(userId, productCode) {
   return proyecto ? almacen.borrarDocumento(proyecto.id) : false;
 }
 
+/**
+ * Guarda el reporte de IA de Turnitin (PDF) del documento.
+ *
+ * Se puede subir antes o después del Word: se guardan sus palabras y cuáles
+ * marcó, y el cruce con los párrafos se hace al leer. Devuelve null sin
+ * licencia; lanza `ReporteNoValido` si el PDF no es ese reporte.
+ */
+function subirReporte(argumentos) {
+  return enSerie(claveDelDocumento(argumentos.userId, argumentos.productCode), () => subirReporteEnSuTurno(argumentos));
+}
+
+async function subirReporteEnSuTurno({ userId, productCode, buffer, nombre }) {
+  const leido = await reporteIa.leer(buffer);
+  const proyecto = await proyectoConLicencia(userId, productCode);
+  if (!proyecto) return null;
+
+  const reporte = { nombre: nombre || 'reporte-ia.pdf', subidoAt: new Date().toISOString(), ...leido };
+  await almacen.guardarReporteIaDeDocumento(proyecto.id, reporte);
+
+  const word = await almacen.leerDocumento(proyecto.id);
+  const marcados = word ? parrafosMarcados(documento.leer(word), reporte, word).length : null;
+  return { nombre: reporte.nombre, porcentaje: reporte.porcentaje, marcados, hayDocumento: Boolean(word) };
+}
+
+/** Lo que se puede humanizar: ni títulos, ni tablas, ni referencias, ni rótulos, ni lo bloqueado. */
+const humanizable = (parrafo, bloqueados) =>
+  !parrafo.nivel &&
+  !parrafo.enTabla &&
+  !parrafo.referencias &&
+  !ROTULO.test(parrafo.texto.trim()) &&
+  !bloqueados.has(parrafo.id);
+
+/** Los párrafos humanizables que el reporte marcó, con su porcentaje. */
+function parrafosMarcados(parrafos, reporte, buffer) {
+  const cruce = reporteIa.cruzar(reporte, parrafos);
+  const bloqueados = reescritura.bloqueados(buffer);
+  return parrafos
+    .filter((p) => cruce.get(p.id)?.marcado && humanizable(p, bloqueados))
+    .map((p) => ({ ...p, porcentaje: cruce.get(p.id).porcentaje }));
+}
+
 /** Lo que enseña el panel. Null si no hay documento. */
 async function fichaDelPanel(proyecto) {
   if (!proyecto?.id) return null;
@@ -196,6 +246,7 @@ async function fichaDelPanel(proyecto) {
   if (!ficha) return null;
   const citados = await almacen.leerCitasDeDocumento(proyecto.id).catch(() => ({}));
   const reescritos = await almacen.leerReescritosDeDocumento(proyecto.id).catch(() => ({}));
+  const reporte = await almacen.leerReporteIaDeDocumento(proyecto.id).catch(() => null);
   return {
     nombre: ficha.nombre,
     subidoAt: ficha.subidoAt,
@@ -203,8 +254,12 @@ async function fichaDelPanel(proyecto) {
     palabras: ficha.palabras,
     citados: Object.keys(citados).length,
     humanizados: Object.keys(reescritos).length,
+    reporteIa: fichaDelReporte(reporte),
   };
 }
+
+const fichaDelReporte = (reporte) =>
+  reporte ? { nombre: reporte.nombre, subidoAt: reporte.subidoAt, porcentaje: reporte.porcentaje } : null;
 
 /** La ficha del documento subido sin leer el Word: para decir cuál hay. Null si no hay. */
 async function fichaDe(userId, productCode) {
@@ -219,7 +274,7 @@ async function fichaDe(userId, productCode) {
  * y la segunda ronda del humanizador audita lo que escribió la primera. Un
  * párrafo partido en dos sale con [APARTE] donde va el corte.
  */
-async function ver(userId, productCode, { desde = 1 } = {}) {
+async function ver(userId, productCode, { desde = 1, soloMarcados = false } = {}) {
   const cargado = await cargar(userId, productCode);
   if (!cargado) return null;
 
@@ -227,8 +282,25 @@ async function ver(userId, productCode, { desde = 1 } = {}) {
   const ficha = await almacen.leerFichaDeDocumento(proyecto.id);
   const citados = await almacen.leerCitasDeDocumento(proyecto.id);
   const reescritos = await almacen.leerReescritosDeDocumento(proyecto.id);
+  const reporte = await almacen.leerReporteIaDeDocumento(proyecto.id);
   const parrafos = documento.leer(buffer);
   const bloqueados = reescritura.bloqueados(buffer);
+
+  const comun = {
+    nombre: ficha?.nombre ?? 'documento.docx',
+    subidoAt: ficha?.subidoAt ?? null,
+    total: parrafos.length,
+    primero: parrafos[0]?.id ?? 1,
+    ultimo: parrafos.at(-1)?.id ?? 1,
+    citados: Object.keys(citados).length,
+    humanizados: Object.keys(reescritos).length,
+    norma: normaDe(proyecto),
+    reporteIa: fichaDelReporte(reporte),
+  };
+
+  if (soloMarcados && reporte) {
+    return { ...comun, ...verMarcados(parrafos, reporte, { citados, reescritos, bloqueados, desde }) };
+  }
 
   const lineas = [];
   let largo = 0;
@@ -254,18 +326,42 @@ async function ver(userId, productCode, { desde = 1 } = {}) {
     largo += linea.length;
   }
 
-  return {
-    nombre: ficha?.nombre ?? 'documento.docx',
-    subidoAt: ficha?.subidoAt ?? null,
-    total: parrafos.length,
-    primero: parrafos[0]?.id ?? 1,
-    ultimo: parrafos.at(-1)?.id ?? 1,
-    citados: Object.keys(citados).length,
-    humanizados: Object.keys(reescritos).length,
-    lineas,
-    siguiente,
-    norma: normaDe(proyecto),
-  };
+  return { ...comun, lineas, siguiente };
+}
+
+/**
+ * Solo lo que Turnitin marcó y todavía no se humanizó, por tandas, con la voz
+ * del autor en la primera: dos párrafos que el reporte dio limpios.
+ *
+ * Lo ya humanizado no vuelve a salir, así que la tanda siguiente se pide
+ * volviendo a llamar sin número. `desde` solo sirve para saltar.
+ */
+function verMarcados(parrafos, reporte, { citados, reescritos, bloqueados, desde }) {
+  const cruce = reporteIa.cruzar(reporte, parrafos);
+  const marcados = parrafos.filter((p) => cruce.get(p.id)?.marcado && humanizable(p, bloqueados));
+  const pendientes = marcados.filter((p) => !reescritos[p.id] && p.id >= desde);
+
+  const lineas = [];
+  let largo = 0;
+  let siguiente = null;
+  for (const parrafo of pendientes) {
+    if (largo >= POR_TANDA_MARCADOS) {
+      siguiente = parrafo.id;
+      break;
+    }
+    const cita = citados[parrafo.id] ? ' [citado]' : '';
+    const linea = `¶${parrafo.id} (${cruce.get(parrafo.id).porcentaje} % IA)${cita} ${citados[parrafo.id] ?? parrafo.texto}`;
+    lineas.push(linea);
+    largo += linea.length;
+  }
+
+  // Dos párrafos suyos que Turnitin dio limpios: la voz que hay que imitar.
+  const voz = parrafos
+    .filter((p) => cruce.get(p.id)?.porcentaje === 0 && humanizable(p, bloqueados) && p.texto.trim().split(/\s+/).length >= 50)
+    .slice(0, 2)
+    .map((p) => p.texto.slice(0, 1200));
+
+  return { lineas, siguiente, voz, marcados: marcados.length, pendientes: pendientes.length };
 }
 
 /**
@@ -463,6 +559,7 @@ async function humanizarEnSuTurno(userId, productCode, cambios, deshacer) {
     reescritos[id] = { original: parrafo.texto, texto: limpio };
     if (antes.length > 0) citados[id] = texto;
     guardados += 1;
+    avisos.push(...controles.avisosDelParrafo(id, parrafo.texto, limpio));
     if (prueba.notas) {
       avisos.push(`¶${id} tiene llamadas a nota al pie: que compruebe en su Word que siguen detrás de la palabra correcta`);
     }
@@ -472,6 +569,8 @@ async function humanizarEnSuTurno(userId, productCode, cambios, deshacer) {
   await almacen.guardarCitasDeDocumento(proyecto.id, citados);
 
   const todos = Object.values(reescritos);
+  const reporte = await almacen.leerReporteIaDeDocumento(proyecto.id);
+  const marcados = reporte ? parrafosMarcados([...parrafos.values()], reporte, buffer) : null;
   return {
     guardados,
     deshechos,
@@ -479,6 +578,9 @@ async function humanizarEnSuTurno(userId, productCode, cambios, deshacer) {
     avisos,
     humanizados: todos.length,
     partidos: todos.filter((r) => reescritura.partesDe(r.texto).length > 1).length,
+    // Sobre todo lo humanizado, no sobre esta tanda: el tic aparece entre tandas.
+    muletillas: guardados > 0 ? controles.muletillas(todos.map((r) => r.texto)) : [],
+    marcadosPendientes: marcados ? marcados.filter((p) => !reescritos[p.id]).length : null,
   };
 }
 
@@ -630,13 +732,18 @@ async function aviso(userId, productCode) {
   return (
     `DOCUMENTO SUBIDO: «${ficha.nombre}», ${ficha.parrafos} párrafos, ${ficha.citados} ya con citas y ` +
     `${ficha.humanizados} humanizados. Si pide que lo cites, que le pongas las referencias o que lo ` +
-    'humanices, empieza con "ver_mi_documento": se trabaja sobre ese Word, no sobre una copia.'
+    'humanices, empieza con "ver_mi_documento": se trabaja sobre ese Word, no sobre una copia.' +
+    (ficha.reporteIa
+      ? ` Tiene subido su reporte de IA de Turnitin (${ficha.reporteIa.porcentaje ?? 'menos de 20'} % IA): para ` +
+        'humanizar, "ver_mi_documento" con "solo_marcados": true.'
+      : '')
   );
 }
 
 module.exports = {
   aviso,
   subir,
+  subirReporte,
   quitar,
   fichaDelPanel,
   fichaDe,

@@ -22,6 +22,7 @@ const {
 const descarga = require('./project.descarga');
 const { PlantillaNoValida, MAXIMO_BYTES } = require('./project.plantilla');
 const documentoService = require('./documento.service');
+const reporteIa = require('./project.reporte-ia');
 const avanceService = require('./avance.service');
 const {
   DocumentoNoValido,
@@ -428,6 +429,26 @@ router.post(
     }
     if (!(await tieneLicenciaVigente(userId, productCode))) {
       throw new ForbiddenError('Tu licencia no está vigente, así que no se puede guardar el documento.');
+    }
+
+    // El mismo enlace recibe el reporte de IA de Turnitin, que es un PDF.
+    if (reporteIa.esPdf(req.body)) {
+      let reporte;
+      try {
+        reporte = await documentoService.subirReporte({
+          userId,
+          productCode,
+          buffer: req.body,
+          nombre: decodificar(req.get('X-Nombre-Archivo')),
+        });
+      } catch (error) {
+        if (error instanceof reporteIa.ReporteNoValido) throw new ValidationError(error.message);
+        throw error;
+      }
+      if (!reporte) {
+        throw new ForbiddenError('Tu licencia no está vigente, así que no se puede guardar el reporte.');
+      }
+      return ok(res, { reporteIa: reporte }, { message: mensajeDeReporte(reporte) });
     }
 
     let subido;
@@ -890,6 +911,15 @@ router.post(
     });
   }),
 );
+
+/** Lo que se le dice al subir el reporte de IA de Turnitin por el enlace de Claude. */
+function mensajeDeReporte(reporte) {
+  const cuanto = reporte.porcentaje === null ? 'menos del 20 %' : `${reporte.porcentaje} %`;
+  const marcados = reporte.hayDocumento
+    ? ` Turnitin marcó ${reporte.marcados} párrafos de tu documento.`
+    : ' Sube también tu Word para que se crucen.';
+  return `Reporte guardado: ${cuanto} detectado como IA.${marcados} Vuelve a tu conversación y di «ya lo subí».`;
+}
 
 /** Lo que se le dice al subir el documento, desde el perfil o desde el enlace de Claude. */
 function mensajeDeSubida(subido, cierre) {

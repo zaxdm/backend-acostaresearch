@@ -393,6 +393,7 @@ function rutaDeDocumento(projectId, que) {
     ficha: 'documento.json',
     citas: 'documento-citas.json',
     reescritos: 'documento-reescritos.json',
+    reporteIa: 'documento-reporte-ia.json',
   };
   return path.join(env.capitulosDir, projectId, nombres[que]);
 }
@@ -439,9 +440,18 @@ async function leerReescritosDeDocumento(projectId) {
 const guardarReescritosDeDocumento = (projectId, reescritos) =>
   escribirJson(rutaDeDocumento(projectId, 'reescritos'), reescritos);
 
+/**
+ * El reporte de IA de Turnitin que subió junto al Word (ver `project.reporte-ia`):
+ * sus palabras y cuáles marcó, más su ficha. Null si no subió ninguno.
+ */
+const leerReporteIaDeDocumento = (projectId) => leerJson(rutaDeDocumento(projectId, 'reporteIa'));
+
+const guardarReporteIaDeDocumento = (projectId, reporte) =>
+  escribirJson(rutaDeDocumento(projectId, 'reporteIa'), reporte);
+
 async function borrarDocumento(projectId) {
   let habia = false;
-  for (const que of ['original', 'ficha', 'citas', 'reescritos']) {
+  for (const que of ['original', 'ficha', 'citas', 'reescritos', 'reporteIa']) {
     try {
       await fs.unlink(rutaDeDocumento(projectId, que));
       habia = true;
@@ -531,6 +541,8 @@ module.exports = {
   guardarCitasDeDocumento,
   leerReescritosDeDocumento,
   guardarReescritosDeDocumento,
+  leerReporteIaDeDocumento,
+  guardarReporteIaDeDocumento,
   borrarDocumento,
   guardarFichaDeAvance,
   leerFichaDeAvance,

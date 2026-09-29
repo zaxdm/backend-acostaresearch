@@ -43,8 +43,10 @@ sustituir('../src/modules/projects/project.storage', {
   guardarCitasDeDocumento: async (id, citados) => disco.set(`${id}:citas`, citados),
   leerReescritosDeDocumento: async (id) => ({ ...(disco.get(`${id}:reescritos`) ?? {}) }),
   guardarReescritosDeDocumento: async (id, reescritos) => disco.set(`${id}:reescritos`, reescritos),
+  leerReporteIaDeDocumento: async (id) => disco.get(`${id}:reporteIa`) ?? null,
+  guardarReporteIaDeDocumento: async (id, reporte) => disco.set(`${id}:reporteIa`, reporte),
   borrarDocumento: async (id) =>
-    ['original', 'ficha', 'citas', 'reescritos'].map((q) => disco.delete(`${id}:${q}`)).some(Boolean),
+    ['original', 'ficha', 'citas', 'reescritos', 'reporteIa'].map((q) => disco.delete(`${id}:${q}`)).some(Boolean),
 });
 
 const FUENTE = {
@@ -269,6 +271,55 @@ test('volver a subir el Word conserva lo humanizado, y el ya revisado no cuenta 
   const revisado = await servicio.subir({ userId: 'u1', productCode: 'METODO', buffer: docx(['Nuevo.', 'Crece.']), nombre: 'a.docx' });
   assert.equal(revisado.humanizados, 0);
   assert.equal(revisado.humanizadosPerdidos, 0);
+});
+
+test('con el reporte de Turnitin: lee solo lo marcado, da la voz limpia y cuenta lo que falta', async () => {
+  const reporteIa = require('../src/modules/projects/project.reporte-ia');
+  const limpio =
+    'Este párrafo lo escribió la autora con sus palabras y Turnitin no le marcó nada, así que sirve de ' +
+    'muestra de cómo escribe ella cuando nadie la ayuda, con oraciones largas y conectores propios que ' +
+    'usa siempre, por lo que se tiene que el tono es llano y la redacción es suya de principio a fin sin duda.';
+  const marcado1 = 'El verdadero desafío dogmático estriba en la imperiosa necesidad de equilibrio. La norma exige filtros.';
+  const marcado2 = 'Asimismo, se presenta el reto de evitar que el parte policial sea prueba plena del hecho denunciado.';
+  await servicio.subir({ userId: 'u1', productCode: 'METODO', buffer: docx([limpio, marcado1, marcado2]), nombre: 't.docx' });
+
+  const palabras = [limpio, marcado1, marcado2].map((t) => t.split(/\s+/).map(reporteIa.normalizar));
+  const leerReal = reporteIa.leer;
+  reporteIa.leer = async () => ({
+    porcentaje: 60,
+    palabras: palabras.flat().join(' '),
+    ia: palabras.map((ws, i) => (i === 0 ? '0' : '1').repeat(ws.length)).join(''),
+  });
+  try {
+    const subido = await servicio.subirReporte({ userId: 'u1', productCode: 'METODO', buffer: Buffer.from('%PDF-'), nombre: 'ia.pdf' });
+    assert.deepEqual(subido, { nombre: 'ia.pdf', porcentaje: 60, marcados: 2, hayDocumento: true });
+  } finally {
+    reporteIa.leer = leerReal;
+  }
+
+  const leido = await servicio.ver('u1', 'METODO', { soloMarcados: true });
+  assert.equal(leido.reporteIa.porcentaje, 60);
+  assert.deepEqual(leido.lineas.map((l) => l.slice(0, 12)), ['¶2 (100 % IA', '¶3 (100 % IA']);
+  assert.equal(leido.voz[0], limpio);
+  assert.match(await servicio.aviso('u1', 'METODO'), /solo_marcados/);
+
+  // Guardar uno deja el otro pendiente y avisa de la oración que sigue igual.
+  const r = await servicio.humanizar('u1', 'METODO', [
+    { p: 2, texto: 'Hace falta equilibrio, y eso cuesta. La norma exige filtros.' },
+  ]);
+  assert.equal(r.guardados, 1);
+  assert.equal(r.marcadosPendientes, 1);
+  assert.ok(r.avisos.some((a) => /1 de 2 oraciones siguen idénticas/.test(a)), r.avisos.join('\n'));
+
+  const despues = await servicio.ver('u1', 'METODO', { soloMarcados: true });
+  assert.deepEqual(despues.lineas.map((l) => l.slice(0, 2)), ['¶3']);
+  assert.equal(despues.pendientes, 1);
+
+  // Sin reporte, pedir solo lo marcado lee como siempre.
+  disco.delete('p1:reporteIa');
+  const sinReporte = await servicio.ver('u1', 'METODO', { soloMarcados: true });
+  assert.equal(sinReporte.reporteIa, null);
+  assert.equal(sinReporte.lineas.length, 3);
 });
 
 test('partirCitado deja cada marca con su parte', () => {

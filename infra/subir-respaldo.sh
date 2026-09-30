@@ -45,6 +45,10 @@ if [ -n "$(find "$ULTIMO" -mmin +360)" ]; then
   exit 1
 fi
 
+# Las dos carpetas tienen que existir: rotar una que no está da error.
+rclone mkdir "$REMOTO/diarios"
+rclone mkdir "$REMOTO/mensuales"
+
 TRABAJO=$(mktemp -d)
 trap 'rm -rf "$TRABAJO"' EXIT
 chmod 700 "$TRABAJO"

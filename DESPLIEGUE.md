@@ -20,7 +20,7 @@ api.acostaresearch.com│  Hetzner · Núremberg · 2.28.64.216      │
                                        │
                                        ▼
                       ┌─────────────────────────────────────────┐
-                      │  Clever Cloud · París · MySQL           │
+                      │  MySQL en el mismo VPS (desde el 19-sep) │
                       └─────────────────────────────────────────┘
 ```
 
@@ -105,7 +105,7 @@ Lo que difiere del `.env` local:
 | `APP_URL` | `https://acostaresearch.com` |
 | `CORS_ORIGIN` | El dominio real, sin `localhost` |
 | `MCP_PUBLIC_URL` | `https://api.acostaresearch.com/mcp` |
-| `DATABASE_URL` | La de Clever Cloud |
+| `DATABASE_URL` | La de MySQL en `localhost` (Clever Cloud ya no se usa desde el 19-sep-2026) |
 | `SKILLS_DIR`, `PROOFS_DIR`, `GUIAS_DIR` | Las de `/var/lib/acostaresearch` |
 | `NTFY_TOPIC` | El tópico de los avisos al móvil |
 | `GUIA_URL` | Vacía. Ver abajo |

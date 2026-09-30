@@ -51,6 +51,18 @@ function fromPrisma(error) {
 // Express identifica el manejador de errores por su aridad de 4 argumentos.
 // eslint-disable-next-line no-unused-vars
 function errorHandler(error, req, res, _next) {
+  // El navegador cortó la descarga (cerró el video, adelantó, cambió de
+  // página): `sendFile` lo entrega como error, pero no falló nada y ya no hay a
+  // quién responder. Registrarlo como 500 despertaba al administrador por nada
+  // (5 avisos «Ocurrió un error inesperado» con un video de reseña, 30-sep-2026).
+  // Se exige que la conexión del navegador esté cerrada: ECONNABORTED también es
+  // el código de un tiempo de espera hacia fuera, y eso sí es un error.
+  const clienteSeFue = req.aborted || req.socket?.destroyed;
+  if (clienteSeFue && (error?.code === 'ECONNABORTED' || error?.code === 'ECONNRESET')) {
+    logger.debug({ url: ocultarSecretosEnUrl(req.originalUrl) }, 'El cliente cortó la descarga');
+    return;
+  }
+
   let statusCode = 500;
   let code = ERROR_CODES.INTERNAL_ERROR;
   let message = 'Ocurrió un error inesperado.';

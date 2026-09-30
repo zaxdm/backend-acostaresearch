@@ -128,3 +128,16 @@ test('el mensaje del 503 no culpa a quien lo lee', () => {
 
   assert.match(res.cuerpo.error.message, /Inténtalo de nuevo/);
 });
+
+test('el navegador que corta un video no cuenta como error, un tiempo de espera sí', () => {
+  const corte = Object.assign(new Error('Request aborted'), { code: 'ECONNABORTED' });
+
+  const cortada = respuestaFalsa();
+  const seFue = { method: 'GET', originalUrl: '/api/v1/resenas/1/video', socket: { destroyed: true } };
+  errorHandler(corte, seFue, cortada, () => {});
+  assert.equal(cortada.codigo, null, 'no se responde ni se registra como 500');
+
+  const sigue = respuestaFalsa();
+  errorHandler(corte, { ...peticionFalsa, socket: { destroyed: false } }, sigue, () => {});
+  assert.equal(sigue.codigo, 500);
+});

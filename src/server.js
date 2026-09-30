@@ -9,9 +9,13 @@ const { avisarAlAdmin } = require('./lib/notify');
 const comprobarBase = require('./lib/comprobarBase');
 const { INTERVALO_MS, crearVigia } = require('./lib/vigiaBase');
 const ventasService = require('./modules/ventas/ventas.service');
+const paymentService = require('./modules/payments/payment.service');
 
 /** Cada cuánto se mira si terminó un mes de ventas que haya que cerrar. */
 const CIERRE_DE_MES_MS = 3 * 60 * 60 * 1000;
+
+/** Cada cuánto se cierran las órdenes de pasarela abandonadas. */
+const ORDENES_ABANDONADAS_MS = 30 * 60 * 1000;
 
 async function bootstrap() {
   // Fallar aquí y no en la primera petición si la BD no responde.
@@ -46,11 +50,23 @@ async function bootstrap() {
   cierreDeMes.unref();
   setTimeout(cerrarMeses, 60_000).unref();
 
+  // Las órdenes de PayPal/Culqi que nadie terminó (ventana cerrada en el
+  // móvil, tarjeta rechazada dentro de PayPal) se cierran solas. La primera
+  // pasada, al minuto de arrancar, limpia también las que ya había.
+  const cerrarAbandonadas = () =>
+    paymentService
+      .cerrarAbandonadas()
+      .catch((error) => logger.error({ err: error }, 'No se cerraron las órdenes abandonadas'));
+  const ordenesAbandonadas = setInterval(cerrarAbandonadas, ORDENES_ABANDONADAS_MS);
+  ordenesAbandonadas.unref();
+  setTimeout(cerrarAbandonadas, 60_000).unref();
+
   // Apagado ordenado: se dejan terminar las peticiones en curso.
   const shutdown = (signal) => async () => {
     logger.info(`${signal} recibido, cerrando servidor…`);
     clearInterval(vigia);
     clearInterval(cierreDeMes);
+    clearInterval(ordenesAbandonadas);
     server.close(async () => {
       await prisma.$disconnect();
       logger.info('Servidor cerrado correctamente');

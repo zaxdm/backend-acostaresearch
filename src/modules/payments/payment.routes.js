@@ -10,6 +10,7 @@ const {
   createOrderSchema,
   orderParamsSchema,
   captureBodySchema,
+  cancelBodySchema,
   providerQuerySchema,
   paymentIdParamSchema,
 } = require('./payment.schema');
@@ -45,7 +46,7 @@ router.post(
 router.post(
   '/orders/:orderId/cancel',
   authenticate,
-  validate({ params: orderParamsSchema, query: providerQuerySchema }),
+  validate({ params: orderParamsSchema, query: providerQuerySchema, body: cancelBodySchema }),
   paymentController.cancel,
 );
 

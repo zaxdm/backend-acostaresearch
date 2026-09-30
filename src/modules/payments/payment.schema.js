@@ -55,6 +55,14 @@ const captureBodySchema = z
   })
   .default({});
 
+/**
+ * Al cancelar, el navegador puede decir por qué: el error que dio el botón de
+ * PayPal. Solo se guarda y se anota en el log; no decide nada.
+ */
+const cancelBodySchema = z
+  .object({ motivo: z.string().trim().max(200).optional() })
+  .default({});
+
 const providerQuerySchema = z.object({
   provider: z.string().trim().toUpperCase().max(20).default('PAYPAL'),
 });
@@ -68,6 +76,7 @@ module.exports = {
   createOrderSchema,
   orderParamsSchema,
   captureBodySchema,
+  cancelBodySchema,
   providerQuerySchema,
   paymentIdParamSchema,
 };

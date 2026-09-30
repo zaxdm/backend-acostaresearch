@@ -41,6 +41,7 @@ const paymentController = {
       userId: req.user.id,
       orderId: req.params.orderId,
       providerCode: req.query.provider,
+      motivo: req.body?.motivo ?? null,
     });
     return noContent(res);
   }),

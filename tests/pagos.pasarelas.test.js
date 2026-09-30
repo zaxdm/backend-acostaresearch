@@ -48,7 +48,15 @@ const PLAN = {
 };
 
 const pagos = new Map();
-const llamadas = { fail: [], noteAttempt: [], entregas: [], fetch: [] };
+const llamadas = {
+  fail: [],
+  noteAttempt: [],
+  entregas: [],
+  fetch: [],
+  cancelOtherOpen: [],
+  cancelAbandoned: [],
+  cancel: [],
+};
 let descuentoFalso = null;
 let respuestasFetch = [];
 
@@ -64,8 +72,8 @@ falsificar('../src/modules/billing/discount.service', {
 falsificar('../src/modules/licensing/license.repository', { findById: async () => null });
 falsificar('../src/modules/payments/proof.storage', { borrar: async () => {} });
 falsificar('../src/modules/payments/payment.delivery', {
-  entregarPago: async ({ payment, captura }) => {
-    llamadas.entregas.push({ payment, captura });
+  entregarPago: async ({ payment, captura, estadoEsperado }) => {
+    llamadas.entregas.push({ payment, captura, estadoEsperado });
     payment.status = 'PAID';
     return { pack: { id: 'pack-1' } };
   },
@@ -87,6 +95,18 @@ falsificar('../src/modules/payments/payment.repository', {
     for (const fila of pagos.values()) if (fila.id === id) fila.status = 'FAILED';
   },
   noteAttempt: async (id, datos) => llamadas.noteAttempt.push({ id, ...datos }),
+  cancelOtherOpen: async (datos) => {
+    llamadas.cancelOtherOpen.push(datos);
+    return 0;
+  },
+  cancelAbandoned: async (datos) => {
+    llamadas.cancelAbandoned.push(datos);
+    return 3;
+  },
+  cancel: async (id, userId, motivo) => {
+    llamadas.cancel.push({ id, userId, motivo });
+    return true;
+  },
 });
 
 /** Lee el cuerpo enviado; el del token de PayPal va como formulario, no JSON. */
@@ -121,7 +141,7 @@ global.fetch = async (url, opciones = {}) => {
 };
 
 const paymentService = require('../src/modules/payments/payment.service');
-const { captureBodySchema } = require('../src/modules/payments/payment.schema');
+const { captureBodySchema, cancelBodySchema } = require('../src/modules/payments/payment.schema');
 
 test.beforeEach(() => {
   pagos.clear();
@@ -476,4 +496,106 @@ test('la confirmación acepta cuerpo vacío (PayPal) y rechaza tokens raros', ()
     captureBodySchema.safeParse({ authentication3DS: { eci: '05', otro: 'x' } }).success,
     false,
   );
+});
+
+// ── Órdenes abandonadas ────────────────────────────────────────────────────
+
+/** Respuesta de PayPal a una captura correcta de $15. */
+const capturaPaypal = {
+  status: 201,
+  body: {
+    payer: { email_address: 'p@x.com' },
+    purchase_units: [
+      {
+        payments: {
+          captures: [
+            { id: 'CAP-9', status: 'COMPLETED', amount: { value: '15.00', currency_code: 'USD' } },
+          ],
+        },
+      },
+    ],
+  },
+};
+
+test('abrir una orden cierra las que el mismo comprador dejó abiertas en esa pasarela', async () => {
+  respuestasFetch = [{ status: 201, body: { id: 'PAYPAL-ORDEN-7', links: [] } }];
+  const orden = await paymentService.createOrder({
+    userId: 'user-1',
+    planCode: 'BASICO',
+    providerCode: 'PAYPAL',
+  });
+
+  assert.deepEqual(llamadas.cancelOtherOpen, [
+    { userId: 'user-1', provider: 'PAYPAL', exceptId: orden.paymentId },
+  ]);
+});
+
+test('una orden ya cerrada por la limpieza se cobra igual si el comprador la aprobó', async () => {
+  respuestasFetch = [{ status: 201, body: { id: 'PAYPAL-ORDEN-8', links: [] } }];
+  const orden = await paymentService.createOrder({
+    userId: 'user-1',
+    planCode: 'BASICO',
+    providerCode: 'PAYPAL',
+  });
+  pagos.get('PAYPAL:PAYPAL-ORDEN-8').status = 'CANCELLED';
+  respuestasFetch = [capturaPaypal];
+
+  const resultado = await paymentService.captureOrder({
+    userId: 'user-1',
+    orderId: orden.orderId,
+    providerCode: 'PAYPAL',
+    datosDelCobro: {},
+  });
+
+  assert.equal(resultado.alreadyProcessed, false);
+  assert.equal(llamadas.entregas[0].estadoEsperado, 'CANCELLED');
+});
+
+test('una orden fallida sigue sin poder confirmarse', async () => {
+  respuestasFetch = [{ status: 201, body: { id: 'PAYPAL-ORDEN-9', links: [] } }];
+  const orden = await paymentService.createOrder({
+    userId: 'user-1',
+    planCode: 'BASICO',
+    providerCode: 'PAYPAL',
+  });
+  pagos.get('PAYPAL:PAYPAL-ORDEN-9').status = 'FAILED';
+
+  await assert.rejects(
+    paymentService.captureOrder({
+      userId: 'user-1',
+      orderId: orden.orderId,
+      providerCode: 'PAYPAL',
+      datosDelCobro: {},
+    }),
+    (error) => error.statusCode === 409,
+  );
+  assert.equal(llamadas.fetch.length, 1);
+});
+
+test('la limpieza cierra lo abierto hace más de dos horas', async () => {
+  const ahora = new Date('2026-09-29T20:00:00Z');
+  const cerradas = await paymentService.cerrarAbandonadas(ahora);
+
+  assert.equal(cerradas, 3);
+  assert.equal(llamadas.cancelAbandoned[0].antesDe.toISOString(), '2026-09-29T18:00:00.000Z');
+});
+
+test('cancelar guarda el motivo que dio el botón de PayPal', async () => {
+  respuestasFetch = [{ status: 201, body: { id: 'PAYPAL-ORDEN-10', links: [] } }];
+  const orden = await paymentService.createOrder({
+    userId: 'user-1',
+    planCode: 'BASICO',
+    providerCode: 'PAYPAL',
+  });
+
+  await paymentService.cancelOrder({
+    userId: 'user-1',
+    orderId: orden.orderId,
+    providerCode: 'PAYPAL',
+    motivo: 'Window closed',
+  });
+
+  assert.deepEqual(llamadas.cancel[0], { id: orden.paymentId, userId: 'user-1', motivo: 'Window closed' });
+  assert.deepEqual(cancelBodySchema.parse(undefined), {});
+  assert.equal(cancelBodySchema.safeParse({ motivo: 'x'.repeat(201) }).success, false);
 });

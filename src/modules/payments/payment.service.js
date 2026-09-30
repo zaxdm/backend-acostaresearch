@@ -15,6 +15,23 @@ const { entregarPago } = require('./payment.delivery');
 const { getProvider, enabledProviders } = require('./providers');
 const { AppError, NotFoundError, ValidationError } = require('../../shared/errors/AppError');
 
+/**
+ * Cuánto se deja abierta una orden de pasarela antes de darla por abandonada.
+ * Aprobar en PayPal o pasar el 3-D Secure de Culqi lleva minutos; dos horas
+ * sobran. Cerrarla no puede costarle a nadie una compra: con intención CAPTURE
+ * no se cobra nada hasta que este servidor captura, y si el comprador aprueba
+ * después, `captureOrder` la acepta igual (ver `SE_PUEDE_CAPTURAR`).
+ */
+const ABANDONADA_TRAS_MS = 2 * 60 * 60 * 1000;
+
+/**
+ * Estados desde los que se confirma un cobro. CANCELLED entra a propósito: la
+ * limpieza (o un segundo clic en el botón) puede cerrar una orden que el
+ * comprador sí terminó de aprobar en la ventana de PayPal, y rechazarle el
+ * cobro ahí sería dejarlo sin comprar.
+ */
+const SE_PUEDE_CAPTURAR = new Set(['PENDING', 'CANCELLED']);
+
 /** Pasarela pedida, siempre que exista y tenga credenciales. */
 function obtenerPasarela(code) {
   const provider = getProvider(code);
@@ -132,6 +149,13 @@ const paymentService = {
       discountCents: rebaja,
     });
 
+    // Las órdenes que dejó abiertas antes (doble clic, o cerró la ventana y
+    // volvió a pulsar) ya no las va a terminar: se cierran para que no queden
+    // como «pendientes» en el panel. Si fallara, la compra sigue igual.
+    await paymentRepository
+      .cancelOtherOpen({ userId, provider: provider.code, exceptId: payment.id })
+      .catch((error) => logger.warn({ err: error, userId }, 'No se cerraron las órdenes anteriores'));
+
     logger.info(
       { userId, plan: plan.code, provider: provider.code, orderId: orden.orderId },
       'Orden de pago creada',
@@ -178,7 +202,7 @@ const paymentService = {
       return { alreadyProcessed: true, ...(await resultadoDeCompra(userId, entrega)) };
     }
 
-    if (payment.status !== 'PENDING') {
+    if (!SE_PUEDE_CAPTURAR.has(payment.status)) {
       throw new AppError('Este pago ya no se puede confirmar. Empieza una compra nueva.', {
         statusCode: 409,
         code: ERROR_CODES.PAYMENT_FAILED,
@@ -274,6 +298,7 @@ const paymentService = {
     const entrega = await entregarPago({
       payment,
       captura,
+      estadoEsperado: payment.status,
       notaBolsa: `Pago en línea con ${provider.label}`,
     });
 
@@ -292,8 +317,12 @@ const paymentService = {
     return { alreadyProcessed: false, ...(await resultadoDeCompra(userId, entrega)) };
   },
 
-  /** El usuario cerró la ventana de la pasarela sin pagar. */
-  async cancelOrder({ userId, orderId, providerCode }) {
+  /**
+   * El usuario cerró la ventana de la pasarela sin pagar, o el botón de PayPal
+   * dio error. `motivo` es lo que dijo el botón: queda en el log y en el pago,
+   * porque esos errores pasan en el navegador y el servidor no los veía.
+   */
+  async cancelOrder({ userId, orderId, providerCode, motivo = null }) {
     const provider = obtenerPasarela(providerCode);
     const payment = await paymentRepository.findByOrderId(provider.code, orderId);
 
@@ -301,7 +330,23 @@ const paymentService = {
       throw new NotFoundError('No encontramos ese pago.');
     }
 
-    await paymentRepository.cancel(payment.id, userId);
+    await paymentRepository.cancel(payment.id, userId, motivo);
+    if (motivo) {
+      logger.warn({ userId, orderId, provider: provider.code, motivo }, 'El botón de pago dio error');
+    }
+  },
+
+  /**
+   * Cierra las órdenes de pasarela que nadie terminó. La llama el servidor
+   * cada media hora: sin esto, cada ventana de PayPal cerrada en el móvil sin
+   * pasar por «cancelar» dejaba una fila «pendiente» para siempre.
+   */
+  async cerrarAbandonadas(ahora = new Date()) {
+    const cerradas = await paymentRepository.cancelAbandoned({
+      antesDe: new Date(ahora.getTime() - ABANDONADA_TRAS_MS),
+    });
+    if (cerradas > 0) logger.info({ cerradas }, 'Órdenes de pago abandonadas cerradas');
+    return cerradas;
   },
 
   /**

@@ -147,12 +147,45 @@ const paymentRepository = {
     });
   },
 
-  async cancel(paymentId, userId) {
+  /** `motivo`: por qué se cerró (el error del botón de PayPal), para el panel. */
+  async cancel(paymentId, userId, motivo = null) {
     const { count } = await prisma.payment.updateMany({
       where: { id: paymentId, userId, status: 'PENDING' },
-      data: { status: 'CANCELLED' },
+      data: { status: 'CANCELLED', ...(motivo ? { errorCode: String(motivo).slice(0, 60) } : {}) },
     });
     return count > 0;
+  },
+
+  /**
+   * Las otras órdenes abiertas del mismo comprador en la misma pasarela: al
+   * abrir una nueva, las anteriores ya no las va a terminar (doble clic, o
+   * volvió a pulsar el botón después de cerrar la ventana).
+   */
+  async cancelOtherOpen({ userId, provider, exceptId }) {
+    const { count } = await prisma.payment.updateMany({
+      where: { userId, provider, status: 'PENDING', id: { not: exceptId } },
+      data: { status: 'CANCELLED' },
+    });
+    return count;
+  },
+
+  /**
+   * Cierra las órdenes de pasarela que nadie terminó antes de `antesDe`. Solo
+   * PayPal y Culqi: un Yape pendiente es un comprobante esperando revisión y
+   * no caduca. El motivo que ya tuvieran (tarjeta rechazada) se respeta.
+   */
+  async cancelAbandoned({ antesDe }) {
+    const where = {
+      provider: { in: ['PAYPAL', 'CULQI'] },
+      status: 'PENDING',
+      createdAt: { lt: antesDe },
+    };
+    const sinMotivo = await prisma.payment.updateMany({
+      where: { ...where, errorCode: null },
+      data: { status: 'CANCELLED', errorCode: 'ABANDONADA' },
+    });
+    const conMotivo = await prisma.payment.updateMany({ where, data: { status: 'CANCELLED' } });
+    return sinMotivo.count + conMotivo.count;
   },
 
   /** Bolsa ya entregada por este pago, para responder igual en un reintento. */

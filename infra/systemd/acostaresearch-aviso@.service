@@ -1,0 +1,6 @@
+[Unit]
+Description=Aviso al móvil: falló %i
+
+[Service]
+Type=oneshot
+ExecStart=/opt/acostaresearch/avisar.sh "Falló %i" "Una tarea programada del servidor terminó con error. Mira: journalctl -u %i -n 40" 5

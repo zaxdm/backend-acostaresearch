@@ -1,6 +1,8 @@
 [Unit]
 Description=Sincronizacion nocturna del corpus con Zotero
 After=network-online.target
+# Si falla, aviso al móvil (acostaresearch-aviso@.service).
+OnFailure=acostaresearch-aviso@%n.service
 
 [Service]
 Type=oneshot

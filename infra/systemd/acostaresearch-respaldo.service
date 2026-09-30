@@ -1,6 +1,11 @@
 [Unit]
 Description=Respaldo de la base de datos, skills, comprobantes y configuración
+# Si falla el respaldo o su subida a Drive, aviso al móvil.
+OnFailure=acostaresearch-aviso@%n.service
 
 [Service]
 Type=oneshot
 ExecStart=/opt/acostaresearch/respaldar.sh
+# La copia fuera del VPS, cifrada, en Google Drive (ver subir-respaldo.sh).
+ExecStartPost=/opt/acostaresearch/subir-respaldo.sh
+TimeoutStartSec=3600

@@ -1,6 +1,8 @@
 [Unit]
 Description=Sincronizacion nocturna de las bibliotecas de Zotero de los compradores
 After=network-online.target
+# Si falla, aviso al móvil (acostaresearch-aviso@.service).
+OnFailure=acostaresearch-aviso@%n.service
 
 [Service]
 Type=oneshot

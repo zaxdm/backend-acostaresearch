@@ -1,6 +1,8 @@
 [Unit]
 Description=Aviso de caducidad de licencias de Acosta Research
 After=network-online.target
+# Si falla, aviso al móvil (acostaresearch-aviso@.service).
+OnFailure=acostaresearch-aviso@%n.service
 
 [Service]
 Type=oneshot

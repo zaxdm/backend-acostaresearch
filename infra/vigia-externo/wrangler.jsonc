@@ -1,0 +1,15 @@
+/**
+ * Vigía externo (ver index.js). Se publica aparte de la web:
+ *
+ *   cd backend/infra/vigia-externo
+ *   ../../../acostaresearch-frontend/node_modules/.bin/wrangler deploy
+ *
+ * El tópico de ntfy va como secreto (`wrangler secret put NTFY_TOPIC`), nunca aquí.
+ */
+{
+  "name": "acosta-vigia-externo",
+  "main": "index.js",
+  "compatibility_date": "2026-09-06",
+  "triggers": { "crons": ["*/5 * * * *"] },
+  "kv_namespaces": [{ "binding": "ESTADO", "id": "72f1a607eb6842188761cea4bf7fca9e" }]
+}

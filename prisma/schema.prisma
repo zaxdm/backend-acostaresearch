@@ -93,6 +93,24 @@ model User {
   /// algo distinto que contar.
   resenasServicio ResenaServicio[]
 
+  /// Cuándo pidió no recibir más correos de avance («llevas 7 días sin
+  /// avanzar»…). Nulo = los recibe. No apaga los correos de compra, de
+  /// seguridad ni el aviso de caducidad de 15 días. Ver `modules/avisos`.
+  avisosApagadosAt DateTime?
+  /// Los correos de avance que ya se le mandaron, para no repetirlos.
+  avisosAvance     AvisoAvance[]
+
+  /// Su código para invitar a otros tesistas. Se crea la primera vez que lo
+  /// pide. Ver `modules/referidos`.
+  codigoReferido  String?    @unique @db.VarChar(16)
+  /// A quién invitó, y quién lo invitó a él (como mucho uno).
+  referidosHechos Referido[] @relation("ReferidoInvitador")
+  referidoPor     Referido?  @relation("ReferidoInvitado")
+
+  /// Los grupos de alumnos que coordina: una universidad o un asesor que
+  /// compró cupos. Ver `Grupo`.
+  gruposQueCoordina Grupo[]
+
   /// Enlace de prueba del que salió esta cuenta. Nulo en toda cuenta real.
   ///
   /// Con valor, NO es una persona registrada: es el titular de relleno de un
@@ -169,6 +187,147 @@ model TrialLink {
   guests User[]
 
   @@map("trial_links")
+}
+
+/// Una visita a una página del embudo de venta. Hoy solo /planes.
+///
+/// Lo demás del embudo —quién paga, quién conecta Claude, quién termina una
+/// fase— ya está en la base (pagos, licencias, fases). Lo único que no había
+/// era cuántos llegan a ver los precios, y eso ocurre antes de tener cuenta.
+///
+/// Una fila por visitante, página y día: recargar no suma. `visitante` es un
+/// número al azar que guarda el navegador; no es la IP ni nada que identifique
+/// a nadie fuera de esta web.
+model VisitaEmbudo {
+  id        String   @id @default(uuid()) @db.Char(36)
+  visitante String   @db.VarChar(36)
+  pagina    String   @db.VarChar(40)
+  /// El día de Lima en que ocurrió.
+  dia       DateTime @db.Date
+  /// Si ya había entrado con su cuenta.
+  userId    String?  @db.Char(36)
+  /// De dónde venía: `utm_source`, o «referido» si llegó con un código.
+  origen    String?  @db.VarChar(60)
+  createdAt DateTime @default(now())
+
+  @@unique([visitante, pagina, dia])
+  @@index([pagina, dia])
+  @@map("visitas_embudo")
+}
+
+/// Los correos que se mandan según el avance del tesista.
+enum AvisoAvanceTipo {
+  /// Compró hace unos días y todavía no ha usado el conector.
+  SIN_CONECTAR
+  /// Lo usó, pero lleva días sin volver.
+  SIN_AVANZAR
+  /// Ya avanza y aún no subió el formato de su universidad.
+  FALTA_FORMATO
+  /// Su acceso termina en pocos días (el aviso corto; el de 15 días es otro).
+  VENCE_PRONTO
+}
+
+/// Un correo de avance ya enviado. Existe para no mandar el mismo dos veces.
+///
+/// `clave` dice de qué episodio se trata: la licencia, o el día de su último
+/// uso en SIN_AVANZAR. Así, quien vuelve a trabajar y otra vez se detiene
+/// recibe un aviso nuevo, pero quien sigue parado no recibe uno cada día.
+model AvisoAvance {
+  id        String          @id @default(uuid()) @db.Char(36)
+  userId    String          @db.Char(36)
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  licenseId String?         @db.Char(36)
+  tipo      AvisoAvanceTipo
+  clave     String          @db.VarChar(60)
+  enviadoAt DateTime        @default(now())
+
+  @@unique([userId, tipo, clave])
+  @@index([enviadoAt])
+  @@map("avisos_avance")
+}
+
+enum ReferidoEstado {
+  /// Se apuntó con el código pero aún no ha comprado.
+  PENDIENTE
+  /// Compró: los días ya se repartieron (o esperan en `diasPorAplicar`).
+  PREMIADO
+  /// Lo anuló un administrador (se invitó a sí mismo con otra cuenta…).
+  ANULADO
+}
+
+/// Un tesista que llegó invitado por otro.
+///
+/// Nace cuando el invitado escribe el código (o llega con `?ref=`), y se premia
+/// cuando paga su primer acceso al método: los dos reciben días extra en su
+/// licencia. Si el que invitó no tiene licencia vigente en ese momento, sus
+/// días esperan en `diasPorAplicar` hasta que la tenga.
+model Referido {
+  id             String         @id @default(uuid()) @db.Char(36)
+  invitadorId    String         @db.Char(36)
+  invitador      User           @relation("ReferidoInvitador", fields: [invitadorId], references: [id], onDelete: Cascade)
+  /// Único: a cada uno lo invita una sola persona.
+  invitadoId     String         @unique @db.Char(36)
+  invitado       User           @relation("ReferidoInvitado", fields: [invitadoId], references: [id], onDelete: Cascade)
+  estado         ReferidoEstado @default(PENDIENTE)
+  /// El pago con el que se premió.
+  paymentId      String?        @db.Char(36)
+  diasInvitador  Int            @default(0)
+  diasInvitado   Int            @default(0)
+  /// Días del que invitó que no se pudieron sumar porque no tenía licencia.
+  diasPorAplicar Int            @default(0)
+  premiadoAt     DateTime?
+  createdAt      DateTime       @default(now())
+
+  @@index([invitadorId])
+  @@index([estado, diasPorAplicar])
+  @@map("referidos")
+}
+
+/// Cupos del método vendidos a una universidad o a un asesor.
+///
+/// Es la versión vendible de un enlace de prueba, pero al revés en lo
+/// importante: cada alumno entra con SU cuenta y recibe una licencia normal
+/// —con su tesis, su Word y su correo—, y el coordinador ve desde su perfil
+/// cómo va cada uno (las fases, no el texto).
+///
+/// La venta se cierra fuera de la web (factura, transferencia) y el
+/// administrador da de alta el grupo; el cobro se apunta como un pago del
+/// coordinador para que entre en las ventas del mes.
+model Grupo {
+  id           String    @id @default(uuid()) @db.Char(36)
+  /// Lo que va en el enlace para unirse: /grupo/<slug>. Aleatorio.
+  slug         String    @unique @db.VarChar(40)
+  /// «Maestría en Educación UCV 2026-II», «Alumnos del Dr. Pérez».
+  nombre       String    @db.VarChar(120)
+  productCode  String    @db.VarChar(40)
+  cupos        Int
+  /// Licencias ya entregadas. Se sube con un cerrojo, como en `TrialLink`.
+  ocupados     Int       @default(0)
+  /// Días de acceso de cada alumno desde que se une. 0 = los del plan.
+  duracionDias Int       @default(0)
+  /// Hasta cuándo se puede unir alguien. Nulo = sin fecha.
+  cierraAt     DateTime?
+  /// Apagado ya no admite a nadie. No corta las licencias ya entregadas.
+  activo       Boolean   @default(true)
+
+  coordinadorId String @db.Char(36)
+  coordinador   User   @relation(fields: [coordinadorId], references: [id])
+
+  paymentMethod String  @db.VarChar(30)
+  paymentRef    String? @db.VarChar(80)
+  amountCents   Int?
+  /// El pago apuntado al darlo de alta, si hubo cobro.
+  paymentId     String? @db.Char(36)
+  note          String? @db.VarChar(255)
+
+  createdById String?  @db.Char(36)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  licencias License[]
+
+  @@index([coordinadorId])
+  @@map("grupos")
 }
 
 /// Refresh tokens rotativos.
@@ -645,6 +804,10 @@ model License {
   activationCodeId String?         @unique @db.Char(36)
   activationCode   ActivationCode? @relation(fields: [activationCodeId], references: [id])
 
+  /// El grupo (universidad o asesor) del que salió, si salió de uno.
+  grupoId String? @db.Char(36)
+  grupo   Grupo?  @relation(fields: [grupoId], references: [id])
+
   /// Contadores acumulados: el motor de detección compara el uso de hoy contra
   /// el histórico del propio comprador, que es la señal que sí se sostiene.
   callsTotal Int       @default(0)
@@ -699,6 +862,7 @@ model License {
   payments Payment[]
 
   @@index([userId, status])
+  @@index([grupoId])
   @@map("licenses")
 }
 
@@ -2514,4 +2678,113 @@ model ResenaServicio {
   /// La de la portada, que además filtra por destacada.
   @@index([estado, destacada, createdAt])
   @@map("resenas_servicio")
+}
+
+// ── Bot de WhatsApp ─────────────────────────────────────────────────────────
+// Las consultas que llegan al WhatsApp de atención. Ver `modules/whatsapp`.
+
+/// Quién atiende una conversación.
+enum WhatsappModo {
+  /// Contesta el bot.
+  BOT
+  /// La tomó una persona desde el panel: el bot calla hasta que se la devuelvan.
+  HUMANO
+}
+
+/// Quién escribió un mensaje.
+enum WhatsappAutor {
+  CLIENTE
+  BOT
+  ADMIN
+}
+
+/// Qué pasó al mandarlo a WhatsApp. Los del cliente van siempre RECIBIDO.
+enum WhatsappEnvio {
+  RECIBIDO
+  ENVIADO
+  FALLIDO
+  /// Sin las claves de Meta: se guardó, pero no salió a ninguna parte.
+  SIMULADO
+}
+
+/// Un número que nos escribió. Una fila por número.
+model WhatsappConversacion {
+  id       String @id @default(uuid()) @db.Char(36)
+  /// En formato internacional sin «+», como lo manda Meta: 51987654321.
+  telefono String @unique @db.VarChar(20)
+  /// El nombre de su perfil de WhatsApp. Lo pone él y puede ser cualquier cosa.
+  nombre   String @default("") @db.VarChar(120)
+
+  modo               WhatsappModo @default(BOT)
+  /// Bloqueado: sus mensajes se guardan pero nadie le contesta.
+  bloqueado          Boolean      @default(false)
+  /// El bot no supo o pidió una persona. Se apaga al contestar desde el panel.
+  pideHumano         Boolean      @default(false)
+  /// Mensajes suyos que nadie ha abierto en el panel.
+  noLeidos           Int          @default(0)
+  /// El último mensaje DEL CLIENTE: Meta solo deja escribirle libremente en
+  /// las 24 horas siguientes.
+  ultimoDelClienteAt DateTime?
+  ultimoMensajeAt    DateTime     @default(now())
+
+  mensajes WhatsappMensaje[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ultimoMensajeAt])
+  @@map("whatsapp_conversaciones")
+}
+
+model WhatsappMensaje {
+  id             String               @id @default(uuid()) @db.Char(36)
+  conversacionId String               @db.Char(36)
+  conversacion   WhatsappConversacion @relation(fields: [conversacionId], references: [id], onDelete: Cascade)
+
+  autor WhatsappAutor
+  texto String        @db.Text
+  envio WhatsappEnvio
+
+  /// El id de Meta (wamid.…). Único: Meta reenvía el mismo aviso si tardamos
+  /// en contestar, y así el segundo no se procesa.
+  waId    String? @unique @db.VarChar(191)
+  /// Por qué no salió, si no salió.
+  error   String? @db.VarChar(500)
+  /// El modelo que escribió la respuesta, en las del bot.
+  modelo  String? @db.VarChar(80)
+  /// Quién la escribió, en las del panel.
+  adminId String? @db.Char(36)
+
+  createdAt DateTime @default(now())
+
+  @@index([conversacionId, createdAt])
+  @@index([createdAt])
+  @@map("whatsapp_mensajes")
+}
+
+/// Los ajustes del bot. Una sola fila, id = 1.
+model WhatsappAjustes {
+  id Int @id @default(1)
+
+  /// Apagado = se guardan los mensajes y se avisa, pero nadie contesta solo.
+  activo Boolean @default(true)
+
+  /// Con horario, el bot solo contesta FUERA de él: dentro atiende una persona.
+  usarHorario    Boolean @default(false)
+  /// «09:00» y «18:00», hora de Lima.
+  horaInicio     String  @default("09:00") @db.VarChar(5)
+  horaFin        String  @default("18:00") @db.VarChar(5)
+  /// Días laborables, 1 = lunes … 7 = domingo, separados por comas.
+  diasLaborables String  @default("1,2,3,4,5") @db.VarChar(20)
+
+  /// Lo primero que se le dice a un número nuevo. Vacío = el bot saluda solo.
+  bienvenida     String @default("") @db.Text
+  /// Lo que se añade a las reglas del bot: avisos, ofertas del momento, tono.
+  instrucciones  String @default("") @db.Text
+  /// Palabras que pasan la conversación a una persona, separadas por comas.
+  palabrasHumano String @default("hablar con una persona, hablar con alguien, atención humana, asesor humano, operador") @db.VarChar(500)
+
+  updatedAt DateTime @updatedAt
+
+  @@map("whatsapp_ajustes")
 }

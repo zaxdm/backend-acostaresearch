@@ -30,6 +30,7 @@
     "licenses:trimestre": "node scripts/pasar-a-trimestre.js",
     "backup:traer": "node scripts/traer-respaldo.js",
     "licencias:avisar": "node scripts/avisar-caducidad.js",
+    "avisos:avance": "node scripts/avisar-avance.js",
     "corpus:sincronizar": "node scripts/sincronizar-zotero.js",
     "precio:oferta": "node scripts/precio-de-oferta.js",
     "bibliotecas:sincronizar": "node scripts/sincronizar-bibliotecas.js",

@@ -24,8 +24,12 @@ const transporter = env.smtpEnabled
 /**
  * `attachments`, opcional, con la forma de nodemailer: `[{ filename, content,
  * contentType }]`. Hoy solo la usa la constancia de pago.
+ *
+ * `headers`, opcional: cabeceras de más. La usan los correos de avance para
+ * `List-Unsubscribe`, que es lo que pone el botón «Anular suscripción» de
+ * Gmail y evita que el que no los quiere los marque como spam.
  */
-async function sendMail({ to, subject, html, text, attachments }) {
+async function sendMail({ to, subject, html, text, attachments, headers }) {
   const info = await transporter.sendMail({
     from: env.MAIL_FROM,
     // A dónde va la respuesta si el tesista le da a «Responder».
@@ -41,6 +45,7 @@ async function sendMail({ to, subject, html, text, attachments }) {
     html,
     text,
     ...(attachments?.length ? { attachments } : {}),
+    ...(headers ? { headers } : {}),
   });
 
   if (!env.smtpEnabled) {

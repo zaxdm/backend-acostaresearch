@@ -352,7 +352,34 @@ const mcpFallosLimiter = rateLimit({
     }),
 });
 
+/**
+ * Visitas del embudo (la página de precios avisa de que la vieron).
+ *
+ * Una por visitante y día es lo que se guarda; esto solo frena a quien quiera
+ * inflar la cifra a golpe de peticiones.
+ */
+const embudoLimiter = build({
+  windowMs: 10 * 60 * 1000,
+  max: 30,
+  message: 'Demasiadas peticiones. Inténtalo de nuevo en unos minutos.',
+});
+
+/**
+ * Unirse a un grupo o apuntarse con el código de quien lo invitó.
+ *
+ * Diez por cuarto de hora y por persona: nadie se une a diez grupos seguidos,
+ * y así no se pueden probar códigos de invitación a ciegas.
+ */
+const invitacionLimiter = build({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  keyGenerator: porUsuario,
+  message: 'Has probado demasiadas veces. Espera unos minutos.',
+});
+
 module.exports = {
+  embudoLimiter,
+  invitacionLimiter,
   mcpFallosLimiter,
   globalLimiter,
   authLimiter,

@@ -243,9 +243,11 @@ test('citar_mi_documento exige copiar el texto tal cual y el visto bueno', () =>
   assert.deepEqual(Object.keys(esquema('citar_mi_documento').properties), ['parrafos']);
 });
 
-test('humanizar_mi_documento exige el visto bueno y dice lo que se rechaza', () => {
+test('humanizar_mi_documento guarda de una vez, sin aprobación por bloques, y dice lo que se rechaza', () => {
   const d = descripcion('humanizar_mi_documento');
-  assert.match(d, /visto bueno/);
+  assert.match(d, /SIN enseñársela ni pedir aprobación por bloques/);
+  assert.match(descripcion('ver_lo_marcado'), /"todo"[\s\S]*ENTRADA POR DEFECTO/);
+  assert.deepEqual(Object.keys(esquema('ver_lo_marcado').properties), ['reporte', 'capitulo', 'saltar']);
   assert.match(d, /\[APARTE\]/);
   assert.match(d, /cifras/);
   assert.match(d, /enlace_del_word/);

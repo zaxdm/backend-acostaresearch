@@ -15,6 +15,10 @@ const tutorialRoutes = require('./modules/tutorials/tutorial.routes');
 const guiaRoutes = require('./modules/guias/guia.routes');
 const projectRoutes = require('./modules/projects/project.routes');
 const trialRoutes = require('./modules/trials/trial.routes');
+const grupoRoutes = require('./modules/grupos/grupos.routes');
+const embudoRoutes = require('./modules/embudo/embudo.routes');
+const avisoRoutes = require('./modules/avisos/avisos.routes');
+const referidoRoutes = require('./modules/referidos/referidos.routes');
 const zoteroRoutes = require('./modules/zotero/biblioteca.routes');
 const mendeleyRoutes = require('./modules/mendeley/mendeley.routes');
 const scopusRoutes = require('./modules/scopus/scopus.routes');
@@ -27,6 +31,7 @@ const pedidoRoutes = require('./modules/pedidos/pedido.routes');
 const rRoutes = require('./modules/r/r.routes');
 const cualitativoRoutes = require('./modules/cualitativo/cualitativo.routes');
 const prepararRoutes = require('./modules/preparar/preparar.routes');
+const { panel: whatsappPanel } = require('./modules/whatsapp/whatsapp.routes');
 
 const comprobarBase = require('./lib/comprobarBase');
 
@@ -67,6 +72,14 @@ router.use('/tutoriales', tutorialRoutes);
 router.use('/guias', guiaRoutes);
 router.use('/proyectos', projectRoutes);
 router.use('/pruebas', trialRoutes);
+// Cupos vendidos a una universidad o a un asesor: el alumno se une con su
+// cuenta por el enlace del grupo, y el coordinador ve el avance de cada uno.
+router.use('/grupos', grupoRoutes);
+// Retención y medición: el embudo de venta (visitas a /planes y el resumen del
+// panel), los correos según el avance y los referidos.
+router.use('/embudo', embudoRoutes);
+router.use('/avisos', avisoRoutes);
+router.use('/referidos', referidoRoutes);
 // El Zotero de cada comprador. Aparte de /referencias, que es el corpus de la
 // casa: aquello lo administra Acosta y esto lo conecta cada tesista.
 router.use('/mi-zotero', zoteroRoutes);
@@ -106,5 +119,8 @@ router.use('/cualitativo', cualitativoRoutes);
 // la cuenta; a diferencia de R y del cualitativo, esto no viene de una
 // conversación con Claude sino de la web. Ver `modules/preparar`.
 router.use('/preparar', prepararRoutes);
+// El bot de WhatsApp en el panel (solo ADMIN). El webhook que llama Meta no
+// cuelga de aquí: va en `app.js`, antes del límite global.
+router.use('/whatsapp', whatsappPanel);
 
 module.exports = router;

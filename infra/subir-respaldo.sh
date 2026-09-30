@@ -29,6 +29,9 @@ CLAVE=/root/.config/acostaresearch/clave-respaldo
 REMOTO=${REMOTO:-respaldo-drive:AcostaResearch-respaldos}
 DIAS_DIARIOS=14
 DIAS_MENSUALES=190
+# La app de rclone es compartida por todos sus usuarios y Google le pone tope
+# de peticiones (rateLimitExceeded el 30-sep): se sube despacio y en trozos grandes.
+export RCLONE_TPSLIMIT=2 RCLONE_DRIVE_CHUNK_SIZE=64M RCLONE_RETRIES=5
 
 [ -r "$CLAVE" ] || { echo "ERROR: falta la frase de cifrado en $CLAVE" >&2; exit 1; }
 command -v rclone >/dev/null || { echo "ERROR: rclone no está instalado" >&2; exit 1; }
@@ -51,7 +54,7 @@ gpg --batch --yes --quiet --pinentry-mode loopback --passphrase-file "$CLAVE" \
   --symmetric --cipher-algo AES256 --compress-algo none \
   --output "$CIFRADO" "$ULTIMO"
 
-rclone copyto "$CIFRADO" "$REMOTO/diarios/$(basename "$CIFRADO")" --retries 3 --low-level-retries 5
+rclone copyto "$CIFRADO" "$REMOTO/diarios/$(basename "$CIFRADO")"
 
 # Se comprueba que lo que quedó en Drive mide lo mismo que lo que se subió.
 LOCAL=$(stat -c %s "$CIFRADO")

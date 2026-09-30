@@ -10,12 +10,20 @@ const comprobarBase = require('./lib/comprobarBase');
 const { INTERVALO_MS, crearVigia } = require('./lib/vigiaBase');
 const ventasService = require('./modules/ventas/ventas.service');
 const paymentService = require('./modules/payments/payment.service');
+const avisosService = require('./modules/avisos/avisos.service');
+
+/** Cada cuánto se mira si toca la pasada diaria de correos de avance. */
+const AVISOS_MS = 60 * 60 * 1000;
+const whatsappService = require('./modules/whatsapp/whatsapp.service');
 
 /** Cada cuánto se mira si terminó un mes de ventas que haya que cerrar. */
 const CIERRE_DE_MES_MS = 3 * 60 * 60 * 1000;
 
 /** Cada cuánto se cierran las órdenes de pasarela abandonadas. */
 const ORDENES_ABANDONADAS_MS = 30 * 60 * 1000;
+
+/** Cada cuánto se borran las conversaciones de WhatsApp fuera de plazo. */
+const PURGA_WHATSAPP_MS = 24 * 60 * 60 * 1000;
 
 async function bootstrap() {
   // Fallar aquí y no en la primera petición si la BD no responde.
@@ -39,6 +47,18 @@ async function bootstrap() {
   }, INTERVALO_MS);
   vigia.unref();
 
+  // Los correos según el avance del tesista (y los días de referidos que
+  // esperaban). Se mira cada hora; la pasada sale una vez al día, a partir de
+  // las 9 de Lima. Ver `modules/avisos`.
+  const estadoAvisos = { ultimoDia: null };
+  const pasarAvisos = () =>
+    avisosService
+      .pasadaProgramada(estadoAvisos)
+      .catch((error) => logger.error({ err: error }, 'La pasada de correos de avance falló'));
+  const avisosDeAvance = setInterval(pasarAvisos, AVISOS_MS);
+  avisosDeAvance.unref();
+  setTimeout(pasarAvisos, 5 * 60_000).unref();
+
   // El cierre de ventas del mes: en cuanto termina un mes (hora de Lima), su
   // PDF queda guardado. Mirar cada tres horas basta; el panel también cierra
   // lo pendiente al abrir «Ventas mensuales».
@@ -61,12 +81,24 @@ async function bootstrap() {
   ordenesAbandonadas.unref();
   setTimeout(cerrarAbandonadas, 60_000).unref();
 
+  // Las conversaciones de WhatsApp se guardan WHATSAPP_RETENCION_DIAS y se
+  // borran solas. Una vez al día basta; la primera, a los dos minutos.
+  const purgarWhatsapp = () =>
+    whatsappService
+      .purgar()
+      .catch((error) => logger.error({ err: error }, 'No se purgaron las conversaciones de WhatsApp'));
+  const purgaWhatsapp = setInterval(purgarWhatsapp, PURGA_WHATSAPP_MS);
+  purgaWhatsapp.unref();
+  setTimeout(purgarWhatsapp, 120_000).unref();
+
   // Apagado ordenado: se dejan terminar las peticiones en curso.
   const shutdown = (signal) => async () => {
     logger.info(`${signal} recibido, cerrando servidor…`);
     clearInterval(vigia);
+    clearInterval(avisosDeAvance);
     clearInterval(cierreDeMes);
     clearInterval(ordenesAbandonadas);
+    clearInterval(purgaWhatsapp);
     server.close(async () => {
       await prisma.$disconnect();
       logger.info('Servidor cerrado correctamente');

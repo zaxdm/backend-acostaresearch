@@ -12,11 +12,15 @@ const logger = require('./config/logger');
 const routes = require('./routes');
 const mcpRouter = require('./modules/mcp/mcp.router');
 const enlacesCortosRouter = require('./modules/enlaces/enlaceCorto.routes');
+const { webhook: whatsappWebhook } = require('./modules/whatsapp/whatsapp.routes');
 const { globalLimiter } = require('./middlewares/rateLimit');
 const { ocultarSecretosEnUrl, ocultarConsulta, ocultarParams } = require('./shared/utils/ocultar');
 const { ForbiddenError } = require('./shared/errors/AppError');
 const notFound = require('./middlewares/notFound');
 const errorHandler = require('./middlewares/errorHandler');
+
+/** Donde Meta manda los mensajes de WhatsApp. Ver `modules/whatsapp`. */
+const WHATSAPP_WEBHOOK = `${env.API_PREFIX}/whatsapp/webhook`;
 
 function createApp() {
   const app = express();
@@ -50,7 +54,16 @@ function createApp() {
     }),
   );
 
-  app.use(express.json({ limit: '100kb' }));
+  app.use(
+    express.json({
+      limit: '100kb',
+      // El webhook de WhatsApp comprueba la firma de Meta sobre los bytes
+      // EXACTOS que llegaron; el JSON ya parseado no sirve para eso.
+      verify(req, _res, buffer) {
+        if (req.originalUrl.startsWith(WHATSAPP_WEBHOOK)) req.rawBody = buffer;
+      },
+    }),
+  );
   app.use(express.urlencoded({ extended: true, limit: '100kb' }));
   app.use(cookieParser());
   app.use(
@@ -83,6 +96,11 @@ function createApp() {
   app.use('/.well-known', (_req, res) =>
     res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'No existe.' } }),
   );
+
+  // El webhook de WhatsApp, también antes del límite global: Meta manda un
+  // aviso por mensaje y otro por cada «entregado» y «leído», desde pocas IP.
+  // Lo protege la firma. Ver `modules/whatsapp/whatsapp.routes`.
+  app.use(WHATSAPP_WEBHOOK, whatsappWebhook);
 
   app.use(globalLimiter);
 

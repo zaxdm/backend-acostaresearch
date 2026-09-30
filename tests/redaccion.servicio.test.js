@@ -28,6 +28,7 @@ sustituir('../src/modules/projects/project.repository', {
 const textos = new Map();
 let voz = null;
 let reportes = {};
+let huellas = [];
 sustituir('../src/modules/projects/project.storage', {
   palabrasDe: (t) => t.trim().split(/\s+/).length,
   leer: async (id, code) => textos.get(code) ?? null,
@@ -42,6 +43,10 @@ sustituir('../src/modules/projects/project.storage', {
     voz = v;
   },
   leerFichaDeAvance: async () => null,
+  leerHumanizadosDeCapitulos: async () => huellas,
+  guardarHumanizadosDeCapitulos: async (id, h) => {
+    huellas = h;
+  },
 });
 
 const redaccion = require('../src/modules/projects/redaccion.service');
@@ -57,6 +62,7 @@ const CAPITULO = [
 test.beforeEach(() => {
   proyecto = { id: 'p1', stages: [{ skillCode: 'marco-teorico', palabras: 40, estado: 'EN_CURSO' }] };
   textos.clear();
+  huellas = [];
   textos.set('marco-teorico', CAPITULO);
   etapas.length = 0;
   voz = null;
@@ -128,6 +134,28 @@ test('el reporte se cruza con los capítulos guardados y lo reescrito deja de sa
   assert.equal(despues.lineas.length, 0);
 
   assert.deepEqual(await redaccion.loMarcadoEnCapitulos('u1', 'METODO', { tipo: 'ia' }), { sinReporte: true });
+});
+
+test('sin reporte, «todo» da la prosa sin humanizar y lo ya reescrito no vuelve', async () => {
+  const antes = await redaccion.loMarcadoEnCapitulos('u1', 'METODO', { tipo: 'todo' });
+  assert.equal(antes.marcados, 2);
+  assert.deepEqual(
+    antes.lineas.map((l) => l.slice(0, 22)),
+    ['[marco-teorico ¶2] Gar', '[marco-teorico ¶4] Asi'],
+  );
+
+  await redaccion.reescribirParrafos({
+    userId: 'u1',
+    productCode: 'METODO',
+    capitulo: 'marco-teorico',
+    parrafos: [{ p: 4, texto: 'En 2024 los docentes daban mucho peso a colaborar entre ellos en su trabajo diario de aula.' }],
+  });
+  const despues = await redaccion.loMarcadoEnCapitulos('u1', 'METODO', { tipo: 'todo' });
+  assert.equal(despues.pendientes, 1);
+  assert.match(despues.lineas[0], /¶2\] García/);
+
+  const otro = await redaccion.loMarcadoEnCapitulos('u1', 'METODO', { tipo: 'todo', capitulo: 'discusion' });
+  assert.deepEqual(otro, { sinTexto: true });
 });
 
 test('la voz del avance no pisa la del reporte de IA', async () => {

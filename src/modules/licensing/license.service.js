@@ -16,6 +16,7 @@ const { visiblePara } = require('../billing/plan.visibilidad');
 const { traeHerramientas } = require('../productos/producto.perfil');
 const proofStorage = require('../payments/proof.storage');
 const { enlaceTerminado } = require('../trials/trial.plazo');
+const referidosService = require('../referidos/referidos.service');
 const {
   generateOpaqueToken,
   hashToken,
@@ -886,13 +887,14 @@ const licenseService = {
     }
 
     const token = generateOpaqueToken(32);
+    const pago = pagoDelCodigo({ registro, contrato, userId });
     const licencia = await licenseRepository.redeem({
       codeId: registro.id,
       // El cobro que se apuntó al generar el código. Se pasa al repositorio para
       // que el pago nazca dentro de la misma transacción que la licencia: o
       // quedan las dos cosas o no queda ninguna. Un canje que entregara el
       // acceso sin apuntar el dinero es exactamente el agujero que esto cierra.
-      pago: pagoDelCodigo({ registro, contrato, userId }),
+      pago,
       datosLicencia: {
         userId,
         productCode: registro.productCode,
@@ -924,6 +926,10 @@ const licenseService = {
       connectorUrl: url,
       expiresAt: licencia.expiresAt,
     });
+
+    // Un código VENDIDO es una compra: si llegó invitado, se reparten los días
+    // del referido. Una cortesía no (no trajo a nadie que pagara).
+    if (pago) referidosService.premiarCompra({ userId, licenseId: licencia.id });
 
     return { license: licencia, connectorUrl: url };
   },

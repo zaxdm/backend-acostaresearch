@@ -214,6 +214,33 @@ test('humanizar: guarda lo aprobado, rechaza lo que cambia datos, y lo descarga 
   assert.equal(deshecho.humanizados, 0);
 });
 
+test('sin reporte ni rojo, «todo» da toda la prosa pendiente con la voz guardada', async () => {
+  await servicio.subir({
+    userId: 'u1',
+    productCode: 'METODO',
+    buffer: docx([
+      'Asimismo, cabe destacar que la muestra estuvo constituida por 120 docentes de tres colegios de Lima.',
+      'Resultados',
+      'Es importante mencionar que el alfa de Cronbach fue de 0,89 en la escala completa del estudio.',
+    ]),
+    nombre: 'Mi tesis.docx',
+  });
+  disco.set('p1:voz', { parrafos: ['Un párrafo que escribió el tesista.'] });
+
+  const leido = await servicio.ver('u1', 'METODO', { soloMarcados: true, reporte: 'todo' });
+  assert.equal(leido.tipoReporte, 'todo');
+  assert.equal(leido.marcados, 2);
+  assert.deepEqual(leido.lineas.map((l) => l.slice(0, 11)), ['¶1 Asimismo', '¶3 Es impor']);
+  assert.deepEqual(leido.voz, ['Un párrafo que escribió el tesista.']);
+
+  await servicio.humanizar('u1', 'METODO', [
+    { p: 1, texto: 'La muestra fue de 120 docentes, repartidos en tres colegios de Lima que aceptaron participar.' },
+  ]);
+  const despues = await servicio.ver('u1', 'METODO', { soloMarcados: true, reporte: 'todo' });
+  assert.equal(despues.pendientes, 1);
+  assert.match(despues.lineas[0], /^¶3 /);
+});
+
 test('humanizar un párrafo citado exige sus marcas, y la cita sale en el texto nuevo', async () => {
   await servicio.subir({
     userId: 'u1',

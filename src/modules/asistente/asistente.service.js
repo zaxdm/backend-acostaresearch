@@ -72,6 +72,9 @@ const asistenteService = {
     return { activo: env.asistenteEnabled };
   },
 
+  /** Los mismos precios, con la misma memoria, para el bot de WhatsApp. */
+  preciosVigentes,
+
   async responder({ mensajes, pagina, conSesion }) {
     if (!env.asistenteEnabled) {
       throw noDisponible('El asistente no está disponible. Escríbenos por WhatsApp.');

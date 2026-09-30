@@ -444,6 +444,8 @@ function confirmacionDePago(via, planName) {
 
   if (via === 'yape') return `hemos comprobado tu pago de ${producto}`;
   if (via === 'codigo') return `hemos activado tu código de ${producto}`;
+  // Un alumno que entra por el enlace de su universidad o de su asesor.
+  if (via === 'grupo') return `hemos activado tu acceso a ${producto} como parte de tu grupo`;
   return `hemos confirmado tu pago de ${producto}`;
 }
 
@@ -1523,4 +1525,9 @@ module.exports = {
   reclamoRecibidoAdmin,
   reclamoRespondido,
   appUrl,
+  // Las piezas del marco, para los correos que viven en su módulo (los de
+  // avance y de referidos, en `modules/avisos` y `modules/referidos`).
+  layout,
+  escapar,
+  fecha,
 };

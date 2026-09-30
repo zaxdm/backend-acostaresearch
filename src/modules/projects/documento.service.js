@@ -326,6 +326,18 @@ async function ver(userId, productCode, { desde = 1, soloMarcados = false, repor
     return { ...comun, tipoReporte: 'rojo', ...verRojo(parrafos, { citados, reescritos, bloqueados, desde }) };
   }
 
+  // Sin reporte ni rojo: toda la prosa que aún no se humanizó, por el mismo
+  // camino rápido. La voz es la que ya se guardó (del avance o de un reporte).
+  if (soloMarcados && tipoReporte === 'todo') {
+    const voz = await almacen.leerVoz(proyecto.id).catch(() => null);
+    return {
+      ...comun,
+      tipoReporte,
+      ...verTodo(parrafos, { citados, reescritos, bloqueados, desde }),
+      voz: voz?.parrafos ?? [],
+    };
+  }
+
   // El de similitud se lee igual que el de IA: lo que marcó y aún no se reescribió.
   const elegido = tipoReporte === 'similitud' ? similitud : tipoReporte === 'ia' ? reporte : null;
   if (soloMarcados && elegido) {
@@ -393,6 +405,36 @@ function verMarcados(parrafos, reporte, { citados, reescritos, bloqueados, desde
     .map((p) => p.texto.slice(0, 1200));
 
   return { lineas, siguiente, voz, marcados: marcados.length, pendientes: pendientes.length };
+}
+
+/** Párrafos de menos palabras no entran en «todo»: rótulos, ítems de lista, pies. */
+const MINIMO_PARA_HUMANIZAR = 12;
+
+/**
+ * Toda la prosa del Word que todavía no se humanizó, por tandas: el camino
+ * rápido sin reporte. Deja fuera títulos, tablas, referencias, lo que no se
+ * puede reescribir y los párrafos muy cortos.
+ */
+function verTodo(parrafos, { citados, reescritos, bloqueados, desde }) {
+  const prosa = parrafos.filter(
+    (p) => humanizable(p, bloqueados) && p.texto.trim().split(/\s+/).length >= MINIMO_PARA_HUMANIZAR,
+  );
+  const pendientes = prosa.filter((p) => !reescritos[p.id] && p.id >= desde);
+
+  const lineas = [];
+  let largo = 0;
+  let siguiente = null;
+  for (const parrafo of pendientes) {
+    if (largo >= POR_TANDA_MARCADOS) {
+      siguiente = parrafo.id;
+      break;
+    }
+    const cita = citados[parrafo.id] ? ' [citado]' : '';
+    const linea = `¶${parrafo.id}${cita} ${citados[parrafo.id] ?? parrafo.texto}`;
+    lineas.push(linea);
+    largo += linea.length;
+  }
+  return { lineas, siguiente, marcados: prosa.length, pendientes: pendientes.length };
 }
 
 /** Letras y cifras de un texto: lo que cuenta para saber cuánto del párrafo está en rojo. */

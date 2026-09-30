@@ -396,6 +396,7 @@ function rutaDeDocumento(projectId, que) {
     reporteIa: 'documento-reporte-ia.json',
     reporteSimilitud: 'documento-reporte-similitud.json',
     voz: 'voz-del-tesista.json',
+    humanizados: 'capitulos-humanizados.json',
   };
   return path.join(env.capitulosDir, projectId, nombres[que]);
 }
@@ -465,6 +466,19 @@ const guardarReporteSimilitud = (projectId, reporte) =>
 const leerVoz = (projectId) => leerJson(rutaDeDocumento(projectId, 'voz'));
 
 const guardarVoz = (projectId, voz) => escribirJson(rutaDeDocumento(projectId, 'voz'), voz);
+
+/**
+ * Las huellas de los párrafos de capítulos que ya se humanizaron con
+ * `reescribir_parrafos`: para que «humanizar todo» no los vuelva a dar. Es la
+ * huella del texto y no su número, porque partir o juntar párrafos corre la
+ * numeración. Lista vacía si no hay ninguno.
+ */
+async function leerHumanizadosDeCapitulos(projectId) {
+  return (await leerJson(rutaDeDocumento(projectId, 'humanizados'))) ?? [];
+}
+
+const guardarHumanizadosDeCapitulos = (projectId, huellas) =>
+  escribirJson(rutaDeDocumento(projectId, 'humanizados'), huellas);
 
 async function borrarDocumento(projectId) {
   let habia = false;
@@ -564,6 +578,8 @@ module.exports = {
   guardarReporteSimilitud,
   leerVoz,
   guardarVoz,
+  leerHumanizadosDeCapitulos,
+  guardarHumanizadosDeCapitulos,
   borrarDocumento,
   guardarFichaDeAvance,
   leerFichaDeAvance,

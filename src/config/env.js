@@ -145,6 +145,37 @@ const schema = z.object({
   // Mensajes al día para todo el sitio, contados en memoria. 0 = sin tope.
   ASISTENTE_MAX_DIARIO: z.coerce.number().int().nonnegative().default(1500),
 
+  // ── Bot de WhatsApp ─────────────────────────────────────────────────────
+  // Contesta las consultas que llegan al WhatsApp de atención. Ver
+  // `modules/whatsapp`.
+  //
+  // Su PROPIA clave de Gemini, y solo Gemini: no entra en la carrera con Groq,
+  // NVIDIA ni OVH del chat de la web, ni gasta la clave de la casa. Así una
+  // avalancha de mensajes no se lleva por delante el chat ni «Preparar
+  // documento», y lo que escriben los clientes no sale a planes gratuitos de
+  // otras empresas. Vacía = el bot no contesta (los mensajes se guardan igual).
+  WHATSAPP_GEMINI_API_KEY: vacioComoAusente(z.string()),
+  WHATSAPP_GEMINI_MODEL: z.string().default('gemini-3.1-flash-lite'),
+  // El respaldo es otro Gemini con la MISMA clave. Vacío = sin respaldo.
+  WHATSAPP_GEMINI_MODEL_RESPALDO: vacioComoAusente(z.string()).default('gemini-3.5-flash-lite'),
+  // Respuestas del bot al día, contadas en memoria. 0 = sin tope.
+  WHATSAPP_MAX_DIARIO: z.coerce.number().int().nonnegative().default(1000),
+  // Días que se guardan las conversaciones. Pasados, se borran solas.
+  WHATSAPP_RETENCION_DIAS: z.coerce.number().int().positive().default(90),
+  // La Cloud API de Meta (developers.facebook.com → tu app → WhatsApp). Sin las
+  // cuatro, el bot funciona en modo maqueta: responde y guarda, pero nada sale
+  // a WhatsApp; se prueba desde el panel con «Probar el bot».
+  //   - TOKEN: el permanente de un usuario del sistema, no el de 24 h.
+  //   - PHONE_NUMBER_ID: el identificador del número, no el número.
+  //   - APP_SECRET: Configuración → Básica → Clave secreta. Firma los webhooks.
+  //   - VERIFY_TOKEN: una contraseña que inventamos y se pega también en Meta
+  //     al configurar el webhook.
+  WHATSAPP_TOKEN: vacioComoAusente(z.string()),
+  WHATSAPP_PHONE_NUMBER_ID: vacioComoAusente(z.string().regex(/^\d+$/, 'Solo dígitos')),
+  WHATSAPP_APP_SECRET: vacioComoAusente(z.string()),
+  WHATSAPP_VERIFY_TOKEN: vacioComoAusente(z.string().min(16, 'Al menos 16 caracteres')),
+  WHATSAPP_API_VERSION: z.string().regex(/^v\d+\.\d+$/).default('v23.0'),
+
   // ── Preparar documento ──────────────────────────────────────────────────
   // Edición de inglés académico y traducción. Usa la misma clave de
   // Gemini que el asistente; sin ella el servicio no se ofrece.
@@ -333,6 +364,18 @@ const schema = z.object({
   LICENSE_PRODUCT_CODE: z.string().default('METODO_9_SKILLS'),
   // Días de vigencia de una licencia nueva. 0 = sin caducidad.
   LICENSE_DURATION_DAYS: z.coerce.number().int().nonnegative().default(0),
+
+  // ── Retención: correos de avance y referidos ────────────────────────────
+  // Los correos según el avance del tesista («llevas 7 días sin avanzar»…).
+  // false los apaga todos sin desplegar. Ver `modules/avisos`.
+  AVISOS_AVANCE_ACTIVOS: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((valor) => valor === 'true'),
+  // Días extra por invitar a otro tesista que compra, y para el invitado. 0 =
+  // no se regala nada a ese lado. Ver `modules/referidos`.
+  REFERIDO_DIAS_INVITADOR: z.coerce.number().int().nonnegative().default(15),
+  REFERIDO_DIAS_INVITADO: z.coerce.number().int().nonnegative().default(7),
 
   // Carpeta donde viven los bundles (.skill) que sirve el conector. Es la que
   // escribe el panel al subir una skill, así que tiene que ser persistente:
@@ -598,6 +641,14 @@ const env = Object.freeze({
     Boolean(raw.ANTHROPIC_API_KEY) || (raw.SKILLS_SIMULADAS && raw.NODE_ENV !== 'production'),
   googleAuthEnabled: Boolean(raw.GOOGLE_CLIENT_ID),
   asistenteEnabled: Boolean(raw.GEMINI_API_KEY),
+  // El bot piensa con su clave; habla por WhatsApp solo con las cuatro de Meta.
+  whatsappIaEnabled: Boolean(raw.WHATSAPP_GEMINI_API_KEY),
+  whatsappMetaEnabled: Boolean(
+    raw.WHATSAPP_TOKEN &&
+      raw.WHATSAPP_PHONE_NUMBER_ID &&
+      raw.WHATSAPP_APP_SECRET &&
+      raw.WHATSAPP_VERIFY_TOKEN,
+  ),
   googleClientIds: (raw.GOOGLE_CLIENT_ID ?? '')
     .split(',')
     .map((id) => id.trim())

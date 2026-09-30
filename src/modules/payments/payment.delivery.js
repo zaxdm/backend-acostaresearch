@@ -9,6 +9,7 @@ const licenseService = require('../licensing/license.service');
 const licenseRepository = require('../licensing/license.repository');
 const prepararService = require('../preparar/preparar.service');
 const prepararRepository = require('../preparar/preparar.repository');
+const referidosService = require('../referidos/referidos.service');
 const paymentRepository = require('./payment.repository');
 const constancia = require('./payment.constancia');
 
@@ -231,6 +232,17 @@ async function entregarPago({ payment, captura, estadoEsperado = 'PENDING', nota
   // devolvió null, otra petición cobró este pago un instante antes y el correo
   // ya salió con ella, así que aquí no se manda un duplicado.
   if (entrega) avisarAlComprador(payment, entrega);
+
+  // ¿Llegó invitado por otro tesista? Su primera licencia reparte los días del
+  // referido. Una renovación no: el premio es por traer a alguien nuevo. Sin
+  // await y sin riesgo: `premiarCompra` nunca lanza.
+  if (entrega?.license && !entrega.renovada) {
+    referidosService.premiarCompra({
+      userId: payment.userId,
+      licenseId: entrega.license.id,
+      paymentId: payment.id,
+    });
+  }
 
   return entrega;
 }

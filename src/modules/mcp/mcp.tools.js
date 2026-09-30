@@ -119,8 +119,8 @@ const REGLAS_DE_REDACCION = [
 ].join(N);
 
 const REGLAS_CON_REPORTE = [
-  'CÓMO HUMANIZAR CON EL REPORTE. El tesista ya pidió humanizarlo entero: NO le enseñes los párrafos ni ' +
-    'le pidas aprobación por bloques; trabaja tanda a tanda hasta el final.',
+  'CÓMO HUMANIZAR. El tesista ya pidió humanizarlo: NO le enseñes los párrafos ni le pidas aprobación ' +
+    'por bloques; trabaja tanda a tanda hasta el final. Solo si él pide ver cada párrafo, enséñaselo.',
   '1. Reescribe cada párrafo DESDE LA IDEA: di para ti qué afirma y redáctalo otra vez en otro orden, ' +
     'el cuerpo también. Ninguna oración puede quedar igual; cambiar una palabra suelta no es reescribir.',
   '2. Imita la VOZ DEL AUTOR de abajo: su largo de oración, sus conectores, sus palabras corrientes. No ' +
@@ -1406,7 +1406,8 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         'Reemplaza párrafos sueltos de un capítulo ya guardado en el proyecto, por su número (¶7), sin ' +
         'reenviar el capítulo entero. Los números salen de "ver_capitulo" con "texto": true y "numerado": ' +
         'true, o de "ver_lo_marcado". ÚSALA para humanizar, bajar la similitud o corregir los AVISOS DE ' +
-        'REDACCIÓN de "guardar_capitulo". Manda el texto NUEVO completo de cada párrafo. El servidor ' +
+        'REDACCIÓN de "guardar_capitulo". Al humanizar, guarda cada tanda en cuanto la reescribas, sin ' +
+        'pedir aprobación por bloques. Manda el texto NUEVO completo de cada párrafo. El servidor ' +
         'rechaza el párrafo si cambian las cifras o los años, si lo que va entre comillas no se copió tal ' +
         'cual, si desaparece un apellido citado o si las claves [AR…] y [FALTA FUENTE] no son las mismas. ' +
         'Títulos, tablas, figuras, listas y rótulos no se aceptan. Un párrafo sale como un párrafo. Hasta 40 ' +
@@ -1480,17 +1481,31 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         '"similitud") para bajar la similitud. Los cruza con su Word subido o, si no subió ninguno, con los ' +
         'capítulos guardados en el proyecto. Trae las reglas para reescribirlos y la voz del tesista: no ' +
         'hace falta cargar la skill entera ni leer la tesis completa. Lo ya reescrito no vuelve a salir; la ' +
-        'tanda siguiente se pide volviendo a llamar. Si no hay reporte, dile que lo suba por ese enlace. ' +
+        'tanda siguiente se pide volviendo a llamar. Si quiere trabajar con su reporte y no está subido, dile ' +
+        'que lo suba por ese enlace. ' +
         'SIN REPORTE, CON SU PROPIO RESALTADO: si el tesista dice que marcó en rojo en su Word lo que hay ' +
         'que humanizar (con el resaltador o con la letra en rojo), usa "reporte": "rojo": devuelve solo lo rojo ' +
-        'del Word subido, y de los párrafos con solo una parte en rojo, qué parte es.',
+        'del Word subido, y de los párrafos con solo una parte en rojo, qué parte es. ' +
+        'SIN REPORTE NI ROJO, usa "reporte": "todo": toda la prosa que aún no se humanizó, por el mismo ' +
+        'camino rápido. Con Word subido es ese Word; si no, o si pasas "capitulo", los capítulos ' +
+        'guardados (uno o todos). ES LA ENTRADA POR DEFECTO para «humaniza mi tesis / mi capítulo / mi ' +
+        'documento»: no hace falta leer antes con "ver_mi_documento" ni con "ver_capitulo".',
       inputSchema: fromJsonSchema({
         type: 'object',
         properties: {
           reporte: {
             type: 'string',
-            enum: ['ia', 'similitud', 'rojo'],
-            description: 'Qué reporte leer; "rojo" es lo que el tesista resaltó en rojo en su Word subido.',
+            enum: ['ia', 'similitud', 'rojo', 'todo'],
+            description:
+              'Qué reporte leer; "rojo" es lo que el tesista resaltó en rojo en su Word subido; "todo", ' +
+              'sin reporte, toda la prosa aún sin humanizar.',
+          },
+          capitulo: {
+            type: 'string',
+            maxLength: 60,
+            description:
+              'Solo con "todo": el capítulo guardado que se humaniza (su código, como en "ver_capitulo"). ' +
+              'Sin él, con Word subido se trabaja el Word, y si no hay Word, todos los capítulos.',
           },
           saltar: {
             type: 'array',
@@ -1505,13 +1520,17 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         additionalProperties: false,
       }),
     },
-    async ({ reporte, saltar }) => {
+    async ({ reporte, saltar, capitulo }) => {
       await licenseService.recordUsage({ licenseId: licencia.id, tool: 'ver_lo_marcado' });
       const userId = licencia.user.id;
       const { productCode } = licencia;
       const fuera = (saltar ?? []).map((x) => String(x).replace(/[[\]]/g, '').trim());
       try {
-        const enWord = await documentoService.ver(userId, productCode, { soloMarcados: true, reporte });
+        // Con "capitulo" se trabaja el capítulo guardado aunque haya un Word subido.
+        const enWord =
+          reporte === 'todo' && capitulo
+            ? null
+            : await documentoService.ver(userId, productCode, { soloMarcados: true, reporte });
         if (reporte === 'rojo') {
           if (!enWord) {
             return texto(
@@ -1536,7 +1555,17 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         const enCapitulos = await redaccion.loMarcadoEnCapitulos(userId, productCode, {
           tipo: reporte,
           saltar: fuera.map((x) => x.replace(/\s*¶\s*/, '#')),
+          capitulo: capitulo ?? null,
         });
+        if (reporte === 'todo' && enCapitulos.sinTexto) {
+          return texto(
+            capitulo
+              ? `El capítulo «${capitulo}» no tiene texto guardado. Mira con "mi_proyecto" qué capítulos tienen texto.`
+              : 'No hay ningún Word subido ni capítulos guardados con texto. Si escribió su tesis por su cuenta, ' +
+                  'llama a "subir_mi_documento" y dile que la suba por ese enlace; si quiere humanizar un texto ' +
+                  'corto, que lo pegue en el chat.',
+          );
+        }
         if (enCapitulos.sinReporte && !enWord?.tipoReporte) {
           return texto(
             `No hay ningún reporte de ${reporte === 'ia' ? 'IA' : 'similitud'} subido. Llama a "subir_mi_documento" ` +
@@ -1556,6 +1585,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
             ...enCapitulos,
             modo: 'capitulos',
             tipo: reporte,
+            capitulo: capitulo ?? null,
             voz: vozGuardada?.parrafos ?? [],
             reporteIa: reporte === 'ia' ? enCapitulos.reporte : null,
             reporteSimilitud: reporte === 'similitud' ? enCapitulos.reporte : null,
@@ -3242,7 +3272,8 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
   function respuestaLoMarcado(leido) {
     const similitud = leido.tipo === 'similitud';
     const rojo = leido.tipo === 'rojo';
-    const ficha = rojo ? {} : similitud ? leido.reporteSimilitud : leido.reporteIa;
+    const todo = leido.tipo === 'todo';
+    const ficha = rojo || todo ? {} : similitud ? leido.reporteSimilitud : leido.reporteIa;
     if (!ficha) {
       return (
         `No hay reporte de ${similitud ? 'similitud' : 'IA'} de Turnitin subido. Si lo tiene, llama a ` +
@@ -3253,7 +3284,11 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
       leido.modo === 'capitulos'
         ? '"reescribir_parrafos" (un capítulo por llamada, con el número de cada párrafo)'
         : '"humanizar_mi_documento" (con el número de cada párrafo)';
-    const cabecera = rojo
+    const cabecera = todo
+      ? leido.modo === 'capitulos'
+        ? `Humanizar ${leido.capitulo ? `el capítulo «${leido.capitulo}»` : 'los capítulos guardados'}`
+        : `Humanizar «${leido.nombre}» entero`
+      : rojo
       ? 'Resaltado en rojo en su Word'
       : similitud
         ? `Reporte de similitud: ${ficha.porcentaje ?? '?'} %` +
@@ -3265,6 +3300,12 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
             ? `${N}Fuentes principales: ${ficha.fuentes.slice(0, 8).map((f) => `${f.n}. ${f.nombre} ${f.porcentaje} %`).join(' · ')}`
             : '')
         : `Reporte: ${ficha.porcentaje ?? 'menos de 20'} % IA`;
+    if (leido.lineas.length === 0 && todo) {
+      return (
+        `${cabecera} · ${leido.marcados} párrafos · NO QUEDA NINGUNO POR HUMANIZAR.${N}${N}` +
+        'Dale su Word con "enlace_del_word" y un informe breve. No le prometas ningún porcentaje.'
+      );
+    }
     if (leido.lineas.length === 0 && rojo) {
       return (
         `${cabecera} · ${leido.marcados} párrafos · NO QUEDA NINGUNO POR TRABAJAR.${N}${N}` +
@@ -3290,14 +3331,14 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
       ? ` · por capítulo: ${Object.entries(leido.porCapitulo).map(([c, n]) => `${c} ${n}`).join(', ')}`
       : '';
     return (
-      `${cabecera} · ${leido.marcados} párrafos marcados · faltan ${leido.pendientes} · en esta tanda ` +
+      `${cabecera} · ${leido.marcados} párrafos${todo ? '' : ' marcados'} · faltan ${leido.pendientes} · en esta tanda ` +
       `${leido.lineas.length}${porCapitulo}.${N}${N}` +
       reglas +
       `PÁRRAFOS (lo que va entre paréntesis y corchetes al principio NO es del texto):${N}` +
       `${leido.lineas.join(N)}${N}${N}` +
       `Reescríbelos y guárdalos con ${guardar}. Después vuelve a llamar a ` +
-      (leido.modo === 'capitulos' || similitud || rojo
-        ? `"ver_lo_marcado" con "reporte": "${leido.tipo}"`
+      (leido.modo === 'capitulos' || similitud || rojo || todo
+        ? `"ver_lo_marcado" con "reporte": "${leido.tipo}"${leido.capitulo ? ` y "capitulo": "${leido.capitulo}"` : ''}`
         : '"ver_mi_documento" con "solo_marcados": true') +
       ' hasta que no quede ninguno.'
     );
@@ -3387,8 +3428,8 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         'ANTES DE CITAR O HUMANIZAR, PREGÚNTALE si trabajas con el documento que ya está en el ' +
         'servidor (dile cuál y de qué fecha) o si quiere subir uno nuevo; si es nuevo, o no hay ' +
         'ninguno, dale el enlace de "subir_mi_documento" y espera a que diga que lo subió. ' +
-        'PARA HUMANIZARLO sigue la skill del humanizador y guarda cada bloque aprobado con ' +
-        '"humanizar_mi_documento". ' +
+        'PARA HUMANIZARLO no lo leas entero: usa "ver_lo_marcado" ("ia" con reporte, "rojo" si lo ' +
+        'resaltó, "todo" si no) y guarda cada tanda con "humanizar_mi_documento", de una vez. ' +
         'CÓMO SE CITA, EN ORDEN: ' +
         '1) Si la norma no está elegida, PREGÚNTASELA y guárdala con "guardar_avance" ' +
         '(estiloCitas); las de notas al pie no sirven para un documento subido. ' +
@@ -3612,12 +3653,10 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         'SOLO PARA EL WORD SUBIDO: para humanizar lo que está guardado en el método, lee el ' +
         'capítulo con "ver_capitulo" ("texto": true), reescríbelo y guárdalo con ' +
         '"guardar_capitulo"; no le mandes descargar su Word para volver a subirlo aquí. ' +
-        'NO LA USES sin haberle enseñado antes el bloque reescrito y tener su visto bueno, ni sin ' +
-        'haberle preguntado al empezar si trabajas con el documento que está en el servidor o con uno ' +
-        'nuevo (el nuevo lo sube con el enlace de "subir_mi_documento"). ' +
-        'EXCEPCIÓN: si subió el reporte de IA de Turnitin y pidió humanizarlo entero, se guarda cada ' +
-        'tanda de "ver_mi_documento" ("solo_marcados": true) sin enseñársela, como dicen sus reglas; y lo ' +
-        'mismo con lo que resaltó en rojo ("ver_lo_marcado" con "reporte": "rojo"). ' +
+        'Si pidió humanizar, guarda CADA TANDA de "ver_lo_marcado" en cuanto la reescribas, SIN ' +
+        'enseñársela ni pedir aprobación por bloques: ya pidió que se humanice. Solo si él pide revisar ' +
+        'párrafo por párrafo, enséñaselo antes. Al empezar, si ya hay un Word subido, confírmale una vez ' +
+        'que trabajas con ese (o que suba uno nuevo con el enlace de "subir_mi_documento"). ' +
         'El Word subido no se sobrescribe: el servidor escribe los párrafos nuevos al descargarlo, ' +
         'con el mismo estilo de párrafo, la misma letra, y las cursivas y notas al pie de las ' +
         'palabras que siguen. Reglas que el servidor comprueba y por las que rechaza el párrafo: ' +

@@ -11,7 +11,8 @@
  *   la similitud de tres párrafos obligaba a reenviar el capítulo entero con
  *   `guardar_capitulo`.
  * - Lo que marcó Turnitin (`loMarcado`), con el reporte de IA o el de similitud,
- *   cruzado con el Word subido o con los capítulos guardados.
+ *   cruzado con el Word subido o con los capítulos guardados; o, sin reporte,
+ *   toda la prosa de los capítulos (`tipo: 'todo'`) que aún no se humanizó.
  * - La voz del tesista (`voz`): párrafos que escribió él, sacados del reporte de
  *   IA (los que dio limpios) o de su avance. La reciben las skills que redactan.
  * - Los avisos de redacción de un capítulo recién guardado (`avisosDeRedaccion`),
@@ -22,6 +23,7 @@
  * `project.reporte-ia`.
  */
 
+const crypto = require('node:crypto');
 const projectRepository = require('./project.repository');
 const almacen = require('./project.storage');
 const documento = require('./project.documento');
@@ -33,6 +35,20 @@ const { enSerie } = require('../../shared/utils/enSerie');
 
 /** Caracteres por tanda de lo marcado: se lee y se reescribe en la misma vuelta. */
 const POR_TANDA = 12000;
+
+/** Párrafos de menos palabras no se humanizan en «todo»: rótulos, ítems de lista. */
+const MINIMO_PARA_HUMANIZAR = 12;
+
+/** Cuántas huellas de párrafos humanizados se guardan como mucho. */
+const TOPE_DE_HUELLAS = 5000;
+
+/** Huella de un párrafo sin sus marcas de cita ni sus espacios: su identidad. */
+const huella = (texto) =>
+  crypto
+    .createHash('sha1')
+    .update(quitarMarcas(texto).replace(/\s+/g, ' ').trim())
+    .digest('hex')
+    .slice(0, 16);
 
 /** Caracteres por tanda del capítulo numerado, como `ver_capitulo`. */
 const POR_TANDA_CAPITULO = 24000;
@@ -207,6 +223,15 @@ async function reescribirEnSuTurno({ userId, productCode, capitulo, parrafos }) 
 
   let palabras = almacen.palabrasDe(texto);
   if (guardados > 0) {
+    // Lo guardado no vuelve a salir en «humanizar todo».
+    const nuevas = parrafos
+      .filter(({ p }) => !rechazados.some((r) => r.p === p))
+      .map(({ texto: t }) => huella(t));
+    const previas = await almacen.leerHumanizadosDeCapitulos(proyecto.id);
+    await almacen.guardarHumanizadosDeCapitulos(
+      proyecto.id,
+      [...new Set([...previas, ...nuevas])].slice(-TOPE_DE_HUELLAS),
+    );
     const junto = todos.map((b) => `${b.texto}${b.separador}`).join('');
     ({ palabras } = await almacen.guardar(proyecto.id, capitulo, junto));
     const previa = (proyecto.stages ?? []).find((e) => e.skillCode === capitulo);
@@ -234,9 +259,10 @@ const leerReporte = (proyecto, tipo) =>
  * `{ sinReporte }` si no hay reporte de ese tipo; `{ sinTexto }` si no hay
  * capítulos guardados.
  */
-async function loMarcadoEnCapitulos(userId, productCode, { tipo = 'ia', saltar = [] } = {}) {
+async function loMarcadoEnCapitulos(userId, productCode, { tipo = 'ia', saltar = [], capitulo = null } = {}) {
   const proyecto = await projectRepository.buscar(userId, productCode);
   if (!proyecto) return { sinTexto: true };
+  if (tipo === 'todo') return todoEnCapitulos(proyecto, { saltar, capitulo });
   const reporte = await leerReporte(proyecto, tipo);
   if (!reporte) return { sinReporte: true };
 
@@ -272,6 +298,39 @@ async function loMarcadoEnCapitulos(userId, productCode, { tipo = 'ia', saltar =
     pendientes: pendientes.length,
     porCapitulo,
   };
+}
+
+/**
+ * Sin reporte: toda la prosa de los capítulos guardados (o de uno) que todavía
+ * no se humanizó, por tandas, igual que lo marcado. Es el camino rápido cuando
+ * el tesista pide «humaniza mi capítulo» y no tiene reporte de Turnitin.
+ */
+async function todoEnCapitulos(proyecto, { saltar, capitulo }) {
+  const capitulos = (await capitulosConTexto(proyecto)).filter((c) => !capitulo || c.code === capitulo);
+  if (capitulos.length === 0) return { sinTexto: true };
+
+  const hechos = new Set(await almacen.leerHumanizadosDeCapitulos(proyecto.id));
+  const fuera = new Set(saltar.map(String));
+  const parrafos = capitulos.flatMap(({ code, texto }) =>
+    prosa(texto)
+      .map((b) => ({ id: `${code}#${b.n}`, code, n: b.n, texto: b.texto.trim() }))
+      .filter((p) => p.texto.split(/\s+/).length >= MINIMO_PARA_HUMANIZAR),
+  );
+  const pendientes = parrafos.filter((p) => !fuera.has(p.id) && !hechos.has(huella(p.texto)));
+
+  const lineas = [];
+  let largo = 0;
+  for (const p of pendientes) {
+    if (largo >= POR_TANDA) break;
+    const linea = `[${p.code} ¶${p.n}] ${p.texto}`;
+    lineas.push(linea);
+    largo += linea.length;
+  }
+
+  const porCapitulo = {};
+  for (const p of pendientes) porCapitulo[p.code] = (porCapitulo[p.code] ?? 0) + 1;
+
+  return { lineas, marcados: parrafos.length, pendientes: pendientes.length, porCapitulo };
 }
 
 function fichaDe(reporte, tipo) {

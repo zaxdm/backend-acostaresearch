@@ -59,6 +59,7 @@ const ORDEN = [
   'problema-y-objetivos',
   'marco-teorico',
   'metodologia',
+  'aspectos-administrativos',
   'instrumento-investigacion',
   'recoleccion-datos',
   'analisis-datos-rstudio',

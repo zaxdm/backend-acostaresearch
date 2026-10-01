@@ -63,6 +63,17 @@ const ROMANOS = { i: 1, ii: 2, iii: 3, iv: 4, v: 5, vi: 6, vii: 7, viii: 8, ix: 
 const REGLAS = [
   { titulo: /^(referencias|bibliografia|fuentes consultadas|anexos?|apendices?)\b/, fases: null },
   { titulo: /^(resumen|abstract|dedicatoria|agradecimiento|indice|presentacion|portada)/, fases: null },
+  /*
+   * Los aspectos administrativos del proyecto. Van antes que todo lo demás
+   * porque en el proyecto suelen ser el «CAPÍTULO IV», y sin regla caían en
+   * Resultados por el número. Si el catálogo no tiene la fase, la regla de
+   * debajo los deja fuera: un presupuesto no es el capítulo de nadie.
+   */
+  {
+    titulo: /^(aspectos administrativos|administracion del (proyecto|estudio)|recursos y presupuesto|presupuesto y cronograma)\b/,
+    fases: [/^aspectos-administrativos$/],
+  },
+  { titulo: /^(aspectos administrativos|administracion del (proyecto|estudio))\b/, fases: null },
   {
     titulo: /resultado/,
     fases: [/^analisis-datos-rstudio$/, /^analisis-cualitativo$/, /^articulo-fase5-resultados$/, /^informe-fase3/],

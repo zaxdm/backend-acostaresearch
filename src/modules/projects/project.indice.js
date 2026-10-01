@@ -190,12 +190,13 @@ function rellenarIndice(documento, estilos) {
   const seccion = documento.slice(documento.lastIndexOf('<w:sectPr'));
   const ancho =
     numeroDe(seccion, /<w:pgSz\b[^>]*\bw:w="(\d+)"/, 11906) -
-    numeroDe(seccion, /<w:pgMar\b[^>]*\bw:left="(\d+)"/, 1701) -
-    numeroDe(seccion, /<w:pgMar\b[^>]*\bw:right="(\d+)"/, 1417);
+    // Los respaldos son nuestros márgenes por defecto, 2,54 cm (ver `project.docx`).
+    numeroDe(seccion, /<w:pgMar\b[^>]*\bw:left="(\d+)"/, 1440) -
+    numeroDe(seccion, /<w:pgMar\b[^>]*\bw:right="(\d+)"/, 1440);
   const alto =
     numeroDe(seccion, /<w:pgSz\b[^>]*\bw:h="(\d+)"/, 16838) -
-    Math.abs(numeroDe(seccion, /<w:pgMar\b[^>]*\bw:top="(-?\d+)"/, 1701)) -
-    Math.abs(numeroDe(seccion, /<w:pgMar\b[^>]*\bw:bottom="(-?\d+)"/, 1701));
+    Math.abs(numeroDe(seccion, /<w:pgMar\b[^>]*\bw:top="(-?\d+)"/, 1440)) -
+    Math.abs(numeroDe(seccion, /<w:pgMar\b[^>]*\bw:bottom="(-?\d+)"/, 1440));
 
   const bloques = [...cuerpo.matchAll(BLOQUE_RE)].map((m) => ({ xml: m[0], indice: m.index }));
   const cuantos = bloques.filter((b) => nivelDe(b.xml)).length;

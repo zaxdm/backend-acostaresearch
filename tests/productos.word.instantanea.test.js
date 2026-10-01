@@ -41,6 +41,8 @@ test('el Word de una tesis no cambia', async () => {
   comparar(
     'word.tesis',
     await documentoDe({
+      // El año de la portada, fijo: si no, la instantánea cambiaría cada enero.
+      hoy: new Date('2026-10-01T12:00:00Z'),
       tema: 'Deserción universitaria en el primer año',
       carrera: 'Psicología',
       universidad: 'Universidad Nacional Mayor de San Marcos',
@@ -58,6 +60,8 @@ test('el Word de un informe de curso no cambia', async () => {
   comparar(
     'word.informe-curso',
     await documentoDe({
+      // El año de la portada, fijo: si no, la instantánea cambiaría cada enero.
+      hoy: new Date('2026-10-01T12:00:00Z'),
       tema: 'La informalidad laboral en los mercados de Lima',
       carrera: 'Administración de Empresas',
       universidad: 'Tecsup',
@@ -87,6 +91,8 @@ test('el Word de un artículo no cambia', async () => {
   comparar(
     'word.articulo',
     await documentoDe({
+      // El año de la portada, fijo: si no, la instantánea cambiaría cada enero.
+      hoy: new Date('2026-10-01T12:00:00Z'),
       tema: 'Adopción de pagos digitales en mypes',
       carrera: null,
       universidad: null,

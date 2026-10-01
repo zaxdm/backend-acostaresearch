@@ -812,6 +812,7 @@ async function armarWord(userId, productCode) {
         escritos.push({
           titulo: capitulo.titulo,
           anexo: Boolean(capitulo.anexo),
+          ...(capitulo.porDefecto ? { porDefecto: true } : {}),
           texto: partes.join('\n\n'),
         });
       }
@@ -902,6 +903,8 @@ async function armarWord(userId, productCode) {
     partes,
     figuras,
     ...(perfil.tipo === 'informe' ? { portadaInforme: datosDePortadaInforme(proyecto, autor) } : {}),
+    // El logo y las hojas de jurado, dedicatoria y agradecimientos son de tesis.
+    ...(perfil.tipo === 'tesis' ? { paginasDeTesis: true } : {}),
     ...armado.documento,
   });
 
@@ -2306,6 +2309,10 @@ async function deUsuario(userId, { esAdmin = false } = {}) {
       const nombradas = new Set(
         (proyecto.esquema?.capitulos ?? []).flatMap((c) => c.de ?? []),
       );
+      // Y los aspectos administrativos, que solo salen mientras es el proyecto.
+      const informeFinal = esquemaDeCapitulos.yaEsInformeFinal(
+        new Set(proyecto.stages.filter((e) => (e.palabras ?? 0) > 0).map((e) => e.skillCode)),
+      );
 
       const etapas = catalogo.map((skill) => {
         const etapa = porCapitulo.get(skill.code);
@@ -2319,7 +2326,9 @@ async function deUsuario(userId, { esAdmin = false } = {}) {
            * que el esquema de su facultad las pida como capítulo.
            */
           enDocumento:
-            !esquemaDeCapitulos.FASES_DE_TRABAJO.has(skill.code) || nombradas.has(skill.code),
+            nombradas.has(skill.code) ||
+            (!esquemaDeCapitulos.FASES_DE_TRABAJO.has(skill.code) &&
+              !(informeFinal && esquemaDeCapitulos.SOLO_DEL_PROYECTO.has(skill.code))),
           estado: etapa?.estado ?? 'PENDIENTE',
           resumen: etapa?.resumen ?? null,
           palabras: etapa?.palabras ?? 0,

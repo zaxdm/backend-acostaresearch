@@ -89,3 +89,29 @@ test('sin referencias, los anexos siguen yendo al final', async () => {
 
   assert.deepEqual(titulos, ['CAPÍTULO I: PROBLEMA', 'ANEXO 1: INSTRUMENTO']);
 });
+
+test('los anexos por defecto van juntos bajo un solo «Anexos», como en APA 7', async () => {
+  const zip = new AdmZip(
+    await armar({
+      ...TESIS,
+      capitulos: [
+        { titulo: 'Capítulo I · Problema', texto: 'El problema es la deserción.' },
+        { titulo: 'Anexo 1: Instrumento de recolección de datos', anexo: true, porDefecto: true, texto: '## Ficha técnica\n\nCuestionario de 20 ítems.' },
+        { titulo: 'Anexo 2: Bitácora del trabajo de campo', anexo: true, porDefecto: true, texto: 'Se aplicó en marzo.' },
+      ],
+    }),
+  );
+  const xml = zip.readAsText('word/document.xml');
+  const titulos = (nivel) =>
+    [...xml.matchAll(new RegExp(`<w:pStyle w:val="Heading${nivel}"/>[\\s\\S]*?<w:t[^>]*>([^<]*)</w:t>`, 'g'))].map(
+      (m) => m[1],
+    );
+
+  assert.deepEqual(titulos(1), ['Capítulo I: Problema', 'Referencias', 'Anexos']);
+  assert.deepEqual(titulos(2), [
+    'Anexo 1. Instrumento de recolección de datos',
+    'Anexo 2. Bitácora del trabajo de campo',
+  ]);
+  // Lo de dentro del anexo baja un nivel: el Título 2 es el del anexo.
+  assert.deepEqual(titulos(3), ['Ficha técnica']);
+});

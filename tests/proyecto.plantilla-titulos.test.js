@@ -183,7 +183,7 @@ test('sin plantilla, los ajustes van sobre nuestro formato y el texto sale con e
   assert.match(cuerpo, /w:ascii="Arial"/);
   assert.match(plantilla.interiorDeEstilo(r.estilos, 'Heading1'), /w:ascii="Arial"/, 'los títulos con la misma letra');
   assert.equal(r.pagina.margen.left, 1984);
-  assert.equal(r.pagina.margen.top, 1701, 'los lados que no se pidieron, los de siempre');
+  assert.equal(r.pagina.margen.top, 1440, 'los lados que no se pidieron, los de siempre (2,54 cm)');
   assert.deepEqual(r.pagina.tamano, { width: 11906, height: 16838 });
 
   const salida = await docxMod.armar({
@@ -198,11 +198,11 @@ test('sin plantilla, los ajustes van sobre nuestro formato y el texto sale con e
   assert.match(doc, /<w:pgMar[^>]*w:left="1984"/);
 });
 
-test('la hoja por defecto deja el texto como sin plantilla: doble, justificado y con sangría', async () => {
+test('la hoja por defecto deja el texto como sin plantilla: doble, a la izquierda (APA 7) y con sangría', async () => {
   const base = await require('../src/modules/projects/project.docx').hojaDeEstilosPorDefecto();
   const cuerpo = plantilla.interiorDeEstilo(base, 'CuerpoTesis');
   assert.match(cuerpo, /w:line="480"/);
-  assert.match(cuerpo, /<w:jc w:val="both"\/>/);
+  assert.match(cuerpo, /<w:jc w:val="left"\/>/);
   assert.match(cuerpo, /w:firstLine="720"/);
 });
 

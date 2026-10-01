@@ -79,6 +79,45 @@ const FASES_DE_TRABAJO = new Set([
 ]);
 
 /**
+ * Las secciones que solo lleva el PROYECTO de tesis, no el informe final.
+ *
+ * Los aspectos administrativos —recursos, presupuesto, financiamiento y
+ * cronograma— justifican que el estudio se puede hacer; una vez hecho, casi
+ * ningún reglamento los pide. El servidor no sabe si el tesista está en el
+ * proyecto o en el informe, así que se mira lo escrito: con resultados,
+ * discusión o conclusiones guardados ya es el informe, y la sección deja de
+ * imprimirse. Lo guardado no se toca, y si el esquema de su facultad la nombra,
+ * sale (el reglamento manda).
+ */
+const SOLO_DEL_PROYECTO = new Set(['aspectos-administrativos']);
+
+/** Con texto en cualquiera de estas, el documento ya es el informe final. */
+const DEL_INFORME_FINAL = Object.freeze([
+  'analisis-datos-rstudio',
+  'analisis-cualitativo',
+  'discusion',
+  'conclusiones-abstract',
+]);
+
+const yaEsInformeFinal = (conTexto) => DEL_INFORME_FINAL.some((code) => conTexto.has(code));
+
+/**
+ * Sin esquema, las secciones del proyecto van justo detrás de la Metodología.
+ *
+ * El `orden` del catálogo es uno solo para todos los grupos y no deja huecos
+ * entre la Metodología y el Instrumento; una fase nueva cae al final, detrás de
+ * las Conclusiones. Aquí se coloca donde la pone cualquier guía de proyecto.
+ */
+function trasLaMetodologia(lista) {
+  const delProyecto = lista.filter((c) => SOLO_DEL_PROYECTO.has(c.partes[0]));
+  const metodologia = lista.findIndex((c) => c.partes[0] === 'metodologia');
+  if (delProyecto.length === 0 || metodologia === -1) return lista;
+  const resto = lista.filter((c) => !SOLO_DEL_PROYECTO.has(c.partes[0]));
+  const tras = resto.findIndex((c) => c.partes[0] === 'metodologia') + 1;
+  return [...resto.slice(0, tras), ...delProyecto, ...resto.slice(tras)];
+}
+
+/**
  * Los anexos van DETRÁS de las referencias, siempre.
  *
  * Ningún reglamento pone los anexos antes de la lista de referencias: la
@@ -292,11 +331,16 @@ function capitulosDelDocumento({
   conTexto = new Set(),
   incluirFasesDeTrabajo = false,
 }) {
-  const imprimible = (code) => incluirFasesDeTrabajo || !FASES_DE_TRABAJO.has(code);
+  const informeFinal = yaEsInformeFinal(conTexto);
+  const imprimible = (code) =>
+    incluirFasesDeTrabajo ||
+    (!FASES_DE_TRABAJO.has(code) && !(informeFinal && SOLO_DEL_PROYECTO.has(code)));
 
-  const delCatalogo = catalogo
-    .filter((s) => imprimible(s.code))
-    .map((s) => ({ titulo: s.displayName, partes: [s.code], anexo: esAnexo(s.displayName) }));
+  const delCatalogo = trasLaMetodologia(
+    catalogo
+      .filter((s) => imprimible(s.code))
+      .map((s) => ({ titulo: s.displayName, partes: [s.code], anexo: esAnexo(s.displayName) })),
+  );
   if (!tieneEsquema(esquema)) {
     // La estructura por defecto: los capítulos del método, las referencias —que
     // las pone el Word— y detrás los anexos que tengan texto, numerados.
@@ -306,6 +350,9 @@ function capitulosDelDocumento({
           titulo: `Anexo ${i + 1}: ${a.titulo}`,
           partes: [a.code],
           anexo: true,
+          // Los nuestros, no los de un reglamento: el Word los agrupa bajo un
+          // solo «Anexos» (ver `armar` en `project.docx`).
+          porDefecto: true,
         }));
     return { capitulos: [...delCatalogo, ...anexos], sobrantes: [] };
   }
@@ -394,6 +441,8 @@ module.exports = {
   tieneEsquema,
   capitulosDelDocumento,
   FASES_DE_TRABAJO,
+  SOLO_DEL_PROYECTO,
+  yaEsInformeFinal,
   ANEXOS_POR_DEFECTO,
   esAnexo,
   capituloPropio,

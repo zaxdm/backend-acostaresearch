@@ -242,28 +242,12 @@ async function armar({ titulo = null, tema = null, texto, citas = null, referenc
     title: renglones.join(' ') || 'Informe de resultados',
     ...(Object.keys(notas).length > 0 ? { footnotes: notas } : {}),
     // Los mismos estilos que el Word de la tesis: si el tesista pega el informe
-    // dentro, los títulos tienen que casar.
-    styles: {
-      default: {
-        document: { run: { font: 'Times New Roman', size: 24 } },
-        heading2: {
-          run: { font: 'Times New Roman', size: 24, bold: true, color: '000000' },
-          paragraph: { spacing: { before: 240, after: 120 } },
-        },
-        heading3: {
-          run: { font: 'Times New Roman', size: 24, bold: true, italics: true, color: '000000' },
-          paragraph: { spacing: { before: 200, after: 120 } },
-        },
-        heading4: {
-          run: { font: 'Times New Roman', size: 24, bold: true, color: '000000' },
-          paragraph: { spacing: { before: 160, after: 80 } },
-        },
-      },
-    },
+    // dentro, los títulos tienen que casar. Los toma de allí para no desfasarse.
+    styles: documento.ESTILOS_POR_DEFECTO,
     sections: [
       {
         properties: {
-          page: { margin: { top: 1701, right: 1417, bottom: 1701, left: 1701 } },
+          page: { margin: documento.MARGENES_POR_DEFECTO },
         },
         ...(tema
           ? {

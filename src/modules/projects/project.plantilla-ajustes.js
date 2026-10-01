@@ -39,7 +39,7 @@ class AjusteNoValido extends Error {}
 const twips = (cm) => Math.round((cm / 2.54) * 1440);
 
 /** Los márgenes de nuestro formato, los que valen mientras no se diga otro. */
-const MARGEN_POR_DEFECTO = { top: 1701, right: 1417, bottom: 1701, left: 1701 };
+const { MARGENES_POR_DEFECTO: MARGEN_POR_DEFECTO } = require('./project.docx');
 
 const PAPEL = {
   A4: { width: 11906, height: 16838 },

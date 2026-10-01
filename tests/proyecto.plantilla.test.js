@@ -146,13 +146,13 @@ test('con plantilla, el interlineado y la sangría del texto los decide ella', a
   assert.doesNotMatch(cuerpo, /<w:jc /, 'sin alineación a mano');
 });
 
-test('sin plantilla, el texto sigue a doble espacio, justificado y con sangría', async () => {
+test('sin plantilla, el texto sigue a doble espacio, a la izquierda (APA 7) y con sangría', async () => {
   const { doc } = await armarDePrueba({ conPlantilla: false });
   const cuerpo = parrafoCon(doc, 'Un párrafo del cuerpo.');
 
   assert.match(cuerpo, /w:line="480"/);
   assert.match(cuerpo, /w:firstLine=/);
-  assert.match(cuerpo, /<w:jc w:val="both"\/>/);
+  assert.match(cuerpo, /<w:jc w:val="left"\/>/);
 });
 
 test('las referencias van a la izquierda con sangría francesa, con o sin plantilla', async () => {

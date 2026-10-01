@@ -10,11 +10,14 @@
  *
  * SOBRE EL FORMATO
  * ----------------
- * Va en Times New Roman 12, interlineado doble y sangría de primera línea:
- * es lo que pide casi cualquier reglamento de tesis peruano y lo que menos
- * trabajo le deja al tesista cuando pegue esto en la plantilla de su
- * universidad. No se intenta imitar ninguna plantilla concreta —cada
- * universidad tiene la suya y adivinar mal es peor que no intentarlo—: lo que
+ * Va en APA 7, como la plantilla de la UNT que está en
+ * `documentacion/formato-por-defecto/ejemplo`: Times New Roman 12, doble
+ * espacio, a la izquierda con sangría de primera línea, márgenes de 2,54 cm en
+ * A4 y títulos de 12 puntos. Es lo que pide casi cualquier reglamento de tesis
+ * peruano y lo que menos trabajo le deja al tesista cuando pegue esto en la
+ * plantilla de su universidad. De la UNT se toma el estilo, no su portada ni
+ * sus capítulos —cada universidad tiene los suyos y adivinar mal es peor que
+ * no intentarlo—: lo que
  * se entrega es el contenido bien estructurado, con los títulos marcados como
  * títulos de verdad, para que al aplicar la plantilla se coloque solo.
  *
@@ -36,6 +39,7 @@ const {
   AlignmentType,
   PageNumber,
   Footer,
+  Header,
   TableOfContents,
   StyleLevel,
   FootnoteReferenceRun,
@@ -48,6 +52,8 @@ const {
   TableLayoutType,
   WidthType,
   BorderStyle,
+  HeightRule,
+  VerticalAlign,
   CommentRangeStart,
   CommentRangeEnd,
   CommentReference,
@@ -345,8 +351,16 @@ function tablaSinSeparador(lineas) {
 const LINEA_APA = { style: BorderStyle.SINGLE, size: 8, color: '000000' };
 const SIN_LINEA = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' };
 
-/** Página A4 con los márgenes de tesis: lo que queda para el texto, en twips. */
-const ANCHO_POR_DEFECTO = 11906 - 1701 - 1417;
+/**
+ * Los márgenes sin plantilla: 2,54 cm por los cuatro lados, los de APA 7 y la
+ * plantilla de la UNT. En twips. El papel sigue siendo A4, el de casi todas las
+ * universidades peruanas. Antes eran 3 cm arriba, abajo e izquierda y 2,5 a la
+ * derecha.
+ */
+const MARGENES_POR_DEFECTO = Object.freeze({ top: 1440, right: 1440, bottom: 1440, left: 1440 });
+
+/** Página A4 con nuestros márgenes: lo que queda para el texto, en twips. */
+const ANCHO_POR_DEFECTO = 11906 - MARGENES_POR_DEFECTO.left - MARGENES_POR_DEFECTO.right;
 /** Ninguna columna baja de esto: media pulgada, o no cabe ni una palabra. */
 const COLUMNA_MINIMA = 720;
 /**
@@ -857,7 +871,8 @@ function comoParrafos(texto, contexto = {}) {
 
     const encabezado = bloque.match(/^(#{1,4})\s+(.*)$/);
     if (encabezado) {
-      const nivel = Math.min(3, encabezado[1].length - masAlto + 1);
+      // Dentro de un anexo agrupado el Título 2 es el del anexo: lo suyo baja uno.
+      const nivel = Math.min(3, encabezado[1].length - masAlto + 1 + (contexto.dentroDeAnexo ? 1 : 0));
       // Una cita en un título no se pone como nota ni como campo: se deja su
       // texto, que es lo único que cabe en un encabezado.
       const titulo = encabezado[2]
@@ -882,8 +897,8 @@ function comoParrafos(texto, contexto = {}) {
            * traiga la hoja de estilos que subió.
            */
           indent: { firstLine: 0 },
-          // Con plantilla, el espaciado del título es el de su estilo.
-          ...(contexto.plantilla ? {} : { spacing: { before: 240, after: 120 } }),
+          // El espaciado lo pone el estilo: el de su plantilla o el nuestro,
+          // que es el de APA 7 (ver `ESTILOS_POR_DEFECTO`).
         }),
       );
       continue;
@@ -914,7 +929,7 @@ function comoParrafos(texto, contexto = {}) {
         new Paragraph({
           children: corridas(cita, contexto),
           ...(contexto.estiloCuerpo ? { style: contexto.estiloCuerpo } : {}),
-          alignment: AlignmentType.JUSTIFIED,
+          alignment: AlignmentType.LEFT,
           indent: { left: SANGRIA, firstLine: 0 },
           ...(contexto.plantilla ? {} : { spacing: { line: DOBLE } }),
         }),
@@ -943,7 +958,8 @@ function comoParrafos(texto, contexto = {}) {
             ? { alignment: AlignmentType.LEFT, indent: { left: SANGRIA, firstLine: 0 } }
             : contexto.plantilla
               ? {}
-              : { alignment: AlignmentType.JUSTIFIED, indent: { firstLine: SANGRIA } }),
+              : // A la izquierda, como APA 7 y la plantilla de la UNT.
+                { alignment: AlignmentType.LEFT, indent: { firstLine: SANGRIA } }),
           ...(contexto.plantilla ? {} : { spacing: { line: DOBLE } }),
         }),
       );
@@ -953,26 +969,111 @@ function comoParrafos(texto, contexto = {}) {
   return parrafos;
 }
 
-/** La portada: lo poco que el servidor sabe con certeza. */
-function portada({ tema, carrera, universidad, nombre, asesor }) {
-  const centrado = (texto, opciones = {}) =>
+/**
+ * La portada: lo poco que el servidor sabe con certeza.
+ *
+ * Como la de la plantilla de la UNT: todo en 12 puntos, centrado y a espacio y
+ * medio; la universidad y la carrera en mayúsculas, el título en negrita,
+ * «Autor:» y «Asesor:» delante de cada nombre, y el año al pie. Lo que no se
+ * sabe —el grado, la mención, la ciudad— no se pone: se inventaría.
+ */
+function portada({ tema, carrera, universidad, nombre, asesor, hoy = new Date(), conLogo = false }) {
+  const centrado = (texto, opciones = {}, rotulo = null) =>
     new Paragraph({
-      children: [new TextRun({ text: texto, ...opciones })],
+      // El rótulo en su propia corrida: el nombre queda entero y solo, como
+      // lo buscan quienes leen la portada (ver `word.portada-autor.test`).
+      children: [...(rotulo ? [new TextRun(rotulo)] : []), new TextRun({ text: texto, ...opciones })],
       alignment: AlignmentType.CENTER,
       indent: { firstLine: 0 },
-      spacing: { after: 240 },
+      spacing: { before: 0, after: 0, line: 360 },
     });
+  const hueco = (lineas) => new Paragraph({ text: '', spacing: { before: 0, after: lineas * 360 } });
 
   const hojas = [];
-  if (universidad) hojas.push(centrado(universidad.toUpperCase(), { bold: true, size: 28 }));
-  if (carrera) hojas.push(centrado(carrera, { size: 24 }));
-  hojas.push(new Paragraph({ text: '', spacing: { after: 720 } }));
-  hojas.push(centrado(tema ?? 'Tesis', { bold: true, size: 32 }));
-  hojas.push(new Paragraph({ text: '', spacing: { after: 720 } }));
-  if (nombre) hojas.push(centrado(nombre, { size: 24 }));
-  if (asesor) hojas.push(centrado(`Asesor: ${asesor}`, { size: 24 }));
+  if (universidad) hojas.push(centrado(universidad.toUpperCase(), { bold: true }));
+  if (carrera) hojas.push(centrado(carrera.toUpperCase()));
+  if (conLogo) {
+    hojas.push(hueco(1), recuadroDelLogo(), hueco(1));
+  } else {
+    hojas.push(hueco(4));
+  }
+  hojas.push(centrado(tema ?? 'Tesis', { bold: true }));
+  hojas.push(hueco(4));
+  if (nombre) hojas.push(centrado(nombre, {}, 'Autor: '));
+  if (asesor) hojas.push(centrado(`Asesor: ${asesor}`));
+  hojas.push(hueco(4));
+  hojas.push(centrado(String(hoy.getFullYear())));
 
   return hojas;
+}
+
+/**
+ * El sitio del logo en la portada de tesis: un recuadro punteado y centrado.
+ *
+ * El logo de cada universidad no lo tenemos, y poner uno cualquiera sería
+ * inventar. Así el tesista ve dónde va y del tamaño que va —el del escudo de la
+ * plantilla de la UNT, 6,67 × 4,31 cm— y pega el suyo encima. Si sube la
+ * plantilla de su facultad con portada, sale la de ella y esto no.
+ */
+function recuadroDelLogo() {
+  const ANCHO = 3782; // 6,67 cm en twips
+  const ALTO = 2443; // 4,31 cm
+  const punteado = { style: BorderStyle.DASHED, size: 6, color: '808080' };
+  return new Table({
+    alignment: AlignmentType.CENTER,
+    layout: TableLayoutType.FIXED,
+    width: { size: ANCHO, type: WidthType.DXA },
+    columnWidths: [ANCHO],
+    borders: { top: punteado, bottom: punteado, left: punteado, right: punteado, insideHorizontal: SIN_LINEA, insideVertical: SIN_LINEA },
+    rows: [
+      new TableRow({
+        height: { value: ALTO, rule: HeightRule.EXACT },
+        children: [
+          new TableCell({
+            width: { size: ANCHO, type: WidthType.DXA },
+            verticalAlign: VerticalAlign.CENTER,
+            children: [
+              new Paragraph({
+                alignment: AlignmentType.CENTER,
+                indent: { firstLine: 0 },
+                spacing: { before: 0, after: 0, line: 240 },
+                children: [new TextRun({ text: 'Logo de la universidad', color: '808080' })],
+              }),
+            ],
+          }),
+        ],
+      }),
+    ],
+  });
+}
+
+/**
+ * Las hojas que van entre la portada y el índice de una tesis.
+ *
+ * Como en la plantilla de la UNT: el jurado evaluador con sus tres firmas, la
+ * dedicatoria y los agradecimientos, cada uno en su hoja. El texto es del
+ * tesista, así que va resaltado en amarillo, como las demás marcas por llenar.
+ * Los títulos llevan el estilo del título del índice: se ven como un Título 1
+ * pero no entran en el índice, que empieza en el Capítulo I.
+ */
+function paginasPreliminares() {
+  const titulo = (texto) => new Paragraph({ text: texto, style: 'TOCHeading', pageBreakBefore: true });
+  const linea = (texto, { porLlenar = false } = {}) =>
+    new Paragraph({
+      indent: { firstLine: 0 },
+      spacing: { before: 0, after: 0, line: DOBLE },
+      children: [new TextRun({ text: texto, ...(porLlenar ? { highlight: 'yellow' } : {}) })],
+    });
+  return [
+    titulo('Jurado evaluador'),
+    linea('Presidente: ____________________'),
+    linea('Secretario: ____________________'),
+    linea('Vocal: ____________________'),
+    titulo('Dedicatoria'),
+    linea('Texto.', { porLlenar: true }),
+    titulo('Agradecimientos'),
+    linea('Texto.', { porLlenar: true }),
+  ];
 }
 
 const MESES = [
@@ -1209,6 +1310,11 @@ async function armar({
   figuras = null,
   // Solo el informe estudiantil: los datos de su portada. Nulo = la de siempre.
   portadaInforme = null,
+  // El año de la portada. Se pasa en las pruebas para que no cambie cada enero.
+  hoy = new Date(),
+  // Solo la tesis: el sitio del logo en la portada y, antes del índice, el
+  // jurado, la dedicatoria y los agradecimientos (ver `paginasPreliminares`).
+  paginasDeTesis = false,
 }) {
   const notas = {};
   /** Los pendientes del texto, que van al margen (ver `comoComentario`). */
@@ -1250,8 +1356,9 @@ async function armar({
    * nuestro formato por defecto.
    */
   const suTitulo1 = plantilla ? loQueDiceElEstilo(estilos, 'Heading1') : null;
+  // Sin plantilla, el espaciado lo pone nuestro Título 1 (ver `ESTILOS_POR_DEFECTO`).
   const espacioDeTitulo = !plantilla
-    ? { spacing: { after: 240 } }
+    ? {}
     : {
         ...(suTitulo1?.alineacion ? {} : { alignment: AlignmentType.CENTER }),
         ...(suTitulo1?.espaciado ? {} : { spacing: { before: 480, after: 240 } }),
@@ -1266,7 +1373,8 @@ async function armar({
         ? portadaInforme.ambito === 'empresa'
           ? portadaDeEmpresa(portadaInforme)
           : portadaDeInforme(portadaInforme)
-        : portada({ tema, carrera, universidad, nombre, asesor })),
+        : portada({ tema, carrera, universidad, nombre, asesor, hoy, conLogo: paginasDeTesis })),
+    ...(paginasDeTesis ? paginasPreliminares() : []),
     new Paragraph({ text: '', pageBreakBefore: true }),
     // «TOC Heading» y no Título 1: se ve como un Título 1 pero no entra en el
     // índice. Con Título 1, el índice se listaba a sí mismo como primera
@@ -1323,9 +1431,39 @@ async function armar({
     cuerpo.push(tituloDeSeccion(lista.titulo), ...lista.parrafos);
   }
 
+  /**
+   * Los anexos numerados, todos bajo un solo «Anexos».
+   *
+   * Es como los pone la plantilla APA 7 de la UNT y casi cualquier reglamento:
+   * un Título 1 «Anexos» en el índice y debajo «Anexo 1. …», «Anexo 2. …» como
+   * Título 2, cada uno en su página. Solo con los nuestros
+   * (`ANEXOS_POR_DEFECTO`, marcados `porDefecto`): los que nombra el reglamento
+   * de su facultad salen como él los dice. Y nunca si la plantilla numera los
+   * títulos, que convertiría «Anexo 1» en un «7.1 Anexo 1».
+   */
+  const agruparAnexos =
+    anexos.length > 0 && !partes?.numeracion && anexos.every((c) => c.porDefecto);
+
   /** Los títulos de los anexos, tal como salen impresos: no se numeran. */
   const titulosDeAnexos = [];
-  for (const capitulo of anexos) {
+  if (agruparAnexos) {
+    titulosDeAnexos.push('Anexos');
+    cuerpo.push(tituloDeSeccion('Anexos'));
+    anexos.forEach((capitulo, i) => {
+      cuerpo.push(
+        new Paragraph({
+          // «Anexo 1: Instrumento» → «Anexo 1. Instrumento».
+          text: tituloDelCapitulo(capitulo.titulo).replace(/^(anexo\s+\d+)\s*[:.—–-]\s*/i, '$1. '),
+          heading: HeadingLevel.HEADING_2,
+          pageBreakBefore: i > 0,
+          indent: { firstLine: 0 },
+        }),
+        // Sus subtítulos, un nivel por debajo del Título 2 del anexo.
+        ...comoParrafos(capitulo.texto, { ...contexto, dentroDeAnexo: true }),
+      );
+    });
+  }
+  for (const capitulo of agruparAnexos ? [] : anexos) {
     // Un anexo no es el «Capítulo N» de nadie, así que su título se imprime
     // entero aunque la plantilla numere los capítulos.
     const titulo = tituloDelCapitulo(capitulo.titulo);
@@ -1355,22 +1493,14 @@ async function armar({
         properties: {
           page: {
             // Los de su plantilla si los traía (ver `project.plantilla`); si
-            // no, márgenes de tesis: 3 cm arriba, izquierda y abajo; 2,5 a la
-            // derecha. En twips, que es lo que entiende Word.
-            margin: pagina?.margen ?? { top: 1701, right: 1417, bottom: 1701, left: 1701 },
+            // no, los de APA 7 (ver `MARGENES_POR_DEFECTO`).
+            margin: pagina?.margen ?? MARGENES_POR_DEFECTO,
             ...(pagina?.tamano ? { size: pagina.tamano } : {}),
           },
+          // Sin plantilla, la portada no lleva número (ver `numeroDePagina`).
+          ...(plantilla ? {} : { titlePage: true }),
         },
-        footers: {
-          default: new Footer({
-            children: [
-              new Paragraph({
-                alignment: AlignmentType.CENTER,
-                children: [new TextRun({ children: [PageNumber.CURRENT], size: 20 })],
-              }),
-            ],
-          }),
-        },
+        ...numeroDePagina(plantilla),
         children: cuerpo,
       },
     ],
@@ -1410,30 +1540,67 @@ async function armar({
   return indice.conIndice(buffer);
 }
 
-/** Nuestro formato, el que sale cuando no hay plantilla. */
+/**
+ * Nuestro formato, el que sale cuando no hay plantilla.
+ *
+ * Los títulos de APA 7, como los trae la plantilla de la UNT
+ * (`documentacion/formato-por-defecto/ejemplo`): todos de 12 puntos, negros, a
+ * doble espacio y sin aire de más, porque el doble espacio ya separa. El Título
+ * 1, centrado; los demás, a la izquierda. Ninguno se queda solo al pie de una
+ * página (`keepNext`). Antes el Título 1 iba a 14 y todos llevaban espacio
+ * antes y después, que APA no pide.
+ */
+const TITULO_APA = { font: 'Times New Roman', size: 24, bold: true, color: '000000' };
+const ESPACIO_APA = { before: 0, after: 0, line: DOBLE };
 const ESTILOS_POR_DEFECTO = {
   default: {
     document: { run: { font: 'Times New Roman', size: 24 } },
     heading1: {
-      run: { font: 'Times New Roman', size: 28, bold: true, color: '000000' },
-      paragraph: { alignment: AlignmentType.CENTER, spacing: { after: 240 } },
+      run: TITULO_APA,
+      paragraph: { alignment: AlignmentType.CENTER, spacing: ESPACIO_APA, keepNext: true, keepLines: true },
     },
     heading2: {
-      run: { font: 'Times New Roman', size: 24, bold: true, color: '000000' },
-      paragraph: { spacing: { before: 240, after: 120 } },
+      run: TITULO_APA,
+      paragraph: { alignment: AlignmentType.LEFT, spacing: ESPACIO_APA, keepNext: true, keepLines: true },
     },
     heading3: {
-      run: { font: 'Times New Roman', size: 24, bold: true, italics: true, color: '000000' },
-      paragraph: { spacing: { before: 200, after: 120 } },
+      run: { ...TITULO_APA, italics: true },
+      paragraph: { alignment: AlignmentType.LEFT, spacing: ESPACIO_APA, keepNext: true, keepLines: true },
     },
     // El cuarto nivel («###» en el texto). Sin definirlo, salía con el azul
     // en cursiva de la librería, distinto de todo lo demás.
     heading4: {
-      run: { font: 'Times New Roman', size: 24, bold: true, color: '000000' },
-      paragraph: { spacing: { before: 160, after: 80 } },
+      run: TITULO_APA,
+      paragraph: { alignment: AlignmentType.LEFT, spacing: ESPACIO_APA, keepNext: true, keepLines: true },
     },
   },
 };
+
+/**
+ * El número de página.
+ *
+ * Sin plantilla, como APA 7 y la UNT: arriba a la derecha, del tamaño del
+ * texto, y la portada sin número (la sección lleva `titlePage` y su encabezado
+ * de primera página va vacío). Con plantilla se queda donde estaba, abajo al
+ * centro, que es lo que su formato ya esperaba.
+ */
+function numeroDePagina(plantilla) {
+  const numero = (alineacion, tamano) =>
+    new Paragraph({
+      alignment: alineacion,
+      indent: { firstLine: 0 },
+      children: [new TextRun({ children: [PageNumber.CURRENT], ...(tamano ? { size: tamano } : {}) })],
+    });
+  if (plantilla) {
+    return { footers: { default: new Footer({ children: [numero(AlignmentType.CENTER, 20)] }) } };
+  }
+  return {
+    headers: {
+      default: new Header({ children: [numero(AlignmentType.RIGHT)] }),
+      first: new Header({ children: [new Paragraph('')] }),
+    },
+  };
+}
 
 /**
  * Nuestro formato por defecto como hoja de estilos, con el estilo del cuerpo.
@@ -1441,7 +1608,7 @@ const ESTILOS_POR_DEFECTO = {
  * Es la base de los ajustes dichos en el chat cuando el tesista no subió
  * plantilla (ver `project.plantilla-ajustes`): se guarda como si fuera la suya,
  * y por eso el texto lo lleva «Cuerpo de tesis» con lo que sin plantilla se
- * pone a mano en cada párrafo: doble espacio, justificado y sangría de APA.
+ * pone a mano en cada párrafo: doble espacio, a la izquierda y sangría de APA.
  */
 async function hojaDeEstilosPorDefecto() {
   const buffer = await Packer.toBuffer(
@@ -1451,7 +1618,7 @@ async function hojaDeEstilosPorDefecto() {
   const cuerpo =
     '<w:style w:type="paragraph" w:customStyle="1" w:styleId="CuerpoTesis"><w:name w:val="Cuerpo de tesis"/>' +
     '<w:basedOn w:val="Normal"/><w:qFormat/><w:pPr><w:spacing w:line="480" w:lineRule="auto"/>' +
-    `<w:ind w:firstLine="${SANGRIA}"/><w:jc w:val="both"/></w:pPr></w:style>`;
+    `<w:ind w:firstLine="${SANGRIA}"/><w:jc w:val="left"/></w:pPr></w:style>`;
   return xml.replace('</w:styles>', `${cuerpo}</w:styles>`);
 }
 
@@ -1595,6 +1762,9 @@ function nombreDeArchivo(tema, respaldo = 'tesis') {
 module.exports = {
   armar,
   hojaDeEstilosPorDefecto,
+  // Los usa también el informe de R, para que sus títulos casen con la tesis.
+  ESTILOS_POR_DEFECTO,
+  MARGENES_POR_DEFECTO,
   nombreDeArchivo,
   comoParrafos,
   ajustarEstilos,

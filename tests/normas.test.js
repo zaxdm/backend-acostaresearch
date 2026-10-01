@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Las quince normas de citas y sus archivos.
+ * Las diecisiete normas de citas y sus archivos.
  *
  * Lo que se prueba es lo que rompería el Word sin avisar: un archivo que falta,
  * un estilo que dependa de otro que no tenemos, o una familia mal apuntada. La
@@ -21,9 +21,10 @@ const FAMILIA_DE_CSL = {
   note: 'notas',
 };
 
-test('son las quince de Zotero, sin repetir, y APA es la de por defecto', () => {
-  assert.equal(normas.NORMAS.length, 15);
-  assert.equal(new Set(normas.IDS_DE_NORMA).size, 15);
+test('son las quince de Zotero más las dos ISO 690, sin repetir, y APA es la de por defecto', () => {
+  assert.equal(normas.NORMAS.length, 17);
+  assert.equal(new Set(normas.IDS_DE_NORMA).size, 17);
+  assert.ok(normas.IDS_DE_NORMA.includes('iso690-author-date-es'), 'la que piden en España');
   assert.equal(normas.NORMA_POR_DEFECTO, 'apa');
   assert.equal(normas.NORMAS[0].id, 'apa', 'la primera que se enseña es la que usa casi todo el mundo');
 });

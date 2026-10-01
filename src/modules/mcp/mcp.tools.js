@@ -37,6 +37,7 @@ const memosCualitativos = require('../cualitativo/cualitativo.memos');
 const rEnlaces = require('../r/r.enlaces');
 const consejos = require('../projects/project.consejos');
 const normas = require('../projects/project.normas');
+const paises = require('../projects/project.pais');
 const etapas = require('../projects/project.etapas');
 const esquemaDeCapitulos = require('../projects/project.esquema');
 const bloquesDeAnalisis = require('../projects/project.bloques');
@@ -185,7 +186,7 @@ const ESQUEMA_FUENTES = fromJsonSchema({
     pais: {
       type: 'string',
       description:
-        'Código de dos letras del país del tesista: «pe» Perú, «co» Colombia, «mx» México. ' +
+        'Código de dos letras del país del tesista: «pe» Perú, «es» España, «co» Colombia, «mx» México. ' +
         'Solo se usa si hay que salir al catálogo abierto, y sirve para traerle ' +
         'ANTECEDENTES NACIONALES, que es lo que le va a pedir su jurado.',
     },
@@ -297,7 +298,7 @@ const ESQUEMA_LITERATURA = fromJsonSchema({
     pais: {
       type: 'string',
       description:
-        'Código de dos letras del país de los autores: «pe» Perú, «co» Colombia, «mx» ' +
+        'Código de dos letras del país de los autores: «pe» Perú, «es» España, «co» Colombia, «mx» ' +
         'México, «cl» Chile. ES LO QUE PIDE UN JURADO cuando pregunta qué se ha estudiado ' +
         'sobre esto en el país. Sin él, entra la producción de todo el mundo.',
     },
@@ -350,6 +351,13 @@ const GUARDAR_AVANCE = {
     },
     carrera: { type: 'string', description: 'La carrera del tesista.' },
     universidad: { type: 'string', description: 'Su universidad.' },
+    pais: {
+      type: 'string',
+      description:
+        'El país donde estudia, en dos letras: «es» España, «mx» México, «co» Colombia. Si es del ' +
+        'Perú no hace falta. GUÁRDALO en cuanto sepas que estudia fuera del Perú —por lo que diga o ' +
+        'por su universidad—: con «es», "mi_proyecto" te dirá cómo adaptar el método a un TFG o un TFM.',
+    },
     autor: {
       type: 'string',
       description:
@@ -1273,6 +1281,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         if (entrada.tema) guardado.push('el tema');
         if (entrada.carrera) guardado.push('la carrera');
         if (entrada.universidad) guardado.push('la universidad');
+        if (entrada.pais) guardado.push(`el país (${paises.nombreDe(entrada.pais)})`);
         if (entrada.informe) guardado.push('la ficha del informe');
         if (entrada.estiloCitas) {
           guardado.push(`la norma de citas (${normas.normaDe(entrada.estiloCitas).nombre})`);

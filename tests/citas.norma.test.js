@@ -176,9 +176,9 @@ test('un libro lleva la editorial como editorial, no como revista', () => {
   assert.equal(item['container-title'], undefined);
 });
 
-// ── Las quince ──────────────────────────────────────────────────────────────
+// ── Las diecisiete ──────────────────────────────────────────────────────────────
 
-test('las quince normas dan citas y bibliografía sin romperse', () => {
+test('las diecisiete normas dan citas y bibliografía sin romperse', () => {
   for (const norma of normas.NORMAS) {
     const r = aplicar(norma.id, 'A [AR11111111]. B [AR33333333][AR22222222].');
 

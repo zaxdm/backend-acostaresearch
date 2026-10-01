@@ -1481,6 +1481,10 @@ model Project {
   tema        String? @db.VarChar(500)
   carrera     String? @db.VarChar(160)
   universidad String? @db.VarChar(160)
+  /// Dónde estudia, en dos letras («es» España). Nulo = Perú, para quien está
+  /// hecho el método. Si su país tiene perfil, `mi_proyecto` le dice a Claude
+  /// qué ajustar (ver `project.pais`).
+  pais        String? @db.VarChar(2)
   /// El autor o tesista de la investigación, para la portada del Word.
   /// Nulo = se usa el nombre de la cuenta (User.firstName/lastName) como respaldo.
   autor       String? @db.VarChar(160)

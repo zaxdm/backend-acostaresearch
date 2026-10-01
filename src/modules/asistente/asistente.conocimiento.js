@@ -34,7 +34,7 @@ Incluye:
 - Las 12 Skills: las 9 fases de la tesis, el Humanizador académico y Bajar similitud.
 - El panel: sus fuentes de Scopus, sus PDF o su Zotero.
 - El análisis de sus datos con R, hecho por Claude en la conversación: pregunta lo que necesita, corre el análisis, lo explica y entrega el informe en Word. El tesista solo sube su Excel, CSV o SPSS desde un enlace.
-- La tesis en un solo Word, en 15 normas de citas. Y si ya la escribió por su cuenta, sube su Word y Claude le pone las citas y las referencias sin tocar su formato.
+- La tesis en un solo Word, en 17 normas de citas. Y si ya la escribió por su cuenta, sube su Word y Claude le pone las citas y las referencias sin tocar su formato.
 - Videos guía para conectarlo y usarlo.
 
 Las 9 fases (se entra por la fase en la que se esté, no hace falta empezar por la 1):
@@ -58,7 +58,7 @@ De una idea a un artículo enviado a una revista real. Incluye:
 - El Humanizador académico.
 - El panel: fuentes de Scopus, PDF o Zotero.
 - El análisis de datos con R, hecho por Claude en la conversación, con el informe en Word.
-- El artículo en Word, en 15 normas de citas, o su manuscrito ya escrito con las citas puestas.
+- El artículo en Word, en 17 normas de citas, o su manuscrito ya escrito con las citas puestas.
 - Videos guía.
 Las fases: tema y revista destino verificada (cuartil, costo de publicación, si es depredadora) · matriz de estrategia · introducción · revisión de la literatura (o mapeo bibliométrico con PRISMA) · métodos · resultados · discusión · conclusiones, título y resumen · adaptación a la revista y carta de presentación · respuesta a revisores.
 
@@ -69,7 +69,7 @@ Ningún paquete incluye asesoría personalizada ni redacción por encargo. Por W
 - Zotero conectado: se elige una colección y sus referencias quedan listas para citar, actualizadas cada noche.
 - Citar o humanizar lo ya escrito: se le dice a Claude «cita mi documento» o «humaniza mi documento», y Claude da un enlace para subir el Word. Claude pone cada cita y la lista de referencias dentro del mismo documento, con fuentes de su Zotero, Scopus y OpenAlex, y enseña un resumen antes de aplicarlas. Su formato, tablas y figuras no se tocan.
 - Avance escrito por fuera: desde «Mi tesis» en el perfil se sube el Word con lo que ya se tiene. Cada capítulo que se reconoce pasa a su fase, que queda «En curso», y Claude sigue desde ese texto.
-- 15 normas de citas: APA 7, IEEE, Vancouver, AMA, Chicago, Harvard, MLA y más, en español o inglés. Claude pregunta cuál pide la universidad; si luego piden otra, se le dice a Claude y no se reescribe nada.
+- 17 normas de citas: APA 7, ISO 690, IEEE, Vancouver, AMA, Chicago, Harvard, MLA y más, en español o inglés. Claude pregunta cuál pide la universidad; si luego piden otra, se le dice a Claude y no se reescribe nada.
 - Un repaso antes de entregar: variables sin objetivo, objetivos sin conclusión, citas rotas y afirmaciones sin fuente.
 - El tesista decide: la Skill pregunta, explica el porqué metodológico y pone opciones; el diseño, la muestra y la interpretación las elige él o ella, y por eso las puede defender.
 
@@ -98,7 +98,7 @@ La licencia es individual: compartir la URL del conector puede hacer que se desa
 - ¿Necesito pagar Claude Pro? No. Funciona con el plan gratuito. Con Pro hay más conversaciones seguidas antes de que Claude pida esperar, cómodo si se trabaja varias horas, pero no es requisito. (La única excepción es la vía de Claude for Excel en el análisis.)
 - ¿Sirve para investigación cualitativa? Sí: la Skill 5 construye guías de entrevista y la 7 acompaña el análisis por categorías. Donde el método está más desarrollado es en cuantitativo, así que una tesis cualitativa pura tendrá más trabajo propio en el Capítulo IV.
 - ¿Puedo usarlo si mi tesis ya está avanzada? Para eso está pensado: se entra por donde se esté. Con el Capítulo III aprobado, se empieza por el instrumento; con los datos recogidos, por el análisis.
-- ¿Sirve para mi universidad y mi carrera? La estructura es la que piden las universidades peruanas (UCV, UNT, UPAO y similares) y se adapta a otros países. La carrera no la fija el método: el tesista aporta tema, población y fuentes. Si ya escribió la tesis en la plantilla de su universidad, la sube y Claude le pone las citas sin tocar su formato.
+- ¿Sirve para mi universidad y mi carrera? La estructura por defecto es la que piden las universidades peruanas (UCV, UNT, UPAO y similares) y se adapta a otros países. En España sirve para TFG, TFM y tesis doctoral: Claude propone la estructura de introducción a conclusiones, busca antecedentes españoles (Dialnet, TESEO), aplica el RGPD en la parte ética y el Word sale en ISO 690 o la norma que pida la facultad; el pago desde España es con tarjeta o PayPal, en dólares. La carrera no la fija el método: el tesista aporta tema, población y fuentes. Si ya escribió la tesis en la plantilla de su universidad, la sube y Claude le pone las citas sin tocar su formato.
 - ¿Escriben la tesis por mí? No. Las Skills preguntan, explican el criterio y ordenan lo que el tesista decide. Por eso en la sustentación puede defender cada decisión.
 - ¿Es plagio? ¿Lo detecta Turnitin? Plagio es tomar a otro autor sin citarlo. Aquí cada afirmación se apoya en fuentes reales con su referencia, se parafrasea con estructura propia y el texto se construye con los datos, la población y los resultados del tesista. Si Turnitin marca coincidencias, la Skill Bajar similitud separa copia real de estructura obligatoria; si dicen que suena a IA, el Humanizador explica por qué. Benicio pide lo mismo que a sus asesorados: leerlo, corregirlo con su voz y pasarlo por el antiplagio de su universidad antes de entregar.
 - «Mi asesor no me lo va a aceptar»: lo que se rechaza es un texto vago, sin sustento o con citas inventadas. Aquí se lleva un capítulo con la estructura que pide la universidad (matriz de consistencia, operacionalización, validación por jueces), en la norma que exigen, repasado antes de entregar, y con cada decisión metodológica tomada por el propio tesista.

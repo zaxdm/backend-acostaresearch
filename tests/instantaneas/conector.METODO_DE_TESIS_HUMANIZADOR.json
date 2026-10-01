@@ -102,6 +102,10 @@
           "type": "string",
           "description": "Su universidad."
         },
+        "pais": {
+          "type": "string",
+          "description": "El país donde estudia, en dos letras: «es» España, «mx» México, «co» Colombia. Si es del Perú no hace falta. GUÁRDALO en cuanto sepas que estudia fuera del Perú —por lo que diga o por su universidad—: con «es», \"mi_proyecto\" te dirá cómo adaptar el método a un TFG o un TFM."
+        },
         "autor": {
           "type": "string",
           "description": "Quién firma la tesis, tal como debe salir en la portada del Word y con sus dos apellidos («Ana María Quispe Flores»). Sin esto la portada sale con el nombre de la CUENTA, que no siempre es el del tesista: guárdalo en cuanto sepas que es otro."
@@ -125,11 +129,13 @@
             "chicago-shortened-notes-bibliography",
             "harvard-cite-them-right",
             "elsevier-harvard",
+            "iso690-author-date-es",
+            "iso690-full-note-es",
             "american-political-science-association",
             "american-sociological-association",
             "mhra-notes"
           ],
-          "description": "La norma de citas que exige su universidad o su asesor. El Word sale con las citas y las referencias ya escritas en ella, con notas al pie si la norma las pide. PREGÚNTASELA antes de que descargue su Word si el proyecto no la tiene elegida, y no la supongas por la universidad. Las que hay: apa (APA 7.ª edición); ieee (IEEE); nlm-citation-sequence (Vancouver (NLM, por orden de cita)); american-medical-association (AMA 11.ª edición); american-chemical-society (ACS (revisión 2026)); nature (Nature); modern-language-association (MLA 9.ª edición); chicago-author-date (Chicago 18.ª (autor-fecha)); chicago-notes-bibliography (Chicago 18.ª (notas y bibliografía)); chicago-shortened-notes-bibliography (Chicago 18.ª (notas abreviadas y bibliografía)); harvard-cite-them-right (Harvard (Cite Them Right 12.ª)); elsevier-harvard (Elsevier Harvard (con títulos)); american-political-science-association (APSA (revisión 2018)); american-sociological-association (ASA 6.ª/7.ª edición); mhra-notes (MHRA 4.ª edición (notas))."
+          "description": "La norma de citas que exige su universidad o su asesor. El Word sale con las citas y las referencias ya escritas en ella, con notas al pie si la norma las pide. PREGÚNTASELA antes de que descargue su Word si el proyecto no la tiene elegida, y no la supongas por la universidad. Las que hay: apa (APA 7.ª edición); ieee (IEEE); nlm-citation-sequence (Vancouver (NLM, por orden de cita)); american-medical-association (AMA 11.ª edición); american-chemical-society (ACS (revisión 2026)); nature (Nature); modern-language-association (MLA 9.ª edición); chicago-author-date (Chicago 18.ª (autor-fecha)); chicago-notes-bibliography (Chicago 18.ª (notas y bibliografía)); chicago-shortened-notes-bibliography (Chicago 18.ª (notas abreviadas y bibliografía)); harvard-cite-them-right (Harvard (Cite Them Right 12.ª)); elsevier-harvard (Elsevier Harvard (con títulos)); iso690-author-date-es (ISO 690 (autor-fecha, España)); iso690-full-note-es (ISO 690 (notas, España)); american-political-science-association (APSA (revisión 2018)); american-sociological-association (ASA 6.ª/7.ª edición); mhra-notes (MHRA 4.ª edición (notas))."
         },
         "idiomaCitas": {
           "type": "string",
@@ -479,7 +485,7 @@
         },
         "pais": {
           "type": "string",
-          "description": "Código de dos letras del país del tesista: «pe» Perú, «co» Colombia, «mx» México. Solo se usa si hay que salir al catálogo abierto, y sirve para traerle ANTECEDENTES NACIONALES, que es lo que le va a pedir su jurado."
+          "description": "Código de dos letras del país del tesista: «pe» Perú, «es» España, «co» Colombia, «mx» México. Solo se usa si hay que salir al catálogo abierto, y sirve para traerle ANTECEDENTES NACIONALES, que es lo que le va a pedir su jurado."
         },
         "cuantas": {
           "type": "integer",
@@ -517,7 +523,7 @@
         },
         "pais": {
           "type": "string",
-          "description": "Código de dos letras del país de los autores: «pe» Perú, «co» Colombia, «mx» México, «cl» Chile. ES LO QUE PIDE UN JURADO cuando pregunta qué se ha estudiado sobre esto en el país. Sin él, entra la producción de todo el mundo."
+          "description": "Código de dos letras del país de los autores: «pe» Perú, «es» España, «co» Colombia, «mx» México, «cl» Chile. ES LO QUE PIDE UN JURADO cuando pregunta qué se ha estudiado sobre esto en el país. Sin él, entra la producción de todo el mundo."
         },
         "desdeAnio": {
           "type": "integer",
@@ -663,6 +669,8 @@
                 "chicago-shortened-notes-bibliography",
                 "harvard-cite-them-right",
                 "elsevier-harvard",
+                "iso690-author-date-es",
+                "iso690-full-note-es",
                 "american-political-science-association",
                 "american-sociological-association",
                 "mhra-notes"
@@ -976,6 +984,8 @@
             "chicago-shortened-notes-bibliography",
             "harvard-cite-them-right",
             "elsevier-harvard",
+            "iso690-author-date-es",
+            "iso690-full-note-es",
             "american-political-science-association",
             "american-sociological-association",
             "mhra-notes"

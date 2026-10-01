@@ -10,6 +10,11 @@ citeproc-js.
   de `https://www.zotero.org/styles/<id>` el 12 de septiembre de 2026. Son los
   mismos archivos que usa Zotero: si alguien abre el Word con Zotero y pulsa
   «Refresh», las citas no cambian.
+- `estilos/iso690-author-date-es.csl` y `estilos/iso690-full-note-es.csl` — la
+  ISO 690 en español, para las universidades de España. Del mismo sitio
+  (`https://www.zotero.org/styles/<id>`), descargadas el 30 de septiembre de
+  2026. Zotero no las trae instaladas: quien la use con Zotero la añade desde su
+  buscador de estilos, y entonces «Refresh» tampoco cambia nada.
 - `idiomas/locales-*.xml` — del repositorio oficial
   `https://github.com/citation-style-language/locales`. De Perú no hay: se ofrecen
   España, México y Chile, y el inglés de respaldo.
@@ -33,4 +38,4 @@ curl -fsSL "https://www.zotero.org/styles/apa" -o estilos/apa.csl
 
 Después, `npm test`: `normas.test.js` comprueba que cada estilo sigue siendo
 independiente y que su familia (autor-fecha, numérica o notas) no ha cambiado, y
-`citas.norma.test.js` que los quince siguen dando citas y bibliografía.
+`citas.norma.test.js` que los diecisiete siguen dando citas y bibliografía.

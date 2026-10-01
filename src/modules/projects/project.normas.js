@@ -3,13 +3,19 @@
 /**
  * Las normas de citas que puede llevar el Word.
  *
- * POR QUÉ ESTAS QUINCE
- * --------------------
- * Son las que trae Zotero de fábrica, con los mismos archivos: se descargaron de
- * zotero.org/styles, que es de donde las toma Zotero. Importa por dos razones.
- * Es la lista que un tesista ya ha visto si ha usado Zotero. Y si abre el Word
- * con Zotero y pulsa «Refresh», Zotero rehace las citas con el mismo motor y el
- * mismo archivo, así que no cambia nada.
+ * POR QUÉ ESTAS DIECISIETE
+ * ------------------------
+ * Quince son las que trae Zotero de fábrica, con los mismos archivos: se
+ * descargaron de zotero.org/styles, que es de donde las toma Zotero. Importa por
+ * dos razones. Es la lista que un tesista ya ha visto si ha usado Zotero. Y si
+ * abre el Word con Zotero y pulsa «Refresh», Zotero rehace las citas con el mismo
+ * motor y el mismo archivo, así que no cambia nada.
+ *
+ * Las otras dos son la ISO 690 en español (autor-fecha y notas), que es la que
+ * piden muchas universidades de España para el TFG, el TFM y la tesis doctoral.
+ * Salen del mismo repositorio de Zotero, aunque no vienen instaladas: quien la
+ * use con Zotero la añade desde su buscador de estilos. No hay ISO 690 numérica
+ * en español; quien la necesite numérica puede usar Vancouver o IEEE.
  *
  * Los archivos viven en `csl/estilos` y `csl/idiomas`; su procedencia y su
  * licencia, en `csl/LEEME.md`.
@@ -50,6 +56,8 @@ const NORMAS = [
   },
   { id: 'harvard-cite-them-right', nombre: 'Harvard (Cite Them Right 12.ª)', familia: 'autor-fecha' },
   { id: 'elsevier-harvard', nombre: 'Elsevier Harvard (con títulos)', familia: 'autor-fecha' },
+  { id: 'iso690-author-date-es', nombre: 'ISO 690 (autor-fecha, España)', familia: 'autor-fecha' },
+  { id: 'iso690-full-note-es', nombre: 'ISO 690 (notas, España)', familia: 'notas' },
   { id: 'american-psychological-association-no-existe', nombre: '', familia: '' },
 ].filter((norma) => norma.nombre !== '');
 

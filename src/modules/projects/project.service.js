@@ -19,6 +19,7 @@ const almacen = require('./project.storage');
 const documento = require('./project.docx');
 const env = require('../../config/env');
 const normas = require('./project.normas');
+const paises = require('./project.pais');
 const csl = require('./project.csl');
 const zoteroCampos = require('./project.zotero-campos');
 const descarga = require('./project.descarga');
@@ -162,8 +163,13 @@ async function contexto(userId, productCode) {
   // y el aviso con él.
   const aviso = await avisoDeAnalisis(proyecto, porCapitulo);
   // La ficha cuenta como avance: un informe con curso y entrega ya dichos no está vacío.
+  // El país también: quien solo ha dicho que estudia en España tiene que recibir
+  // ya su perfil, antes de fijar el tema.
   const hayAvance =
-    proyecto.tema || proyecto.fichaInforme || proyecto.stages.some((e) => e.estado !== 'PENDIENTE');
+    proyecto.tema ||
+    proyecto.fichaInforme ||
+    paises.perfilPara(proyecto.pais) ||
+    proyecto.stages.some((e) => e.estado !== 'PENDIENTE');
   if (!hayAvance && !aviso) return null;
 
   const cabecera = [];
@@ -171,7 +177,9 @@ async function contexto(userId, productCode) {
   // ve con cuál está trabajando Claude, y al comprador no le sale nada nuevo.
   if (proyecto.nombre) cabecera.push(`Tesis activa: ${proyecto.nombre} (se cambia en el panel)`);
   if (proyecto.tema) cabecera.push(`Tema: ${proyecto.tema}`);
-  const donde = [proyecto.carrera, proyecto.universidad].filter(Boolean).join(' · ');
+  const donde = [proyecto.carrera, proyecto.universidad, paises.nombreDe(proyecto.pais)]
+    .filter(Boolean)
+    .join(' · ');
   if (donde) cabecera.push(donde);
   if (perfilDe(productCode).tipo === 'informe') {
     // El informe no tiene asesor: tiene curso, docente, integrantes y entrega.
@@ -207,6 +215,8 @@ async function contexto(userId, productCode) {
   // se guarda y se lee siguen siendo las del método, y leerlas antes que el
   // esquema es lo que evita que el asistente empiece a inventar claves nuevas.
   const estructura = esquemaDeCapitulos.comoTexto(proyecto.esquema, catalogo);
+  // Lo que cambia del método en su país: estructura, fuentes, ley de datos.
+  const perfilDePais = perfilDe(productCode).tipo === 'tesis' ? paises.perfilPara(proyecto.pais) : null;
 
   return [
     'LO QUE ESTE SERVIDOR YA SABE DE SU PROYECTO',
@@ -215,6 +225,7 @@ async function contexto(userId, productCode) {
     ...lineas,
     '',
     ...(estructura ? [estructura, ''] : []),
+    ...(perfilDePais ? [perfilDePais, ''] : []),
     ...(aviso ? [aviso, ''] : []),
     'Da esto por sabido: NO se lo vuelvas a preguntar. Si algo de aquí ya no es ' +
       'cierto porque lo han cambiado hablando, corrígelo con "guardar_avance".',
@@ -343,13 +354,20 @@ async function resumen(userId, productCode) {
   // y el aviso con él.
   const aviso = await avisoDeAnalisis(proyecto, porCapitulo);
   // La ficha cuenta como avance: un informe con curso y entrega ya dichos no está vacío.
+  // El país también: quien solo ha dicho que estudia en España tiene que recibir
+  // ya su perfil, antes de fijar el tema.
   const hayAvance =
-    proyecto.tema || proyecto.fichaInforme || proyecto.stages.some((e) => e.estado !== 'PENDIENTE');
+    proyecto.tema ||
+    proyecto.fichaInforme ||
+    paises.perfilPara(proyecto.pais) ||
+    proyecto.stages.some((e) => e.estado !== 'PENDIENTE');
   if (!hayAvance && !aviso) return null;
 
   const cabecera = [];
   if (proyecto.tema) cabecera.push(proyecto.tema);
-  const donde = [proyecto.carrera, proyecto.universidad].filter(Boolean).join(' · ');
+  const donde = [proyecto.carrera, proyecto.universidad, paises.nombreDe(proyecto.pais)]
+    .filter(Boolean)
+    .join(' · ');
   if (donde) cabecera.push(donde);
   if (perfilDe(productCode).tipo === 'informe') {
     cabecera.push(...lineasDeFicha(proyecto.fichaInforme ?? {}));
@@ -433,6 +451,9 @@ async function resumen(userId, productCode) {
     recuento,
     aviso,
     loSuyo.join('\n'),
+    // Solo en la tesis: es la que cambia de estructura, fuentes y ley según el
+    // país. El artículo lo manda la revista y el informe, el docente.
+    perfilDe(productCode).tipo === 'tesis' ? paises.perfilPara(proyecto.pais) : null,
     // Sin esta línea, el asistente da por hecho que lo que no está aquí no
     // existe y se pone a preguntarle al tesista lo que ya decidió, que es
     // exactamente lo que este módulo entero existe para evitar.
@@ -2182,6 +2203,7 @@ function proyectoEnBlanco(productCode) {
     tema: null,
     carrera: null,
     universidad: null,
+    pais: null,
     autor: null,
     esquema: null,
     asesor: null,

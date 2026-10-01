@@ -34,6 +34,13 @@ const guardarAvanceSchema = z.object({
   tema: z.string().trim().max(500).optional(),
   carrera: z.string().trim().max(160).optional(),
   universidad: z.string().trim().max(160).optional(),
+  /** El país en dos letras. Se normaliza aquí para que «ES» y «es» sean lo mismo. */
+  pais: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .regex(/^[a-z]{2}$/, 'El país va en dos letras: «es» España, «pe» Perú, «mx» México.')
+    .optional(),
   autor: z.string().trim().max(160, 'El nombre del autor admite hasta 160 caracteres.').optional(),
   /** Vacío = todavía no tiene asesor: queda anotado que ya se preguntó. */
   asesor: z.string().trim().max(160, 'El nombre del asesor admite hasta 160 caracteres.').optional(),

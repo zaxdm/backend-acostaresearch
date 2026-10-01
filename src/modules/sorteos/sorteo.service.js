@@ -22,9 +22,23 @@ const { ConflictError, NotFoundError } = require('../../shared/errors/AppError')
  *
  * El premio es un código de cortesía del producto del sorteo (por defecto el
  * método de tesis, cuyo plan dura tres meses), que se le manda por correo. El
- * código no se guarda en claro: lo ven el ganador en su correo y el
- * administrador en la pantalla, una vez.
+ * código entero solo lo ve el ganador: ni se guarda en claro ni llega al panel,
+ * que lo enseña con los cuatro últimos caracteres tapados. Si el correo no le
+ * llegó, «reenviar» anula ese código y le manda uno nuevo.
  */
+
+/** «ACR-R7VC-PJWV-EMXX» → «ACR-R7VC-PJWV-****»: lo que ve el panel. */
+const ocultar = (codigo) => `${codigo.slice(0, -4)}****`;
+
+/** Lo que se apunta en la nota del código, para encontrarlo al reenviar. */
+const notaDe = (sorteo) => `Sorteo «${sorteo.nombre}»`.slice(0, 255);
+
+/**
+ * Cuántas vueltas tiene un sorteo: las primeras eliminan y la última da el
+ * ganador. Con pocos inscritos se llega antes al ganador: si en la ruleta
+ * queda una sola persona, esa gana.
+ */
+const VUELTAS = 3;
 
 /** El mismo alfabeto que los enlaces de prueba: sin letras que se confundan. */
 const ALFABETO = 'abcdefghjkmnpqrstuvwxyz23456789';
@@ -52,7 +66,13 @@ async function premioDe(productCode) {
   };
 }
 
-const participanteSelect = { id: true, email: true, nombre: true, createdAt: true };
+const participanteSelect = {
+  id: true,
+  email: true,
+  nombre: true,
+  eliminadoEn: true,
+  createdAt: true,
+};
 
 /** Un sorteo como lo ve el panel. */
 async function salidaAdmin(sorteo) {
@@ -77,10 +97,11 @@ async function salidaAdmin(sorteo) {
     premio,
     duracionDias,
     abierto: sorteo.abierto,
+    ronda: sorteo.ronda ?? 0,
+    vueltas: VUELTAS,
     inscritos: sorteo._count?.participantes ?? participantes.length,
     ganador: ganador ?? null,
     sorteadoAt: sorteo.sorteadoAt,
-    codigoHint: sorteo.codigoHint,
     correoEnviado: sorteo.correoEnviado,
     createdAt: sorteo.createdAt,
   };
@@ -176,8 +197,8 @@ const sorteoService = {
   /** Abrir o cerrar las inscripciones. Uno ya sorteado no se reabre. */
   async cambiar(id, { abierto }) {
     const sorteo = await buscar(id);
-    if (sorteo.ganadorId && abierto) {
-      throw new ConflictError('Este sorteo ya se realizó: no se puede reabrir.');
+    if ((sorteo.ganadorId || sorteo.ronda > 0) && abierto) {
+      throw new ConflictError('Este sorteo ya empezó a girar: no se puede reabrir.');
     }
     await prisma.sorteo.update({ where: { id }, data: { abierto } });
     return sorteoService.ver(id);
@@ -186,8 +207,8 @@ const sorteoService = {
   /** Quitar a un inscrito: un correo de broma, uno repetido con otra letra. */
   async quitarParticipante(id, participanteId) {
     const sorteo = await buscar(id);
-    if (sorteo.ganadorId === participanteId) {
-      throw new ConflictError('Ese es el ganador: no se puede quitar.');
+    if (sorteo.ganadorId || sorteo.ronda > 0) {
+      throw new ConflictError('La ruleta ya empezó a girar: ya no se quita a nadie.');
     }
     const { count } = await prisma.sorteoParticipante.deleteMany({
       where: { id: participanteId, sorteoId: id },
@@ -203,73 +224,74 @@ const sorteoService = {
   },
 
   /**
-   * Girar la ruleta.
+   * Una vuelta de la ruleta.
    *
-   * El ganador se fija con `updateMany` condicionado a que siga vacío: con dos
-   * administradores pulsando a la vez, solo uno sortea y el otro recibe un 409
-   * en vez de un segundo ganador. Si después falla la creación del código, se
-   * deshace el ganador para poder volver a sortear.
+   * Gira solo entre los que siguen dentro. En las dos primeras vueltas el que
+   * sale queda eliminado; en la tercera —o cuando ya solo queda uno— el que
+   * sale gana. Cada vuelta se apunta con `updateMany` condicionado a la ronda
+   * que se leyó: con dos administradores pulsando a la vez, solo una vuelta
+   * cuenta y la otra recibe un 409. Si falla la creación del código, el
+   * ganador se deshace para poder volver a girar la última vuelta.
    */
   async sortear(id, adminId) {
     const sorteo = await buscar(id);
     if (sorteo.ganadorId) throw new ConflictError('Este sorteo ya se realizó.');
 
-    const participantes = sorteo.participantes;
-    if (participantes.length === 0) {
+    const candidatos = sorteo.participantes.filter((p) => p.eliminadoEn == null);
+    if (candidatos.length === 0) {
       throw new ConflictError('Todavía no hay nadie inscrito: no hay a quién sortear.');
     }
 
-    const indice = crypto.randomInt(0, participantes.length);
-    const ganador = participantes[indice];
+    const anterior = sorteo.ronda ?? 0;
+    const ronda = anterior + 1;
+    const indice = crypto.randomInt(0, candidatos.length);
+    const elegido = candidatos[indice];
+    const otraVuelta = () =>
+      new ConflictError('Otra persona acaba de girar esta ruleta. Recarga para ver cómo va.');
 
+    // ── Vuelta que elimina ──
+    if (ronda < VUELTAS && candidatos.length > 1) {
+      const { count } = await prisma.sorteo.updateMany({
+        where: { id, ganadorId: null, ronda: anterior },
+        data: { ronda, abierto: false },
+      });
+      if (count === 0) throw otraVuelta();
+      await prisma.sorteoParticipante.update({
+        where: { id: elegido.id },
+        data: { eliminadoEn: ronda },
+      });
+
+      logger.info({ sorteoId: id, ronda, adminId }, 'Vuelta del sorteo: un eliminado');
+      return {
+        tipo: 'ELIMINADO',
+        ronda,
+        participantes: candidatos,
+        indice,
+        eliminado: elegido,
+        sorteo: await sorteoService.ver(id),
+      };
+    }
+
+    // ── Vuelta que da el ganador ──
+    const ganador = elegido;
     const { count } = await prisma.sorteo.updateMany({
-      where: { id, ganadorId: null },
-      data: { ganadorId: ganador.id, sorteadoAt: new Date(), abierto: false },
+      where: { id, ganadorId: null, ronda: anterior },
+      data: { ganadorId: ganador.id, ronda, sorteadoAt: new Date(), abierto: false },
     });
-    if (count === 0) throw new ConflictError('Este sorteo ya se realizó.');
+    if (count === 0) throw otraVuelta();
 
     let codigo;
     try {
-      const generados = await licenseService.generateCodes({
-        cantidad: 1,
-        productCode: sorteo.productCode,
-        buyerEmail: ganador.email,
-        note: `Sorteo «${sorteo.nombre}»`.slice(0, 255),
-        createdById: adminId,
-        paymentMethod: 'CORTESIA',
-        // Sin consultar el buzón y sin el correo de compra: este lleva el suyo.
-        revisarBuzon: false,
-        avisar: false,
-      });
-      codigo = generados.codes[0];
+      codigo = await generarPremio(sorteo, ganador, adminId);
     } catch (error) {
       await prisma.sorteo.update({
         where: { id },
-        data: { ganadorId: null, sorteadoAt: null, abierto: sorteo.abierto },
+        data: { ganadorId: null, sorteadoAt: null, ronda: anterior },
       });
       throw error;
     }
 
-    const { premio, duracionDias } = await premioDe(sorteo.productCode);
-
-    let correoEnviado = false;
-    try {
-      await sendMail({
-        to: ganador.email,
-        ...ganadorDelSorteo({
-          nombre: ganador.nombre,
-          sorteo: sorteo.nombre,
-          premio,
-          duracionDias,
-          codigo,
-        }),
-      });
-      correoEnviado = true;
-    } catch (error) {
-      // El ganador y el código ya existen; el administrador tiene el código
-      // en pantalla para mandárselo por otra vía.
-      logger.error({ err: error, sorteoId: id }, 'No salió el correo al ganador del sorteo');
-    }
+    const correoEnviado = await avisarAlGanador(sorteo, ganador, codigo);
 
     await prisma.sorteo.update({
       where: { id },
@@ -277,20 +299,107 @@ const sorteoService = {
     });
 
     logger.info(
-      { sorteoId: id, inscritos: participantes.length, correoEnviado, adminId },
+      { sorteoId: id, ronda, enLaRuleta: candidatos.length, correoEnviado, adminId },
       'Sorteo realizado',
     );
 
     return {
+      tipo: 'GANADOR',
+      ronda,
       ganador,
       // La lista que gira la ruleta, en el mismo orden con que se eligió.
-      participantes,
+      participantes: candidatos,
       indice,
-      codigo,
+      codigoOculto: ocultar(codigo),
+      correoEnviado,
+      sorteo: await sorteoService.ver(id),
+    };
+  },
+
+  /**
+   * Volver a mandarle el premio al ganador.
+   *
+   * El código no se guarda en claro, así que no se puede reenviar el mismo:
+   * se anula el anterior —si sigue sin canjear— y se genera otro. Si ya lo
+   * canjeó, no se manda nada: ya tiene su matrícula.
+   */
+  async reenviar(id, adminId) {
+    const sorteo = await buscar(id);
+    if (!sorteo.ganadorId) throw new ConflictError('Este sorteo todavía no tiene ganador.');
+    const ganador = sorteo.participantes.find((p) => p.id === sorteo.ganadorId);
+    if (!ganador) throw new NotFoundError('El ganador ya no está en la lista.');
+
+    const anteriores = {
+      productCode: sorteo.productCode,
+      buyerEmail: ganador.email,
+      note: notaDe(sorteo),
+      ...(sorteo.codigoHint ? { hint: sorteo.codigoHint } : {}),
+    };
+    const canjeado = await prisma.activationCode.findFirst({
+      where: { ...anteriores, status: 'REDEEMED' },
+      select: { id: true },
+    });
+    if (canjeado) throw new ConflictError('El ganador ya canjeó su código: no hace falta otro.');
+
+    await prisma.activationCode.updateMany({
+      where: { ...anteriores, status: 'AVAILABLE' },
+      data: { status: 'VOID' },
+    });
+
+    const codigo = await generarPremio(sorteo, ganador, adminId);
+    const correoEnviado = await avisarAlGanador(sorteo, ganador, codigo);
+    await prisma.sorteo.update({
+      where: { id },
+      data: { codigoHint: codigo.slice(-4), correoEnviado },
+    });
+
+    logger.info({ sorteoId: id, correoEnviado, adminId }, 'Premio del sorteo reenviado');
+    return {
+      ganador,
+      codigoOculto: ocultar(codigo),
       correoEnviado,
       sorteo: await sorteoService.ver(id),
     };
   },
 };
+
+/** El código de cortesía del ganador. Sin revisar el buzón y sin el correo de compra. */
+async function generarPremio(sorteo, ganador, adminId) {
+  const generados = await licenseService.generateCodes({
+    cantidad: 1,
+    productCode: sorteo.productCode,
+    buyerEmail: ganador.email,
+    note: notaDe(sorteo),
+    createdById: adminId,
+    paymentMethod: 'CORTESIA',
+    revisarBuzon: false,
+    avisar: false,
+  });
+  return generados.codes[0];
+}
+
+/**
+ * El correo con el código entero. Su fallo no deshace nada: el panel lo dice y
+ * ofrece reenviar.
+ */
+async function avisarAlGanador(sorteo, ganador, codigo) {
+  const { premio, duracionDias } = await premioDe(sorteo.productCode);
+  try {
+    await sendMail({
+      to: ganador.email,
+      ...ganadorDelSorteo({
+        nombre: ganador.nombre,
+        sorteo: sorteo.nombre,
+        premio,
+        duracionDias,
+        codigo,
+      }),
+    });
+    return true;
+  } catch (error) {
+    logger.error({ err: error, sorteoId: sorteo.id }, 'No salió el correo al ganador del sorteo');
+    return false;
+  }
+}
 
 module.exports = sorteoService;

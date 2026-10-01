@@ -45,9 +45,22 @@ const sorteoController = {
 
   sortear: asyncHandler(async (req, res) => {
     const resultado = await sorteoService.sortear(req.params.id, req.user.id);
+    if (resultado.tipo === 'ELIMINADO') {
+      return ok(res, resultado, {
+        message: `Vuelta ${resultado.ronda}: queda fuera ${resultado.eliminado.email}.`,
+      });
+    }
     const message = resultado.correoEnviado
       ? `Ganó ${resultado.ganador.email}. Ya le mandamos su código por correo.`
-      : `Ganó ${resultado.ganador.email}, pero el correo no salió: mándale el código por otra vía.`;
+      : `Ganó ${resultado.ganador.email}, pero el correo no salió: pulsa «Reenviar el código».`;
+    return ok(res, resultado, { message });
+  }),
+
+  reenviar: asyncHandler(async (req, res) => {
+    const resultado = await sorteoService.reenviar(req.params.id, req.user.id);
+    const message = resultado.correoEnviado
+      ? `Le mandamos un código nuevo a ${resultado.ganador.email}; el anterior quedó anulado.`
+      : 'El correo tampoco salió esta vez. Inténtalo en un rato.';
     return ok(res, resultado, { message });
   }),
 };

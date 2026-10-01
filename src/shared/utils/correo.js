@@ -569,6 +569,7 @@ async function revisarCorreos(correos, opciones) {
 }
 
 module.exports = {
+  DOMINIOS_BUENOS,
   revisarCorreo,
   revisarCorreos,
   dominioRecibeCorreo,

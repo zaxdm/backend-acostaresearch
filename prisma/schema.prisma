@@ -2854,8 +2854,12 @@ model Sorteo {
   /// duración de su plan (METODO_9_SKILLS = tres meses).
   productCode String @db.VarChar(40)
 
-  /// ¿Admite inscripciones? Se cierra solo al sortear.
+  /// ¿Admite inscripciones? Se cierra sola en la primera vuelta.
   abierto Boolean @default(true)
+
+  /// Vueltas ya giradas. Las dos primeras eliminan a alguien y la tercera da
+  /// el ganador; el administrador pulsa «Girar» cada vez.
+  ronda Int @default(0)
 
   /// El inscrito que ganó. Sin relación: el ganador se fija una sola vez con
   /// `updateMany` condicionado a que siga vacío.
@@ -2883,6 +2887,9 @@ model SorteoParticipante {
 
   email  String @db.VarChar(255)
   nombre String @default("") @db.VarChar(120)
+
+  /// En qué vuelta salió eliminado (1 o 2). Nulo = sigue en la ruleta.
+  eliminadoEn Int?
 
   createdAt DateTime @default(now())
 

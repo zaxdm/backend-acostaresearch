@@ -40,6 +40,7 @@ router.patch(
 );
 router.delete('/:id', validate({ params: idParamSchema }), sorteoController.borrar);
 router.post('/:id/sortear', validate({ params: idParamSchema }), sorteoController.sortear);
+router.post('/:id/reenviar', validate({ params: idParamSchema }), sorteoController.reenviar);
 router.delete(
   '/:id/participantes/:participanteId',
   validate({ params: participanteParamSchema }),

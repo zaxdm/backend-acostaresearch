@@ -33,6 +33,7 @@ const cualitativoRoutes = require('./modules/cualitativo/cualitativo.routes');
 const prepararRoutes = require('./modules/preparar/preparar.routes');
 const { panel: whatsappPanel } = require('./modules/whatsapp/whatsapp.routes');
 const correoRoutes = require('./modules/correo/rebotes.routes');
+const sorteoRoutes = require('./modules/sorteos/sorteo.routes');
 
 const comprobarBase = require('./lib/comprobarBase');
 
@@ -126,5 +127,8 @@ router.use('/whatsapp', whatsappPanel);
 // Los rebotes de Brevo: un correo que no llegó porque la cuenta no existe.
 // Lo llama Brevo con un secreto en la URL. Ver `modules/correo`.
 router.use('/correo', correoRoutes);
+// Sorteos de una matrícula: apuntarse es público (con el enlace), girar la
+// ruleta es del administrador. Ver `modules/sorteos`.
+router.use('/sorteos', sorteoRoutes);
 
 module.exports = router;

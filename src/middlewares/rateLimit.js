@@ -306,6 +306,18 @@ const pedidoLimiter = build({
 });
 
 /**
+ * Inscripciones a un sorteo.
+ *
+ * Treinta por hora y por IP: un salón entero detrás de la misma wifi tiene que
+ * poder apuntarse, pero un script no debe llenar la ruleta de correos.
+ */
+const sorteoLimiter = build({
+  windowMs: 60 * 60 * 1000,
+  max: 30,
+  message: 'Demasiadas inscripciones desde esta conexión. Prueba en un rato.',
+});
+
+/**
  * Límite del conector MCP, contado POR LICENCIA y no por IP.
  *
  * Es obligatorio que sea así: Claude llama desde la infraestructura de
@@ -378,6 +390,7 @@ const invitacionLimiter = build({
 });
 
 module.exports = {
+  sorteoLimiter,
   embudoLimiter,
   invitacionLimiter,
   mcpFallosLimiter,

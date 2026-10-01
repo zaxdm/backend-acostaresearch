@@ -1493,6 +1493,89 @@ function reclamoRespondido({ reclamo, proveedor, fechaTexto, respuestaTexto }) {
   };
 }
 
+// ── Sorteos ───────────────────────────────────────────────────────────────
+
+/**
+ * Al ganador de un sorteo, con su código de cortesía.
+ *
+ * Gemelo de `activationCode`, pero sin «recibimos tu pago»: aquí nadie pagó.
+ * El código solo existe en claro en este correo y en la pantalla del
+ * administrador que giró la ruleta.
+ */
+function ganadorDelSorteo({ nombre, sorteo, premio, duracionDias, codigo }) {
+  const registro = `${appUrl()}/auth/registro`;
+  const canje = `${appUrl()}/planes?codigo=${encodeURIComponent(codigo)}`;
+  const saludo = nombre ? `Hola, ${nombreDePila(nombre)}:` : 'Hola:';
+  const tiempo = duracionDias > 0 ? ` por ${duracionDias} días` : '';
+
+  return {
+    subject: '¡Ganaste el sorteo de Acosta Research!',
+    text: [
+      saludo,
+      '',
+      `Ganaste el sorteo «${sorteo}». Tu premio: ${premio}${tiempo}.`,
+      '',
+      'Este es tu código de activación:',
+      '',
+      `  ${codigo}`,
+      '',
+      'Guárdalo: es de un solo uso y no podemos volver a mostrártelo.',
+      '',
+      'Cómo activarlo, en dos pasos:',
+      `  1. Crea tu cuenta en ${registro} (te pedimos un código de 6 cifras por correo para verificarla).`,
+      `  2. Entra en ${canje}, pega el código en «¿Compraste por Yape o transferencia?» y pulsa Canjear.`,
+      '',
+      'En cuanto lo canjees te llega otro correo con tu URL personal del conector, que es lo que se pega en Claude.',
+      '',
+      'Si algo no te cuadra, respóndenos a este mensaje.',
+    ].join('\n'),
+    html: layout(
+      '¡Ganaste el sorteo!',
+      `<p style="margin:0 0 20px;font-size:15px;line-height:1.6">${escapar(saludo)} ganaste el
+         sorteo <strong>«${escapar(sorteo)}»</strong>. Tu premio:
+         <strong>${escapar(premio)}${escapar(tiempo)}</strong>.</p>
+
+       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+         <tr>
+           <td align="center" style="background:#f2f6fe;border:1px solid #d7e3fb;border-radius:12px;
+                     padding:22px 16px">
+             <div style="font-family:Consolas,'Courier New',monospace;font-size:23px;font-weight:700;
+                         letter-spacing:.06em;color:#1a3fa8;word-break:break-all">${escapar(codigo)}</div>
+           </td>
+         </tr>
+       </table>
+
+       <p style="margin:12px 0 24px;font-size:13.5px;line-height:1.65;color:#7b8794">
+         Guárdalo: es de un solo uso y no podemos volver a mostrártelo.
+       </p>
+
+       <p style="margin:0 0 10px;font-size:13px;font-weight:650;color:#52606d">
+         CÓMO ACTIVARLO, EN DOS PASOS
+       </p>
+       <p style="margin:0 0 10px;font-size:14.5px;line-height:1.65">
+         <strong>1.</strong> Crea tu cuenta en
+         <a href="${registro}" style="color:#1a56db">acostaresearch.com</a>. Te pedimos un código
+         de 6 cifras por correo para verificarla.
+       </p>
+       <p style="margin:0 0 22px;font-size:14.5px;line-height:1.65">
+         <strong>2.</strong> Entra en <a href="${canje}" style="color:#1a56db">la página de
+         precios</a>, pega el código en «¿Compraste por Yape o transferencia?», arriba a la
+         derecha, y pulsa Canjear.
+       </p>
+
+       <p style="margin:0 0 18px;font-size:14px;line-height:1.65;color:#52606d">
+         En cuanto lo canjees te llega otro correo con tu URL personal del conector, que es lo
+         que se pega en Claude.
+       </p>
+
+       <p style="margin:0;font-size:13.5px;line-height:1.65;color:#7b8794">
+         Si algo no te cuadra, responde a este mensaje y lo miramos.
+       </p>`,
+      { preheader: `Tu código es ${escapar(codigo)}. Se canjea en la página de precios.` },
+    ),
+  };
+}
+
 module.exports = {
   emailVerificationCode,
   passwordChangeCode,
@@ -1524,6 +1607,8 @@ module.exports = {
   reclamoRegistrado,
   reclamoRecibidoAdmin,
   reclamoRespondido,
+  // Al ganador de un sorteo, desde `modules/sorteos`.
+  ganadorDelSorteo,
   appUrl,
   // Las piezas del marco, para los correos que viven en su módulo (los de
   // avance y de referidos, en `modules/avisos` y `modules/referidos`).

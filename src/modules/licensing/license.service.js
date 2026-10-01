@@ -677,6 +677,10 @@ const licenseService = {
     paymentMethod = 'CORTESIA',
     paymentRef,
     amountCents,
+    // El sorteo los apaga: allí el correo no se comprueba —lo pidió así el
+    // administrador— y el ganador recibe su propio correo, no el de una compra.
+    revisarBuzon = true,
+    avisar = true,
   }) {
     const producto = productCode ?? env.LICENSE_PRODUCT_CODE;
     // Se lee siempre, no solo cuando hay que mandar correo: de aquí sale el
@@ -705,9 +709,9 @@ const licenseService = {
     // recibe correo. `zz@hou.com` tiene forma perfecta, no se parece a ningún
     // proveedor y no tiene buzones: sin esto el código se cobra y no llega.
     // Antes de crear nada, para que no quede una venta a medias.
-    const sinBuzon = (await revisarCorreos(compradores.filter(Boolean))).filter(
-      (revision) => revision.problema,
-    );
+    const sinBuzon = revisarBuzon
+      ? (await revisarCorreos(compradores.filter(Boolean))).filter((revision) => revision.problema)
+      : [];
     if (sinBuzon.length > 0) {
       throw new ValidationError(
         sinBuzon.map((revision) => ({
@@ -772,7 +776,7 @@ const licenseService = {
     );
 
     const conCorreo = envios.filter((envio) => envio.email);
-    if (conCorreo.length > 0) {
+    if (avisar && conCorreo.length > 0) {
       // El nombre del plan sale del mismo sitio que en una compra, para que el
       // comprador lea lo mismo que vio en la web al pagar.
       // Sin conector cuando lo vendido son documentos: a ese comprador no le

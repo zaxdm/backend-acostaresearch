@@ -2835,3 +2835,57 @@ model WhatsappAjustes {
 
   @@map("whatsapp_ajustes")
 }
+
+/// Un sorteo de una matrícula del método.
+///
+/// El administrador lo crea y reparte el enlace /sorteo/<slug>; quien lo abre
+/// deja su correo una vez, sin cuenta ni código de verificación. Cuando el
+/// administrador quiere, gira la ruleta: el servidor elige al ganador entre los
+/// inscritos, le genera un código de cortesía del producto y se lo manda.
+model Sorteo {
+  id String @id @default(uuid()) @db.Char(36)
+
+  /// Lo que va en la URL: /sorteo/<slug>.
+  slug   String @unique @db.VarChar(40)
+  /// Para quién es, visto desde el panel y en la página: «Sorteo de octubre».
+  nombre String @db.VarChar(120)
+
+  /// Qué se regala: el código del ganador se canjea por este producto, con la
+  /// duración de su plan (METODO_9_SKILLS = tres meses).
+  productCode String @db.VarChar(40)
+
+  /// ¿Admite inscripciones? Se cierra solo al sortear.
+  abierto Boolean @default(true)
+
+  /// El inscrito que ganó. Sin relación: el ganador se fija una sola vez con
+  /// `updateMany` condicionado a que siga vacío.
+  ganadorId     String?   @db.Char(36)
+  sorteadoAt    DateTime?
+  /// Los últimos caracteres del código regalado, para reconocerlo en Accesos.
+  codigoHint    String?   @db.VarChar(12)
+  correoEnviado Boolean   @default(false)
+
+  createdById String?  @db.Char(36)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  participantes SorteoParticipante[]
+
+  @@map("sorteos")
+}
+
+/// Un correo inscrito en un sorteo. Uno por sorteo: el índice único es lo que
+/// impide que alguien se apunte dos veces.
+model SorteoParticipante {
+  id       String @id @default(uuid()) @db.Char(36)
+  sorteoId String @db.Char(36)
+  sorteo   Sorteo @relation(fields: [sorteoId], references: [id], onDelete: Cascade)
+
+  email  String @db.VarChar(255)
+  nombre String @default("") @db.VarChar(120)
+
+  createdAt DateTime @default(now())
+
+  @@unique([sorteoId, email])
+  @@map("sorteo_participantes")
+}

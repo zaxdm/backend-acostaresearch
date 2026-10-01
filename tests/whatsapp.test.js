@@ -103,6 +103,100 @@ test('ignora los avisos de otro número, los «entregado/leído» y lo que no es
   assert.deepEqual(meta.extraerMensajes(soloEstados, '1234'), []);
 });
 
+// ── Lo que el equipo contesta desde el celular (coexistencia) ──────────────
+
+const avisoDeEcos = (ecos, numero = '1234') => ({
+  object: 'whatsapp_business_account',
+  entry: [
+    {
+      id: 'waba',
+      changes: [
+        {
+          field: 'smb_message_echoes',
+          value: {
+            messaging_product: 'whatsapp',
+            metadata: { display_phone_number: '51999', phone_number_id: numero },
+            message_echoes: ecos,
+          },
+        },
+      ],
+    },
+  ],
+});
+
+test('saca a quién le contestó el equipo desde el celular y qué le dijo', () => {
+  const ecos = meta.extraerEcos(
+    avisoDeEcos([
+      { from: '51999', to: '+51 987 654 321', id: 'wamid.e1', type: 'text', text: { body: ' Te llamo ' } },
+      { from: '51999', to: '51987654321', id: 'wamid.e2', type: 'image' },
+    ]),
+    '1234',
+  );
+  assert.deepEqual(ecos, [
+    { waId: 'wamid.e1', telefono: '51987654321', tipo: 'text', texto: 'Te llamo' },
+    { waId: 'wamid.e2', telefono: '51987654321', tipo: 'image', texto: '' },
+  ]);
+});
+
+test('los ecos no se cuelan como mensajes del cliente, ni al revés', () => {
+  const eco = [{ from: '51999', to: '51987654321', id: 'wamid.e1', type: 'text', text: { body: 'hola' } }];
+  assert.deepEqual(meta.extraerMensajes(avisoDeEcos(eco), '1234'), []);
+  assert.deepEqual(meta.extraerEcos(avisoDeEcos(eco, '9999'), '1234'), []);
+  const delCliente = [{ from: '51987654321', id: 'x', type: 'text', text: { body: 'hola' } }];
+  assert.deepEqual(meta.extraerEcos(aviso(delCliente), '1234'), []);
+});
+
+/** Cambia métodos del repositorio por los de la prueba y los devuelve al acabar. */
+async function conRepo(cambios, prueba) {
+  const repo = require('../src/modules/whatsapp/whatsapp.repository');
+  const originales = Object.fromEntries(Object.keys(cambios).map((k) => [k, repo[k]]));
+  Object.assign(repo, cambios);
+  try {
+    return await prueba();
+  } finally {
+    Object.assign(repo, originales);
+  }
+}
+
+test('contestar desde el celular pasa la conversación a una persona y lo guarda como del equipo', async () => {
+  const llamadas = [];
+  const resultado = await conRepo(
+    {
+      yaVisto: async () => false,
+      anotarDelEquipo: async (telefono) => {
+        llamadas.push(['tomar', telefono]);
+        return { id: 'c1', telefono, modo: 'HUMANO' };
+      },
+      guardarMensaje: async (datos) => {
+        llamadas.push(['guardar', datos]);
+        return datos;
+      },
+    },
+    () => _interno.registrarEco({ waId: 'wamid.e1', telefono: '51987654321', tipo: 'image', texto: '' }),
+  );
+  assert.deepEqual(resultado, { motivo: 'persona' });
+  assert.deepEqual(llamadas[0], ['tomar', '51987654321']);
+  assert.equal(llamadas[1][1].autor, 'ADMIN');
+  assert.equal(llamadas[1][1].envio, 'ENVIADO');
+  assert.equal(llamadas[1][1].waId, 'wamid.e1');
+  assert.match(llamadas[1][1].texto, /image.*celular/);
+});
+
+test('un eco de lo que ya mandó el bot o el panel no toma la conversación', async () => {
+  let tomada = false;
+  const resultado = await conRepo(
+    {
+      yaVisto: async () => true,
+      anotarDelEquipo: async () => {
+        tomada = true;
+      },
+    },
+    () => _interno.registrarEco({ waId: 'wamid.bot', telefono: '51987654321', tipo: 'text', texto: 'hola' }),
+  );
+  assert.deepEqual(resultado, { motivo: 'repetido' });
+  assert.equal(tomada, false);
+});
+
 test('sin claves de Meta, mandar no llama a nadie: es la maqueta', async () => {
   let llamado = false;
   const resultado = await meta.enviarTexto('51987654321', 'hola', {

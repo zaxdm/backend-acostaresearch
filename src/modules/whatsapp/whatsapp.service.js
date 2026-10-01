@@ -226,6 +226,10 @@ async function atender(entrante, { simulado = false } = {}) {
       ajustes,
       primeraVez,
     );
+    // Gemini tarda unos segundos: si en ese rato alguien contestó desde el
+    // celular o el panel, lo pensado se tira para no hablarle encima.
+    const ahora = await repo.porId(conversacion.id);
+    if (ahora?.modo === 'HUMANO') return { motivo: 'persona', respuestas };
     if (dicho) await responder(dicho, { modelo });
     if (quierePersona && !conversacion.pideHumano) {
       conversacion = await repo.actualizar(conversacion.id, { pideHumano: true });
@@ -243,6 +247,33 @@ async function atender(entrante, { simulado = false } = {}) {
     avisar(conversacion, 'el bot no pudo responder');
     return { motivo: 'error_ia', respuestas };
   }
+}
+
+/**
+ * Lo que el equipo contestó desde el celular (coexistencia): se guarda como
+ * respuesta del equipo y el bot se calla en esa conversación, igual que al
+ * contestar desde el panel. No va a la fila del número a propósito: así, si el
+ * bot está pensando una respuesta para ese cliente, ve el cambio y no la manda.
+ */
+async function registrarEco(eco) {
+  // Lo que mandó el bot o el panel por la API ya está guardado con su waId.
+  if (await repo.yaVisto(eco.waId)) return { motivo: 'repetido' };
+
+  const conversacion = await repo.anotarDelEquipo(eco.telefono);
+  const texto = eco.texto || `(mandaste un mensaje de tipo «${eco.tipo}» desde el celular)`;
+  try {
+    await repo.guardarMensaje({
+      conversacionId: conversacion.id,
+      autor: 'ADMIN',
+      texto: meta.recortar(texto),
+      envio: 'ENVIADO',
+      waId: eco.waId,
+    });
+  } catch (error) {
+    if (error?.code === 'P2002') return { motivo: 'repetido' };
+    throw error;
+  }
+  return { motivo: 'persona' };
 }
 
 /** Las claves de Meta que faltan, por su nombre en el .env. */
@@ -266,8 +297,16 @@ function inicioDelDiaEnLima(ahora = new Date()) {
 const whatsappService = {
   // ── Lo que manda Meta ────────────────────────────────────────────────────
 
-  /** Cada mensaje de un aviso, en la fila de su número. Nunca lanza. */
+  /**
+   * Cada mensaje de un aviso, en la fila de su número, y cada respuesta que el
+   * equipo dio desde el celular. Nunca lanza.
+   */
   recibirAviso(cuerpo) {
+    for (const eco of meta.extraerEcos(cuerpo)) {
+      registrarEco(eco).catch((error) =>
+        logger.error({ err: error }, 'WhatsApp: no se pudo anotar lo que se contestó desde el celular'),
+      );
+    }
     for (const entrante of meta.extraerMensajes(cuerpo)) {
       enFila(entrante.telefono, () => atender(entrante)).catch((error) =>
         logger.error({ err: error }, 'WhatsApp: no se pudo atender un mensaje'),
@@ -362,4 +401,4 @@ const whatsappService = {
 };
 
 module.exports = whatsappService;
-module.exports._interno = { comoConversacion, atender, RESPUESTAS };
+module.exports._interno = { comoConversacion, atender, registrarEco, RESPUESTAS };

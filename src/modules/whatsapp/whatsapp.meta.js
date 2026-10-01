@@ -96,6 +96,40 @@ function extraerMensajes(cuerpo, numeroPropio = env.WHATSAPP_PHONE_NUMBER_ID) {
   return mensajes;
 }
 
+/**
+ * Lo que el equipo contestó DESDE EL CELULAR, ya aplanado.
+ *
+ * Con la coexistencia el mismo número vive en la app WhatsApp Business y en la
+ * API. Lo que se escribe desde la app no pasa por aquí, pero Meta lo avisa en
+ * el campo `smb_message_echoes` (hay que suscribirlo en el webhook). Ahí `to`
+ * es el cliente. Sirve para que el bot sepa que una persona tomó la
+ * conversación y se calle, como cuando se contesta desde el panel.
+ */
+function extraerEcos(cuerpo, numeroPropio = env.WHATSAPP_PHONE_NUMBER_ID) {
+  if (cuerpo?.object !== 'whatsapp_business_account') return [];
+
+  const ecos = [];
+  for (const entrada of cuerpo.entry ?? []) {
+    for (const cambio of entrada.changes ?? []) {
+      if (cambio.field !== 'smb_message_echoes') continue;
+      const valor = cambio.value ?? {};
+      if (numeroPropio && valor.metadata?.phone_number_id !== numeroPropio) continue;
+
+      for (const eco of valor.message_echoes ?? []) {
+        const telefono = String(eco.to ?? '').replace(/\D/g, '');
+        if (!telefono || !eco.id) continue;
+        ecos.push({
+          waId: String(eco.id),
+          telefono,
+          tipo: String(eco.type ?? 'unknown'),
+          texto: textoDe(eco).trim(),
+        });
+      }
+    }
+  }
+  return ecos;
+}
+
 /** Recorta a lo que cabe en un mensaje de WhatsApp. */
 function recortar(texto) {
   return texto.length > MAX_TEXTO ? `${texto.slice(0, MAX_TEXTO - 1)}…` : texto;
@@ -170,4 +204,4 @@ function marcarLeido(waId, { fetchImpl = fetch } = {}) {
   }).catch(() => {});
 }
 
-module.exports = { firmaValida, extraerMensajes, enviarTexto, marcarLeido, recortar, MAX_TEXTO };
+module.exports = { firmaValida, extraerMensajes, extraerEcos, enviarTexto, marcarLeido, recortar, MAX_TEXTO };

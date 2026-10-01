@@ -69,6 +69,20 @@ const whatsappRepository = {
     });
   },
 
+  /**
+   * El equipo le escribió desde el celular: la conversación pasa a una persona
+   * y queda leída. Si la empezó el equipo, se crea aquí (sin nombre todavía).
+   */
+  anotarDelEquipo(telefono, ahora = new Date()) {
+    const tomada = { modo: 'HUMANO', pideHumano: false, noLeidos: 0, ultimoMensajeAt: ahora };
+    return prisma.whatsappConversacion.upsert({
+      where: { telefono },
+      create: { telefono, ...tomada },
+      update: tomada,
+      select: RESUMEN,
+    });
+  },
+
   actualizar(id, datos) {
     return prisma.whatsappConversacion.update({ where: { id }, data: datos, select: RESUMEN });
   },

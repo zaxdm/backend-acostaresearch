@@ -27,7 +27,30 @@ const listarQuerySchema = z.object({
   busqueda: z.string().trim().max(60).optional(),
 });
 
-const responderSchema = z.object({ texto: z.string().trim().min(1).max(4000) });
+/** Texto, imagen de la galería, o las dos (el texto va debajo de la imagen). */
+const responderSchema = z
+  .object({
+    texto: z.string().trim().max(4000).default(''),
+    imagenId: z.string().uuid().optional(),
+  })
+  .refine((r) => r.texto || r.imagenId, { message: 'Escribe algo o elige una imagen.', path: ['texto'] });
+
+/** Los datos de una imagen. Al subirla van en la dirección: el cuerpo es el archivo. */
+const imagenCampos = {
+  nombre: z.string().trim().min(1, 'Ponle un nombre.').max(80),
+  cuando: z.string().trim().max(400),
+  pie: z.string().trim().max(1000),
+  enBot: z.boolean(),
+};
+
+const subirImagenQuerySchema = z.object({
+  nombre: imagenCampos.nombre,
+  cuando: imagenCampos.cuando.default(''),
+  pie: imagenCampos.pie.default(''),
+  enBot: z.enum(['true', 'false']).default('true').transform((v) => v === 'true'),
+});
+
+const editarImagenSchema = z.object(imagenCampos).partial();
 
 const modoSchema = z.object({ modo: z.enum(['BOT', 'HUMANO']) });
 
@@ -49,6 +72,8 @@ module.exports = {
   idParamSchema,
   listarQuerySchema,
   responderSchema,
+  subirImagenQuerySchema,
+  editarImagenSchema,
   modoSchema,
   bloqueoSchema,
   simularSchema,

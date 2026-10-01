@@ -9,6 +9,7 @@ const asistenteService = require('../asistente/asistente.service');
 const { crearTopeDiario } = require('../asistente/asistente.tope');
 const repo = require('./whatsapp.repository');
 const meta = require('./whatsapp.meta');
+const imagenesStorage = require('./whatsapp.imagenes');
 const { construirSistemaWhatsapp, aTextoDeWhatsapp } = require('./whatsapp.prompt');
 const { enHorarioHumano, pidePersona, ventanaAbierta } = require('./whatsapp.reglas');
 
@@ -92,6 +93,69 @@ async function decir(conversacion, texto, { autor = 'BOT', modelo = null, adminI
 }
 
 /**
+ * Meta guarda una imagen subida 30 días. Se reutiliza su id 25 y luego se
+ * vuelve a subir, para no apurar el plazo.
+ */
+const VIGENCIA_MEDIA_MS = 25 * 24 * 60 * 60 * 1000;
+
+/** El id de Meta de una imagen: el guardado si sigue valiendo, o se sube. */
+async function mediaDe(imagen, { forzar = false } = {}) {
+  if (!forzar && imagen.mediaId && imagen.mediaHasta && new Date(imagen.mediaHasta) > new Date()) {
+    return { mediaId: imagen.mediaId, guardado: true };
+  }
+  let buffer;
+  try {
+    buffer = await imagenesStorage.leer(imagen.archivo);
+  } catch (error) {
+    logger.error({ err: error, imagenId: imagen.id }, 'WhatsApp: falta el archivo de una imagen');
+    return { error: 'No se encontró el archivo de la imagen en el servidor: vuelve a subirla.' };
+  }
+  const subida = await meta.subirImagen(buffer, imagen.mime);
+  if (subida.mediaId) {
+    await repo.anotarMedia(imagen.id, subida.mediaId, new Date(Date.now() + VIGENCIA_MEDIA_MS));
+  }
+  return subida;
+}
+
+/** Cómo queda una imagen en el historial: así la ve el bot y la ve el panel. */
+const textoDeImagen = (imagen, pie) => `[Imagen: ${imagen.nombre}]${pie ? `\n${pie}` : ''}`;
+
+/** Una imagen de la galería, mandada y guardada. Como `decir`, nunca lanza por Meta. */
+async function decirImagen(conversacion, imagen, { autor = 'BOT', adminId = null, simulado = false, pie }) {
+  const texto = String(pie ?? imagen.pie ?? '').trim();
+  let resultado;
+  if (simulado || !env.whatsappMetaEnabled) {
+    resultado = { simulado: true };
+  } else {
+    let media = await mediaDe(imagen);
+    resultado = media.error ? media : await meta.enviarImagen(conversacion.telefono, media.mediaId, texto);
+    // Si Meta ya no reconoce el id guardado, se sube otra vez y se reintenta una vez.
+    if (resultado.error && media.guardado) {
+      media = await mediaDe(imagen, { forzar: true });
+      resultado = media.error ? media : await meta.enviarImagen(conversacion.telefono, media.mediaId, texto);
+    }
+  }
+  const envio = resultado.simulado ? 'SIMULADO' : resultado.error ? 'FALLIDO' : 'ENVIADO';
+
+  const mensaje = await repo.guardarMensaje({
+    conversacionId: conversacion.id,
+    autor,
+    texto: meta.recortar(textoDeImagen(imagen, texto)),
+    envio,
+    waId: resultado.waId ?? null,
+    error: resultado.error ?? null,
+    imagenId: imagen.id,
+    adminId,
+  });
+  await repo.actualizar(conversacion.id, { ultimoMensajeAt: new Date() });
+  if (resultado.error) logger.warn({ error: resultado.error }, 'WhatsApp: la imagen no salió');
+  return mensaje;
+}
+
+/** La clave con la que el bot nombra una imagen: los 8 primeros del id. */
+const claveDe = (imagen) => imagen.id.slice(0, 8).toLowerCase();
+
+/**
  * La historia para Gemini. Lo del bot y lo del panel son «asistente»: para el
  * cliente, las dos cosas las dijo la misma casa. Los turnos seguidos del mismo
  * lado se juntan en uno, que es como los espera Gemini.
@@ -115,7 +179,9 @@ const modelosDelBot = () =>
 
 async function pensarRespuesta(conversacion, ajustes, primeraVez) {
   const { planes, promos } = await asistenteService.preciosVigentes();
+  const galeria = await repo.imagenesDelBot();
   const sistema = construirSistemaWhatsapp({
+    imagenes: galeria.map((i) => ({ clave: claveDe(i), nombre: i.nombre, cuando: i.cuando })),
     planes,
     promos,
     appUrl: env.APP_URL,
@@ -137,7 +203,13 @@ async function pensarRespuesta(conversacion, ajustes, primeraVez) {
     { modelo, entrada: uso?.promptTokenCount, salida: uso?.candidatesTokenCount, hoy: tope.usados() },
     'WhatsApp: respuesta del bot',
   );
-  return { ...aTextoDeWhatsapp(texto, env.APP_URL), modelo };
+  const limpio = aTextoDeWhatsapp(texto, env.APP_URL);
+  // Una marca que no es de ninguna imagen de la galería (inventada o de una
+  // que ya se quitó) se ignora sin más.
+  const imagenes = limpio.imagenes
+    .map((clave) => galeria.find((i) => claveDe(i) === clave)?.id)
+    .filter(Boolean);
+  return { ...limpio, imagenes, modelo };
 }
 
 /**
@@ -218,19 +290,34 @@ async function atender(entrante, { simulado = false } = {}) {
   }
 
   const primeraVez = (await repo.cuantosMensajes(conversacion.id)) === 1;
-  if (primeraVez && ajustes.bienvenida.trim()) await responder(ajustes.bienvenida.trim());
 
   try {
-    const { texto: dicho, pidePersona: quierePersona, modelo } = await pensarRespuesta(
-      conversacion,
-      ajustes,
-      primeraVez,
-    );
+    const {
+      texto: dicho,
+      pidePersona: quierePersona,
+      imagenes,
+      silencio,
+      modelo,
+    } = await pensarRespuesta(conversacion, ajustes, primeraVez);
     // Gemini tarda unos segundos: si en ese rato alguien contestó desde el
     // celular o el panel, lo pensado se tira para no hablarle encima.
     const ahora = await repo.porId(conversacion.id);
     if (ahora?.modo === 'HUMANO') return { motivo: 'persona', respuestas };
+    // Un mensaje personal para Benicio: ni bienvenida ni respuesta. La
+    // conversación pasa a él, así el bot tampoco contesta lo siguiente.
+    if (silencio) {
+      conversacion = await repo.actualizar(conversacion.id, { modo: 'HUMANO' });
+      avisar(conversacion, 'parece un mensaje personal: el bot no contestó');
+      return { motivo: 'personal', respuestas };
+    }
+    // La bienvenida va después de pensar, para no saludar como tienda a quien
+    // escribe por algo personal.
+    if (primeraVez && ajustes.bienvenida.trim()) await responder(ajustes.bienvenida.trim());
     if (dicho) await responder(dicho, { modelo });
+    for (const imagenId of imagenes) {
+      const imagen = await repo.imagenCompleta(imagenId);
+      if (imagen) respuestas.push(await decirImagen(conversacion, imagen, { simulado }));
+    }
     if (quierePersona && !conversacion.pideHumano) {
       conversacion = await repo.actualizar(conversacion.id, { pideHumano: true });
       avisar(conversacion, 'el bot pidió que lo atienda una persona');
@@ -352,9 +439,11 @@ const whatsappService = {
    * Contestar desde el panel. Quien contesta toma la conversación: el bot se
    * calla en ella hasta que se le devuelva, o hablarían los dos a la vez.
    */
-  async responder(id, texto, adminId) {
+  async responder(id, texto, adminId, imagenId = null) {
     const conversacion = await repo.porId(id);
     if (!conversacion) throw new NotFoundError('Esa conversación ya no existe.');
+    const imagen = imagenId ? await repo.imagenCompleta(imagenId) : null;
+    if (imagenId && !imagen) throw new NotFoundError('Esa imagen ya no está en la galería.');
     const esPrueba = !/^\d+$/.test(conversacion.telefono);
     if (!esPrueba && env.whatsappMetaEnabled && !ventanaAbierta(conversacion.ultimoDelClienteAt)) {
       throw new ConflictError(
@@ -362,9 +451,61 @@ const whatsappService = {
       );
     }
     await repo.actualizar(id, { modo: 'HUMANO', pideHumano: false, noLeidos: 0 });
-    const mensaje = await decir(conversacion, texto, { autor: 'ADMIN', adminId, simulado: esPrueba });
+
+    const opciones = { autor: 'ADMIN', adminId, simulado: esPrueba };
+    let mensaje;
+    if (!imagen) {
+      mensaje = await decir(conversacion, texto, opciones);
+    } else if (texto && texto.length > meta.MAX_PIE) {
+      // No cabe debajo de la imagen: primero el texto y luego la imagen sola.
+      mensaje = await decir(conversacion, texto, opciones);
+      if (mensaje.envio === 'FALLIDO') throw new ConflictError(`No salió: ${mensaje.error}`);
+      mensaje = await decirImagen(conversacion, imagen, { ...opciones, pie: '' });
+    } else {
+      // Lo escrito va debajo de la imagen; sin texto, el pie de la galería.
+      mensaje = await decirImagen(conversacion, imagen, { ...opciones, pie: texto || undefined });
+    }
     if (mensaje.envio === 'FALLIDO') throw new ConflictError(`No salió: ${mensaje.error}`);
     return mensaje;
+  },
+
+  // ── La galería de imágenes ───────────────────────────────────────────────
+
+  imagenes: () => repo.imagenes(),
+
+  /** Sube una imagen nueva. El archivo se comprueba antes de tocar la base. */
+  async subirImagen(buffer, datos) {
+    const guardada = await imagenesStorage.guardar(buffer);
+    try {
+      return await repo.crearImagen({ ...datos, ...guardada });
+    } catch (error) {
+      await imagenesStorage.borrar(guardada.archivo);
+      throw error;
+    }
+  },
+
+  async editarImagen(id, datos) {
+    if (!(await repo.imagenCompleta(id))) throw new NotFoundError('Esa imagen ya no está en la galería.');
+    return repo.actualizarImagen(id, datos);
+  },
+
+  /** Los mensajes que la llevaban se quedan, con su «[Imagen: …]». */
+  async borrarImagen(id) {
+    const imagen = await repo.imagenCompleta(id);
+    if (!imagen) throw new NotFoundError('Esa imagen ya no está en la galería.');
+    await repo.borrarImagen(id);
+    await imagenesStorage.borrar(imagen.archivo);
+  },
+
+  /** El archivo, para verla en el panel. */
+  async archivoImagen(id) {
+    const imagen = await repo.imagenCompleta(id);
+    if (!imagen) throw new NotFoundError('Esa imagen ya no está en la galería.');
+    try {
+      return { buffer: await imagenesStorage.leer(imagen.archivo), mime: imagen.mime };
+    } catch {
+      throw new NotFoundError('El archivo de esa imagen ya no está en el servidor.');
+    }
   },
 
   /** Tomarla (HUMANO) o devolvérsela al bot (BOT). Devolverla apaga el aviso. */
@@ -401,4 +542,4 @@ const whatsappService = {
 };
 
 module.exports = whatsappService;
-module.exports._interno = { comoConversacion, atender, registrarEco, RESPUESTAS };
+module.exports._interno = { comoConversacion, atender, registrarEco, decirImagen, claveDe, RESPUESTAS };

@@ -305,3 +305,179 @@ test('los días laborables se guardan ordenados y sin repetir', () => {
   assert.equal(diasLaborables, '1,3,5');
   assert.throws(() => ajustesSchema.parse({ horaInicio: '25:00' }));
 });
+
+// ── Las imágenes ───────────────────────────────────────────────────────────
+
+const os = require('node:os');
+const path = require('node:path');
+const fs = require('node:fs/promises');
+const imagenesStorage = require('../src/modules/whatsapp/whatsapp.imagenes');
+const { responderSchema, subirImagenQuerySchema } = require('../src/modules/whatsapp/whatsapp.schema');
+
+const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(32)]);
+const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(32)]);
+const WEBP = Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WEBP'), Buffer.alloc(32)]);
+
+test('las marcas de imagen se quitan del texto y salen aparte, sin repetir y como mucho dos', () => {
+  const { texto, imagenes, pidePersona: pide } = aTextoDeWhatsapp(
+    'Aquí tienes el QR para pagar.\n[[IMAGEN:0A1B2C3D]]\n[[IMAGEN:0a1b2c3d]] [[IMAGEN:11112222]]\n[[IMAGEN:33334444]]',
+    'https://x',
+  );
+  assert.equal(texto, 'Aquí tienes el QR para pagar.');
+  assert.deepEqual(imagenes, ['0a1b2c3d', '11112222']);
+  assert.equal(pide, false);
+  assert.deepEqual(aTextoDeWhatsapp('Hola', 'https://x').imagenes, []);
+});
+
+test('el bot solo sabe de las imágenes que el equipo dejó para él', () => {
+  const base = {
+    planes: [{ name: 'Método de Tesis', priceCents: 19900, currency: 'PEN', durationDays: 360 }],
+    appUrl: 'https://acostaresearch.com',
+  };
+  assert.doesNotMatch(construirSistemaWhatsapp(base), /Imágenes que puedes mandar/);
+  const sistema = construirSistemaWhatsapp({
+    ...base,
+    imagenes: [{ clave: 'ab12cd34', nombre: 'QR de Yape', cuando: 'cuando quiera pagar con Yape' }],
+  });
+  assert.match(sistema, /## Imágenes que puedes mandar/);
+  assert.match(sistema, /\[\[IMAGEN:ab12cd34\]\] «QR de Yape» · cuándo: cuando quiera pagar con Yape/);
+});
+
+test('la galería solo acepta PNG o JPG de hasta 5 MB, por sus bytes', () => {
+  assert.equal(imagenesStorage.comprobar(PNG).mime, 'image/png');
+  assert.equal(imagenesStorage.comprobar(JPG).mime, 'image/jpeg');
+  assert.throws(() => imagenesStorage.comprobar(WEBP), /PNG o JPG/);
+  assert.throws(() => imagenesStorage.comprobar(Buffer.from('<html>no soy una imagen</html>')), /PNG o JPG/);
+  assert.throws(() => imagenesStorage.comprobar(Buffer.alloc(0)), /ninguna imagen/);
+  const enorme = Buffer.concat([PNG, Buffer.alloc(imagenesStorage.MAX_BYTES)]);
+  assert.throws(() => imagenesStorage.comprobar(enorme), /5 MB/);
+});
+
+test('guarda, lee y borra la imagen con un nombre puesto por el servidor', async () => {
+  const raiz = await fs.mkdtemp(path.join(os.tmpdir(), 'wa-img-'));
+  try {
+    const guardada = await imagenesStorage.guardar(JPG, raiz);
+    assert.match(guardada.archivo, /^[0-9a-f-]{36}\.jpg$/);
+    assert.deepEqual(await imagenesStorage.leer(guardada.archivo, raiz), JPG);
+    await assert.rejects(() => imagenesStorage.leer('../fuera.jpg', raiz), /no válida/);
+    await imagenesStorage.borrar(guardada.archivo, raiz);
+    await assert.rejects(() => imagenesStorage.leer(guardada.archivo, raiz));
+  } finally {
+    await fs.rm(raiz, { recursive: true, force: true });
+  }
+});
+
+test('sin claves de Meta, mandar una imagen no llama a nadie', async () => {
+  let llamado = false;
+  const resultado = await meta.enviarImagen('51987654321', 'media-1', 'pie', {
+    fetchImpl: async () => {
+      llamado = true;
+    },
+  });
+  assert.deepEqual(resultado, { simulado: true });
+  assert.equal(llamado, false);
+});
+
+test('una imagen mandada queda en el historial con su nombre, su pie y de qué imagen era', async () => {
+  const guardados = [];
+  const imagen = { id: 'ab12cd34-0000-4000-8000-000000000000', nombre: 'QR de Yape', pie: 'Yape a nombre de Benicio', archivo: 'x.png', mime: 'image/png' };
+  await conRepo(
+    {
+      guardarMensaje: async (datos) => {
+        guardados.push(datos);
+        return datos;
+      },
+      actualizar: async () => ({}),
+    },
+    async () => {
+      await _interno.decirImagen({ id: 'c1', telefono: 'prueba-x' }, imagen, { simulado: true });
+      await _interno.decirImagen({ id: 'c1', telefono: 'prueba-x' }, imagen, { simulado: true, autor: 'ADMIN', pie: '' });
+    },
+  );
+  assert.equal(guardados[0].texto, '[Imagen: QR de Yape]\nYape a nombre de Benicio');
+  assert.equal(guardados[0].imagenId, imagen.id);
+  assert.equal(guardados[0].envio, 'SIMULADO');
+  assert.equal(guardados[0].autor, 'BOT');
+  assert.equal(guardados[1].texto, '[Imagen: QR de Yape]');
+  assert.equal(guardados[1].autor, 'ADMIN');
+  assert.equal(_interno.claveDe(imagen), 'ab12cd34');
+});
+
+test('responder pide texto o imagen; al subir, los datos van en la dirección', () => {
+  assert.throws(() => responderSchema.parse({ texto: '   ' }));
+  assert.deepEqual(responderSchema.parse({ texto: 'hola' }), { texto: 'hola' });
+  const id = 'ab12cd34-0000-4000-8000-000000000000';
+  assert.deepEqual(responderSchema.parse({ imagenId: id }), { texto: '', imagenId: id });
+  assert.deepEqual(subirImagenQuerySchema.parse({ nombre: ' QR ', enBot: 'false' }), {
+    nombre: 'QR',
+    cuando: '',
+    pie: '',
+    enBot: false,
+  });
+  assert.throws(() => subirImagenQuerySchema.parse({ nombre: '' }));
+});
+
+test('subir una imagen a Meta manda el archivo como formulario y devuelve su id', async () => {
+  let pedido;
+  const resultado = await meta.subirImagen(PNG, 'image/png', {
+    fetchImpl: async (url, opciones) => {
+      pedido = { url, opciones };
+      return { ok: true, status: 200, json: async () => ({ id: '987654' }) };
+    },
+  });
+  assert.deepEqual(resultado, { mediaId: '987654' });
+  assert.match(pedido.url, /\/media$/);
+  assert.equal(pedido.opciones.body.get('messaging_product'), 'whatsapp');
+  assert.equal(pedido.opciones.body.get('type'), 'image/png');
+  const archivo = pedido.opciones.body.get('file');
+  assert.equal(archivo.type, 'image/png');
+  assert.equal(archivo.size, PNG.length);
+
+  const fallo = await meta.subirImagen(PNG, 'image/png', {
+    fetchImpl: async () => ({ ok: false, status: 400, json: async () => ({ error: { code: 190 } }) }),
+  });
+  assert.match(fallo.error, /token de Meta/);
+});
+
+// ── Servicios de WhatsApp y mensajes personales ────────────────────────────
+
+const { MARCA_SILENCIO } = require('../src/modules/whatsapp/whatsapp.prompt');
+
+test('un mensaje personal no deja nada que mandar, aunque el modelo escriba algo más', () => {
+  assert.deepEqual(aTextoDeWhatsapp(MARCA_SILENCIO, 'https://x'), {
+    texto: '',
+    pidePersona: false,
+    imagenes: [],
+    silencio: true,
+  });
+  const conTexto = aTextoDeWhatsapp(`Hola tía, Benicio le responde luego.\n${MARCA_SILENCIO}\n[[IMAGEN:0a1b2c3d]]`, 'https://x');
+  assert.equal(conTexto.texto, '');
+  assert.equal(conTexto.silencio, true);
+  assert.deepEqual(conTexto.imagenes, []);
+  assert.equal(aTextoDeWhatsapp('Hola, ¿en qué te ayudo?', 'https://x').silencio, false);
+});
+
+test('el bot conoce los servicios de WhatsApp con sus precios y sabe callar lo personal', () => {
+  const sistema = construirSistemaWhatsapp({
+    planes: [{ name: 'Método de Tesis', priceCents: 19900, currency: 'PEN', durationDays: 360 }],
+    appUrl: 'https://acostaresearch.com',
+  });
+  assert.match(sistema, /Claude Max x20/);
+  assert.match(sistema, /S\/115 al mes/);
+  assert.match(sistema, /33\.33 USD al mes/);
+  assert.match(sistema, /Turnitin[^\n]*S\/15[^\n]*4\.35 USD/);
+  assert.match(sistema, /PayPal, Yape, Plin y Western Union/);
+  assert.match(sistema, /Asesorías con Benicio Acosta[^\n]*No des precio/);
+  assert.match(sistema, /Humanizar textos[^\n]*cuántas páginas/);
+  assert.ok(sistema.includes(`responde ÚNICAMENTE ${MARCA_SILENCIO}`));
+});
+
+test('la marca de pasar a una persona no cuenta si el bot aún le está preguntando algo', () => {
+  assert.equal(aTextoDeWhatsapp(`Cuesta 33.33 USD al mes. ¿Te gustaría contratarlo?\n${MARCA_PERSONA}`, 'https://x').pidePersona, false);
+  assert.equal(aTextoDeWhatsapp(`Listo, Benicio te enviará la cotización por aquí.\n${MARCA_PERSONA}`, 'https://x').pidePersona, true);
+});
+
+test('tampoco cuenta si la pregunta va en medio y el mensaje acaba en una frase', () => {
+  const texto = `Me faltan dos datos:\n- ¿Es cuantitativa o cualitativa?\nCon eso te enviamos la cotización.\n${MARCA_PERSONA}`;
+  assert.equal(aTextoDeWhatsapp(texto, 'https://x').pidePersona, false);
+});

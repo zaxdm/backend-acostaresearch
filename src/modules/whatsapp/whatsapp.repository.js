@@ -23,6 +23,19 @@ const MENSAJE = {
   envio: true,
   error: true,
   modelo: true,
+  imagenId: true,
+  createdAt: true,
+};
+
+/** Lo que el panel enseña de cada imagen. El archivo y el id de Meta, no. */
+const IMAGEN = {
+  id: true,
+  nombre: true,
+  cuando: true,
+  pie: true,
+  enBot: true,
+  mime: true,
+  bytes: true,
   createdAt: true,
 };
 
@@ -145,6 +158,43 @@ const whatsappRepository = {
       }),
     ]);
     return { conversaciones, delCliente, delBot, esperando };
+  },
+
+  // ── La galería de imágenes ───────────────────────────────────────────────
+
+  imagenes() {
+    return prisma.whatsappImagen.findMany({ orderBy: [{ enBot: 'desc' }, { createdAt: 'desc' }], select: IMAGEN });
+  },
+
+  /** Las que puede mandar el bot, con lo que necesita para elegirlas. */
+  imagenesDelBot() {
+    return prisma.whatsappImagen.findMany({
+      where: { enBot: true },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, nombre: true, cuando: true },
+    });
+  },
+
+  /** Con el archivo y el id de Meta: para mandarla o servirla. */
+  imagenCompleta(id) {
+    return prisma.whatsappImagen.findUnique({ where: { id } });
+  },
+
+  crearImagen(datos) {
+    return prisma.whatsappImagen.create({ data: datos, select: IMAGEN });
+  },
+
+  actualizarImagen(id, datos) {
+    return prisma.whatsappImagen.update({ where: { id }, data: datos, select: IMAGEN });
+  },
+
+  /** Anota el id que dio Meta al subirla y hasta cuándo vale. */
+  anotarMedia(id, mediaId, mediaHasta) {
+    return prisma.whatsappImagen.update({ where: { id }, data: { mediaId, mediaHasta }, select: { id: true } });
+  },
+
+  borrarImagen(id) {
+    return prisma.whatsappImagen.delete({ where: { id } });
   },
 
   borrarConversacion(id) {

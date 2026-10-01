@@ -1,13 +1,16 @@
 'use strict';
 
-const { Router } = require('express');
+const express = require('express');
+
+const { Router } = express;
 const env = require('../../config/env');
 const logger = require('../../config/logger');
 const authenticate = require('../../middlewares/authenticate');
 const authorize = require('../../middlewares/authorize');
 const validate = require('../../middlewares/validate');
 const asyncHandler = require('../../shared/http/asyncHandler');
-const { ok, noContent } = require('../../shared/http/apiResponse');
+const { ok, created, noContent } = require('../../shared/http/apiResponse');
+const imagenesStorage = require('./whatsapp.imagenes');
 const { ROLES } = require('../../config/constants');
 const meta = require('./whatsapp.meta');
 const whatsappService = require('./whatsapp.service');
@@ -16,6 +19,8 @@ const {
   idParamSchema,
   listarQuerySchema,
   responderSchema,
+  subirImagenQuerySchema,
+  editarImagenSchema,
   modoSchema,
   bloqueoSchema,
   simularSchema,
@@ -96,8 +101,59 @@ panel.post(
   '/conversaciones/:id/responder',
   validate({ params: idParamSchema, body: responderSchema }),
   asyncHandler(async (req, res) =>
-    ok(res, await whatsappService.responder(req.params.id, req.body.texto, req.user.id)),
+    ok(
+      res,
+      await whatsappService.responder(req.params.id, req.body.texto, req.user.id, req.body.imagenId),
+    ),
   ),
+);
+
+// ── La galería de imágenes ───────────────────────────────────────────────────
+
+panel.get(
+  '/imagenes',
+  asyncHandler(async (_req, res) => ok(res, await whatsappService.imagenes())),
+);
+
+/**
+ * Subir una imagen: el archivo va crudo en el cuerpo y sus datos en la
+ * dirección, como los comprobantes. El techo de 100 KB del resto de la API se
+ * abre solo aquí; el formato real lo comprueba `whatsapp.imagenes` por sus bytes.
+ */
+panel.post(
+  '/imagenes',
+  express.raw({ type: ['image/png', 'image/jpeg'], limit: imagenesStorage.MAX_BYTES }),
+  validate({ query: subirImagenQuerySchema }),
+  asyncHandler(async (req, res) =>
+    created(res, await whatsappService.subirImagen(req.body, req.query), 'Imagen guardada.'),
+  ),
+);
+
+panel.put(
+  '/imagenes/:id',
+  validate({ params: idParamSchema, body: editarImagenSchema }),
+  asyncHandler(async (req, res) => ok(res, await whatsappService.editarImagen(req.params.id, req.body))),
+);
+
+panel.delete(
+  '/imagenes/:id',
+  validate({ params: idParamSchema }),
+  asyncHandler(async (req, res) => {
+    await whatsappService.borrarImagen(req.params.id);
+    return noContent(res);
+  }),
+);
+
+/** La imagen tal cual, para verla en el panel. Se pide con el token, como blob. */
+panel.get(
+  '/imagenes/:id/archivo',
+  validate({ params: idParamSchema }),
+  asyncHandler(async (req, res) => {
+    const { buffer, mime } = await whatsappService.archivoImagen(req.params.id);
+    res.set('Content-Type', mime);
+    res.set('Cache-Control', 'private, max-age=3600');
+    return res.send(buffer);
+  }),
 );
 
 panel.put(

@@ -685,6 +685,9 @@ const env = Object.freeze({
   // Los videos de los testimonios. Mismo criterio: colgados de donde estén los
   // comprobantes, sin pedir otra variable que alguien tenga que recordar.
   resenasDir: raw.RESENAS_DIR ?? path.join(path.dirname(raw.PROOFS_DIR), 'resenas'),
+  // Las imágenes que manda el bot de WhatsApp. Mismo criterio: al lado de los
+  // comprobantes, dentro del respaldo diario y fuera del alcance del despliegue.
+  whatsappImagenesDir: path.join(path.dirname(raw.PROOFS_DIR), 'whatsapp-imagenes'),
   // Los .docx de «Preparar documento», el que sube el cliente y el que se le
   // devuelve. Colgado de los comprobantes, como los anteriores, así que el
   // respaldo diario ya se lo lleva sin tocar nada.

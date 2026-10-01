@@ -2765,12 +2765,48 @@ model WhatsappMensaje {
   modelo  String? @db.VarChar(80)
   /// Quién la escribió, en las del panel.
   adminId String? @db.Char(36)
+  /// La imagen que se mandó, si fue una. Borrarla de la galería no borra el
+  /// mensaje: se queda con su texto («[Imagen: …]»).
+  imagenId String?         @db.Char(36)
+  imagen   WhatsappImagen? @relation(fields: [imagenId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
 
+  @@index([imagenId])
   @@index([conversacionId, createdAt])
   @@index([createdAt])
   @@map("whatsapp_mensajes")
+}
+
+/// Las imágenes que se pueden mandar por WhatsApp: las sube el equipo en el
+/// panel. Las que tienen `enBot` las elige el bot según `cuando`; las demás
+/// solo se mandan a mano desde el panel. El archivo va a disco, no aquí.
+model WhatsappImagen {
+  id      String  @id @default(uuid()) @db.Char(36)
+  /// Cómo se llama en el panel y en el historial: «QR de Yape».
+  nombre  String  @db.VarChar(80)
+  /// Cuándo debe mandarla el bot: «cuando quiera pagar con Yape».
+  cuando  String  @default("") @db.VarChar(400)
+  /// El texto que va debajo de la imagen en WhatsApp. Vacío = sin texto.
+  pie     String  @default("") @db.VarChar(1000)
+  enBot   Boolean @default(true)
+
+  /// Ruta relativa dentro de la carpeta de imágenes del bot.
+  archivo String @db.VarChar(200)
+  mime    String @db.VarChar(20)
+  bytes   Int
+
+  /// El id que dio Meta al subirla. Meta lo guarda 30 días: se reutiliza
+  /// hasta `mediaHasta` y luego se vuelve a subir.
+  mediaId    String?   @db.VarChar(64)
+  mediaHasta DateTime?
+
+  mensajes WhatsappMensaje[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("whatsapp_imagenes")
 }
 
 /// Los ajustes del bot. Una sola fila, id = 1.

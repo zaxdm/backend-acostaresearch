@@ -185,6 +185,81 @@ async function enviarTexto(telefono, texto, { fetchImpl = fetch } = {}) {
   }
 }
 
+/** WhatsApp corta el texto bajo una imagen en 1024 caracteres. */
+const MAX_PIE = 1024;
+
+/**
+ * Sube una imagen a Meta y devuelve su id, que vale 30 días. Así no hace
+ * falta una dirección pública de la imagen: Meta la guarda y la manda él.
+ * Nunca lanza.
+ *
+ * @returns {Promise<{ mediaId: string } | { error: string }>}
+ */
+async function subirImagen(buffer, mime, { fetchImpl = fetch } = {}) {
+  try {
+    const formulario = new FormData();
+    formulario.append('messaging_product', 'whatsapp');
+    formulario.append('type', mime);
+    formulario.append('file', new Blob([buffer], { type: mime }), mime === 'image/png' ? 'imagen.png' : 'imagen.jpg');
+
+    const respuesta = await fetchImpl(
+      `${GRAPH}/${env.WHATSAPP_API_VERSION}/${env.WHATSAPP_PHONE_NUMBER_ID}/media`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${env.WHATSAPP_TOKEN}` },
+        body: formulario,
+        signal: AbortSignal.timeout(30_000),
+      },
+    );
+    const cuerpo = await respuesta.json().catch(() => null);
+    if (!respuesta.ok || !cuerpo?.id) return { error: explicarError(cuerpo, respuesta.status) };
+    return { mediaId: String(cuerpo.id) };
+  } catch (error) {
+    logger.warn({ err: error }, 'WhatsApp: no se pudo subir la imagen');
+    return { error: 'No hubo respuesta de Meta al subir la imagen. Inténtalo otra vez.' };
+  }
+}
+
+/**
+ * Manda una imagen ya subida, con su texto debajo si lo tiene. Nunca lanza.
+ *
+ * @returns {Promise<{ simulado: true } | { waId: string } | { error: string }>}
+ */
+async function enviarImagen(telefono, mediaId, pie = '', { fetchImpl = fetch } = {}) {
+  if (!env.whatsappMetaEnabled) return { simulado: true };
+
+  const imagen = { id: mediaId };
+  const texto = String(pie ?? '').trim();
+  if (texto) imagen.caption = texto.length > MAX_PIE ? `${texto.slice(0, MAX_PIE - 1)}…` : texto;
+
+  try {
+    const respuesta = await fetchImpl(
+      `${GRAPH}/${env.WHATSAPP_API_VERSION}/${env.WHATSAPP_PHONE_NUMBER_ID}/messages`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${env.WHATSAPP_TOKEN}`,
+        },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          recipient_type: 'individual',
+          to: telefono,
+          type: 'image',
+          image: imagen,
+        }),
+        signal: AbortSignal.timeout(15_000),
+      },
+    );
+    const cuerpo = await respuesta.json().catch(() => null);
+    if (!respuesta.ok) return { error: explicarError(cuerpo, respuesta.status) };
+    return { waId: String(cuerpo?.messages?.[0]?.id ?? '') || null };
+  } catch (error) {
+    logger.warn({ err: error }, 'WhatsApp: no se pudo mandar la imagen');
+    return { error: 'No hubo respuesta de Meta. Inténtalo otra vez.' };
+  }
+}
+
 /**
  * Marca el mensaje como leído y enseña «escribiendo…» mientras el bot piensa.
  * Es cortesía: si falla, no pasa nada y no se espera.
@@ -204,4 +279,15 @@ function marcarLeido(waId, { fetchImpl = fetch } = {}) {
   }).catch(() => {});
 }
 
-module.exports = { firmaValida, extraerMensajes, extraerEcos, enviarTexto, marcarLeido, recortar, MAX_TEXTO };
+module.exports = {
+  firmaValida,
+  extraerMensajes,
+  extraerEcos,
+  enviarTexto,
+  subirImagen,
+  enviarImagen,
+  marcarLeido,
+  recortar,
+  MAX_TEXTO,
+  MAX_PIE,
+};

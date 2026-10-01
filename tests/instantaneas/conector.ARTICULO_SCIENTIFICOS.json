@@ -766,10 +766,121 @@
   {
     "nombre": "formato_de_la_universidad",
     "titulo": "La plantilla de la revista para el Word del artículo",
-    "descripcion": "La plantilla o el formato de Word del ARTÍCULO —la plantilla de la revista a la que lo envía (template, guía de autores en Word) o el formato que le pidió su universidad—, que el Word del servidor aplica solo: títulos, fuentes, márgenes, encabezado y pie de página. ÚSALA SIEMPRE que diga «quiero subir el formato de mi artículo», «tengo la plantilla de la revista», «la revista tiene template» o «quiero que salga con el formato de la revista»: la subida es por el enlace de esta herramienta, NO adjuntando el archivo en el chat. PREGÚNTALE UNA VEZ, al elegir revista o antes de darle su Word, si la revista tiene plantilla. Sin argumentos dice si ya hay uno puesto y da un ENLACE para subirlo o cambiarlo: dáselo como enlace que se pulsa, sin escribir la dirección, y dile que vuelva cuando lo haya subido; entonces llámala otra vez para confirmar qué se tomó. NO le pidas que te pegue ni te adjunte el formato en el chat, no lo copies tú a mano y no le armes un Word con ese formato: lo aplica el servidor. Si no tiene formato, no insistas. CAMBIAR o QUITAR el formato se hace DESDE AQUÍ: en su perfil no hay ningún recuadro del formato, así que NO lo mandes a su perfil ni al panel a buscarlo. Si quiere poner otro, o quitarlo él mismo, llámala sin argumentos y dale el enlace: esa página sirve para las dos cosas. Si dice «quita el formato de mi universidad», «borra el formato que subí», «ya no quiero ese formato» o «que el Word salga con el formato por defecto», llámala con quitar en verdadero. NUNCA le digas que quedó quitado ni cambiado sin haber llamado y leído lo que devuelve: si la llamada no se hizo, el formato sigue puesto y su Word sigue saliendo con él.",
+    "descripcion": "La plantilla o el formato de Word del ARTÍCULO —la plantilla de la revista a la que lo envía (template, guía de autores en Word) o el formato que le pidió su universidad—, que el Word del servidor aplica solo: títulos, fuentes, márgenes, encabezado y pie de página. ÚSALA SIEMPRE que diga «quiero subir el formato de mi artículo», «tengo la plantilla de la revista», «la revista tiene template» o «quiero que salga con el formato de la revista»: la subida es por el enlace de esta herramienta, NO adjuntando el archivo en el chat. PREGÚNTALE UNA VEZ, al elegir revista o antes de darle su Word, si la revista tiene plantilla. Sin argumentos dice si ya hay uno puesto y da un ENLACE para subirlo o cambiarlo: dáselo como enlace que se pulsa, sin escribir la dirección, y dile que vuelva cuando lo haya subido; entonces llámala otra vez para confirmar qué se tomó. NO le pidas que te pegue ni te adjunte el formato en el chat, no lo copies tú a mano y no le armes un Word con ese formato: lo aplica el servidor. Si no tiene formato, no insistas. CAMBIAR o QUITAR el formato se hace DESDE AQUÍ: en su perfil no hay ningún recuadro del formato, así que NO lo mandes a su perfil ni al panel a buscarlo. Si quiere poner otro, o quitarlo él mismo, llámala sin argumentos y dale el enlace: esa página sirve para las dos cosas. Si dice «quita el formato de mi universidad», «borra el formato que subí», «ya no quiero ese formato» o «que el Word salga con el formato por defecto», llámala con quitar en verdadero. NUNCA le digas que quedó quitado ni cambiado sin haber llamado y leído lo que devuelve: si la llamada no se hizo, el formato sigue puesto y su Word sigue saliendo con él. AJUSTAR el formato con indicaciones: si te dice cómo debe ir —«Times 12, doble espacio», «márgenes de 2,54», «títulos en APA», «los títulos en negro»—, o te pega o adjunta las indicaciones de formato o la guía de su facultad, LEE tú esas indicaciones y llama con \"ajustes\": el servidor las aplica sobre su formato (o sobre el formato por defecto si no subió ninguno) y conserva su portada, encabezado y pie. Pasa SOLO lo que se pidió o lo que dice la guía, nunca lo que supones. Si además quiere SU portada, esa solo llega subiendo el .docx por el enlace. NO le armes un .docx ni una plantilla en el chat: el formato vive en el servidor y un archivo hecho aquí no llega a su Word. Si sube un formato nuevo por el enlace, los ajustes anteriores se pierden: vuelve a llamar con ellos.",
     "esquema": {
       "type": "object",
       "properties": {
+        "ajustes": {
+          "type": "object",
+          "description": "Cambios del formato pedidos en el chat o sacados de la guía de su facultad. Solo los campos que se pidieron; lo que no se manda no se toca.",
+          "properties": {
+            "fuente": {
+              "type": "string",
+              "description": "Letra del texto y los títulos, como en Word: «Times New Roman», «Arial»."
+            },
+            "tamano": {
+              "type": "number",
+              "description": "Tamaño de letra del texto, en puntos (8 a 16)."
+            },
+            "interlineado": {
+              "type": "number",
+              "description": "Interlineado del texto: 1, 1.15, 1.5 o 2 (doble)."
+            },
+            "sangria": {
+              "type": "number",
+              "description": "Sangría de primera línea en cm (1.27 en APA; 0 = sin sangría)."
+            },
+            "alineacion": {
+              "type": "string",
+              "enum": [
+                "justificado",
+                "izquierda"
+              ],
+              "description": "Alineación del texto."
+            },
+            "espacioEntreParrafos": {
+              "type": "number",
+              "description": "Espacio después de cada párrafo, en puntos (0 en APA)."
+            },
+            "margenes": {
+              "type": "object",
+              "description": "Márgenes en cm (2.54 = una pulgada). Solo los lados que se pidieron.",
+              "properties": {
+                "superior": {
+                  "type": "number"
+                },
+                "inferior": {
+                  "type": "number"
+                },
+                "izquierdo": {
+                  "type": "number"
+                },
+                "derecho": {
+                  "type": "number"
+                }
+              },
+              "additionalProperties": false
+            },
+            "papel": {
+              "type": "string",
+              "enum": [
+                "A4",
+                "carta"
+              ]
+            },
+            "titulosApa7": {
+              "type": "boolean",
+              "description": "Títulos como APA 7: nivel 1 centrado en negrita, 2 a la izquierda en negrita, 3 en negrita y cursiva; en negro y del tamaño del texto. El nivel 1 es el título del capítulo."
+            },
+            "titulosEnNegro": {
+              "type": "boolean",
+              "description": "Solo poner los títulos en negro."
+            },
+            "titulos": {
+              "type": "array",
+              "description": "Un nivel concreto distinto de APA (se aplica después de titulosApa7).",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "nivel": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 4
+                  },
+                  "alineacion": {
+                    "type": "string",
+                    "enum": [
+                      "centrado",
+                      "izquierda",
+                      "derecha"
+                    ]
+                  },
+                  "negrita": {
+                    "type": "boolean"
+                  },
+                  "cursiva": {
+                    "type": "boolean"
+                  },
+                  "mayusculas": {
+                    "type": "boolean"
+                  },
+                  "tamano": {
+                    "type": "number",
+                    "description": "En puntos."
+                  },
+                  "fuente": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "nivel"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "additionalProperties": false
+        },
         "usarNuestraPortada": {
           "type": "boolean",
           "description": "Verdadero para dejar de usar la portada del formato cuando se detectó mal: el resto del formato se queda."

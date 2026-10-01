@@ -2,21 +2,49 @@
 
 const { z } = require('zod');
 
+/** Más que esto no es un carrito, es un error o un abuso. Hoy se venden tres productos. */
+const MAX_PRODUCTOS = 5;
+
+const codigoDePlan = z.string().trim().toUpperCase().max(40);
+const codigoDeDescuento = z.string().trim().max(40).optional();
+
+/**
+ * Una línea del carrito: qué plan y, si lo hay, con qué código de descuento.
+ * Cada producto lleva el suyo porque los códigos anunciados son por plan.
+ */
+const lineaDelCarrito = z.object({
+  planCode: codigoDePlan,
+  discountCode: codigoDeDescuento,
+});
+
+/** Las líneas del carrito: de una a `MAX_PRODUCTOS`, sin repetir plan. */
+const lineasDelCarrito = z
+  .array(lineaDelCarrito)
+  .min(1, 'El carrito está vacío.')
+  .max(MAX_PRODUCTOS, `En el carrito caben hasta ${MAX_PRODUCTOS} productos.`)
+  .refine(
+    (lineas) => new Set(lineas.map((l) => l.planCode)).size === lineas.length,
+    'Hay un producto repetido en el carrito.',
+  );
+
 /**
  * El navegador solo dice QUÉ plan quiere y por dónde paga. El precio lo pone
  * siempre el servidor: si el importe llegara desde el cliente, cualquiera
  * podría comprar el plan grande por un céntimo.
  */
-const createOrderSchema = z.object({
-  planCode: z
-    .string({ required_error: 'Indica el plan que quieres comprar.' })
-    .trim()
-    .toUpperCase()
-    .max(40),
-  provider: z.string().trim().toUpperCase().max(20).default('PAYPAL'),
-  // Código promocional. El servidor calcula la rebaja; aquí solo viaja el código.
-  discountCode: z.string().trim().max(40).optional(),
-});
+const createOrderSchema = z
+  .object({
+    // Compra suelta: un plan. Con carrito llega `items` en su lugar.
+    planCode: codigoDePlan.optional(),
+    items: lineasDelCarrito.optional(),
+    provider: z.string().trim().toUpperCase().max(20).default('PAYPAL'),
+    // Código promocional. El servidor calcula la rebaja; aquí solo viaja el código.
+    discountCode: codigoDeDescuento,
+  })
+  .refine((datos) => Boolean(datos.planCode) !== Boolean(datos.items), {
+    message: 'Indica el plan que quieres comprar.',
+    path: ['planCode'],
+  });
 
 const orderParamsSchema = z.object({
   orderId: z.string().trim().min(1).max(120),
@@ -73,6 +101,8 @@ const paymentIdParamSchema = z.object({
 });
 
 module.exports = {
+  MAX_PRODUCTOS,
+  lineasDelCarrito,
   createOrderSchema,
   orderParamsSchema,
   captureBodySchema,

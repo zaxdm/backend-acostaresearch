@@ -171,7 +171,12 @@ const paypalProvider = {
             reference_id: plan.code,
             // Sirve para reconciliar desde el panel de PayPal sin abrir la BD.
             custom_id: referencia,
-            description: `${plan.name} · ${plan.words} palabras`,
+            // Las palabras solo las tienen las bolsas: a una licencia o a un
+            // carrito les sobraba un «· 0 palabras». PayPal corta en 127.
+            description: (plan.words > 0 ? `${plan.name} · ${plan.words} palabras` : plan.name).slice(
+              0,
+              127,
+            ),
             amount: { currency_code: this.currency, value: aImporte(amountCents) },
           },
         ],

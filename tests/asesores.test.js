@@ -110,7 +110,7 @@ sustituir('../src/lib/prisma', {
   },
 });
 
-sustituir('../src/lib/notify', { avisarAlAdmin: (aviso) => estado.avisos.push(aviso) });
+sustituir('../src/lib/notify', { avisarAlProgramador: (aviso) => estado.avisos.push(aviso) });
 
 const { postulacionBodySchema } = require('../src/modules/asesores/asesor.schema');
 const { guardarLista, AREAS } = require('../src/modules/asesores/asesor.catalogo');

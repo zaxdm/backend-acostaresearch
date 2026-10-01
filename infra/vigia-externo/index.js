@@ -14,7 +14,8 @@
  *  · que sigue caída, una vez cada 30 minutos;
  *  · que volvió, y cuánto estuvo fuera.
  *
- * Secreto: NTFY_TOPIC (el mismo tópico que usa el backend). Opcional: NTFY_URL.
+ * Secreto: NTFY_TOPIC_PROGRAMADOR (el tópico del programador: una caída no es
+ * cosa del administrador). Si no está, NTFY_TOPIC. Opcional: NTFY_URL.
  */
 
 const OBJETIVOS = [
@@ -47,11 +48,12 @@ async function comprobar(url) {
 }
 
 async function avisar(env, { titulo, mensaje, prioridad, etiquetas }) {
-  if (!env.NTFY_TOPIC) return;
+  const topico = env.NTFY_TOPIC_PROGRAMADOR || env.NTFY_TOPIC;
+  if (!topico) return;
   await fetch(env.NTFY_URL || 'https://ntfy.sh', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ topic: env.NTFY_TOPIC, title: titulo, message: mensaje, priority: prioridad, tags: etiquetas }),
+    body: JSON.stringify({ topic: topico, title: titulo, message: mensaje, priority: prioridad, tags: etiquetas }),
   }).catch(() => undefined);
 }
 

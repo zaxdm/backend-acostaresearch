@@ -668,11 +668,18 @@ model Payment {
   /// escribe pensando en que lo va a leer él.
   reviewNote    String?   @db.VarChar(255)
 
+  /// Compra con carrito: las filas que se pagaron juntas comparten este
+  /// identificador. Cada producto sigue siendo su propia fila —con su plan, su
+  /// importe y su constancia— y lo que se cobra de una vez es la suma. Nulo en
+  /// las compras de un solo producto, que son todas las anteriores al carrito.
+  cartId String? @db.Char(36)
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   paidAt    DateTime?
 
   @@unique([provider, providerOrderId])
+  @@index([cartId])
   @@index([licenseId])
   @@index([docPackId])
   @@index([userId, createdAt])

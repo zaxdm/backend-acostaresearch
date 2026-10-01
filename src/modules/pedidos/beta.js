@@ -2,7 +2,7 @@
 
 const env = require('../../config/env');
 const logger = require('../../config/logger');
-const { avisarAlAdmin } = require('../../lib/notify');
+const { avisarAlProgramador } = require('../../lib/notify');
 
 /**
  * Los interruptores del piloto: quién lo ve y si avisa.
@@ -47,7 +47,8 @@ function enBeta(email) {
 }
 
 /**
- * Un aviso al móvil, pero solo si el piloto ya avisa.
+ * Un aviso al móvil, pero solo si el piloto ya avisa. Va al tópico del
+ * programador, no al del administrador: el piloto lo sigue el programador.
  *
  * POR QUÉ ESTÁ APAGADO MIENTRAS SE PRUEBA
  * ---------------------------------------
@@ -67,7 +68,7 @@ function avisarDelPiloto(aviso) {
     logger.info({ aviso }, 'Aviso del piloto de revisión (silenciado)');
     return;
   }
-  avisarAlAdmin(aviso);
+  avisarAlProgramador(aviso);
 }
 
 module.exports = { correosDe, enBeta, avisarDelPiloto };

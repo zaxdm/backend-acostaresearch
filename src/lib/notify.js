@@ -32,28 +32,37 @@ const logger = require('../config/logger');
  * de pila, importe y plan. El resto está detrás del panel, que pide sesión.
  */
 
+/**
+ * ── Dos tópicos: el del administrador y el del programador ─────────────────
+ *
+ * El administrador atiende el negocio desde el móvil: un Yape que aprobar, una
+ * reseña, un reclamo, una licencia que el detector revocó. Un error de Prisma o
+ * un respaldo comprobado no le dicen nada y le enseñan a no mirar los avisos.
+ *
+ *  · `avisarAlAdmin`: lo que tiene que resolver el administrador. Va a
+ *    `NTFY_TOPIC` y también a `NTFY_TOPIC_PROGRAMADOR`.
+ *  · `avisarAlProgramador`: errores, caídas, respaldos. Solo a
+ *    `NTFY_TOPIC_PROGRAMADOR`.
+ *
+ * Así el del programador recibe todo y el del administrador solo lo suyo. Sin
+ * `NTFY_TOPIC_PROGRAMADOR`, lo técnico sigue cayendo en `NTFY_TOPIC` como antes:
+ * un .env sin rellenar no deja a nadie sin enterarse de una caída.
+ */
+
 /** Segundos que se espera al servidor de avisos. Pasados, se abandona. */
 const TIEMPO_LIMITE_MS = 5000;
 
 /**
- * Manda un aviso, sin bloquear y sin poder tumbar nada.
+ * Publica en un tópico, sin bloquear y sin poder tumbar nada.
  *
- * Se llama sin `await` a propósito: quien la invoca está en mitad de una
- * petición del comprador, y que su Yape se registre no puede depender de que un
+ * Se llama sin `await` a propósito: quien avisa está en mitad de una petición
+ * del comprador, y que su Yape se registre no puede depender de que un
  * servidor de notificaciones responda. Si falla, se registra en el log —donde
  * se mira cuando alguien dice que no le llegó— y se sigue.
- *
- * Sin `NTFY_TOPIC` configurado no se llama a nadie, igual que el mailer sin
- * SMTP: el aviso se escribe en el log y en desarrollo eso es lo que hace falta.
  */
-function avisarAlAdmin({ titulo, mensaje, etiquetas = [], prioridad = 4, enlace }) {
-  if (!env.NTFY_TOPIC) {
-    logger.info({ titulo, mensaje }, 'Aviso al administrador (ntfy sin configurar)');
-    return;
-  }
-
+function publicar(topico, { titulo, mensaje, etiquetas = [], prioridad = 4, enlace }) {
   const cuerpo = {
-    topic: env.NTFY_TOPIC,
+    topic: topico,
     title: titulo,
     message: mensaje,
     tags: etiquetas,
@@ -85,4 +94,26 @@ function avisarAlAdmin({ titulo, mensaje, etiquetas = [], prioridad = 4, enlace 
     });
 }
 
-module.exports = { avisarAlAdmin };
+/** Manda el aviso a cada tópico de la lista, sin repetir ni dejar huecos. */
+function publicarEn(topicos, aviso, quien) {
+  const destinos = [...new Set(topicos.filter(Boolean))];
+  if (destinos.length === 0) {
+    // Sin tópicos no se llama a nadie, igual que el mailer sin SMTP: el aviso
+    // se escribe en el log y en desarrollo eso es lo que hace falta.
+    logger.info({ titulo: aviso.titulo, mensaje: aviso.mensaje }, `Aviso al ${quien} (ntfy sin configurar)`);
+    return;
+  }
+  for (const topico of destinos) publicar(topico, aviso);
+}
+
+/** Lo que tiene que atender el administrador. Le llega también al programador. */
+function avisarAlAdmin(aviso) {
+  publicarEn([env.NTFY_TOPIC, env.NTFY_TOPIC_PROGRAMADOR], aviso, 'administrador');
+}
+
+/** Lo técnico: errores, caídas, respaldos. El administrador no lo recibe. */
+function avisarAlProgramador(aviso) {
+  publicarEn([env.NTFY_TOPIC_PROGRAMADOR || env.NTFY_TOPIC], aviso, 'programador');
+}
+
+module.exports = { avisarAlAdmin, avisarAlProgramador };

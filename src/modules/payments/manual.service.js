@@ -14,6 +14,7 @@ const discountService = require('../billing/discount.service');
 const paymentRepository = require('./payment.repository');
 const proofStorage = require('./proof.storage');
 const { entregarPago } = require('./payment.delivery');
+const carrito = require('./payment.carrito');
 const { AppError, NotFoundError } = require('../../shared/errors/AppError');
 
 /**
@@ -98,6 +99,82 @@ async function correoDelAdministrador() {
   }
 
   return admin.email;
+}
+
+/**
+ * Qué se entregó, para que el administrador lo vea en el panel.
+ *
+ * Tres formas porque hay tres productos, y cada uno se comprueba mirando una
+ * cosa distinta: la licencia por su producto, la bolsa por sus palabras y la
+ * membresía por sus documentos al mes.
+ */
+function loEntregado(plan, entrega) {
+  if (plan.kind === 'LICENSE') {
+    return {
+      tipo: 'LICENSE',
+      licenseId: entrega.license.id,
+      productCode: entrega.license.productCode,
+    };
+  }
+  if (plan.kind === 'DOCUMENTO') {
+    return {
+      tipo: 'DOCUMENTO',
+      docPackId: entrega.membresia.id,
+      docsPorMes: entrega.membresia.docsPorMes,
+      expiresAt: entrega.membresia.expiresAt,
+      renovada: Boolean(entrega.renovada),
+    };
+  }
+  return { tipo: 'WORDS', packId: entrega.pack.id, words: entrega.pack.wordsTotal };
+}
+
+/** Los datos del cobro manual que quedan en el pago al aprobarlo. */
+function capturaManual(payment, adminId) {
+  return {
+    // El número de operación es lo que permite cuadrarlo con el extracto;
+    // si el comprador no lo puso, queda nuestra referencia.
+    captureId: payment.operationCode || payment.providerOrderId,
+    payerEmail: payment.user.email,
+    raw: { metodo: PROVEEDOR, aprobadoPor: adminId, aprobadoEn: new Date().toISOString() },
+  };
+}
+
+/**
+ * Aprueba todas las filas de un carrito, una detrás de otra y por el mismo
+ * `entregarPago` que una compra suelta: si trae dos licencias, la segunda ve
+ * ya creada la primera. La que otro administrador aprobó un instante antes
+ * simplemente no entrega nada.
+ */
+async function aprobarCarrito({ cartId, adminId }) {
+  const filas = (await paymentRepository.findCart(cartId)).filter(
+    (fila) => fila.status === 'IN_REVIEW',
+  );
+  const entregados = [];
+
+  for (const fila of filas) {
+    const entrega = await entregarPago({
+      payment: fila,
+      estadoEsperado: 'IN_REVIEW',
+      captura: capturaManual(fila, adminId),
+      notaBolsa: 'Pago por Yape confirmado a mano (carrito)',
+    });
+    if (!entrega) continue;
+
+    await paymentRepository.markReviewed(fila.id, adminId);
+    entregados.push(loEntregado(fila.plan, entrega));
+  }
+
+  logger.info(
+    { cartId, adminId, productos: entregados.length },
+    'Yape de un carrito aprobado y productos entregados',
+  );
+
+  return {
+    alreadyProcessed: entregados.length === 0,
+    payment: { id: filas[0]?.id ?? null, status: 'PAID' },
+    entregado: entregados[0] ?? null,
+    entregados,
+  };
 }
 
 const manualService = {
@@ -207,9 +284,143 @@ const manualService = {
     };
   },
 
-  /** Comprobantes esperando revisión. Es la bandeja del administrador. */
-  pendientes() {
-    return paymentRepository.listInReview();
+  /**
+   * Un Yape por todo el carrito: una captura, un importe y una sola revisión.
+   *
+   * Cada producto queda en su propia fila con su referencia, y todas apuntan a
+   * la misma captura. El administrador ve UN comprobante por la suma, y al
+   * aprobarlo se entregan todos.
+   */
+  async registrarCarrito({ userId, items, operationCode, buffer }) {
+    const lineas = await carrito.resolverLineas(items, {
+      // Yape cobra en soles, que es el precio del catálogo.
+      precio: (plan) => plan.priceCents,
+      rebaja: (descuento) => descuento.amountCents,
+      medio: 'Yape',
+    });
+    const amountCents = lineas.reduce((suma, linea) => suma + linea.amountCents, 0);
+    const nombre = carrito.nombreDelCarrito(lineas.map((linea) => linea.plan));
+    const cartId = crypto.randomUUID();
+
+    const filas = await paymentRepository.createCart(
+      lineas.map((linea) => ({
+        userId,
+        planId: linea.plan.id,
+        provider: PROVEEDOR,
+        providerOrderId: generarReferencia(),
+        amountCents: linea.amountCents,
+        currency: MONEDA,
+        discountCodeId: linea.descuento ? linea.descuento.id : null,
+        discountCents: linea.rebaja,
+        operationCode: operationCode || null,
+        cartId,
+      })),
+    );
+    const lider = filas[0];
+    const cerrarTodas = (errorCode) =>
+      Promise.all(filas.map((fila) => paymentRepository.fail(fila.id, { errorCode })));
+
+    let comprobante;
+    try {
+      comprobante = await proofStorage.guardar(buffer, { paymentId: lider.id });
+    } catch (error) {
+      await cerrarTodas('PROOF_REJECTED');
+      throw error;
+    }
+
+    const enganchados = await Promise.all(
+      filas.map((fila) =>
+        paymentRepository.attachProof(fila.id, {
+          userId,
+          proofPath: comprobante.path,
+          proofMime: comprobante.mime,
+        }),
+      ),
+    );
+
+    if (enganchados.some((ok) => !ok)) {
+      await cerrarTodas('PROOF_REJECTED');
+      await proofStorage.borrar(comprobante.path);
+      throw new AppError('No pudimos registrar tu comprobante. Vuelve a intentarlo.', {
+        statusCode: 409,
+        code: ERROR_CODES.PAYMENT_FAILED,
+      });
+    }
+
+    const comprador = await prisma.user.findUnique({ where: { id: userId }, select: COMPRADOR });
+
+    logger.info(
+      { userId, cartId, productos: filas.length, amountCents },
+      'Comprobante de Yape de un carrito recibido, pendiente de revisión',
+    );
+
+    // Un solo aviso por la suma: es un solo comprobante que mirar.
+    avisar(
+      await correoDelAdministrador(),
+      plantillas.manualPaymentReceived({
+        buyer: comprador,
+        planName: nombre,
+        amountCents,
+        operationCode: operationCode || null,
+        paymentId: lider.id,
+      }),
+      { paymentId: lider.id, cartId },
+    );
+    avisarAlAdmin({
+      titulo: `Yape por revisar · S/ ${(amountCents / 100).toFixed(2)}`,
+      mensaje: `${comprador.firstName} ${(comprador.lastName || '').charAt(0)}. · ${nombre}`,
+      etiquetas: ['moneybag'],
+      enlace: `${env.APP_URL}/admin?seccion=yape`,
+    });
+
+    return {
+      paymentId: lider.id,
+      reference: lider.providerOrderId,
+      amountCents,
+      currency: MONEDA,
+      status: 'IN_REVIEW',
+      plan: { code: 'CARRITO', name: nombre },
+      items: carrito.resumenDeLineas(lineas),
+    };
+  },
+
+  /**
+   * Comprobantes esperando revisión. Es la bandeja del administrador.
+   *
+   * Un carrito sale UNA vez, con la suma y la lista de lo que lleva: es una
+   * sola captura por un solo importe. Enseñarlo como dos filas con la misma
+   * imagen y cifras que no cuadran con ella invitaba a aprobar una y olvidar
+   * la otra.
+   */
+  async pendientes() {
+    const filas = await paymentRepository.listInReview();
+    const porCarrito = new Map();
+    const bandeja = [];
+
+    for (const fila of filas) {
+      if (!fila.cartId) {
+        bandeja.push({ ...fila, carrito: null });
+        continue;
+      }
+
+      const visto = porCarrito.get(fila.cartId);
+      if (!visto) {
+        const entrada = {
+          ...fila,
+          carrito: { productos: [fila.plan.name], pagos: [fila.id] },
+        };
+        porCarrito.set(fila.cartId, entrada);
+        bandeja.push(entrada);
+        continue;
+      }
+
+      visto.amountCents += fila.amountCents;
+      visto.discountCents += fila.discountCents;
+      visto.carrito.productos.push(fila.plan.name);
+      visto.carrito.pagos.push(fila.id);
+    }
+
+    return bandeja;
   },
 
   /**
@@ -273,16 +484,13 @@ const manualService = {
       });
     }
 
+    // Un carrito se aprueba entero: es un solo comprobante por la suma.
+    if (payment.cartId) return aprobarCarrito({ cartId: payment.cartId, adminId });
+
     const entrega = await entregarPago({
       payment,
       estadoEsperado: 'IN_REVIEW',
-      captura: {
-        // El número de operación es lo que permite cuadrarlo con el extracto;
-        // si el comprador no lo puso, queda nuestra referencia.
-        captureId: payment.operationCode || payment.providerOrderId,
-        payerEmail: payment.user.email,
-        raw: { metodo: PROVEEDOR, aprobadoPor: adminId, aprobadoEn: new Date().toISOString() },
-      },
+      captura: capturaManual(payment, adminId),
       notaBolsa: 'Pago por Yape confirmado a mano',
     });
 
@@ -292,33 +500,6 @@ const manualService = {
     }
 
     await paymentRepository.markReviewed(paymentId, adminId);
-
-    /**
-     * Qué se entregó, para que el administrador lo vea en el panel.
-     *
-     * Tres formas porque hay tres productos, y cada uno se comprueba mirando
-     * una cosa distinta: la licencia por su producto, la bolsa por sus
-     * palabras y la membresía por sus documentos al mes.
-     */
-    const entregado = () => {
-      if (payment.plan.kind === 'LICENSE') {
-        return {
-          tipo: 'LICENSE',
-          licenseId: entrega.license.id,
-          productCode: entrega.license.productCode,
-        };
-      }
-      if (payment.plan.kind === 'DOCUMENTO') {
-        return {
-          tipo: 'DOCUMENTO',
-          docPackId: entrega.membresia.id,
-          docsPorMes: entrega.membresia.docsPorMes,
-          expiresAt: entrega.membresia.expiresAt,
-          renovada: Boolean(entrega.renovada),
-        };
-      }
-      return { tipo: 'WORDS', packId: entrega.pack.id, words: entrega.pack.wordsTotal };
-    };
 
     logger.info(
       { paymentId, adminId, plan: payment.plan.code, userId: payment.userId },
@@ -336,7 +517,7 @@ const manualService = {
       alreadyProcessed: false,
       payment: { id: paymentId, status: 'PAID' },
       // Solo lo que el administrador necesita ver.
-      entregado: entregado(),
+      entregado: loEntregado(payment.plan, entrega),
     };
   },
 
@@ -349,10 +530,16 @@ const manualService = {
 
     if (!payment) throw new NotFoundError('No encontramos ese pago.');
 
-    const rechazado = await paymentRepository.reject(paymentId, {
-      reviewedById: adminId,
-      reviewNote: motivo,
-    });
+    // Un carrito se rechaza entero, con un solo correo: es una sola captura.
+    const filas = payment.cartId
+      ? (await paymentRepository.findCart(payment.cartId)).filter((f) => f.status === 'IN_REVIEW')
+      : [payment];
+    const resultados = await Promise.all(
+      filas.map((fila) =>
+        paymentRepository.reject(fila.id, { reviewedById: adminId, reviewNote: motivo }),
+      ),
+    );
+    const rechazado = resultados.some(Boolean);
 
     if (!rechazado) {
       throw new AppError(
@@ -367,7 +554,9 @@ const manualService = {
       payment.user.email,
       plantillas.manualPaymentRejected({
         firstName: payment.user.firstName,
-        planName: payment.plan.name,
+        planName: payment.cartId
+          ? carrito.nombreDelCarrito(filas.map((fila) => fila.plan))
+          : payment.plan.name,
         motivo,
       }),
       { paymentId },

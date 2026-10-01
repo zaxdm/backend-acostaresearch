@@ -1,6 +1,28 @@
 'use strict';
 
 const { z } = require('zod');
+const { lineasDelCarrito } = require('./payment.schema');
+
+/**
+ * El carrito en la query, porque el cuerpo es la imagen: `PLAN:CODIGO,PLAN2`.
+ * El código de descuento de cada línea es opcional. Se convierte aquí en la
+ * misma lista que llega en JSON a la pasarela, y se valida igual.
+ */
+const carritoEnLaQuery = z
+  .string()
+  .trim()
+  .max(400)
+  .transform((texto) =>
+    texto
+      .split(',')
+      .map((parte) => parte.trim())
+      .filter(Boolean)
+      .map((parte) => {
+        const [planCode, discountCode] = parte.split(':').map((trozo) => trozo.trim());
+        return { planCode, ...(discountCode ? { discountCode } : {}) };
+      }),
+  )
+  .pipe(lineasDelCarrito);
 
 /**
  * Datos que acompañan a la captura.
@@ -10,18 +32,21 @@ const { z } = require('zod');
  * PayPal. Si el importe llegara desde el navegador, cualquiera podría declarar
  * que pagó un sol.
  */
-const registrarQuerySchema = z.object({
-  planCode: z
-    .string({ required_error: 'Indica el plan que estás pagando.' })
-    .trim()
-    .toUpperCase()
-    .max(40),
+const registrarQuerySchema = z
+  .object({
+  // Compra suelta: un plan. Con carrito llega `items` en su lugar.
+  planCode: z.string().trim().toUpperCase().max(40).optional(),
+  items: carritoEnLaQuery.optional(),
   discountCode: z.string().trim().max(40).optional(),
   // El número de operación de Yape. Es opcional porque no todo el mundo lo
   // encuentra, pero es lo que de verdad permite cuadrarlo con el extracto, así
   // que la web lo pide con insistencia.
   operationCode: z.string().trim().max(40).optional(),
-});
+  })
+  .refine((datos) => Boolean(datos.planCode) !== Boolean(datos.items), {
+    message: 'Indica el plan que estás pagando.',
+    path: ['planCode'],
+  });
 
 const paymentParamsSchema = z.object({
   id: z.string().uuid('Identificador de pago no válido.'),

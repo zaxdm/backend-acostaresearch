@@ -368,7 +368,26 @@ test('formato_de_la_universidad: Claude lo pregunta una vez y da el enlace, no l
   assert.match(d, /no le armes un Word/);
   const e = esquema('formato_de_la_universidad');
   assert.equal(e.required, undefined, 'sin argumentos da el estado y el enlace');
-  assert.deepEqual(Object.keys(e.properties).sort(), ['quitar', 'usarNuestraPortada']);
+  assert.deepEqual(Object.keys(e.properties).sort(), ['ajustes', 'quitar', 'usarNuestraPortada']);
+});
+
+/**
+ * Las indicaciones de formato dichas en el chat las lee Claude y las aplica el
+ * servidor. Antes Claude armaba una plantilla .docx en la conversación, que no
+ * llegaba nunca al Word del tesista.
+ */
+test('formato_de_la_universidad: las indicaciones del chat van en "ajustes", no en un .docx armado ahí', () => {
+  const d = descripcion('formato_de_la_universidad');
+  assert.match(d, /AJUSTAR el formato con indicaciones/);
+  assert.match(d, /llama con "ajustes"/);
+  assert.match(d, /NO le armes un \.docx ni una plantilla en el chat/);
+  assert.match(d, /SOLO lo que se pidió/);
+
+  const ajustes = esquema('formato_de_la_universidad').properties.ajustes;
+  assert.deepEqual(Object.keys(ajustes.properties).sort(), [
+    'alineacion', 'espacioEntreParrafos', 'fuente', 'interlineado', 'margenes', 'papel', 'sangria', 'tamano',
+    'titulos', 'titulosApa7', 'titulosEnNegro',
+  ]);
 });
 
 /**

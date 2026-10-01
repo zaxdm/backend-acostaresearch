@@ -18,13 +18,24 @@ const manualController = {
    * cuerpo de la petición es exactamente el archivo, sin nada que desenredar.
    */
   registrar: asyncHandler(async (req, res) => {
-    const resultado = await manualService.registrar({
-      userId: req.user.id,
-      planCode: req.query.planCode,
-      discountCode: req.query.discountCode,
-      operationCode: req.query.operationCode,
-      buffer: req.body,
-    });
+    const { items } = req.query;
+
+    // Un carrito de un solo producto es un Yape de los de siempre.
+    const resultado =
+      items && items.length > 1
+        ? await manualService.registrarCarrito({
+            userId: req.user.id,
+            items,
+            operationCode: req.query.operationCode,
+            buffer: req.body,
+          })
+        : await manualService.registrar({
+            userId: req.user.id,
+            planCode: items ? items[0].planCode : req.query.planCode,
+            discountCode: items ? items[0].discountCode : req.query.discountCode,
+            operationCode: req.query.operationCode,
+            buffer: req.body,
+          });
 
     return created(
       res,

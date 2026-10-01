@@ -10,12 +10,23 @@ const paymentController = {
   }),
 
   createOrder: asyncHandler(async (req, res) => {
-    const order = await paymentService.createOrder({
-      userId: req.user.id,
-      planCode: req.body.planCode,
-      providerCode: req.body.provider,
-      discountCode: req.body.discountCode,
-    });
+    const { items } = req.body;
+
+    // Un carrito de un solo producto es una compra suelta: va por el camino
+    // de siempre, con su fila sin `cartId`.
+    const order =
+      items && items.length > 1
+        ? await paymentService.createCartOrder({
+            userId: req.user.id,
+            items,
+            providerCode: req.body.provider,
+          })
+        : await paymentService.createOrder({
+            userId: req.user.id,
+            planCode: items ? items[0].planCode : req.body.planCode,
+            providerCode: req.body.provider,
+            discountCode: items ? items[0].discountCode : req.body.discountCode,
+          });
     return created(res, { order });
   }),
 
@@ -31,7 +42,7 @@ const paymentController = {
       ? 'Tu banco pide confirmar el pago. Sigue los pasos de la verificación.'
       : resultado.alreadyProcessed
         ? 'Este pago ya estaba confirmado.'
-        : '¡Pago confirmado! Ya tienes tus palabras disponibles.';
+        : '¡Pago confirmado! Ya tienes tu acceso.';
 
     return ok(res, resultado, { message: mensaje });
   }),

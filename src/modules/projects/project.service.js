@@ -39,6 +39,7 @@ const bloques = require('./project.bloques');
 const evidencia = require('./project.evidencia');
 const plantilla = require('./project.plantilla');
 const partesDePlantilla = require('./project.plantilla-partes');
+const plantillaAjustes = require('./project.plantilla-ajustes');
 const portadaAuto = require('./project.portada-auto');
 const auditoria = require('./project.auditoria');
 const documentoService = require('./documento.service');
@@ -1152,9 +1153,9 @@ async function guardarPlantilla({ userId, productCode, buffer, nombre }) {
   const conLicencia = await projectRepository.productosConLicencia(userId);
   if (!conLicencia.includes(productCode)) return null;
 
-  // Con el formato del cuerpo en «Normal»: muchas plantillas lo ponen párrafo a
-  // párrafo, y nuestro Word escribe el texto en «Normal».
-  const xml = plantilla.conFormatoDelCuerpo(plantilla.extraerEstilos(buffer), buffer);
+  // Con el formato del cuerpo y de los títulos como se ven: muchas plantillas
+  // los ponen párrafo a párrafo y no en sus estilos, que es lo que lee nuestro Word.
+  const { xml, cambios } = plantilla.estilosParaGuardar(buffer);
   const pagina = plantilla.extraerPagina(buffer);
   // Si la portada no trae marcas, se buscan solas dónde van sus datos.
   // El tipo decide qué etiquetas se buscan en la portada: un informe tiene curso,
@@ -1175,11 +1176,11 @@ async function guardarPlantilla({ userId, productCode, buffer, nombre }) {
   await projectRepository.marcarPlantilla(proyecto.id, nombre ?? null);
 
   const estilos = plantilla.estilosQueTrae(xml);
-  return { estilos, mensaje: mensajeDePlantilla(estilos.length, pagina, partes) };
+  return { estilos, mensaje: mensajeDePlantilla(estilos.length, pagina, partes, cambios) };
 }
 
 /** Qué se tomó de la plantilla, dicho de forma que se pueda comprobar en el Word. */
-function mensajeDePlantilla(cuantosEstilos, pagina, partes) {
+function mensajeDePlantilla(cuantosEstilos, pagina, partes, cambios = []) {
   const r = partesDePlantilla.resumen(partes);
   const tomado = [
     `${cuantosEstilos} estilos`,
@@ -1195,6 +1196,10 @@ function mensajeDePlantilla(cuantosEstilos, pagina, partes) {
   ].filter(Boolean);
 
   let mensaje = `Plantilla guardada, con ${enLista(tomado)}. Tu próxima descarga saldrá con ese formato.`;
+  if (cambios.length > 0) {
+    const frase = enLista(cambios);
+    mensaje += ` Además, ${frase}.`;
+  }
 
   if (r.portadaSinMarcas) {
     mensaje +=
@@ -1475,6 +1480,40 @@ async function cambiarRetomar({ userId, productCode, capitulo }) {
   const proyecto = actual ?? (await projectRepository.asegurar(userId, productCode));
   await projectRepository.elegirRetomar(proyecto.id, capitulo ?? null);
   return { ok: true };
+}
+
+/** Cómo figura en el panel el formato hecho solo con indicaciones, sin plantilla subida. */
+const FORMATO_POR_INDICACIONES = 'Formato según sus indicaciones';
+
+/**
+ * Ajusta el formato con lo que el tesista pidió en el chat (ver
+ * `project.plantilla-ajustes`).
+ *
+ * Sobre su plantilla si la subió; si no, sobre nuestro formato por defecto, que
+ * desde ese momento se guarda como si fuera la suya. Devuelve qué se hizo, o
+ * null sin licencia vigente de ese método. Lanza `AjusteNoValido` si una medida
+ * no tiene sentido.
+ */
+async function ajustarFormato({ userId, productCode, ajustes }) {
+  const conLicencia = await projectRepository.productosConLicencia(userId);
+  if (!conLicencia.includes(productCode)) return null;
+
+  const proyecto = await projectRepository.asegurar(userId, productCode);
+  const suya = await almacen.leerPlantilla(proyecto.id);
+  const base = suya ?? (await documento.hojaDeEstilosPorDefecto());
+  const pagina = suya ? await almacen.leerPagina(proyecto.id) : null;
+
+  const r = plantillaAjustes.aplicar(base, pagina, ajustes);
+
+  await almacen.guardarPlantilla(proyecto.id, r.estilos);
+  if (r.pagina !== pagina) await almacen.guardarPagina(proyecto.id, r.pagina);
+  if (!suya) {
+    // Sin partes: portada, encabezado y pie siguen siendo los nuestros. Vacías y
+    // no ausentes, para que el panel no le pida volver a subir una plantilla.
+    await almacen.guardarPartes(proyecto.id, {}, partesDePlantilla.resumen({}));
+    await projectRepository.marcarPlantilla(proyecto.id, FORMATO_POR_INDICACIONES);
+  }
+  return { hecho: r.hecho, sobreSuPlantilla: Boolean(suya) };
 }
 
 async function quitarPlantilla(userId, productCode) {
@@ -2457,6 +2496,7 @@ module.exports = {
   consultarAnalisis,
   guardarPlantilla,
   quitarPlantilla,
+  ajustarFormato,
   reiniciarProyecto,
   crearTesis,
   activarTesis,

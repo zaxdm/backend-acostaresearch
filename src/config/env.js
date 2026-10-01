@@ -75,6 +75,13 @@ const schema = z.object({
   // puerto 25 de salida; si el proveedor del VPS lo tiene cerrado no bloquea
   // nada, solo deja de comprobar. `false` lo apaga.
   CORREO_SONDEAR_BUZON: booleanish.default('true'),
+  // Clave de ZeroBounce (plan gratuito, 100 al mes). Con ella el buzón se
+  // pregunta por HTTPS en vez de por el puerto 25, que Hetzner tiene cerrado.
+  // Vacía = se intenta por el puerto 25, como antes.
+  ZEROBOUNCE_API_KEY: vacioComoAusente(z.string()),
+  // Secreto del webhook de rebotes de Brevo (`modules/correo`). Va en la URL
+  // como `?token=`. Vacío = el webhook no acepta nada.
+  BREVO_WEBHOOK_TOKEN: vacioComoAusente(z.string().min(24)),
 
   // ── Reescritor académico (Claude) ───────────────────────────────────────
   ANTHROPIC_API_KEY: vacioComoAusente(z.string()),
@@ -174,7 +181,7 @@ const schema = z.object({
   WHATSAPP_PHONE_NUMBER_ID: vacioComoAusente(z.string().regex(/^\d+$/, 'Solo dígitos')),
   WHATSAPP_APP_SECRET: vacioComoAusente(z.string()),
   WHATSAPP_VERIFY_TOKEN: vacioComoAusente(z.string().min(16, 'Al menos 16 caracteres')),
-  WHATSAPP_API_VERSION: z.string().regex(/^v\d+\.\d+$/).default('v23.0'),
+  WHATSAPP_API_VERSION: z.string().regex(/^v\d+\.\d+$/).default('v25.0'),
 
   // ── Preparar documento ──────────────────────────────────────────────────
   // Edición de inglés académico y traducción. Usa la misma clave de
@@ -278,6 +285,11 @@ const schema = z.object({
   // largo y aleatorio, y por eso el aviso no lleva datos del comprador.
   NTFY_URL: z.string().url().default('https://ntfy.sh'),
   NTFY_TOPIC: vacioComoAusente(z.string()),
+  // El tópico del programador: le llega TODO (lo del administrador y además
+  // los errores del backend, las caídas, los respaldos y el piloto de revisión). `NTFY_TOPIC` queda
+  // solo para lo que tiene que resolver el administrador. Vacío = lo técnico
+  // sigue yendo a `NTFY_TOPIC`, como antes. Ver lib/notify.
+  NTFY_TOPIC_PROGRAMADOR: vacioComoAusente(z.string()),
   // Solo si el tópico está reservado con una cuenta de pago. Con uno público
   // sobra.
   NTFY_TOKEN: vacioComoAusente(z.string()),

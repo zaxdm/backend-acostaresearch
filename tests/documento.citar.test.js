@@ -233,6 +233,35 @@ test('si ya dejó el título «REFERENCIAS», la lista va debajo y no se repite 
   assert.ok(!lista.includes('Referencias'));
 });
 
+test('sin título de «Referencias», la lista entra delante de los anexos y no detrás', () => {
+  const salto = '<w:p><w:r><w:br w:type="page"/></w:r></w:p>';
+  const cuerpo =
+    titulo('Capítulo I') +
+    // Un «Anexo» citado en medio del cuerpo no es donde empiezan los anexos.
+    p(r('Anexo 3 del reglamento')) +
+    titulo('Capítulo II') +
+    p(r('Una idea.')) +
+    salto +
+    p(r('ANEXOS')) +
+    p(r('Anexo 1: Matriz de consistencia')) +
+    p(r('Contenido del anexo.'));
+  const salida = documento.citar(docx(cuerpo), {
+    norma: 'apa',
+    porClave,
+    citados: { 4: 'Una idea [AR11111111].' },
+  });
+  const lista = textos(salida.buffer).filter((t) => t.trim() !== '');
+  const donde = lista.indexOf('Referencias');
+  assert.ok(donde > lista.indexOf('Una idea (Warshaw & Davis, 1985).'), lista.join('\n'));
+  assert.ok(lista[donde + 1].startsWith('Warshaw, P. R.'), lista.join('\n'));
+  assert.equal(lista[donde + 2], 'ANEXOS');
+
+  // El salto de página casero se queda pegado a los anexos: siguen en página nueva.
+  const xml = parte(salida.buffer);
+  assert.ok(xml.indexOf('Warshaw, P. R.') < xml.indexOf('w:type="page"'));
+  assert.ok(xml.endsWith(`${SECCION}</w:body></w:document>`));
+});
+
 test('un párrafo que ya no coincide con el Word se salta en vez de citar otra frase', () => {
   const salida = documento.citar(docx(p(r('Texto nuevo del tesista.'))), {
     norma: 'apa',

@@ -196,6 +196,11 @@ function formatoDelCuerpo(documento, estilos) {
       primeraLinea: propio('ind', 'firstLine') ?? '0',
       alineacion: propio('jc', 'val'),
       tamano: moda([...p.matchAll(/<w:sz w:val="(\d+)"/g)].map((m) => m[1])) ?? atributo(estilo, 'sz', 'val'),
+      // La letra, igual: la de las corridas y, si no la dicen, la de su estilo.
+      // Una plantilla con «Normal» en Arial y el texto puesto a mano en Times
+      // se ve en Times, y es lo que espera ver el tesista.
+      fuente: moda([...p.matchAll(/<w:rFonts\b[^>]*\bw:(?:ascii|hAnsi)="([^"]+)"/g)].map((m) => m[1])) ??
+        atributo(estilo, 'rFonts', 'ascii'),
     };
   });
 
@@ -208,6 +213,7 @@ function formatoDelCuerpo(documento, estilos) {
     primeraLinea: Number(campo('primeraLinea') ?? 0) || 0,
     alineacion: campo('alineacion'),
     tamano: campo('tamano'),
+    fuente: campo('fuente'),
   };
 }
 
@@ -351,15 +357,293 @@ function conFormatoDeCuerpo(estilo, cuerpo, conversion) {
   if (cuerpo.alineacion) pPr.jc = `<w:jc w:val="${cuerpo.alineacion}"/>`;
 
   let nuevo = Object.keys(pPr).length > 0 ? conPropiedades(estilo, 'pPr', pPr, ORDEN_PPR) : estilo;
+  const rPr = {};
   if (cuerpo.tamano) {
-    nuevo = conPropiedades(
-      nuevo,
-      'rPr',
-      { sz: `<w:sz w:val="${cuerpo.tamano}"/>`, szCs: `<w:szCs w:val="${cuerpo.tamano}"/>` },
-      ORDEN_RPR,
+    rPr.sz = `<w:sz w:val="${cuerpo.tamano}"/>`;
+    rPr.szCs = `<w:szCs w:val="${cuerpo.tamano}"/>`;
+  }
+  if (cuerpo.fuente) rPr.rFonts = rFontsDe(cuerpo.fuente);
+  if (Object.keys(rPr).length > 0) nuevo = conPropiedades(nuevo, 'rPr', rPr, ORDEN_RPR);
+  return nuevo;
+}
+
+/** El nombre de una letra, a salvo dentro de un atributo de XML. */
+const escaparAtributo = (texto) =>
+  String(texto).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+/** La misma letra para todos los alfabetos: sin `cs`, una tilde podía salir en otra. */
+const rFontsDe = (fuente) => {
+  const f = escaparAtributo(fuente);
+  return `<w:rFonts w:ascii="${f}" w:hAnsi="${f}" w:eastAsia="${f}" w:cs="${f}"/>`;
+};
+
+const escaparRegex = (texto) => String(texto).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// ── Los títulos ────────────────────────────────────────────────────────────
+
+/** Los niveles de título que usa nuestro Word: el capítulo y tres de subtítulo. */
+const NIVELES = [1, 2, 3, 4];
+
+const ESTILO_DE_PARRAFO_RE = /<w:style\b([^>]*)>([\s\S]*?)<\/w:style>/g;
+
+/** Nivel → identificador de su estilo de título, buscado por el nombre interno «heading N». */
+function idsDeTitulos(estilos) {
+  const ids = new Map();
+  for (const m of String(estilos).matchAll(ESTILO_DE_PARRAFO_RE)) {
+    if (!/w:type="paragraph"/.test(m[1])) continue;
+    const id = (m[1].match(/w:styleId="([^"]+)"/) || [])[1];
+    const nivel = Number((m[2].match(/<w:name w:val="heading (\d)"/i) || [])[1]);
+    if (id && nivel && !ids.has(nivel)) ids.set(nivel, id);
+  }
+  return ids;
+}
+
+/**
+ * Los títulos con el identificador que usa nuestro Word: «Heading1».
+ *
+ * Word en español guarda el Título 1 como `w:styleId="Ttulo1"` —el nombre
+ * interno sigue siendo «heading 1»— y nuestro Word escribe los títulos en
+ * «Heading1». Con esas plantillas los títulos de la facultad no se aplicaban
+ * nunca: el estilo que buscaba el documento no estaba en la hoja de la
+ * plantilla y quedaba el azul de 16 puntos de la librería. Se vio el 1 de
+ * octubre de 2026 con una plantilla de la UNT hecha en Word en español.
+ *
+ * Devuelve también qué se renombró, porque el documento de la plantilla sigue
+ * usando los nombres viejos y hay que leerlo con ellos.
+ */
+function conIdsDeTitulos(estilos) {
+  let xml = String(estilos);
+  const renombrados = new Map();
+  for (const [nivel, id] of idsDeTitulos(xml)) {
+    const nuevo = `Heading${nivel}`;
+    if (id === nuevo || xml.includes(`w:styleId="${nuevo}"`)) continue;
+    renombrados.set(id, nuevo);
+  }
+  for (const [viejo, nuevo] of renombrados) {
+    const v = escaparRegex(viejo);
+    xml = xml
+      .replace(new RegExp(`(w:styleId=")${v}(")`, 'g'), `$1${nuevo}$2`)
+      .replace(new RegExp(`(<w:(?:basedOn|next|link) w:val=")${v}(")`, 'g'), `$1${nuevo}$2`);
+  }
+  return { xml, renombrados };
+}
+
+/** Sí, no o no lo dice: `<w:b/>`, `<w:b w:val="0"/>` o nada. */
+function interruptor(rPr, etiqueta) {
+  const m = String(rPr).match(new RegExp(`<w:${etiqueta}(?=[\\s/>])([^>]*)/?>`));
+  if (!m) return undefined;
+  const valor = (m[1].match(/w:val="([^"]*)"/) || [])[1];
+  return valor && /^(0|false|off)$/i.test(valor) ? 'no' : 'si';
+}
+
+/**
+ * Cómo se ven los párrafos que usan un estilo de título: lo que les pusieron a mano.
+ *
+ * Solo lo que el párrafo dice por su cuenta; lo que no dice, lo pone el estilo
+ * y ya se ve como el estilo. Por propiedad, lo que más se repite.
+ */
+function comoSeVen(documento, id) {
+  const marca = `<w:pStyle w:val="${id}"/>`;
+  const parrafos = [...String(documento).matchAll(/<w:p\b[^>]*>(?:(?!<w:p[\s>])[\s\S])*?<\/w:p>/g)]
+    .map((m) => m[0])
+    .filter((p) => p.includes(marca) && /<w:t[\s>][^<]*\S/.test(p));
+  if (parrafos.length === 0) return null;
+
+  const datos = parrafos.map((p) => {
+    const pPr = (p.match(/<w:pPr>([\s\S]*?)<\/w:pPr>/) || [, ''])[1].replace(/<w:rPr>[\s\S]*?<\/w:rPr>/, '');
+    const corridas = [...p.matchAll(/<w:r\b[^>]*>([\s\S]*?)<\/w:r>/g)]
+      .map((m) => m[1])
+      .filter((r) => /<w:t[\s>][^<]*\S/.test(r))
+      .map((r) => (r.match(/<w:rPr>([\s\S]*?)<\/w:rPr>/) || [, ''])[1]);
+    const deCorridas = (leer) => moda(corridas.map(leer));
+    return {
+      alineacion: atributo(pPr, 'jc', 'val'),
+      color: deCorridas((r) => atributo(r, 'color', 'val')),
+      tamano: deCorridas((r) => atributo(r, 'sz', 'val')),
+      fuente: deCorridas((r) => atributo(r, 'rFonts', 'ascii') ?? atributo(r, 'rFonts', 'hAnsi')),
+      negrita: deCorridas((r) => interruptor(r, 'b')),
+      cursiva: deCorridas((r) => interruptor(r, 'i')),
+      mayusculas: deCorridas((r) => interruptor(r, 'caps')),
+    };
+  });
+
+  const formato = {};
+  for (const campo of Object.keys(datos[0])) {
+    const valor = moda(datos.map((d) => d[campo]));
+    if (valor !== undefined) formato[campo] = valor;
+  }
+  return formato;
+}
+
+/** Un formato de título ({alineacion, color, tamano, fuente, negrita, cursiva, mayusculas}) escrito en su estilo. */
+function conFormatoDeTitulo(estilo, formato) {
+  const si = (valor, etiqueta) =>
+    valor === undefined ? null : valor === 'si' ? `<w:${etiqueta}/>` : `<w:${etiqueta} w:val="0"/>`;
+  const rPr = {};
+  if (formato.color) rPr.color = `<w:color w:val="${formato.color}"/>`;
+  if (formato.tamano) {
+    rPr.sz = `<w:sz w:val="${formato.tamano}"/>`;
+    rPr.szCs = `<w:szCs w:val="${formato.tamano}"/>`;
+  }
+  if (formato.rFonts) rPr.rFonts = formato.rFonts;
+  else if (formato.fuente) rPr.rFonts = rFontsDe(formato.fuente);
+  if (formato.negrita) Object.assign(rPr, { b: si(formato.negrita, 'b'), bCs: si(formato.negrita, 'bCs') });
+  if (formato.cursiva) Object.assign(rPr, { i: si(formato.cursiva, 'i'), iCs: si(formato.cursiva, 'iCs') });
+  if (formato.mayusculas) rPr.caps = si(formato.mayusculas, 'caps');
+
+  let nuevo = Object.keys(rPr).length > 0 ? conPropiedades(estilo, 'rPr', rPr, ORDEN_RPR) : estilo;
+  const pPr = {};
+  if (formato.alineacion) pPr.jc = `<w:jc w:val="${formato.alineacion}"/>`;
+  if (formato.sinSangria) pPr.ind = '<w:ind w:left="0" w:firstLine="0"/>';
+  if (Object.keys(pPr).length > 0) nuevo = conPropiedades(nuevo, 'pPr', pPr, ORDEN_PPR);
+  return nuevo;
+}
+
+/** Los azules con que Word trae sus títulos de fábrica, de la versión 2007 a la de hoy. */
+const AZUL_DE_WORD = /^(2F5496|1F3763|365F91|4F81BD|243F60|0F4761|2E74B5|1F4D78|1F3864)$/i;
+
+/** Un título que nadie tocó: el de fábrica de Word, azul o con la letra de títulos del tema. */
+function esDeFabrica(interior) {
+  return (
+    /w:themeColor="accent\d"/.test(interior) ||
+    AZUL_DE_WORD.test(atributo(interior, 'color', 'val') ?? '') ||
+    /w:asciiTheme="major/.test(interior)
+  );
+}
+
+/** El aspecto de cada nivel en APA 7: 1 centrado en negrita, 2 a la izquierda en negrita, 3 además en cursiva. */
+const APA = {
+  1: { alineacion: 'center', negrita: 'si', cursiva: 'no' },
+  2: { alineacion: 'left', negrita: 'si', cursiva: 'no' },
+  3: { alineacion: 'left', negrita: 'si', cursiva: 'si' },
+  4: { alineacion: 'left', negrita: 'si', cursiva: 'no' },
+};
+
+/**
+ * La letra y el tamaño del texto, para que los títulos vayan con lo mismo.
+ *
+ * Del estilo del cuerpo, de «Normal» o de los valores por defecto del
+ * documento, lo primero que los diga. La letra se copia tal cual —también si es
+ * la del tema—, para no cambiar una Calibri por otra cosa.
+ */
+function letraDelCuerpo(estilos) {
+  const xml = String(estilos);
+  const fuentes = [
+    interiorDeEstilo(xml, ESTILO_CUERPO),
+    interiorDeEstilo(xml, 'Normal'),
+    (xml.match(/<w:rPrDefault>([\s\S]*?)<\/w:rPrDefault>/) || [, ''])[1],
+  ];
+  const rFonts = fuentes.map((f) => (f.match(/<w:rFonts\b[^>]*\/>/) || [])[0]).find(Boolean);
+  const tamano = fuentes.map((f) => atributo(f, 'sz', 'val')).find(Boolean) ?? '24';
+  return {
+    rFonts:
+      rFonts ??
+      '<w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:eastAsiaTheme="minorHAnsi" w:cstheme="minorBidi"/>',
+    tamano,
+  };
+}
+
+/** Pone un estilo en su sitio de la hoja, o lo crea si no estaba. */
+function cambiarEstilo(estilos, id, cambiar, crear) {
+  const re = new RegExp(`<w:style\\b[^>]*w:styleId="${escaparRegex(id)}"[^>]*>[\\s\\S]*?</w:style>`);
+  if (re.test(estilos)) return estilos.replace(re, (estilo) => cambiar(estilo));
+  if (!crear || !estilos.includes('</w:styles>')) return estilos;
+  return estilos.replace('</w:styles>', `${cambiar(crear)}</w:styles>`);
+}
+
+/** Un estilo de título nuevo, para cuando la hoja no trae ese nivel. */
+const tituloNuevo = (nivel) =>
+  `<w:style w:type="paragraph" w:styleId="Heading${nivel}"><w:name w:val="heading ${nivel}"/>` +
+  '<w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="9"/><w:qFormat/>' +
+  `<w:pPr><w:keepNext/><w:keepLines/><w:outlineLvl w:val="${nivel - 1}"/></w:pPr></w:style>`;
+
+/**
+ * Los títulos de la hoja como se ven en la plantilla.
+ *
+ * El caso que lo pidió: una plantilla con su «Título 1» en Arial azul de 16
+ * puntos, y cada título de la página puesto a mano en Times negro de 12. El
+ * tesista ve Times negro, que es lo que pide su facultad, y nuestro Word salía
+ * con el estilo, azul y grande. Con el cuerpo ya se hacía esto (ver
+ * `conFormatoDelCuerpo`); con los títulos no.
+ *
+ * Dos casos:
+ * - Si la plantilla usa ese estilo, lo que los párrafos llevan a mano pasa al
+ *   estilo: manda lo que se ve.
+ * - Si no lo usa y el estilo es el de fábrica de Word —azul, letra de títulos
+ *   del tema—, la facultad no lo definió: se pone como APA 7, con la letra y el
+ *   tamaño del texto. Es lo que hace nuestro formato por defecto.
+ *
+ * Un título que la facultad definió de verdad y no usa en la página se queda
+ * como está. Devuelve la hoja y qué se cambió, para decírselo al tesista.
+ */
+function conTitulosComoSeVen(estilos, buffer, renombrados = new Map()) {
+  let documento = '';
+  try {
+    documento = abrirZip(buffer).getEntry('word/document.xml')?.getData().toString('utf8') ?? '';
+  } catch {
+    return { xml: estilos, cambios: [] };
+  }
+
+  const originales = new Map([...renombrados].map(([viejo, nuevo]) => [nuevo, viejo]));
+  const vistos = [];
+  const deFabrica = [];
+  const faltaban = [];
+  let xml = String(estilos);
+  const comoApa = (nivel) => {
+    const letra = letraDelCuerpo(xml);
+    return (estilo) =>
+      conFormatoDeTitulo(estilo, { ...APA[nivel], color: '000000', tamano: letra.tamano, rFonts: letra.rFonts });
+  };
+  for (const nivel of NIVELES) {
+    const id = `Heading${nivel}`;
+    const interior = interiorDeEstilo(xml, id);
+    // Sin ese nivel en su hoja, Word tomaba el de la librería: azul. Se crea
+    // como APA, igual que uno de fábrica.
+    if (!interior) {
+      xml = cambiarEstilo(xml, id, comoApa(nivel), tituloNuevo(nivel));
+      faltaban.push(nivel);
+      continue;
+    }
+
+    const visto = comoSeVen(documento, originales.get(id) ?? id);
+    if (visto && Object.keys(visto).length > 0) {
+      xml = cambiarEstilo(xml, id, (estilo) => conFormatoDeTitulo(estilo, visto));
+      vistos.push(nivel);
+    } else if (!visto && esDeFabrica(interior)) {
+      xml = cambiarEstilo(xml, id, comoApa(nivel));
+      deFabrica.push(nivel);
+    }
+  }
+
+  const cambios = [];
+  if (vistos.length > 0) {
+    cambios.push(`los títulos de nivel ${enLista(vistos)} tomaron el formato que se ve en la plantilla`);
+  }
+  if (deFabrica.length > 0) {
+    cambios.push(
+      `los títulos de nivel ${enLista(deFabrica)} venían con el formato de fábrica de Word (azul) y ` +
+        'se pusieron en negro y en APA 7, con la letra del texto',
     );
   }
-  return nuevo;
+  if (faltaban.length > 0) {
+    cambios.push(`los títulos de nivel ${enLista(faltaban)} no venían en la plantilla y se pusieron en APA 7`);
+  }
+  return { xml, cambios };
+}
+
+const enLista = (cosas) => (cosas.length > 1 ? `${cosas.slice(0, -1).join(', ')} y ${cosas.at(-1)}` : String(cosas[0]));
+
+/**
+ * La hoja de estilos que se guarda de una plantilla, con todo lo de arriba hecho.
+ *
+ * En este orden: los títulos con el identificador que usa nuestro Word, el
+ * estilo del cuerpo y los títulos como se ven. Devuelve también los cambios, que
+ * se le cuentan al tesista al subirla.
+ */
+function estilosParaGuardar(buffer) {
+  const { xml: conIds, renombrados } = conIdsDeTitulos(extraerEstilos(buffer));
+  const conCuerpo = conFormatoDelCuerpo(conIds, buffer);
+  return conTitulosComoSeVen(conCuerpo, buffer, renombrados);
 }
 
 /**
@@ -495,6 +779,20 @@ module.exports = {
   estilosQueTrae,
   conFormatoDelCuerpo,
   formatoDelCuerpo,
+  conIdsDeTitulos,
+  conTitulosComoSeVen,
+  estilosParaGuardar,
+  // Para los ajustes dichos en el chat (`project.plantilla-ajustes`).
+  conPropiedades,
+  conFormatoDeTitulo,
+  cambiarEstilo,
+  tituloNuevo,
+  interiorDeEstilo,
+  rFontsDe,
+  APA,
+  NIVELES,
+  ORDEN_PPR,
+  ORDEN_RPR,
   seccionPrincipal,
   seccionesDe,
   ESTILO_CUERPO,

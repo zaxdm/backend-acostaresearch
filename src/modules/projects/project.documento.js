@@ -41,6 +41,7 @@ const { abrirZip } = require('./project.zip');
 const csl = require('./project.csl');
 const normas = require('./project.normas');
 const { MARCA } = require('./project.citas');
+const esquema = require('./project.esquema');
 
 /** Una tesis con figuras pasa de los 5 MB de una plantilla; cuarenta cubren casi todas. */
 const MAXIMO_BYTES = 40 * 1024 * 1024;
@@ -777,8 +778,10 @@ function bibliografiaXml(bibliografia, estiloTitulo, conTitulo) {
  * Dónde va la lista y si lleva título.
  *
  * Si el tesista ya escribió «Referencias» y lo dejó vacío, la lista va debajo de
- * ese título, que es donde la espera. Si no, al final del documento, antes de la
- * sección final, con un título en su estilo de Título 1.
+ * ese título, que es donde la espera. Si no, con un título en su estilo de
+ * Título 1: delante de los anexos si el documento cierra con ellos —las
+ * referencias nunca van detrás de los anexos— y, si no, al final del documento,
+ * antes de la sección final.
  */
 function destinoDeLaBibliografia(parrafos, xml, nombres) {
   const titulo = parrafos
@@ -787,11 +790,51 @@ function destinoDeLaBibliografia(parrafos, xml, nombres) {
     .at(-1);
   if (titulo) return { pos: titulo.fin, conTitulo: false };
 
+  const anexos = inicioDeLosAnexos(parrafos, xml, nombres);
+  if (anexos !== null) return { pos: anexos, conTitulo: true };
+
   const cierre = xml.lastIndexOf('</w:body>');
   const seccion = xml.lastIndexOf('<w:sectPr', cierre);
   const tramo = seccion === -1 ? '' : xml.slice(seccion, cierre);
   const esDelCuerpo = seccion !== -1 && !tramo.includes('</w:p>') && !tramo.includes('</w:tbl>');
   return { pos: esDelCuerpo ? seccion : cierre, conTitulo: true };
+}
+
+/**
+ * Dónde empiezan los anexos con que cierra el documento, o null si no los hay.
+ *
+ * Un anexo se reconoce por su título («Anexos», «Anexo 1: Matriz…»,
+ * «Apéndice A»): un párrafo corto, fuera de tablas y del índice, que empieza
+ * así. Se toma el primero del bloque final: si detrás viene otro Título 1 que
+ * no es anexo, ese «Anexo» estaba en medio del cuerpo y no cuenta. Si justo
+ * antes hay un párrafo vacío con un salto de página —la forma casera de abrir
+ * página—, la lista entra delante de él, para que el anexo siga en página nueva.
+ */
+function inicioDeLosAnexos(parrafos, xml, nombres) {
+  let primero = null;
+  for (let i = 0; i < parrafos.length; i++) {
+    const p = parrafos[i];
+    const estilo = nombres.get(p.estilo) ?? '';
+    if (p.enTabla || /^toc /i.test(estilo) || p.alIndice) continue;
+    const nivel = Number((estilo.match(/^heading (\d)$/i) || [])[1]) || null;
+    const texto = p.texto.trim();
+    const esTituloDeAnexo =
+      esquema.esAnexo(texto) && (nivel !== null || (texto.length <= 120 && !/[.;]$/.test(texto)));
+    if (esTituloDeAnexo) {
+      if (primero === null) primero = i;
+    } else if (nivel === 1) {
+      primero = null;
+    }
+  }
+  if (primero === null) return null;
+
+  const anterior = parrafos[primero - 1];
+  const salto =
+    anterior &&
+    anterior.texto.trim() === '' &&
+    /<w:br\b[^>]*w:type="page"/.test(xml.slice(anterior.inicio, anterior.fin)) &&
+    xml.slice(anterior.fin, parrafos[primero].inicio).trim() === '';
+  return (salto ? anterior : parrafos[primero]).inicio;
 }
 
 function estiloDeTitulo1(nombres) {

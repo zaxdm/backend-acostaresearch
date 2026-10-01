@@ -17,9 +17,9 @@ si algún día divergen, manda el servidor.
 | `respaldar.sh` | `/opt/acostaresearch/respaldar.sh` | Vuelca la base de datos entera y empaqueta las skills, los comprobantes de Yape y el `.env`. Se niega a rotar los respaldos viejos si el volcado sale a medias |
 | `systemd/acostaresearch-respaldo.*` | `/etc/systemd/system/` | Lanza el respaldo cada día a las 3:30 UTC y, después, `subir-respaldo.sh` |
 | `subir-respaldo.sh` | `/opt/acostaresearch/subir-respaldo.sh` | Cifra el respaldo del día con gpg y lo sube a Google Drive con rclone (remoto `respaldo-drive`, carpeta `AcostaResearch-respaldos`): 14 diarios y 6 mensuales. El día 1, o con `PROBAR=1`, lo baja, lo descifra y comprueba la base. La frase está en `/root/.config/acostaresearch/clave-respaldo` y la configuración de rclone en `/root/.config/rclone/rclone.conf`: ninguna de las dos está aquí |
-| `avisar.sh` | `/opt/acostaresearch/avisar.sh` | Un aviso al móvil por ntfy desde los scripts del servidor, con el tópico del `.env` |
+| `avisar.sh` | `/opt/acostaresearch/avisar.sh` | Un aviso al móvil por ntfy desde los scripts del servidor, con el tópico del programador del `.env` (`NTFY_TOPIC_PROGRAMADOR`, o `NTFY_TOPIC` si no está) |
 | `systemd/acostaresearch-aviso@.service` | `/etc/systemd/system/` | Lo llama el `OnFailure` de las tareas programadas: si una falla, aviso al móvil |
-| `vigia-externo/` | Cloudflare (Worker `acosta-vigia-externo`) | Pide la API y la web cada 5 minutos desde fuera del VPS y avisa si caen. Se publica con `wrangler deploy` en su carpeta; el tópico va como secreto `NTFY_TOPIC` |
+| `vigia-externo/` | Cloudflare (Worker `acosta-vigia-externo`) | Pide la API y la web cada 5 minutos desde fuera del VPS y avisa si caen. Se publica con `wrangler deploy` en su carpeta; el tópico va como secreto `NTFY_TOPIC_PROGRAMADOR` |
 | `systemd/acostaresearch-caducidad.*` | `/etc/systemd/system/` | Lanza el aviso de caducidad cada día a las 13:00 UTC, las 8 de la mañana en Lima |
 | `systemd/acostaresearch-corpus.*` | `/etc/systemd/system/` | Sincroniza el corpus con Zotero cada noche a las 04:30 UTC, las 23:30 en Lima |
 | `systemd/acostaresearch-bibliotecas.*` | `/etc/systemd/system/` | Trae la colección de Zotero de cada comprador que la conectó, a las 05:30 UTC, las 00:30 en Lima |

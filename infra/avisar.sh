@@ -3,6 +3,9 @@
 # Un aviso al móvil por ntfy desde los scripts del servidor (el backend usa
 # lib/notify). Lee el tópico del .env de la app sin imprimirlo.
 #
+# Todo lo de aquí es técnico (respaldos, tareas que fallan), así que va al
+# tópico del programador, NTFY_TOPIC_PROGRAMADOR. Si no está, al de siempre.
+#
 #   avisar.sh "título" "mensaje" [prioridad 1-5]
 #
 # También lo usa systemd cuando falla un servicio programado:
@@ -15,7 +18,8 @@ MENSAJE=${2:-}
 PRIORIDAD=${3:-4}
 
 leer() { grep -m1 "^$1=" "$ENV_APP" 2>/dev/null | cut -d= -f2- | tr -d "\"'\r"; }
-TOPICO=$(leer NTFY_TOPIC)
+TOPICO=$(leer NTFY_TOPIC_PROGRAMADOR)
+[ -n "$TOPICO" ] || TOPICO=$(leer NTFY_TOPIC)
 URL=$(leer NTFY_URL)
 URL=${URL:-https://ntfy.sh}
 [ -n "$TOPICO" ] || { echo "ntfy sin configurar: $TITULO — $MENSAJE" >&2; exit 0; }

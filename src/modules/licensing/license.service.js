@@ -1440,7 +1440,7 @@ const licenseService = {
 
     return {
       license: licencia,
-      diagnostico: analizar(usos),
+      diagnostico: analizar(usos, { variasTesis: licencia.variasTesis }),
       usosRecientes: await licenseRepository.recentUsages(id),
       historial: await historialDe(id),
     };
@@ -1461,7 +1461,7 @@ const licenseService = {
 
     for (const licencia of licencias) {
       const usos = await licenseRepository.usagesSince(licencia.id, desde);
-      const diagnostico = analizar(usos);
+      const diagnostico = analizar(usos, { variasTesis: licencia.variasTesis });
 
       if (diagnostico.nivel !== NIVELES.NORMAL) {
         hallazgos.push({ license: licencia, diagnostico });

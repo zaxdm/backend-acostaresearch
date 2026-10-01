@@ -262,7 +262,7 @@ sustituir('../src/lib/prisma', {
   },
 });
 
-sustituir('../src/lib/notify', { avisarAlAdmin: (aviso) => estado.avisos.push(aviso) });
+sustituir('../src/lib/notify', { avisarAlProgramador: (aviso) => estado.avisos.push(aviso) });
 
 // El log se calla: lo monta pino con el entorno de verdad, y aquí el entorno
 // está sustituido por el de arriba, que solo trae lo que estas pruebas usan.

@@ -5,7 +5,7 @@ const logger = require('./config/logger');
 const prisma = require('./lib/prisma');
 const createApp = require('./app');
 const { verifyTransport } = require('./lib/mailer');
-const { avisarAlAdmin } = require('./lib/notify');
+const { avisarAlProgramador } = require('./lib/notify');
 const comprobarBase = require('./lib/comprobarBase');
 const { INTERVALO_MS, crearVigia } = require('./lib/vigiaBase');
 const ventasService = require('./modules/ventas/ventas.service');
@@ -41,7 +41,7 @@ async function bootstrap() {
   // El vigilante de la base: pregunta cada medio minuto aunque no haya nadie en
   // la web, y avisa al móvil si deja de contestar. El `catch` no sobra: una
   // promesa rechazada sin manejar tumba el proceso, y ningún aviso vale eso.
-  const vigilar = crearVigia({ comprobar: comprobarBase, avisar: avisarAlAdmin });
+  const vigilar = crearVigia({ comprobar: comprobarBase, avisar: avisarAlProgramador });
   const vigia = setInterval(() => {
     vigilar().catch((error) => logger.error({ err: error }, 'El vigilante de la base falló'));
   }, INTERVALO_MS);

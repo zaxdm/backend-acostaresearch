@@ -124,3 +124,19 @@ test('la fiabilidad avisa de que falta la mitad de la información', () => {
   const completo = analizar([...historicoTranquilo(10, 4), ...llamadas(6)], { ahora: AHORA });
   assert.equal(completo.fiabilidad, 'normal');
 });
+
+test('con varias tesis, las conversaciones paralelas y los temas cruzados no cuentan', () => {
+  // Lo mismo que delata a dos personas es lo que hace quien lleva dos tesis
+  // con permiso: chats que se alternan sobre temas que no se parecen.
+  const usos = [];
+  for (let i = 0; i < 6; i += 1) {
+    const t = AHORA.getTime() - i * 300_000;
+    usos.push({ createdAt: new Date(t), sessionId: 'sesion-' + i, promptHash: 'tesis-a' + i });
+    usos.push({ createdAt: new Date(t + 30_000), sessionId: 'sesion-' + (i + 10), promptHash: 'tesis-b' + i });
+  }
+  const d = analizar(usos, { ahora: AHORA, variasTesis: true });
+
+  assert.equal(d.nivel, NIVELES.NORMAL);
+  assert.deepEqual(codigos(d), []);
+  assert.equal(d.metricas.variasTesis, true);
+});

@@ -249,7 +249,7 @@ async function evaluar(licenseId, { forzar = false } = {}) {
       orderBy: { createdAt: 'asc' },
     });
 
-    const diagnostico = analizar(usos);
+    const diagnostico = analizar(usos, { variasTesis: licencia.variasTesis });
     const señales = [...diagnostico.senales];
 
     // Los intentos de extracción no los ve el detector: se suman aquí.

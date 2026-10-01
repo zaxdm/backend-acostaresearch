@@ -146,8 +146,14 @@ function contarSolapes(usos) {
  * Devuelve un diagnóstico; NO revoca nada. La decisión de revocar es del
  * servicio, que además avisa: castigar a un cliente legítimo por una alerta
  * automática sale más caro que dejar correr una sospecha unos días.
+ *
+ * Con `variasTesis` (permiso que da el administrador para llevar más de una
+ * tesis con la misma licencia) se callan las señales de conversaciones: quien
+ * lleva dos tesis abre varios chats, los alterna y pregunta por temas que no
+ * tienen nada que ver, que es exactamente lo que esas señales buscan. Queda el
+ * volumen, que nunca corta el acceso por sí solo.
  */
-function analizar(usos, { ahora = new Date() } = {}) {
+function analizar(usos, { ahora = new Date(), variasTesis = false } = {}) {
   // Se ordena aquí y no se da por supuesto: comparar llamadas consecutivas sin
   // orden cronológico da separaciones negativas y cuenta como solapadas cosas
   // que ocurrieron con horas de diferencia.
@@ -188,7 +194,9 @@ function analizar(usos, { ahora = new Date() } = {}) {
     }
   }
 
-  if (sesiones24.size >= SESIONES_SOSPECHA) {
+  if (variasTesis) {
+    // Nada de lo que sigue distingue a dos personas de una con dos tesis.
+  } else if (sesiones24.size >= SESIONES_SOSPECHA) {
     senales.push({
       codigo: 'MUCHAS_SESIONES',
       detalle: `${sesiones24.size} conversaciones distintas en 24 h.`,
@@ -202,7 +210,7 @@ function analizar(usos, { ahora = new Date() } = {}) {
     });
   }
 
-  if (solapes >= SOLAPES_SOSPECHA) {
+  if (!variasTesis && solapes >= SOLAPES_SOSPECHA) {
     senales.push({
       codigo: 'SESIONES_SOLAPADAS',
       detalle: `${solapes} llamadas de sesiones distintas separadas por menos de ${SOLAPE_SEGUNDOS} s.`,
@@ -210,7 +218,7 @@ function analizar(usos, { ahora = new Date() } = {}) {
     });
   }
 
-  if (incoherentes >= INCOHERENTES_SOSPECHA) {
+  if (!variasTesis && incoherentes >= INCOHERENTES_SOSPECHA) {
     senales.push({
       codigo: 'CONSULTAS_INCOHERENTES',
       detalle: `${incoherentes} pares de consultas en el mismo minuto sobre temas distintos.`,
@@ -237,6 +245,7 @@ function analizar(usos, { ahora = new Date() } = {}) {
       // Se expone para que el panel pueda explicar por qué no hay señal de
       // volumen, en lugar de dejar pensar que el comprador es intachable.
       hayConQueComparar,
+      variasTesis,
       sesionesDistintas24: sesiones24.size,
       solapes,
       incoherentes,

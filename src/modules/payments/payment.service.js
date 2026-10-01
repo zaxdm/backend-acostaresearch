@@ -1,5 +1,6 @@
 'use strict';
 
+const crypto = require('node:crypto');
 const logger = require('../../config/logger');
 const { ERROR_CODES, ROLES } = require('../../config/constants');
 const billingRepository = require('../billing/billing.repository');
@@ -12,6 +13,8 @@ const paymentRepository = require('./payment.repository');
 const proofStorage = require('./proof.storage');
 const constancia = require('./payment.constancia');
 const { entregarPago } = require('./payment.delivery');
+const carrito = require('./payment.carrito');
+const { avisarAlAdmin } = require('../../lib/notify');
 const { getProvider, enabledProviders } = require('./providers');
 const { AppError, NotFoundError, ValidationError } = require('../../shared/errors/AppError');
 
@@ -80,6 +83,196 @@ async function entregaDeUnPago(payment) {
 function rebajaEnLaMoneda(descuento, moneda) {
   if (!descuento) return 0;
   return moneda === 'USD' ? descuento.discountUsdCents : descuento.amountCents;
+}
+
+/**
+ * Cobra en la pasarela y comprueba que lo cobrado es lo que se abrió.
+ *
+ * Es el mismo paso para una compra suelta y para un carrito: `filas` son los
+ * pagos que cubre el cobro (uno, o todos los del carrito) y `pagoParaPasarela`
+ * el que se le enseña a la pasarela, con el importe total. Si algo falla, se
+ * marcan TODAS las filas: un carrito no se cobra a medias.
+ *
+ * Devuelve la captura, o `{ requiresAuthentication }` si el banco pide 3-D
+ * Secure y todavía no se cobró nada.
+ */
+async function cobrar({ provider, orderId, userId, pagoParaPasarela, filas, datosDelCobro }) {
+  const fallar = (datos) => Promise.all(filas.map((fila) => paymentRepository.fail(fila.id, datos)));
+  const esperado = filas.reduce((suma, fila) => suma + fila.amountCents, 0);
+
+  let captura;
+  try {
+    captura = await provider.captureOrder(orderId, { payment: pagoParaPasarela, ...datosDelCobro });
+  } catch (error) {
+    // El banco rechazó ESTA tarjeta: el pago sigue abierto para que pruebe
+    // con otra sin empezar la compra de nuevo. Solo se anota el motivo.
+    if (error.reintentable) {
+      await paymentRepository.noteAttempt(pagoParaPasarela.id, {
+        errorCode:
+          error.body?.decline_code ??
+          error.body?.code ??
+          error.body?.type ??
+          error.body?.details?.[0]?.issue ??
+          'DECLINED',
+        rawResponse: error.body,
+      });
+      logger.warn(
+        { detalle: error.body, userId, orderId, provider: provider.code },
+        'La pasarela rechazó el cobro; el pago sigue abierto para reintentar',
+      );
+      throw new AppError(
+        error.userMessage ?? 'Tu banco no aprobó el pago. Prueba con otra tarjeta o con Yape.',
+        { statusCode: 402, code: ERROR_CODES.PAYMENT_DECLINED },
+      );
+    }
+
+    await fallar({ errorCode: 'GATEWAY_ERROR', rawResponse: error.body });
+    logger.error(
+      { err: error, detalle: error.body, userId, orderId },
+      'La pasarela rechazó el cobro',
+    );
+    throw new AppError('El pago no se pudo completar. No se te ha cobrado nada.', {
+      statusCode: 400,
+      code: ERROR_CODES.PAYMENT_FAILED,
+    });
+  }
+
+  // El banco pide 3-D Secure: todavía no se cobró nada y el pago sigue
+  // pendiente. El navegador pasa la verificación y vuelve a llamar.
+  if (captura.requiresAuthentication) return captura;
+
+  if (!captura.captured) {
+    await fallar({ errorCode: captura.status ?? 'NOT_COMPLETED', rawResponse: captura.raw });
+    throw new AppError('El pago quedó sin completar. Inténtalo de nuevo.', {
+      statusCode: 400,
+      code: ERROR_CODES.PAYMENT_FAILED,
+    });
+  }
+
+  // El importe cobrado tiene que ser exactamente el que abrimos. Si no
+  // cuadra, no se entrega nada y queda registrado para revisarlo a mano.
+  if (captura.amountCents !== esperado || captura.currency !== pagoParaPasarela.currency) {
+    await fallar({ errorCode: 'AMOUNT_MISMATCH', rawResponse: captura.raw });
+    logger.error(
+      {
+        userId,
+        orderId,
+        esperado: `${esperado} ${pagoParaPasarela.currency}`,
+        cobrado: `${captura.amountCents} ${captura.currency}`,
+      },
+      'El importe cobrado no coincide con el de la orden',
+    );
+    throw new AppError('El importe cobrado no coincide. Escríbenos y lo revisamos.', {
+      statusCode: 409,
+      code: ERROR_CODES.PAYMENT_FAILED,
+    });
+  }
+
+  return captura;
+}
+
+/** Lo entregado por una fila del carrito, con el producto al que corresponde. */
+function lineaEntregada(fila, entrega) {
+  return { plan: { code: fila.plan.code, name: fila.plan.name }, ...entrega };
+}
+
+/**
+ * Confirma el cobro de un carrito y entrega cada producto.
+ *
+ * Se cobra UNA vez por la suma y luego se entrega fila a fila, cada una en su
+ * transacción y por el mismo `entregarPago` de una compra suelta. Una por una y
+ * no a la vez: si el carrito trae dos licencias, la segunda tiene que ver ya
+ * creada la primera.
+ *
+ * Si una entrega falla después de cobrar, las demás siguen: el dinero ya
+ * entró y lo que sí se pudo entregar no se le quita. La que falló queda
+ * pendiente y se avisa al administrador para resolverla a mano.
+ */
+async function capturarCarrito({ provider, orderId, userId, cartId, datosDelCobro }) {
+  const filas = carrito.ordenarFilas(await paymentRepository.findCart(cartId), orderId);
+  const lider = filas[0];
+
+  if (filas.every((fila) => fila.status === 'PAID')) {
+    const items = await Promise.all(
+      filas.map(async (fila) => lineaEntregada(fila, await entregaDeUnPago(fila))),
+    );
+    return { alreadyProcessed: true, items, ...(await resultadoDeCompra(userId)) };
+  }
+
+  const porCobrar = filas.filter((fila) => fila.status !== 'PAID');
+  if (porCobrar.some((fila) => !SE_PUEDE_CAPTURAR.has(fila.status))) {
+    throw new AppError('Este pago ya no se puede confirmar. Empieza una compra nueva.', {
+      statusCode: 409,
+      code: ERROR_CODES.PAYMENT_FAILED,
+    });
+  }
+
+  const total = filas.reduce((suma, fila) => suma + fila.amountCents, 0);
+  const captura = await cobrar({
+    provider,
+    orderId,
+    userId,
+    // La pasarela ve un solo pago por el total, con el nombre de todo lo que lleva.
+    pagoParaPasarela: {
+      ...lider,
+      amountCents: total,
+      plan: carrito.planDelCarrito(filas.map((fila) => fila.plan)),
+    },
+    filas,
+    datosDelCobro,
+  });
+
+  if (captura.requiresAuthentication) {
+    return { alreadyProcessed: false, requiresAuthentication: true };
+  }
+
+  const items = [];
+  const fallidas = [];
+
+  for (const fila of filas) {
+    if (fila.status === 'PAID') {
+      items.push(lineaEntregada(fila, await entregaDeUnPago(fila)));
+      continue;
+    }
+
+    try {
+      const entrega = await entregarPago({
+        payment: fila,
+        captura,
+        estadoEsperado: fila.status,
+        notaBolsa: `Pago en línea con ${provider.label} (carrito)`,
+      });
+      // Sin entrega: otra petición simultánea ya cerró esta fila.
+      items.push(lineaEntregada(fila, entrega ?? (await entregaDeUnPago(fila))));
+    } catch (error) {
+      fallidas.push(fila);
+      logger.error(
+        { err: error, paymentId: fila.id, cartId, orderId, plan: fila.plan.code },
+        'Carrito cobrado pero una de sus entregas falló',
+      );
+    }
+  }
+
+  if (fallidas.length > 0) {
+    const nombres = fallidas.map((fila) => fila.plan.name);
+    avisarAlAdmin({
+      titulo: 'Carrito cobrado con una entrega pendiente',
+      mensaje: `${nombres.join(', ')} · pedido ${orderId}`,
+      etiquetas: ['warning'],
+    });
+    throw new AppError(
+      `Cobramos tu pago, pero no pudimos activar ${nombres.join(' y ')}. ` +
+        'Ya nos llegó el aviso y lo activamos a mano; si te urge, escríbenos por WhatsApp.',
+      { statusCode: 500, code: ERROR_CODES.PAYMENT_FAILED },
+    );
+  }
+
+  logger.info(
+    { userId, orderId, cartId, captureId: captura.captureId, productos: filas.length },
+    'Carrito cobrado y entregado',
+  );
+
+  return { alreadyProcessed: false, items, ...(await resultadoDeCompra(userId)) };
 }
 
 const paymentService = {
@@ -173,6 +366,80 @@ const paymentService = {
   },
 
   /**
+   * Abre UNA orden en la pasarela por todo el carrito.
+   *
+   * Cada producto queda en su propia fila, con su precio y su descuento, y la
+   * orden se abre por la suma. Las filas se guardan juntas o no se guarda
+   * ninguna.
+   */
+  async createCartOrder({ userId, items, providerCode }) {
+    const provider = obtenerPasarela(providerCode);
+
+    const lineas = await carrito.resolverLineas(items, {
+      precio: (plan) => provider.priceForPlan(plan),
+      rebaja: (descuento) => rebajaEnLaMoneda(descuento, provider.currency),
+      medio: provider.label,
+    });
+    const amountCents = lineas.reduce((suma, linea) => suma + linea.amountCents, 0);
+    const planDelCarrito = carrito.planDelCarrito(lineas.map((linea) => linea.plan));
+
+    let orden;
+    try {
+      orden = await provider.createOrder({ plan: planDelCarrito, amountCents, referencia: userId });
+    } catch (error) {
+      logger.error(
+        { err: error, detalle: error.body, userId, plan: planDelCarrito.name },
+        'La pasarela no pudo crear la orden del carrito',
+      );
+      throw new AppError('No pudimos iniciar el pago. Vuelve a intentarlo en un momento.', {
+        statusCode: 502,
+        code: ERROR_CODES.PAYMENT_FAILED,
+      });
+    }
+
+    const cartId = crypto.randomUUID();
+    const filas = await paymentRepository.createCart(
+      lineas.map((linea, i) => ({
+        userId,
+        planId: linea.plan.id,
+        provider: provider.code,
+        // Ver `carrito.ordenarFilas`: la pareja (pasarela, orden) es única.
+        providerOrderId: i === 0 ? orden.orderId : `${orden.orderId}#${i + 1}`,
+        amountCents: linea.amountCents,
+        currency: provider.currency,
+        discountCodeId: linea.descuento?.id ?? null,
+        discountCents: linea.rebaja,
+        cartId,
+      })),
+    );
+
+    await paymentRepository
+      .cancelOtherOpen({
+        userId,
+        provider: provider.code,
+        exceptId: filas[0].id,
+        exceptCartId: cartId,
+      })
+      .catch((error) => logger.warn({ err: error, userId }, 'No se cerraron las órdenes anteriores'));
+
+    logger.info(
+      { userId, cartId, productos: lineas.length, provider: provider.code, orderId: orden.orderId },
+      'Orden de carrito creada',
+    );
+
+    return {
+      paymentId: filas[0].id,
+      orderId: orden.orderId,
+      approveUrl: orden.approveUrl,
+      amountCents,
+      currency: provider.currency,
+      discount: null,
+      plan: { code: planDelCarrito.code, name: planDelCarrito.name, words: 0 },
+      items: carrito.resumenDeLineas(lineas),
+    };
+  },
+
+  /**
    * Confirma el cobro y entrega la bolsa.
    *
    * Aquí es donde de verdad se mueve el dinero, así que el orden importa: se
@@ -197,6 +464,17 @@ const paymentService = {
       throw new NotFoundError('No encontramos ese pago.');
     }
 
+    // Un carrito se cobra por la suma y entrega cada producto: ver `capturarCarrito`.
+    if (payment.cartId) {
+      return capturarCarrito({
+        provider,
+        orderId,
+        userId,
+        cartId: payment.cartId,
+        datosDelCobro,
+      });
+    }
+
     if (payment.status === 'PAID') {
       const entrega = await entregaDeUnPago(payment);
       return { alreadyProcessed: true, ...(await resultadoDeCompra(userId, entrega)) };
@@ -209,83 +487,17 @@ const paymentService = {
       });
     }
 
-    let captura;
-    try {
-      captura = await provider.captureOrder(orderId, { payment, ...datosDelCobro });
-    } catch (error) {
-      // El banco rechazó ESTA tarjeta: el pago sigue abierto para que pruebe
-      // con otra sin empezar la compra de nuevo. Solo se anota el motivo.
-      if (error.reintentable) {
-        await paymentRepository.noteAttempt(payment.id, {
-          errorCode:
-            error.body?.decline_code ??
-            error.body?.code ??
-            error.body?.type ??
-            error.body?.details?.[0]?.issue ??
-            'DECLINED',
-          rawResponse: error.body,
-        });
-        logger.warn(
-          { detalle: error.body, userId, orderId, provider: provider.code },
-          'La pasarela rechazó el cobro; el pago sigue abierto para reintentar',
-        );
-        throw new AppError(
-          error.userMessage ?? 'Tu banco no aprobó el pago. Prueba con otra tarjeta o con Yape.',
-          { statusCode: 402, code: ERROR_CODES.PAYMENT_DECLINED },
-        );
-      }
+    const captura = await cobrar({
+      provider,
+      orderId,
+      userId,
+      pagoParaPasarela: payment,
+      filas: [payment],
+      datosDelCobro,
+    });
 
-      await paymentRepository.fail(payment.id, {
-        errorCode: 'GATEWAY_ERROR',
-        rawResponse: error.body,
-      });
-      logger.error(
-        { err: error, detalle: error.body, userId, orderId },
-        'La pasarela rechazó el cobro',
-      );
-      throw new AppError('El pago no se pudo completar. No se te ha cobrado nada.', {
-        statusCode: 400,
-        code: ERROR_CODES.PAYMENT_FAILED,
-      });
-    }
-
-    // El banco pide 3-D Secure: todavía no se cobró nada y el pago sigue
-    // pendiente. El navegador pasa la verificación y vuelve a llamar.
     if (captura.requiresAuthentication) {
       return { alreadyProcessed: false, requiresAuthentication: true };
-    }
-
-    if (!captura.captured) {
-      await paymentRepository.fail(payment.id, {
-        errorCode: captura.status ?? 'NOT_COMPLETED',
-        rawResponse: captura.raw,
-      });
-      throw new AppError('El pago quedó sin completar. Inténtalo de nuevo.', {
-        statusCode: 400,
-        code: ERROR_CODES.PAYMENT_FAILED,
-      });
-    }
-
-    // El importe cobrado tiene que ser exactamente el que abrimos. Si no
-    // cuadra, no se entrega nada y queda registrado para revisarlo a mano.
-    if (captura.amountCents !== payment.amountCents || captura.currency !== payment.currency) {
-      await paymentRepository.fail(payment.id, {
-        errorCode: 'AMOUNT_MISMATCH',
-        rawResponse: captura.raw,
-      });
-      logger.error(
-        {
-          userId,
-          orderId,
-          esperado: `${payment.amountCents} ${payment.currency}`,
-          cobrado: `${captura.amountCents} ${captura.currency}`,
-        },
-        'El importe cobrado no coincide con el de la orden',
-      );
-      throw new AppError('El importe cobrado no coincide. Escríbenos y lo revisamos.', {
-        statusCode: 409,
-        code: ERROR_CODES.PAYMENT_FAILED,
-      });
     }
 
     // Un plan de licencia entrega acceso al conector; uno de palabras, una
@@ -330,7 +542,12 @@ const paymentService = {
       throw new NotFoundError('No encontramos ese pago.');
     }
 
-    await paymentRepository.cancel(payment.id, userId, motivo);
+    // Un carrito se abandona entero: la orden de la pasarela es una sola.
+    if (payment.cartId) {
+      await paymentRepository.cancelCart(payment.cartId, userId, motivo);
+    } else {
+      await paymentRepository.cancel(payment.id, userId, motivo);
+    }
     if (motivo) {
       logger.warn({ userId, orderId, provider: provider.code, motivo }, 'El botón de pago dio error');
     }
@@ -404,7 +621,10 @@ const paymentService = {
 
     // El comprobante de Yape se va con el apunte: sin la fila a la que
     // pertenece, esa imagen ya no es el justificante de nada.
-    if (pago.proofPath) await proofStorage.borrar(pago.proofPath);
+    // Salvo que otra fila del mismo carrito la siga usando: la comparten.
+    if (pago.proofPath && (await paymentRepository.countByProofPath(pago.proofPath)) === 0) {
+      await proofStorage.borrar(pago.proofPath);
+    }
 
     logger.warn(
       {

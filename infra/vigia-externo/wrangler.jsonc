@@ -4,7 +4,7 @@
  *   cd backend/infra/vigia-externo
  *   ../../../acostaresearch-frontend/node_modules/.bin/wrangler deploy
  *
- * El tópico de ntfy va como secreto (`wrangler secret put NTFY_TOPIC`), nunca aquí.
+ * El tópico del programador va como secreto (`wrangler secret put NTFY_TOPIC_PROGRAMADOR`), nunca aquí.
  */
 {
   "name": "acosta-vigia-externo",

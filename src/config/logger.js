@@ -10,7 +10,7 @@ const NIVEL_ERROR = 50;
 // Solo en producción: en local y en las pruebas los errores se ven en consola.
 // `notify` se pide al avisar y no aquí, porque `notify` usa este logger.
 const vigia = env.isProduction
-  ? crearVigiaDeErrores({ avisar: (aviso) => require('../lib/notify').avisarAlAdmin(aviso) })
+  ? crearVigiaDeErrores({ avisar: (aviso) => require('../lib/notify').avisarAlProgramador(aviso) })
   : null;
 vigia?.vigilarResumen();
 

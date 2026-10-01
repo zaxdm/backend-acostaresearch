@@ -1349,29 +1349,7 @@ async function armar({
     ...(comentarios.length > 0 ? { comments: { children: comentarios } } : {}),
     ...(zotero ? { customProperties: zotero.preferencias } : {}),
     ...(estilos ? { externalStyles: estilos } : {}),
-    ...(estilos ? {} : { styles: {
-      default: {
-        document: { run: { font: 'Times New Roman', size: 24 } },
-        heading1: {
-          run: { font: 'Times New Roman', size: 28, bold: true, color: '000000' },
-          paragraph: { alignment: AlignmentType.CENTER, spacing: { after: 240 } },
-        },
-        heading2: {
-          run: { font: 'Times New Roman', size: 24, bold: true, color: '000000' },
-          paragraph: { spacing: { before: 240, after: 120 } },
-        },
-        heading3: {
-          run: { font: 'Times New Roman', size: 24, bold: true, italics: true, color: '000000' },
-          paragraph: { spacing: { before: 200, after: 120 } },
-        },
-        // El cuarto nivel («###» en el texto). Sin definirlo, salía con el azul
-        // en cursiva de la librería, distinto de todo lo demás.
-        heading4: {
-          run: { font: 'Times New Roman', size: 24, bold: true, color: '000000' },
-          paragraph: { spacing: { before: 160, after: 80 } },
-        },
-      },
-    } }),
+    ...(estilos ? {} : { styles: ESTILOS_POR_DEFECTO }),
     sections: [
       {
         properties: {
@@ -1430,6 +1408,51 @@ async function armar({
   // El índice, relleno: sin esto salía vacío en la vista protegida de Word y
   // en cualquier visor (ver `project.indice`).
   return indice.conIndice(buffer);
+}
+
+/** Nuestro formato, el que sale cuando no hay plantilla. */
+const ESTILOS_POR_DEFECTO = {
+  default: {
+    document: { run: { font: 'Times New Roman', size: 24 } },
+    heading1: {
+      run: { font: 'Times New Roman', size: 28, bold: true, color: '000000' },
+      paragraph: { alignment: AlignmentType.CENTER, spacing: { after: 240 } },
+    },
+    heading2: {
+      run: { font: 'Times New Roman', size: 24, bold: true, color: '000000' },
+      paragraph: { spacing: { before: 240, after: 120 } },
+    },
+    heading3: {
+      run: { font: 'Times New Roman', size: 24, bold: true, italics: true, color: '000000' },
+      paragraph: { spacing: { before: 200, after: 120 } },
+    },
+    // El cuarto nivel («###» en el texto). Sin definirlo, salía con el azul
+    // en cursiva de la librería, distinto de todo lo demás.
+    heading4: {
+      run: { font: 'Times New Roman', size: 24, bold: true, color: '000000' },
+      paragraph: { spacing: { before: 160, after: 80 } },
+    },
+  },
+};
+
+/**
+ * Nuestro formato por defecto como hoja de estilos, con el estilo del cuerpo.
+ *
+ * Es la base de los ajustes dichos en el chat cuando el tesista no subió
+ * plantilla (ver `project.plantilla-ajustes`): se guarda como si fuera la suya,
+ * y por eso el texto lo lleva «Cuerpo de tesis» con lo que sin plantilla se
+ * pone a mano en cada párrafo: doble espacio, justificado y sangría de APA.
+ */
+async function hojaDeEstilosPorDefecto() {
+  const buffer = await Packer.toBuffer(
+    new Document({ styles: ESTILOS_POR_DEFECTO, sections: [{ children: [new Paragraph('')] }] }),
+  );
+  const xml = sinEstilosRepetidos(new AdmZip(buffer).getEntry('word/styles.xml').getData().toString('utf8'));
+  const cuerpo =
+    '<w:style w:type="paragraph" w:customStyle="1" w:styleId="CuerpoTesis"><w:name w:val="Cuerpo de tesis"/>' +
+    '<w:basedOn w:val="Normal"/><w:qFormat/><w:pPr><w:spacing w:line="480" w:lineRule="auto"/>' +
+    `<w:ind w:firstLine="${SANGRIA}"/><w:jc w:val="both"/></w:pPr></w:style>`;
+  return xml.replace('</w:styles>', `${cuerpo}</w:styles>`);
 }
 
 /** Un estilo entero de `styles.xml`, con su identificador. */
@@ -1571,6 +1594,7 @@ function nombreDeArchivo(tema, respaldo = 'tesis') {
 
 module.exports = {
   armar,
+  hojaDeEstilosPorDefecto,
   nombreDeArchivo,
   comoParrafos,
   ajustarEstilos,

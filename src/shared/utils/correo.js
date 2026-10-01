@@ -407,6 +407,80 @@ async function sondearPorSmtp(correo, servidores) {
   return null;
 }
 
+// ── El buzón por ZeroBounce ────────────────────────────────────────────────
+//
+// Hetzner cierra el puerto 25 de salida en las cuentas nuevas, así que el
+// sondeo SMTP de arriba nunca llega a hablar con nadie. ZeroBounce hace esa
+// misma pregunta desde sus servidores y contesta por HTTPS.
+//
+// Se usa su plan gratuito: 100 comprobaciones al mes. Solo se gasta una al
+// vender un código —el panel y la generación comparten la caché de una hora—,
+// y si se acaban el resultado es «no se sabe» y la venta sigue, igual que con
+// el puerto cerrado. Lo que se escape lo atrapa el aviso de rebotes de Brevo
+// (`modules/correo`).
+
+const ZEROBOUNCE_URL = 'https://api.zerobounce.net/v2/validate';
+const TIEMPO_ZEROBOUNCE_MS = 10000;
+
+/** Sin créditos o con la clave mal, no se vuelve a preguntar en una hora. */
+const PAUSA_ZEROBOUNCE_MS = 60 * 60 * 1000;
+let zeroBounceParadoHasta = 0;
+
+/**
+ * Lo que significa la respuesta de ZeroBounce: true existe, false no existe,
+ * null no se sabe.
+ *
+ * Solo `invalid` es un «no existe». `catch-all` (el dominio acepta cualquier
+ * dirección), `unknown` y `do_not_mail` (desechable, de rol, tóxico) no dicen
+ * que la cuenta falte, y bloquear con ellos frenaría ventas buenas.
+ */
+function veredictoZeroBounce(respuesta) {
+  const estado = String(respuesta?.status ?? '').toLowerCase();
+  if (estado === 'valid') return true;
+  if (estado === 'invalid') return false;
+  return null;
+}
+
+async function sondearPorZeroBounce(correo, { clave, pedir = fetch, ahora = Date.now } = {}) {
+  if (ahora() < zeroBounceParadoHasta) return null;
+
+  const url = `${ZEROBOUNCE_URL}?${new URLSearchParams({ api_key: clave, email: correo, ip_address: '' })}`;
+  let datos;
+  try {
+    const respuesta = await pedir(url, { signal: AbortSignal.timeout(TIEMPO_ZEROBOUNCE_MS) });
+    datos = await respuesta.json();
+  } catch (error) {
+    require('../../config/logger').warn({ err: error }, 'ZeroBounce no contestó; se sigue sin comprobar');
+    return null;
+  }
+
+  // Sin créditos o con la clave mal contesta 200 con `error` y sin `status`.
+  if (datos?.error) {
+    zeroBounceParadoHasta = ahora() + PAUSA_ZEROBOUNCE_MS;
+    require('../../config/logger').warn(
+      { detalle: String(datos.error).slice(0, 200) },
+      'ZeroBounce no comprobó el buzón (¿créditos del mes agotados?); se sigue sin comprobar',
+    );
+    return null;
+  }
+  return veredictoZeroBounce(datos);
+}
+
+/**
+ * Con `ZEROBOUNCE_API_KEY`, pregunta a ZeroBounce; sin ella, por el puerto 25.
+ * Apagado en las pruebas y con CORREO_SONDEAR_BUZON=false.
+ */
+async function sondearPorDefecto(correo, servidores) {
+  const env = require('../../config/env');
+  if (env.NODE_ENV === 'test' || process.env.NODE_TEST_CONTEXT || !env.CORREO_SONDEAR_BUZON) {
+    return null;
+  }
+  if (env.ZEROBOUNCE_API_KEY) {
+    return sondearPorZeroBounce(correo, { clave: env.ZEROBOUNCE_API_KEY });
+  }
+  return sondearPorSmtp(correo, servidores);
+}
+
 /**
  * true si el buzón existe, false si su servidor dice que no, null si no se sabe.
  * Solo se recuerdan las respuestas firmes, una hora.
@@ -414,7 +488,7 @@ async function sondearPorSmtp(correo, servidores) {
 async function buzonExiste(
   correo,
   servidores,
-  { sondearBuzon = sondearPorSmtp, cacheBuzon = cacheBuzones, ahora = Date.now } = {},
+  { sondearBuzon = sondearPorDefecto, cacheBuzon = cacheBuzones, ahora = Date.now } = {},
 ) {
   const guardado = cacheBuzon.get(correo);
   if (guardado && guardado.hasta > ahora()) return guardado.existe;
@@ -501,4 +575,6 @@ module.exports = {
   buzonExiste,
   veredicto,
   conversarSmtp,
+  veredictoZeroBounce,
+  sondearPorZeroBounce,
 };

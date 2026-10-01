@@ -107,7 +107,8 @@ Lo que difiere del `.env` local:
 | `MCP_PUBLIC_URL` | `https://api.acostaresearch.com/mcp` |
 | `DATABASE_URL` | La de MySQL en `localhost` (Clever Cloud ya no se usa desde el 19-sep-2026) |
 | `SKILLS_DIR`, `PROOFS_DIR`, `GUIAS_DIR` | Las de `/var/lib/acostaresearch` |
-| `NTFY_TOPIC` | El tópico de los avisos al móvil |
+| `NTFY_TOPIC` | El tópico del administrador: solo lo que tiene que resolver él |
+| `NTFY_TOPIC_PROGRAMADOR` | El tópico del programador: le llega todo, también errores, caídas y respaldos |
 | `GUIA_URL` | Vacía. Ver abajo |
 | `PAYPAL_ENV` | `sandbox` mientras no se pase a `live` |
 
@@ -212,8 +213,21 @@ aviso por **ntfy** al teléfono. Un correo se lee cuando uno abre el correo, y u
 comprobante espera a que alguien lo mire: cada hora de retraso es una hora que
 alguien que ya pagó pasa sin su acceso.
 
-Se configura con `NTFY_TOPIC`. Sin esa variable no se llama a ningún servidor: el
-aviso se queda en el log, que es lo que hace falta en desarrollo.
+**Hay dos tópicos** (desde el 1-oct-2026):
+
+| Tópico | Quién lo mira | Qué le llega |
+|---|---|---|
+| `NTFY_TOPIC` | El administrador | Yape por revisar, reseñas y videos por aprobar, reclamos, licencias que el detector revocó o pide revisar, WhatsApp que necesita una persona, cuentas borradas |
+| `NTFY_TOPIC_PROGRAMADOR` | El programador | **Todo** lo anterior y además: avisos del piloto de revisión, errores del backend y su resumen de las 8:00, base caída o vuelta, API o web caídas (vigía externo), tareas programadas que fallan, respaldo comprobado |
+
+En el código: `avisarAlAdmin` manda a los dos, `avisarAlProgramador` solo al del
+programador (`src/lib/notify.js`). Sin `NTFY_TOPIC_PROGRAMADOR`, lo técnico sigue
+yendo a `NTFY_TOPIC` como antes. Sin ninguno de los dos no se llama a ningún
+servidor: el aviso se queda en el log, que es lo que hace falta en desarrollo.
+
+Lo técnico se manda desde tres sitios, y los tres leen el tópico del programador:
+el backend (`.env`), `avisar.sh` (lee el mismo `.env`) y el vigía externo de
+Cloudflare (secreto `NTFY_TOPIC_PROGRAMADOR`, con `wrangler secret put`).
 
 **El tópico es la credencial.** En el plan gratuito de ntfy los tópicos no se
 reservan: cualquiera que acierte el nombre lee los avisos. Por eso es largo y
@@ -221,7 +235,7 @@ aleatorio, y por eso el aviso **no lleva el correo del comprador** — solo nomb
 de pila, inicial, importe y plan. Quién es y su comprobante están detrás del
 panel, que pide sesión.
 
-**Los cortes de la base avisan por el mismo canal.** El servidor pregunta a la
+**Los cortes de la base avisan al programador.** El servidor pregunta a la
 base cada 30 s (`src/lib/vigiaBase.js`), haya o no gente en la web. Dos
 comprobaciones fallidas seguidas mandan «La base de datos no responde», una sola
 vez por corte, y cuando vuelve llega «La base de datos volvió» con lo que duró.

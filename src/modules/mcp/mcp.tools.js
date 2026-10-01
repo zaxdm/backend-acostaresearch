@@ -15,6 +15,7 @@ const projectService = require('../projects/project.service');
 const documentoService = require('../projects/documento.service');
 const redaccion = require('../projects/redaccion.service');
 const subidaFormato = require('../projects/project.subida-formato');
+const { AjusteNoValido } = require('../projects/project.plantilla-ajustes');
 const subidaMaterial = require('../projects/project.subida-material');
 const subidaDocumento = require('../projects/project.subida-documento');
 const { enlaceClic } = require('../../shared/utils/enlaceClic');
@@ -3794,6 +3795,17 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
     'verdadero. NUNCA le digas que quedó quitado ni cambiado sin haber llamado y leído lo que ' +
     'devuelve: si la llamada no se hizo, el formato sigue puesto y su Word sigue saliendo con él.';
 
+  const AJUSTAR =
+    ' AJUSTAR el formato con indicaciones: si te dice cómo debe ir —«Times 12, doble espacio», ' +
+    '«márgenes de 2,54», «títulos en APA», «los títulos en negro»—, o te pega o adjunta las ' +
+    'indicaciones de formato o la guía de su facultad, LEE tú esas indicaciones y llama con ' +
+    '"ajustes": el servidor las aplica sobre su formato (o sobre el formato por defecto si no subió ' +
+    'ninguno) y conserva su portada, encabezado y pie. Pasa SOLO lo que se pidió o lo que dice la ' +
+    'guía, nunca lo que supones. Si además quiere SU portada, esa solo llega subiendo el .docx por ' +
+    'el enlace. NO le armes un .docx ni una plantilla en el chat: el formato vive en el servidor y ' +
+    'un archivo hecho aquí no llega a su Word. Si sube un formato nuevo por el enlace, los ' +
+    'ajustes anteriores se pierden: vuelve a llamar con ellos.';
+
   server.registerTool(
     'formato_de_la_universidad',
     {
@@ -3846,10 +3858,63 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
             'confirmar qué se tomó. ' +
             'NO le pidas que te pegue ni te adjunte el formato en el chat, no lo copies tú a mano y no ' +
             'le armes un Word con ese formato: lo aplica el servidor. Si no tiene formato, no insistas.') +
-        CAMBIAR_O_QUITAR,
+        CAMBIAR_O_QUITAR +
+        AJUSTAR,
       inputSchema: fromJsonSchema({
         type: 'object',
         properties: {
+          ajustes: {
+            type: 'object',
+            description:
+              'Cambios del formato pedidos en el chat o sacados de la guía de su facultad. Solo los ' +
+              'campos que se pidieron; lo que no se manda no se toca.',
+            properties: {
+              fuente: { type: 'string', description: 'Letra del texto y los títulos, como en Word: «Times New Roman», «Arial».' },
+              tamano: { type: 'number', description: 'Tamaño de letra del texto, en puntos (8 a 16).' },
+              interlineado: { type: 'number', description: 'Interlineado del texto: 1, 1.15, 1.5 o 2 (doble).' },
+              sangria: { type: 'number', description: 'Sangría de primera línea en cm (1.27 en APA; 0 = sin sangría).' },
+              alineacion: { type: 'string', enum: ['justificado', 'izquierda'], description: 'Alineación del texto.' },
+              espacioEntreParrafos: { type: 'number', description: 'Espacio después de cada párrafo, en puntos (0 en APA).' },
+              margenes: {
+                type: 'object',
+                description: 'Márgenes en cm (2.54 = una pulgada). Solo los lados que se pidieron.',
+                properties: {
+                  superior: { type: 'number' },
+                  inferior: { type: 'number' },
+                  izquierdo: { type: 'number' },
+                  derecho: { type: 'number' },
+                },
+                additionalProperties: false,
+              },
+              papel: { type: 'string', enum: ['A4', 'carta'] },
+              titulosApa7: {
+                type: 'boolean',
+                description:
+                  'Títulos como APA 7: nivel 1 centrado en negrita, 2 a la izquierda en negrita, 3 en ' +
+                  'negrita y cursiva; en negro y del tamaño del texto. El nivel 1 es el título del capítulo.',
+              },
+              titulosEnNegro: { type: 'boolean', description: 'Solo poner los títulos en negro.' },
+              titulos: {
+                type: 'array',
+                description: 'Un nivel concreto distinto de APA (se aplica después de titulosApa7).',
+                items: {
+                  type: 'object',
+                  properties: {
+                    nivel: { type: 'integer', minimum: 1, maximum: 4 },
+                    alineacion: { type: 'string', enum: ['centrado', 'izquierda', 'derecha'] },
+                    negrita: { type: 'boolean' },
+                    cursiva: { type: 'boolean' },
+                    mayusculas: { type: 'boolean' },
+                    tamano: { type: 'number', description: 'En puntos.' },
+                    fuente: { type: 'string' },
+                  },
+                  required: ['nivel'],
+                  additionalProperties: false,
+                },
+              },
+            },
+            additionalProperties: false,
+          },
           usarNuestraPortada: {
             type: 'boolean',
             description:
@@ -3868,11 +3933,34 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         additionalProperties: false,
       }),
     },
-    async ({ usarNuestraPortada, quitar }) => {
+    async ({ usarNuestraPortada, quitar, ajustes }) => {
       await licenseService.recordUsage({ licenseId: licencia.id, tool: 'formato_de_la_universidad' });
 
       const userId = licencia.user.id;
       const { productCode } = licencia;
+
+      if (ajustes && !quitar) {
+        let r;
+        try {
+          r = await projectService.ajustarFormato({ userId, productCode, ajustes });
+        } catch (error) {
+          if (error instanceof AjusteNoValido) {
+            return texto(`No se aplicó ningún ajuste: ${error.message} Corrige ese dato y vuelve a llamar.`);
+          }
+          throw error;
+        }
+        if (!r) return texto('No tiene una licencia vigente de este método: no se pudo ajustar el formato.');
+        return texto(
+          `Formato ajustado ${r.sobreSuPlantilla ? 'sobre el que subió' : 'sobre el formato por defecto'}: ` +
+            `${r.hecho.join('; ')}. Su próxima descarga del Word sale así.${N}${N}` +
+            'Díselo con esas mismas palabras, sin añadir cambios que no están en la lista, y ofrécele ' +
+            'su Word con "enlace_del_word" para que lo compruebe.' +
+            (r.sobreSuPlantilla
+              ? ''
+              : ' Si su facultad le dio una plantilla con portada, puede subirla con el enlace de ' +
+                'esta herramienta (llámala sin argumentos); entonces habrá que repetir estos ajustes.'),
+        );
+      }
 
       if (quitar) {
         const quitado = await projectService.quitarPlantilla(userId, productCode);
@@ -3914,7 +4002,9 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
             `${await darEnlace({ texto: 'Haz clic aquí para subir tu formato', url, minutos })}${N}${N}` +
             'Dile que suba el .docx que le dieron, sin cambiarle nada y con su ' +
             'portada si la trae, y que vuelva aquí cuando lo haya subido. Solo se guarda el ' +
-            'formato: el texto que traiga el documento no se conserva.',
+            'formato: el texto que traiga el documento no se conserva. Si en lugar de una plantilla ' +
+            'tiene indicaciones («Times 12, doble espacio, márgenes de 2,54») o la guía de su ' +
+            'facultad, léelas y llama con "ajustes".',
         );
       }
 
@@ -3958,7 +4048,8 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
           await darEnlace({ texto: 'Haz clic aquí para cambiar o quitar tu formato', url, minutos }) +
           `${N}${N}Si prefiere que lo quites tú, llama con "quitar" y su Word vuelve al formato por ` +
           'defecto; no se lo des por hecho sin llamar. Si la portada salió mal, llama con ' +
-          '"usarNuestraPortada". Para ver cómo quedó, dale su Word con "enlace_del_word".',
+          '"usarNuestraPortada". Si quiere cambiar la letra, el interlineado, los márgenes o los ' +
+          'títulos, llama con "ajustes". Para ver cómo quedó, dale su Word con "enlace_del_word".',
       );
     },
   );

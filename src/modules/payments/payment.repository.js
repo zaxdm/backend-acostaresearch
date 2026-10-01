@@ -12,6 +12,8 @@ const paymentSelect = {
   createdAt: true,
   paidAt: true,
   reviewNote: true,
+  // Las compras con carrito comparten este identificador; null en las sueltas.
+  cartId: true,
   // `productCode` además de `code`: son cosas distintas y el panel necesita la
   // primera. Varios planes pueden vender el mismo producto —uno suelto y otro
   // en oferta—, y lo que decide qué capítulos ve el comprador es el producto.
@@ -25,6 +27,25 @@ const paymentRepository = {
 
   create(data) {
     return prisma.payment.create({ data });
+  },
+
+  /**
+   * Las filas de un carrito, todas o ninguna: un carrito a medio guardar
+   * cobraría la suma entera y entregaría solo una parte.
+   */
+  createCart(filas) {
+    return prisma.$transaction(filas.map((data) => prisma.payment.create({ data })));
+  },
+
+  /** Las filas de un carrito, con lo mismo que trae `findByOrderId`. */
+  findCart(cartId) {
+    return prisma.payment.findMany({
+      where: { cartId },
+      include: {
+        plan: true,
+        user: { select: { id: true, email: true, firstName: true, lastName: true } },
+      },
+    });
   },
 
   /**
@@ -156,14 +177,33 @@ const paymentRepository = {
     return count > 0;
   },
 
+  /** Cierra todas las filas abiertas de un carrito: se abandonó entero. */
+  async cancelCart(cartId, userId, motivo = null) {
+    const { count } = await prisma.payment.updateMany({
+      where: { cartId, userId, status: 'PENDING' },
+      data: { status: 'CANCELLED', ...(motivo ? { errorCode: String(motivo).slice(0, 60) } : {}) },
+    });
+    return count > 0;
+  },
+
   /**
    * Las otras órdenes abiertas del mismo comprador en la misma pasarela: al
    * abrir una nueva, las anteriores ya no las va a terminar (doble clic, o
    * volvió a pulsar el botón después de cerrar la ventana).
+   *
+   * `exceptCartId` deja en paz las demás filas del carrito recién abierto. Va
+   * con OR y no con NOT: en SQL, «no es este carrito» descarta también las
+   * filas sin carrito, que son justo las que hay que cerrar.
    */
-  async cancelOtherOpen({ userId, provider, exceptId }) {
+  async cancelOtherOpen({ userId, provider, exceptId, exceptCartId = null }) {
     const { count } = await prisma.payment.updateMany({
-      where: { userId, provider, status: 'PENDING', id: { not: exceptId } },
+      where: {
+        userId,
+        provider,
+        status: 'PENDING',
+        id: { not: exceptId },
+        ...(exceptCartId ? { OR: [{ cartId: null }, { cartId: { not: exceptCartId } }] } : {}),
+      },
       data: { status: 'CANCELLED' },
     });
     return count;
@@ -227,7 +267,7 @@ const paymentRepository = {
         discountCents: true,
         user: { select: { id: true, email: true, firstName: true, lastName: true } },
       },
-      orderBy: { createdAt: 'asc' },
+      orderBy: [{ createdAt: 'asc' }, { providerOrderId: 'asc' }],
       take: limit,
     });
   },
@@ -300,8 +340,22 @@ const paymentRepository = {
     });
   },
 
-  countInReview() {
-    return prisma.payment.count({ where: { status: 'IN_REVIEW' } });
+  /**
+   * Cuántos comprobantes esperan. Un carrito es UN comprobante aunque sean
+   * varias filas: es una sola captura y se aprueba de una vez.
+   */
+  async countInReview() {
+    const filas = await prisma.payment.findMany({
+      where: { status: 'IN_REVIEW' },
+      select: { cartId: true },
+    });
+    const carritos = new Set(filas.filter((f) => f.cartId).map((f) => f.cartId));
+    return filas.filter((f) => !f.cartId).length + carritos.size;
+  },
+
+  /** Cuántos pagos usan esta captura. Las de un carrito la comparten. */
+  countByProofPath(proofPath) {
+    return prisma.payment.count({ where: { proofPath } });
   },
 
   /**

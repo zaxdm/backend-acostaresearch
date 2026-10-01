@@ -32,6 +32,7 @@ const rRoutes = require('./modules/r/r.routes');
 const cualitativoRoutes = require('./modules/cualitativo/cualitativo.routes');
 const prepararRoutes = require('./modules/preparar/preparar.routes');
 const { panel: whatsappPanel } = require('./modules/whatsapp/whatsapp.routes');
+const correoRoutes = require('./modules/correo/rebotes.routes');
 
 const comprobarBase = require('./lib/comprobarBase');
 
@@ -122,5 +123,8 @@ router.use('/preparar', prepararRoutes);
 // El bot de WhatsApp en el panel (solo ADMIN). El webhook que llama Meta no
 // cuelga de aquí: va en `app.js`, antes del límite global.
 router.use('/whatsapp', whatsappPanel);
+// Los rebotes de Brevo: un correo que no llegó porque la cuenta no existe.
+// Lo llama Brevo con un secreto en la URL. Ver `modules/correo`.
+router.use('/correo', correoRoutes);
 
 module.exports = router;

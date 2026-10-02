@@ -372,13 +372,14 @@ const paymentService = {
    * orden se abre por la suma. Las filas se guardan juntas o no se guarda
    * ninguna.
    */
-  async createCartOrder({ userId, items, providerCode }) {
+  async createCartOrder({ userId, items, providerCode, discountCode }) {
     const provider = obtenerPasarela(providerCode);
 
-    const lineas = await carrito.resolverLineas(items, {
+    const { lineas, delTotal } = await carrito.resolverLineas(items, {
       precio: (plan) => provider.priceForPlan(plan),
       rebaja: (descuento) => rebajaEnLaMoneda(descuento, provider.currency),
       medio: provider.label,
+      discountCode,
     });
     const amountCents = lineas.reduce((suma, linea) => suma + linea.amountCents, 0);
     const planDelCarrito = carrito.planDelCarrito(lineas.map((linea) => linea.plan));
@@ -407,7 +408,7 @@ const paymentService = {
         providerOrderId: i === 0 ? orden.orderId : `${orden.orderId}#${i + 1}`,
         amountCents: linea.amountCents,
         currency: provider.currency,
-        discountCodeId: linea.descuento?.id ?? null,
+        discountCodeId: carrito.codigoDeLaFila(linea, delTotal),
         discountCents: linea.rebaja,
         cartId,
       })),
@@ -433,7 +434,7 @@ const paymentService = {
       approveUrl: orden.approveUrl,
       amountCents,
       currency: provider.currency,
-      discount: null,
+      discount: carrito.resumenDelTotal(delTotal),
       plan: { code: planDelCarrito.code, name: planDelCarrito.name, words: 0 },
       items: carrito.resumenDeLineas(lineas),
     };

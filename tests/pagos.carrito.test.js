@@ -79,6 +79,7 @@ const filas = new Map(); // id → fila
 const llamadas = { fetch: [], entregas: [], fail: [], cancelCart: [], cancelOtherOpen: [], avisos: [] };
 let respuestasFetch = [];
 let descuentos = {}; // código → descuento
+let generales = {}; // código del carrito sin plan → registro
 let fallaLaEntregaDe = null; // código de plan cuya entrega revienta
 
 function conPlan(fila) {
@@ -106,6 +107,20 @@ falsificar('../src/modules/billing/billing.repository', {
 falsificar('../src/modules/billing/billing.service', { getBalance: async () => ({ words: 0 }) });
 falsificar('../src/modules/billing/discount.service', {
   resolve: async ({ code }) => (code ? (descuentos[code] ?? null) : null),
+  // Los códigos del carrito: los de un producto llevan `planCode`.
+  encontrar: async (code) => {
+    const registro = generales[code] ?? descuentos[code];
+    if (!registro) throw new Error('Ese código de descuento no es válido.');
+    return registro;
+  },
+  // La misma proporción en dólares que el servicio de verdad.
+  aplicarAlTotal: (registro, total) => ({
+    id: registro.id,
+    code: registro.code,
+    amountCents: registro.amountCents,
+    discountUsdCents: Math.round((total.priceUsdCents * registro.amountCents) / total.priceCents),
+    finalPriceCents: total.priceCents - registro.amountCents,
+  }),
 });
 falsificar('../src/modules/licensing/license.repository', {
   findById: async (id) => ({ id, productCode: 'X' }),
@@ -202,6 +217,7 @@ test.beforeEach(() => {
   for (const lista of Object.values(llamadas)) lista.length = 0;
   respuestasFetch = [];
   descuentos = {};
+  generales = {};
   fallaLaEntregaDe = null;
 });
 
@@ -478,6 +494,91 @@ test('rechazar el comprobante rechaza el carrito entero', async () => {
   });
 
   assert.ok([...filas.values()].every((f) => f.status === 'REJECTED'));
+});
+
+// ── Descuento sobre el total ───────────────────────────────────────────────
+
+test('un código general rebaja el TOTAL una vez y se reparte entre las filas', async () => {
+  generales.TOTAL50 = { id: 'g1', code: 'TOTAL50', amountCents: 5000, planCode: null };
+
+  const enviado = await manualService.registrarCarrito({
+    userId: 'user-1',
+    items: [{ planCode: 'METODO' }, { planCode: 'ARTICULO' }],
+    discountCode: 'TOTAL50',
+    buffer: Buffer.from('png'),
+  });
+
+  // 159 + 220 − 50 = 329: cincuenta una vez, no cincuenta por producto.
+  assert.equal(enviado.amountCents, 32900);
+  assert.deepEqual(enviado.discount, { code: 'TOTAL50', amountCents: 5000 });
+
+  const guardadas = [...filas.values()];
+  assert.equal(guardadas.reduce((s, f) => s + f.amountCents, 0), 32900);
+  assert.equal(guardadas.reduce((s, f) => s + f.discountCents, 0), 5000);
+  // El código queda en UNA fila: gasta un solo uso al entregarse.
+  assert.equal(guardadas.filter((f) => f.discountCodeId === 'g1').length, 1);
+  assert.ok(enviado.items.every((i) => i.discount === null));
+});
+
+test('en PayPal el código del total se cobra en dólares y se suma al de la línea', async () => {
+  descuentos.PROMO40 = { id: 'd1', code: 'PROMO40', amountCents: 4000, discountUsdCents: 1100 };
+  generales.TOTAL50 = { id: 'g1', code: 'TOTAL50', amountCents: 5000, planCode: null };
+
+  respuestasFetch = [ordenPaypal()];
+  const orden = await paymentService.createCartOrder({
+    userId: 'user-1',
+    items: [{ planCode: 'METODO', discountCode: 'PROMO40' }, { planCode: 'ARTICULO' }],
+    discountCode: 'TOTAL50',
+    providerCode: 'PAYPAL',
+  });
+
+  // Antes del total: 34 + 60 = 94 $ (339 soles). 50 soles son 94·50/339 ≈ 13,86 $.
+  assert.equal(orden.discount.amountCents, 1386);
+  assert.equal(orden.amountCents, 9400 - 1386);
+  const guardadas = [...filas.values()];
+  assert.equal(guardadas.reduce((s, f) => s + f.amountCents, 0), orden.amountCents);
+  // La línea con su código lo conserva; el del total va a la otra.
+  assert.deepEqual(
+    guardadas.map((f) => f.discountCodeId),
+    ['d1', 'g1'],
+  );
+  assert.deepEqual(
+    orden.items.map((i) => i.discount?.amountCents ?? null),
+    [1100, null],
+  );
+});
+
+test('un código de un producto escrito en el carrito rebaja solo ese producto', async () => {
+  descuentos.SOLOART = { id: 'd2', code: 'SOLOART', amountCents: 3000, discountUsdCents: 800, planCode: 'ARTICULO' };
+
+  const enviado = await manualService.registrarCarrito({
+    userId: 'user-1',
+    items: [{ planCode: 'METODO' }, { planCode: 'ARTICULO' }],
+    discountCode: 'SOLOART',
+    buffer: Buffer.from('png'),
+  });
+
+  assert.equal(enviado.amountCents, 15900 + 22000 - 3000);
+  assert.equal(enviado.discount, null);
+  assert.deepEqual(
+    enviado.items.map((i) => i.discount?.code ?? null),
+    [null, 'SOLOART'],
+  );
+});
+
+test('la ventana comprueba el código del carrito y dice a qué se aplica', async () => {
+  const carrito = require('../src/modules/payments/payment.carrito');
+  generales.TOTAL50 = { id: 'g1', code: 'TOTAL50', amountCents: 5000, planCode: null };
+  descuentos.SOLOART = { id: 'd2', code: 'SOLOART', amountCents: 3000, planCode: 'ARTICULO' };
+  const items = [{ planCode: 'METODO' }, { planCode: 'ARTICULO' }];
+
+  const total = await carrito.validarCodigoDelCarrito(items, 'TOTAL50');
+  assert.equal(total.alcance, 'TOTAL');
+  assert.equal(total.discount.amountCents, 5000);
+
+  const solo = await carrito.validarCodigoDelCarrito(items, 'SOLOART');
+  assert.equal(solo.alcance, 'PLAN');
+  assert.equal(solo.planCode, 'ARTICULO');
 });
 
 // ── Lo que manda el navegador ──────────────────────────────────────────────

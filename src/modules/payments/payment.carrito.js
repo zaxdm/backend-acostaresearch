@@ -21,6 +21,16 @@ const { AppError, NotFoundError } = require('../../shared/errors/AppError');
  *
  * El precio de cada línea lo pone el servidor, igual que en la compra suelta:
  * el navegador manda códigos de plan y de descuento, nunca importes.
+ *
+ * DOS CLASES DE CÓDIGO
+ * --------------------
+ * - El de un producto (los anunciados en su tarjeta) va en su línea y rebaja
+ *   solo esa línea.
+ * - El del carrito (`discountCode` junto a `items`) rebaja el TOTAL una sola
+ *   vez: «S/ 50» en un carrito de tres productos son S/ 50, no S/ 150. Para
+ *   que cada fila siga cuadrando con lo cobrado, la rebaja se reparte entre
+ *   las filas en proporción a lo que paga cada una. El código queda enlazado a
+ *   UNA sola fila, que es la que gasta su uso al entregarse.
  */
 
 const { MAX_PRODUCTOS } = require('./payment.schema');
@@ -45,11 +55,12 @@ function noComprable(mensaje) {
  * `precio(plan)` da el importe en la moneda del cobro (o null si ese plan no
  * se cobra ahí) y `rebaja(descuento)` lo que le quita el código en esa misma
  * moneda. Así sirve igual para PayPal (dólares) que para Culqi y Yape (soles).
+ * `discountCode` es el código del carrito entero, si lo hay.
  *
  * Se rechaza el carrito entero si una línea falla: cobrar una parte de lo que
  * eligió no es lo que pidió.
  */
-async function resolverLineas(items, { precio, rebaja, medio }) {
+async function resolverLineas(items, { precio, rebaja, medio, discountCode }) {
   if (!Array.isArray(items) || items.length < 2) {
     throw noComprable('Un carrito necesita al menos dos productos.');
   }
@@ -84,18 +95,134 @@ async function resolverLineas(items, { precio, rebaja, medio }) {
     const descuento = await discountService.resolve({ code: item.discountCode, plan });
     const menos = descuento ? rebaja(descuento) : 0;
 
-    lineas.push({ plan, descuento, rebaja: menos, amountCents: base - menos });
+    lineas.push({ plan, base, descuento, rebaja: menos, amountCents: base - menos, parteDelTotal: 0 });
   }
 
-  return lineas;
+  const delCarrito = await codigoDelCarrito(discountCode, lineas);
+  if (!delCarrito) return { lineas, delTotal: null };
+
+  if (delCarrito.linea) {
+    // Un código de un solo producto escrito en el campo del carrito: rebaja esa
+    // línea y nada más, igual que si hubiera venido en ella.
+    const linea = delCarrito.linea;
+    linea.descuento = delCarrito.descuento;
+    linea.rebaja = rebaja(delCarrito.descuento);
+    linea.amountCents = linea.base - linea.rebaja;
+    return { lineas, delTotal: null };
+  }
+
+  const portadora = lineas.find((linea) => !linea.descuento);
+  if (!portadora) {
+    throw new AppError('Cada producto ya lleva su código: no se puede sumar otro al total.', {
+      statusCode: 400,
+      code: ERROR_CODES.DISCOUNT_INVALID,
+    });
+  }
+
+  const total = rebaja(delCarrito.descuento);
+  repartir(lineas, total);
+  portadora.portaCodigoDelTotal = true;
+
+  return { lineas, delTotal: { descuento: delCarrito.descuento, rebaja: total } };
+}
+
+/**
+ * El código del carrito, resuelto. Si es de un producto, dice de qué línea;
+ * si es general, calcula la rebaja sobre la suma de lo que ya se iba a pagar.
+ */
+async function codigoDelCarrito(code, lineas) {
+  if (!code) return null;
+
+  const registro = await discountService.encontrar(code);
+
+  if (registro.planCode) {
+    const linea = lineas.find((l) => l.plan.code === registro.planCode);
+    if (!linea) {
+      throw new AppError('Ese código no vale para ningún producto del carrito.', {
+        statusCode: 400,
+        code: ERROR_CODES.DISCOUNT_INVALID,
+      });
+    }
+    return { linea, descuento: await discountService.resolve({ code, plan: linea.plan }) };
+  }
+
+  const priceCents = lineas.reduce(
+    (suma, l) => suma + l.plan.priceCents - (l.descuento?.amountCents ?? 0),
+    0,
+  );
+  const priceUsdCents = lineas.every((l) => l.plan.priceUsdCents)
+    ? lineas.reduce(
+        (suma, l) => suma + l.plan.priceUsdCents - (l.descuento?.discountUsdCents ?? 0),
+        0,
+      )
+    : null;
+
+  return { descuento: discountService.aplicarAlTotal(registro, { priceCents, priceUsdCents }) };
+}
+
+/**
+ * Reparte la rebaja del total entre las líneas, en proporción a lo que paga
+ * cada una. Lo que sobra del redondeo va a la más cara, para que la suma de
+ * las filas sea exactamente lo que se cobra.
+ */
+function repartir(lineas, total) {
+  const suma = lineas.reduce((s, l) => s + l.amountCents, 0);
+  let repartido = 0;
+
+  for (const linea of lineas) {
+    linea.parteDelTotal = Math.floor((total * linea.amountCents) / suma);
+    repartido += linea.parteDelTotal;
+  }
+
+  const mayor = lineas.reduce((a, b) => (b.amountCents > a.amountCents ? b : a));
+  mayor.parteDelTotal += total - repartido;
+
+  for (const linea of lineas) {
+    linea.rebaja += linea.parteDelTotal;
+    linea.amountCents -= linea.parteDelTotal;
+  }
+}
+
+/** Con qué código se guarda cada fila: el suyo, o el del total en la portadora. */
+function codigoDeLaFila(linea, delTotal) {
+  if (linea.descuento) return linea.descuento.id;
+  return linea.portaCodigoDelTotal && delTotal ? delTotal.descuento.id : null;
+}
+
+/** El descuento del total tal como se le devuelve al navegador. */
+function resumenDelTotal(delTotal) {
+  return delTotal ? { code: delTotal.descuento.code, amountCents: delTotal.rebaja } : null;
+}
+
+/**
+ * Comprueba el código del carrito antes de pagar, para enseñarlo en la ventana.
+ *
+ * Calcula en soles, que es lo que se anuncia; la cifra que se cobra la vuelve
+ * a sacar `resolverLineas` al abrir la orden. Dice si rebaja el total o un
+ * solo producto, porque la ventana los enseña en sitios distintos.
+ */
+async function validarCodigoDelCarrito(items, code) {
+  const { lineas, delTotal } = await resolverLineas(items, {
+    precio: (plan) => plan.priceCents,
+    rebaja: (descuento) => descuento.amountCents,
+    medio: 'esta web',
+    discountCode: code,
+  });
+
+  if (delTotal) return { alcance: 'TOTAL', planCode: null, discount: delTotal.descuento };
+
+  const registro = await discountService.encontrar(code);
+  const linea = lineas.find((l) => l.plan.code === registro.planCode);
+  return { alcance: 'PLAN', planCode: linea.plan.code, discount: linea.descuento };
 }
 
 /** Lo que se le devuelve al navegador de cada línea: nunca el plan entero. */
 function resumenDeLineas(lineas) {
-  return lineas.map(({ plan, descuento, rebaja, amountCents }) => ({
+  return lineas.map(({ plan, descuento, rebaja, parteDelTotal, amountCents }) => ({
     plan: { code: plan.code, name: plan.name },
     amountCents,
-    discount: descuento ? { code: descuento.code, amountCents: rebaja } : null,
+    // Solo lo del código de la línea: lo del total se devuelve aparte, una vez.
+    discount: descuento ? { code: descuento.code, amountCents: rebaja - parteDelTotal } : null,
   }));
 }
 
@@ -120,5 +247,8 @@ module.exports = {
   planDelCarrito,
   resolverLineas,
   resumenDeLineas,
+  codigoDeLaFila,
+  resumenDelTotal,
+  validarCodigoDelCarrito,
   ordenarFilas,
 };

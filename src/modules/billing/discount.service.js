@@ -76,6 +76,58 @@ function invalido() {
   });
 }
 
+/**
+ * Cuánto rebaja un código ya comprobado sobre un precio, en las dos monedas.
+ * `plan` puede ser un plan o el total de un carrito: solo se leen sus precios.
+ */
+function calcular(registro, plan) {
+  // La rebaja no puede dejar el precio a cero: PayPal no cobra importes nulos.
+  // Para regalar el producto entero está el código de activación.
+  const rebajaSoles = Math.min(registro.amountCents, plan.priceCents - RESTO_MINIMO_CENTS);
+
+  if (rebajaSoles < DESCUENTO_MINIMO_CENTS) {
+    throw new AppError(`Ese código no se puede aplicar a «${plan.name}».`, {
+      statusCode: 400,
+      code: ERROR_CODES.DISCOUNT_INVALID,
+    });
+  }
+
+  // Misma proporción en dólares, para que lo anunciado y lo cobrado coincidan.
+  const proporcion = rebajaSoles / plan.priceCents;
+  const rebajaDolares = plan.priceUsdCents
+    ? Math.min(
+        Math.round(plan.priceUsdCents * proporcion),
+        plan.priceUsdCents - RESTO_MINIMO_CENTS,
+      )
+    : 0;
+
+  return {
+    id: registro.id,
+    code: registro.code,
+    /** Rebaja anunciada, en céntimos de sol. */
+    amountCents: rebajaSoles,
+    /** Rebaja equivalente en la moneda de la pasarela. */
+    discountUsdCents: rebajaDolares,
+    finalPriceCents: plan.priceCents - rebajaSoles,
+    finalPriceUsdCents: plan.priceUsdCents ? plan.priceUsdCents - rebajaDolares : null,
+    /**
+     * Hasta cuándo vale, y cuántos canjes le quedan.
+     *
+     * Se devuelven para que el comprador vea el plazo mientras decide. Es la
+     * única urgencia que se le puede enseñar sin mentirle: no la marca un
+     * reloj de la pantalla, la marcan estas dos columnas, y cuando se cumplen
+     * el código deja de resolverse. Un contador que cuenta hacia algo que de
+     * verdad ocurre.
+     *
+     * Nulos cuando no hay plazo: el modal entonces no enseña nada, que es lo
+     * correcto. Inventarle una cuenta atrás a un código que no caduca sería
+     * exactamente lo que esto viene a evitar.
+     */
+    expiresAt: registro.expiresAt,
+    usesLeft: registro.maxUses > 0 ? registro.maxUses - registro.usedCount : null,
+  };
+}
+
 const discountService = {
   DESCUENTO_MINIMO_CENTS,
 
@@ -212,6 +264,22 @@ const discountService = {
   },
 
   /**
+   * Busca un código utilizable, sin mirar todavía a qué se aplica.
+   *
+   * Lo usa el carrito para saber si el código es de un producto o de todo lo
+   * que se paga antes de decidir dónde rebajarlo.
+   */
+  async encontrar(code) {
+    const registro = await prisma.discountCode.findUnique({ where: { code: normalizar(code) } });
+
+    if (!registro || !registro.active) throw invalido();
+    if (registro.expiresAt && registro.expiresAt <= new Date()) throw invalido();
+    if (registro.maxUses > 0 && registro.usedCount >= registro.maxUses) throw invalido();
+
+    return registro;
+  },
+
+  /**
    * Busca un código utilizable para un plan concreto.
    *
    * Devuelve además cuánto rebaja en cada moneda, calculado sobre el plan: el
@@ -220,11 +288,7 @@ const discountService = {
   async resolve({ code, plan }) {
     if (!code) return null;
 
-    const registro = await prisma.discountCode.findUnique({ where: { code: normalizar(code) } });
-
-    if (!registro || !registro.active) throw invalido();
-    if (registro.expiresAt && registro.expiresAt <= new Date()) throw invalido();
-    if (registro.maxUses > 0 && registro.usedCount >= registro.maxUses) throw invalido();
+    const registro = await discountService.encontrar(code);
 
     if (registro.planCode && registro.planCode !== plan.code) {
       throw new AppError(`Ese código no se puede usar en «${plan.name}».`, {
@@ -233,53 +297,18 @@ const discountService = {
       });
     }
 
-    // La rebaja no puede dejar el precio a cero: PayPal no cobra importes nulos.
-    // Para regalar el producto entero está el código de activación.
-    const rebajaSoles = Math.min(registro.amountCents, plan.priceCents - RESTO_MINIMO_CENTS);
-
-    if (rebajaSoles < DESCUENTO_MINIMO_CENTS) {
-      throw new AppError(`Ese código no se puede aplicar a «${plan.name}».`, {
-        statusCode: 400,
-        code: ERROR_CODES.DISCOUNT_INVALID,
-      });
-    }
-
-    // Misma proporción en dólares, para que lo anunciado y lo cobrado coincidan.
-    const proporcion = rebajaSoles / plan.priceCents;
-    const rebajaDolares = plan.priceUsdCents
-      ? Math.min(
-          Math.round(plan.priceUsdCents * proporcion),
-          plan.priceUsdCents - RESTO_MINIMO_CENTS,
-        )
-      : 0;
-
-    return {
-      id: registro.id,
-      code: registro.code,
-      /** Rebaja anunciada, en céntimos de sol. */
-      amountCents: rebajaSoles,
-      /** Rebaja equivalente en la moneda de la pasarela. */
-      discountUsdCents: rebajaDolares,
-      finalPriceCents: plan.priceCents - rebajaSoles,
-      finalPriceUsdCents: plan.priceUsdCents ? plan.priceUsdCents - rebajaDolares : null,
-      /**
-       * Hasta cuándo vale, y cuántos canjes le quedan.
-       *
-       * Se devuelven para que el comprador vea el plazo mientras decide. Es la
-       * única urgencia que se le puede enseñar sin mentirle: no la marca un
-       * reloj de la pantalla, la marcan estas dos columnas, y cuando se cumplen
-       * este mismo método deja de resolver el código. Un contador que cuenta
-       * hacia algo que de verdad ocurre.
-       *
-       * Nulos cuando no hay plazo: el modal entonces no enseña nada, que es lo
-       * correcto. Inventarle una cuenta atrás a un código que no caduca sería
-       * exactamente lo que esto viene a evitar.
-       */
-      expiresAt: registro.expiresAt,
-      usesLeft: registro.maxUses > 0 ? registro.maxUses - registro.usedCount : null,
-    };
+    return calcular(registro, plan);
   },
 
+  /**
+   * La rebaja de un código sobre el TOTAL de un carrito, no sobre cada
+   * producto: «S/ 50 de descuento» en un carrito de tres cosas son S/ 50, no
+   * S/ 150. `total` tiene la forma de un plan (`priceCents`, `priceUsdCents`)
+   * con la suma de lo que ya se iba a pagar.
+   */
+  aplicarAlTotal(registro, total) {
+    return calcular(registro, { name: 'tu carrito', ...total });
+  },
   /**
    * Suma un canje. Va dentro de la transacción del cobro: si el pago no se
    * confirma, el código no se gasta.

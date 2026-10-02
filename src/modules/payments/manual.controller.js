@@ -26,13 +26,15 @@ const manualController = {
         ? await manualService.registrarCarrito({
             userId: req.user.id,
             items,
+            // El código del carrito rebaja el total, una sola vez.
+            discountCode: req.query.discountCode,
             operationCode: req.query.operationCode,
             buffer: req.body,
           })
         : await manualService.registrar({
             userId: req.user.id,
             planCode: items ? items[0].planCode : req.query.planCode,
-            discountCode: items ? items[0].discountCode : req.query.discountCode,
+            discountCode: (items && items[0].discountCode) || req.query.discountCode,
             operationCode: req.query.operationCode,
             buffer: req.body,
           });

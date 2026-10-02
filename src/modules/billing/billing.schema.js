@@ -2,6 +2,7 @@
 
 const { z } = require('zod');
 const { correosDe } = require('./plan.visibilidad');
+const { lineasDelCarrito } = require('../payments/payment.schema');
 
 const grantPackSchema = z.object({
   email: z
@@ -48,6 +49,12 @@ const discountIdParamSchema = z.object({ id: z.string().uuid('Identificador no v
 const validateDiscountSchema = z.object({
   code: z.string({ required_error: 'Escribe el código.' }).trim().min(3).max(40),
   planCode: z.string({ required_error: 'Indica el plan.' }).trim().toUpperCase().max(40),
+});
+
+/** El código escrito en un carrito: se comprueba contra todo lo que lleva. */
+const validateCartDiscountSchema = z.object({
+  code: z.string({ required_error: 'Escribe el código.' }).trim().min(3).max(40),
+  items: lineasDelCarrito.refine((lineas) => lineas.length > 1, 'Un carrito lleva dos productos o más.'),
 });
 
 const CODIGO_GRUPO = /^[A-Z0-9]+(?:_[A-Z0-9]+)*$/;
@@ -127,4 +134,5 @@ module.exports = {
   createDiscountSchema,
   discountIdParamSchema,
   validateDiscountSchema,
+  validateCartDiscountSchema,
 };

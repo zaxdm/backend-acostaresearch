@@ -20,12 +20,14 @@ const paymentController = {
             userId: req.user.id,
             items,
             providerCode: req.body.provider,
+            // El código del carrito rebaja el total, una sola vez.
+            discountCode: req.body.discountCode,
           })
         : await paymentService.createOrder({
             userId: req.user.id,
             planCode: items ? items[0].planCode : req.body.planCode,
             providerCode: req.body.provider,
-            discountCode: items ? items[0].discountCode : req.body.discountCode,
+            discountCode: (items && items[0].discountCode) || req.body.discountCode,
           });
     return created(res, { order });
   }),

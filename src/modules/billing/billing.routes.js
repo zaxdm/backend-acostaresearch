@@ -10,6 +10,7 @@ const {
   createDiscountSchema,
   discountIdParamSchema,
   validateDiscountSchema,
+  validateCartDiscountSchema,
   createProductSchema,
   updateProductSchema,
   productCodeParamSchema,
@@ -83,6 +84,12 @@ router.post(
   authenticate,
   validate({ body: validateDiscountSchema }),
   billingController.validateDiscount,
+);
+router.post(
+  '/discounts/validate-cart',
+  authenticate,
+  validate({ body: validateCartDiscountSchema }),
+  billingController.validateCartDiscount,
 );
 
 router.post(

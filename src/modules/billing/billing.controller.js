@@ -5,6 +5,7 @@ const { ok, created } = require('../../shared/http/apiResponse');
 const billingService = require('./billing.service');
 const discountService = require('./discount.service');
 const productService = require('./product.service');
+const carrito = require('../payments/payment.carrito');
 const { addDays } = require('../../shared/utils/tokens');
 
 const billingController = {
@@ -31,6 +32,15 @@ const billingController = {
     const plan = await billingService.findPlan(req.body.planCode);
     const discount = await discountService.resolve({ code: req.body.code, plan });
     return ok(res, { discount }, { message: 'Código aplicado.' });
+  }),
+
+  /**
+   * Comprueba el código de un carrito: si rebaja el total (una sola vez) o un
+   * producto concreto, y cuánto.
+   */
+  validateCartDiscount: asyncHandler(async (req, res) => {
+    const resultado = await carrito.validarCodigoDelCarrito(req.body.items, req.body.code);
+    return ok(res, resultado, { message: 'Código aplicado.' });
   }),
 
   createDiscount: asyncHandler(async (req, res) => {

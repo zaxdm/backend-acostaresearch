@@ -291,12 +291,13 @@ const manualService = {
    * la misma captura. El administrador ve UN comprobante por la suma, y al
    * aprobarlo se entregan todos.
    */
-  async registrarCarrito({ userId, items, operationCode, buffer }) {
-    const lineas = await carrito.resolverLineas(items, {
+  async registrarCarrito({ userId, items, discountCode, operationCode, buffer }) {
+    const { lineas, delTotal } = await carrito.resolverLineas(items, {
       // Yape cobra en soles, que es el precio del catálogo.
       precio: (plan) => plan.priceCents,
       rebaja: (descuento) => descuento.amountCents,
       medio: 'Yape',
+      discountCode,
     });
     const amountCents = lineas.reduce((suma, linea) => suma + linea.amountCents, 0);
     const nombre = carrito.nombreDelCarrito(lineas.map((linea) => linea.plan));
@@ -310,7 +311,7 @@ const manualService = {
         providerOrderId: generarReferencia(),
         amountCents: linea.amountCents,
         currency: MONEDA,
-        discountCodeId: linea.descuento ? linea.descuento.id : null,
+        discountCodeId: carrito.codigoDeLaFila(linea, delTotal),
         discountCents: linea.rebaja,
         operationCode: operationCode || null,
         cartId,
@@ -380,6 +381,7 @@ const manualService = {
       currency: MONEDA,
       status: 'IN_REVIEW',
       plan: { code: 'CARRITO', name: nombre },
+      discount: carrito.resumenDelTotal(delTotal),
       items: carrito.resumenDeLineas(lineas),
     };
   },

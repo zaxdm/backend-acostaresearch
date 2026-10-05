@@ -58,8 +58,23 @@ const tutorialBodySchema = z.object({
 /** Al editar, todo es opcional: se puede cambiar solo la URL del video. */
 const tutorialPatchSchema = tutorialBodySchema.partial();
 
+/**
+ * El orden nuevo al arrastrar en el panel: TODOS los ids, en el orden en que
+ * quedan. Se manda la lista entera y no «este pasa al 3» para que el servidor
+ * no tenga que adivinar cómo correr a los demás.
+ */
+const ordenSchema = z.object({
+  ids: z.array(z.string().uuid('Identificador no válido.')).min(1).max(99),
+});
+
 const idParamSchema = z.object({
   id: z.string().uuid('Identificador no válido.'),
 });
 
-module.exports = { tutorialBodySchema, tutorialPatchSchema, idParamSchema, idDeYouTube };
+module.exports = {
+  tutorialBodySchema,
+  tutorialPatchSchema,
+  ordenSchema,
+  idParamSchema,
+  idDeYouTube,
+};

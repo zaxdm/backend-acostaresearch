@@ -27,6 +27,12 @@ const tutorialController = {
     return ok(res, { tutorial }, { message: mensaje });
   }),
 
+  /** Arrastrar en el panel: devuelve la lista ya numerada. */
+  reorder: asyncHandler(async (req, res) => {
+    const tutoriales = await tutorialService.reorder(req.body.ids);
+    return ok(res, { tutoriales }, { message: 'Orden guardado. Ya se ve así en la web.' });
+  }),
+
   remove: asyncHandler(async (req, res) => {
     await tutorialService.remove(req.params.id);
     return noContent(res);

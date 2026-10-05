@@ -1,7 +1,7 @@
 'use strict';
 
 const prisma = require('../../lib/prisma');
-const { NotFoundError } = require('../../shared/errors/AppError');
+const { ConflictError, NotFoundError } = require('../../shared/errors/AppError');
 
 /**
  * Los videos de la página de tutoriales.
@@ -49,6 +49,30 @@ const tutorialService = {
 
     const fila = await prisma.tutorial.update({ where: { id }, data: datos });
     return salida(fila);
+  },
+
+  /**
+   * Renumera 1, 2, 3… según el orden de `ids`.
+   *
+   * Tiene que venir la lista completa: si faltara uno, quedaría con su número
+   * viejo y chocaría con el de otro. En una transacción, para que un fallo a
+   * medias no deje dos videos con el mismo número.
+   */
+  async reorder(ids) {
+    const existentes = await prisma.tutorial.findMany({ select: { id: true } });
+    const conocidos = new Set(existentes.map((fila) => fila.id));
+    const completa =
+      new Set(ids).size === ids.length &&
+      ids.length === conocidos.size &&
+      ids.every((id) => conocidos.has(id));
+    if (!completa) {
+      throw new ConflictError('La lista cambió mientras la ordenabas. Recarga y vuelve a intentarlo.');
+    }
+
+    await prisma.$transaction(
+      ids.map((id, i) => prisma.tutorial.update({ where: { id }, data: { orden: i + 1 } })),
+    );
+    return tutorialService.listAll();
   },
 
   async remove(id) {

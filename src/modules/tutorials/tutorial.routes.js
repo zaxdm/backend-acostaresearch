@@ -8,6 +8,7 @@ const { ROLES } = require('../../config/constants');
 const {
   tutorialBodySchema,
   tutorialPatchSchema,
+  ordenSchema,
   idParamSchema,
 } = require('./tutorial.schema');
 const tutorialController = require('./tutorial.controller');
@@ -23,6 +24,7 @@ router.use(authenticate, authorize(ROLES.ADMIN));
 
 router.get('/todos', tutorialController.listAll);
 router.post('/', validate({ body: tutorialBodySchema }), tutorialController.create);
+router.put('/orden', validate({ body: ordenSchema }), tutorialController.reorder);
 router.patch(
   '/:id',
   validate({ params: idParamSchema, body: tutorialPatchSchema }),

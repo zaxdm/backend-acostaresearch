@@ -1,7 +1,22 @@
 'use strict';
 
+const env = require('../../config/env');
+const logger = require('../../config/logger');
 const prisma = require('../../lib/prisma');
-const { ConflictError, NotFoundError } = require('../../shared/errors/AppError');
+const { AppError, ConflictError, NotFoundError } = require('../../shared/errors/AppError');
+
+/**
+ * Lo que se le pide a Gemini al ver el video. Corto y en segunda persona,
+ * como el resto de la página de tutoriales.
+ */
+const PEDIDO_RESUMEN =
+  'Eres el editor de la página de tutoriales de Acosta | IA & Research, que enseña a ' +
+  'tesistas a hacer su tesis con Claude y Skills. Mira el video y devuelve SOLO un JSON ' +
+  '{"entrada": "...", "puntos": ["...", "..."]}. "entrada": una o dos frases en español, ' +
+  'de tú, que digan de qué va el video y para qué le sirve al tesista (máximo 300 ' +
+  'caracteres). "puntos": de 4 a 6 cosas concretas que se ven en el video, en el orden ' +
+  'en que aparecen, cada una en una frase corta sin punto final. Solo lo que de verdad ' +
+  'sale en el video: no inventes pasos.';
 
 /**
  * Los videos de la página de tutoriales.
@@ -96,6 +111,83 @@ const tutorialService = {
     } catch {
       return { titulo: null };
     }
+  },
+
+  /**
+   * «De qué va» y «Puntos que cubre», escritos por Gemini viendo el video.
+   *
+   * Gemini acepta un enlace de YouTube como si fuera un archivo y ve el video
+   * entero (vídeo y audio). Solo funciona con videos PÚBLICOS: uno oculto o
+   * privado da error y el panel lo dice. Resolución baja y un fotograma cada
+   * 10 s: lo que se explica va en el audio, y así gasta mucho menos. Solo se
+   * llama cuando el admin pulsa «Escribir con IA», nunca al pegar el enlace.
+   * Si el modelo principal está saturado, se prueba el de respaldo.
+   */
+  async resumenDeYouTube(videoId) {
+    if (!env.GEMINI_API_KEY) {
+      throw new AppError('La IA no está configurada en el servidor.', { statusCode: 503 });
+    }
+    const modelos = [env.GEMINI_MODEL, env.GEMINI_MODEL_RESPALDO].filter(
+      (modelo, i, lista) => modelo && lista.indexOf(modelo) === i,
+    );
+
+    for (const modelo of modelos) {
+      try {
+        const respuesta = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelo)}:generateContent`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
+            body: JSON.stringify({
+              contents: [
+                {
+                  role: 'user',
+                  parts: [
+                    {
+                      fileData: { fileUri: `https://www.youtube.com/watch?v=${videoId}` },
+                      // Un fotograma cada 10 s en vez de uno por segundo: es una
+                      // grabación de pantalla con voz, lo que cuenta va en el audio.
+                      videoMetadata: { fps: 0.1 },
+                    },
+                    { text: PEDIDO_RESUMEN },
+                  ],
+                },
+              ],
+              generationConfig: {
+                responseMimeType: 'application/json',
+                maxOutputTokens: 1500,
+                mediaResolution: 'MEDIA_RESOLUTION_LOW',
+              },
+            }),
+            signal: AbortSignal.timeout(90_000),
+          },
+        );
+        const cuerpo = await respuesta.json().catch(() => null);
+        if (!respuesta.ok) {
+          logger.warn({ modelo, status: respuesta.status, error: cuerpo?.error?.message }, 'Resumen de video: Gemini falló');
+          continue;
+        }
+        const texto = (cuerpo?.candidates?.[0]?.content?.parts ?? [])
+          .filter((parte) => !parte.thought && typeof parte.text === 'string')
+          .map((parte) => parte.text)
+          .join('');
+        const datos = JSON.parse(texto);
+        const entrada = String(datos?.entrada ?? '').trim().slice(0, 600);
+        const puntos = (Array.isArray(datos?.puntos) ? datos.puntos : [])
+          .map((punto) => String(punto).trim())
+          .filter(Boolean)
+          .slice(0, 8);
+        if (entrada || puntos.length > 0) return { entrada, puntos };
+      } catch (error) {
+        logger.warn({ modelo, err: error?.message }, 'Resumen de video: respuesta no válida');
+      }
+    }
+
+    throw new AppError(
+      'La IA no pudo ver el video ahora. Si es oculto o privado no puede; si es público, ' +
+        'prueba otra vez en un rato o escríbelo a mano.',
+      { statusCode: 503 },
+    );
   },
 
   async remove(id) {

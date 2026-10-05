@@ -30,6 +30,11 @@ router.get(
   validate({ params: videoIdParamSchema }),
   tutorialController.youtube,
 );
+router.post(
+  '/youtube/:videoId/resumen',
+  validate({ params: videoIdParamSchema }),
+  tutorialController.resumen,
+);
 router.put('/orden', validate({ body: ordenSchema }), tutorialController.reorder);
 router.patch(
   '/:id',

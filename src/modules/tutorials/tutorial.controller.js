@@ -38,6 +38,11 @@ const tutorialController = {
     return ok(res, await tutorialService.datosDeYouTube(req.params.videoId));
   }),
 
+  /** «De qué va» y los puntos, escritos por la IA viendo el video. */
+  resumen: asyncHandler(async (req, res) => {
+    return ok(res, await tutorialService.resumenDeYouTube(req.params.videoId));
+  }),
+
   remove: asyncHandler(async (req, res) => {
     await tutorialService.remove(req.params.id);
     return noContent(res);

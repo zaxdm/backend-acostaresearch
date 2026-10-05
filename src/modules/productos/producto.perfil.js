@@ -70,12 +70,50 @@ const INFORME = Object.freeze({
   ]),
 });
 
+/**
+ * El Trabajo de Suficiencia Profesional (TSP).
+ *
+ * Es otra modalidad de titulación, no otro tipo de documento: lleva portada,
+ * índice, páginas preliminares, asesor y reglamento de facultad como una
+ * tesis. Por eso su `tipo` es 'tesis' —todo lo que el Word y el panel hacen
+ * con una tesis le vale tal cual— y lo que cambia va en `modalidad` y en los
+ * textos. Lo que de verdad lo distingue, que no lleva hipótesis, ni
+ * instrumento, ni muestra, lo deciden sus propias skills (`tsp-fase*`): el
+ * catálogo de su grupo es otro, y con él el orden, el «¿qué sigue?» y la barra
+ * de avance.
+ *
+ * NO cambia el perfil de tesis: las instantáneas siguen vigilando TESIS.
+ */
+const TSP = Object.freeze({
+  ...TESIS,
+  modalidad: 'tsp',
+  obra: 'su trabajo de suficiencia profesional',
+  laObra: 'el trabajo de suficiencia profesional',
+  tuObra: 'tu trabajo de suficiencia profesional',
+  entregarla: 'entregarlo',
+  /** Cómo se llama la ruta en el catálogo y el archivo del Word. */
+  ruta: 'Ruta del Trabajo de Suficiencia Profesional',
+  archivo: 'suficiencia-profesional',
+});
+
 /** El perfil de un producto por su código. Sin código o desconocido: tesis. */
 function perfilDe(productCode) {
   const codigo = String(productCode ?? '');
   if (codigo.startsWith('ARTICULO')) return ARTICULO;
   if (codigo.startsWith('INFORME')) return INFORME;
+  if (codigo.startsWith('TSP')) return TSP;
   return TESIS;
+}
+
+/**
+ * ¿Es una tesis de las de siempre, con hipótesis y método?
+ *
+ * Para lo que es del método de tesis y no de cualquier trabajo de grado: el
+ * perfil de país (TFG/TFM), que reescribe la estructura en términos de
+ * metodología y resultados que un TSP no tiene.
+ */
+function esTesisDelMetodo(productCode) {
+  return perfilDe(productCode) === TESIS;
 }
 
 /**
@@ -103,4 +141,4 @@ function traeHerramientas(productCode) {
   return !SIN_HERRAMIENTAS.test(String(productCode ?? '').trim());
 }
 
-module.exports = { perfilDe, traeHerramientas, TESIS, ARTICULO, INFORME };
+module.exports = { perfilDe, esTesisDelMetodo, traeHerramientas, TESIS, ARTICULO, INFORME, TSP };

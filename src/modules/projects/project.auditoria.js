@@ -29,7 +29,12 @@ const { normalizar } = require('../references/zotero.mapper');
 const cifras = require('./project.cifras');
 
 /** Capítulos donde no citar nada es, casi siempre, un olvido. */
-const EXIGEN_FUENTES = new Set(['marco-teorico', 'discusion', 'articulo-fase3-revision-literatura']);
+const EXIGEN_FUENTES = new Set([
+  'marco-teorico',
+  'discusion',
+  'articulo-fase3-revision-literatura',
+  'tsp-fase2-marco-teorico',
+]);
 
 /**
  * Capítulos donde un número es un resultado de este estudio.
@@ -44,6 +49,8 @@ const REPORTAN_CIFRAS = new Set([
   'conclusiones-abstract',
   'articulo-fase5-resultados',
   'articulo-fase6-discusion',
+  'tsp-fase4-resultados',
+  'tsp-fase5-conclusiones',
 ]);
 
 /**
@@ -127,7 +134,8 @@ function auditar({ proyecto, catalogo, etapas, capitulos, evidencia, citasRotas 
 
   // ── 2. Coherencia entre objetivos, variables y conclusiones ────────────
   const datos = new Map(etapas.map((e) => [e.skillCode, e.datos ?? {}]));
-  const objetivos = datos.get('problema-y-objetivos') ?? {};
+  // En el TSP los objetivos se fijan en su Capítulo I, con los mismos campos.
+  const objetivos = datos.get('problema-y-objetivos') ?? datos.get('tsp-fase1-introduccion') ?? {};
 
   const especificos = objetivos.objetivosEspecificos ?? [];
   const variables = objetivos.variables ?? [];
@@ -156,7 +164,7 @@ function auditar({ proyecto, catalogo, etapas, capitulos, evidencia, citasRotas 
 
   // Cada objetivo específico debería tener su conclusión. Es de las primeras
   // cosas que mira un jurado, y de las que más se caen al final.
-  const conclusiones = textoDe.get('conclusiones-abstract');
+  const conclusiones = textoDe.get('conclusiones-abstract') ?? textoDe.get('tsp-fase5-conclusiones');
   if (conclusiones && especificos.length > 0) {
     especificos.forEach((objetivo, i) => {
       if (!apareceEn(objetivo, conclusiones)) {

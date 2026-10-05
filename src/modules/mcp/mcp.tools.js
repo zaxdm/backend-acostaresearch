@@ -416,6 +416,38 @@ const GUARDAR_AVANCE = {
 const ESQUEMA_GUARDAR_AVANCE = fromJsonSchema(GUARDAR_AVANCE);
 
 /**
+ * El mismo esquema para el Trabajo de Suficiencia Profesional.
+ *
+ * Solo cambia la lista de campos por capítulo: a quien hace un TSP no se le
+ * enseñan hipótesis, muestra ni instrumento, porque Claude acaba rellenando lo
+ * que ve. Los campos son los de `project.etapas`.
+ */
+const ESQUEMA_GUARDAR_AVANCE_TSP = fromJsonSchema({
+  ...GUARDAR_AVANCE,
+  properties: {
+    ...GUARDAR_AVANCE.properties,
+    tema: {
+      type: 'string',
+      description: 'El título del trabajo de suficiencia profesional, si se ha fijado o ha cambiado.',
+    },
+    datos: {
+      ...GUARDAR_AVANCE.properties.datos,
+      description:
+        'Lo mismo que el resumen pero por campos, para los capítulos que los tienen. ' +
+        'Mándalo SIEMPRE que se fije uno de estos, además del resumen: el resumen se lee, ' +
+        'los campos se usan.\n\n' +
+        'tsp-fase0-experiencia: empresa, rubro, cargo, periodo, experiencia, problema, ' +
+        'evidencias (lista).\n' +
+        'tsp-fase1-introduccion: problemaGeneral, objetivoGeneral, objetivosEspecificos (lista).\n' +
+        'tsp-fase3-experiencia: metodologia, actividades (lista), herramientas (lista).\n' +
+        'tsp-fase4-resultados: indicadores (lista), logros (lista).\n\n' +
+        'Los capítulos que no salen aquí no llevan campos: para esos basta el resumen. ' +
+        'Manda solo lo que se haya fijado; lo que no mandes se queda como estaba.',
+    },
+  },
+});
+
+/**
  * El mismo esquema con la ficha del informe estudiantil.
  *
  * Aparte y no dentro del de siempre: tesis y artículo no tienen curso ni
@@ -1032,7 +1064,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
           : '';
 
       return texto(
-        `${perfil.tipo === 'informe' ? 'Ruta del informe' : 'Método de tesis'} — Acosta | IA & Research\n\n${lineas.join('\n\n')}${aviso}\n\n` +
+        `${perfil.ruta ?? (perfil.tipo === 'informe' ? 'Ruta del informe' : 'Método de tesis')} — Acosta | IA & Research\n\n${lineas.join('\n\n')}${aviso}\n\n` +
           'Para trabajar un capítulo usa la herramienta "redactar" con la clave correspondiente.',
       );
     },
@@ -1254,7 +1286,12 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         'aunque sea en otra conversación. Úsala EN CUANTO se fije algo —el tema, los ' +
         'objetivos, la población, el diseño—, no al terminar. Guarda lo acordado en dos o ' +
         'tres frases, nunca el texto del capítulo.',
-      inputSchema: perfil.tipo === 'informe' ? ESQUEMA_GUARDAR_AVANCE_INFORME : ESQUEMA_GUARDAR_AVANCE,
+      inputSchema:
+        perfil.tipo === 'informe'
+          ? ESQUEMA_GUARDAR_AVANCE_INFORME
+          : perfil.modalidad === 'tsp'
+            ? ESQUEMA_GUARDAR_AVANCE_TSP
+            : ESQUEMA_GUARDAR_AVANCE,
     },
     async (entrada) => {
       await licenseService.recordUsage({ licenseId: licencia.id, tool: 'guardar_avance' });

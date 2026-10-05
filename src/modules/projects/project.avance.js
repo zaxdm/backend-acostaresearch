@@ -74,32 +74,54 @@ const REGLAS = [
     fases: [/^aspectos-administrativos$/],
   },
   { titulo: /^(aspectos administrativos|administracion del (proyecto|estudio))\b/, fases: null },
+  /*
+   * El capítulo propio del TSP. Va antes que «resultado» y «metodología»:
+   * «Descripción de la experiencia» no es ninguno de los dos, y «Metodología
+   * aplicada en la experiencia» es parte de este capítulo, no de un método de
+   * investigación que el TSP no tiene.
+   */
+  {
+    titulo: /descripcion de la experiencia|experiencia profesional|desarrollo de la experiencia|actividades (desarrolladas|realizadas)|metodologia (aplicada|de trabajo)/,
+    fases: [/^tsp-fase3-experiencia$/],
+  },
   {
     titulo: /resultado/,
-    fases: [/^analisis-datos-rstudio$/, /^analisis-cualitativo$/, /^articulo-fase5-resultados$/, /^informe-fase3/],
+    fases: [
+      /^analisis-datos-rstudio$/,
+      /^analisis-cualitativo$/,
+      /^articulo-fase5-resultados$/,
+      /^informe-fase3/,
+      /^tsp-fase4-resultados$/,
+    ],
   },
   { titulo: /discusion/, fases: [/(^|-)discusion$/] },
-  { titulo: /conclusion|recomendacion/, fases: [/conclusiones-abstract$/, /^informe-fase4/] },
+  { titulo: /conclusion|recomendacion/, fases: [/conclusiones-abstract$/, /^informe-fase4/, /^tsp-fase5-conclusiones$/] },
   { titulo: /metodolog|metodo|materiales y/, fases: [/^metodologia$/, /^articulo-fase4-metodos$/] },
   {
     titulo: /marco teorico|marco conceptual|marco referencial|antecedentes|bases teoricas|revision de (la )?literatura|estado del arte|fundamentacion/,
-    fases: [/^marco-teorico$/, /^articulo-fase3-revision-literatura$/, /^informe-fase2-desarrollo$/],
+    fases: [/^marco-teorico$/, /^articulo-fase3-revision-literatura$/, /^informe-fase2-desarrollo$/, /^tsp-fase2-marco-teorico$/],
   },
   {
     titulo: /introduccion|planteamiento|el problema|problema de investigacion|realidad problematica|objetivos/,
-    fases: [/^problema-y-objetivos$/, /^articulo-fase2-introduccion$/, /^informe-fase2-desarrollo$/],
+    fases: [/^problema-y-objetivos$/, /^articulo-fase2-introduccion$/, /^informe-fase2-desarrollo$/, /^tsp-fase1-introduccion$/],
   },
+  // Cómo titulan algunas guías de TSP su primer capítulo. Solo para el TSP.
+  { titulo: /aspectos generales|generalidades de la empresa|descripcion de la empresa/, fases: [/^tsp-fase1-introduccion$/] },
   { titulo: /desarrollo/, fases: [/^informe-fase2-desarrollo$/] },
 ];
 
-/** En la tesis, el capítulo sin nombre se reconoce por su número: así los ordena el método. */
+/**
+ * En la tesis, el capítulo sin nombre se reconoce por su número: así los ordena
+ * el método. El TSP numera cinco y a su manera; como sus claves no están en el
+ * catálogo de una tesis ni al revés, cada número prueba las dos.
+ */
 const POR_NUMERO_EN_TESIS = {
-  1: /^problema-y-objetivos$/,
-  2: /^marco-teorico$/,
-  3: /^metodologia$/,
-  4: /^analisis-datos-rstudio$/,
-  5: /(^|-)discusion$/,
-  6: /conclusiones-abstract$/,
+  1: [/^problema-y-objetivos$/, /^tsp-fase1-introduccion$/],
+  2: [/^marco-teorico$/, /^tsp-fase2-marco-teorico$/],
+  3: [/^metodologia$/, /^tsp-fase3-experiencia$/],
+  4: [/^analisis-datos-rstudio$/, /^tsp-fase4-resultados$/],
+  5: [/(^|-)discusion$/, /^tsp-fase5-conclusiones$/],
+  6: [/conclusiones-abstract$/],
 };
 
 /** La primera fase del catálogo que casa con alguno de los patrones, en su orden. */
@@ -140,8 +162,8 @@ function faseDelTitulo(titulo, { codigos, esquema, tipo }) {
 
   if (numero && tipo === 'tesis') {
     const n = ROMANOS[numero] ?? Number(numero);
-    const patron = POR_NUMERO_EN_TESIS[n];
-    if (patron) return primeraFase([patron], codigos) ?? undefined;
+    const patrones = POR_NUMERO_EN_TESIS[n];
+    if (patrones) return primeraFase(patrones, codigos) ?? undefined;
   }
 
   return undefined;

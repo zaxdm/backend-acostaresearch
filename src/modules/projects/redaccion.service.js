@@ -66,6 +66,13 @@ const ORDEN = [
   'analisis-cualitativo',
   'discusion',
   'conclusiones-abstract',
+  // Trabajo de Suficiencia Profesional
+  'tsp-fase0-experiencia',
+  'tsp-fase1-introduccion',
+  'tsp-fase2-marco-teorico',
+  'tsp-fase3-experiencia',
+  'tsp-fase4-resultados',
+  'tsp-fase5-conclusiones',
 ];
 
 const posicion = (code) => {

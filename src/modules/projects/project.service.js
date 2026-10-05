@@ -48,7 +48,7 @@ const skillService = require('../skills/skill.service');
 const referenceService = require('../references/reference.service');
 const { guardarAvanceSchema, guardarCapituloSchema } = require('./project.schema');
 const { fusionarFicha, lineasDeFicha, esDeEmpresa, NOMBRE_DE_TIPO } = require('./project.ficha-informe');
-const { perfilDe } = require('../productos/producto.perfil');
+const { perfilDe, esTesisDelMetodo } = require('../productos/producto.perfil');
 const { lineaDeMaterial } = require('./project.material');
 const esquemaDeCapitulos = require('./project.esquema');
 
@@ -81,7 +81,7 @@ function conMiles(numero) {
  * producto en vez de casar producto y clave a mano, para que un método nuevo
  * que use cualquiera de las dos funcione sin tocar esto.
  */
-const CAPITULOS_DE_RESULTADOS = ['analisis-datos-rstudio', 'articulo-fase5-resultados'];
+const CAPITULOS_DE_RESULTADOS = ['analisis-datos-rstudio', 'articulo-fase5-resultados', 'tsp-fase4-resultados'];
 
 async function capituloDeResultados(productCode) {
   const catalogo = await skillService.listCatalog(productCode);
@@ -178,6 +178,11 @@ async function contexto(userId, productCode) {
   // ve con cuál está trabajando Claude, y al comprador no le sale nada nuevo.
   if (proyecto.nombre) cabecera.push(`Tesis activa: ${proyecto.nombre} (se cambia en el panel)`);
   if (proyecto.tema) cabecera.push(`Tema: ${proyecto.tema}`);
+  // La modalidad, para que Claude no le hable de hipótesis ni de muestra a
+  // quien se titula por su experiencia en una empresa.
+  if (perfilDe(productCode).modalidad === 'tsp') {
+    cabecera.push('Modalidad: Trabajo de Suficiencia Profesional (sin hipótesis, sin instrumento ni muestra)');
+  }
   const donde = [proyecto.carrera, proyecto.universidad, paises.nombreDe(proyecto.pais)]
     .filter(Boolean)
     .join(' · ');
@@ -217,7 +222,7 @@ async function contexto(userId, productCode) {
   // esquema es lo que evita que el asistente empiece a inventar claves nuevas.
   const estructura = esquemaDeCapitulos.comoTexto(proyecto.esquema, catalogo);
   // Lo que cambia del método en su país: estructura, fuentes, ley de datos.
-  const perfilDePais = perfilDe(productCode).tipo === 'tesis' ? paises.perfilPara(proyecto.pais) : null;
+  const perfilDePais = esTesisDelMetodo(productCode) ? paises.perfilPara(proyecto.pais) : null;
 
   return [
     'LO QUE ESTE SERVIDOR YA SABE DE SU PROYECTO',
@@ -454,7 +459,7 @@ async function resumen(userId, productCode) {
     loSuyo.join('\n'),
     // Solo en la tesis: es la que cambia de estructura, fuentes y ley según el
     // país. El artículo lo manda la revista y el informe, el docente.
-    perfilDe(productCode).tipo === 'tesis' ? paises.perfilPara(proyecto.pais) : null,
+    esTesisDelMetodo(productCode) ? paises.perfilPara(proyecto.pais) : null,
     // Sin esta línea, el asistente da por hecho que lo que no está aquí no
     // existe y se pone a preguntarle al tesista lo que ya decidió, que es
     // exactamente lo que este módulo entero existe para evitar.
@@ -910,7 +915,7 @@ async function armarWord(userId, productCode) {
 
   return {
     buffer,
-    nombreArchivo: documento.nombreDeArchivo(proyecto.tema, perfil.tipo === 'informe' ? 'informe' : 'tesis'),
+    nombreArchivo: documento.nombreDeArchivo(proyecto.tema, perfil.archivo ?? (perfil.tipo === 'informe' ? 'informe' : 'tesis')),
     capitulos: capitulos.length,
     referencias: armado.usadas,
     citasPerdidas: armado.perdidas,

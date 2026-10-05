@@ -272,6 +272,110 @@ const ETAPAS = {
     campos: {},
     necesita: [{ etapa: 'informe-fase0-encargo', campos: ['esquema'] }],
   },
+
+  // ── Trabajo de Suficiencia Profesional ───────────────────────────────────
+  //
+  // No hay población, muestra ni hipótesis: el objeto del trabajo es una
+  // experiencia concreta en una empresa. Lo que la Fase 0 fija aquí es lo que
+  // las demás necesitan para no inventar: dónde, con qué cargo, cuándo y qué
+  // problema se resolvió.
+
+  'tsp-fase0-experiencia': {
+    campos: {
+      empresa: {
+        titulo: 'Empresa o institución',
+        pista: 'Su nombre, o cómo se la va a llamar si no autoriza el nombre.',
+      },
+      rubro: {
+        titulo: 'Rubro',
+        pista: 'A qué se dedica: «distribución de alimentos», «municipalidad distrital».',
+      },
+      cargo: {
+        titulo: 'Cargo',
+        pista: 'El puesto de quien presenta el trabajo, y el área.',
+      },
+      periodo: {
+        titulo: 'Periodo de la experiencia',
+        pista: 'Desde y hasta: «marzo de 2023 a diciembre de 2025».',
+      },
+      experiencia: {
+        titulo: 'Experiencia elegida',
+        pista: 'El proyecto, la mejora o el proceso concreto que se va a contar.',
+      },
+      problema: {
+        titulo: 'Problema que resolvió',
+        pista: 'Qué fallaba antes, en una frase y con su dato si lo hay.',
+      },
+      evidencias: {
+        titulo: 'Evidencias disponibles',
+        lista: true,
+        maximo: 12,
+        pista: 'Una por línea: «informe de producción 2024», «actas de conformidad», «fotos de la obra».',
+      },
+    },
+    necesita: [],
+  },
+
+  'tsp-fase1-introduccion': {
+    campos: {
+      problemaGeneral: {
+        titulo: 'Problema general',
+        pista: 'El problema de la empresa que atendió la experiencia, en interrogativa si su guía lo pide.',
+      },
+      objetivoGeneral: {
+        titulo: 'Objetivo general',
+        pista: 'Empieza por un verbo en infinitivo. Lo que se logró con la experiencia, no lo que se investigó.',
+      },
+      objetivosEspecificos: {
+        titulo: 'Objetivos específicos',
+        lista: true,
+        pista: 'Uno por línea. Cada uno tendrá su resultado en el Capítulo IV.',
+      },
+    },
+    necesita: [{ etapa: 'tsp-fase0-experiencia', campos: ['empresa', 'experiencia'] }],
+  },
+
+  'tsp-fase3-experiencia': {
+    campos: {
+      metodologia: {
+        titulo: 'Metodología aplicada',
+        pista: 'El método de trabajo, la norma o el marco que se siguió: «Lean, 5S», «PMBOK», «NTP 339.034».',
+      },
+      actividades: {
+        titulo: 'Actividades desarrolladas',
+        lista: true,
+        maximo: 15,
+        pista: 'Una por línea y en orden: «Diagnóstico de tiempos de despacho — marzo 2024».',
+      },
+      herramientas: {
+        titulo: 'Herramientas y recursos',
+        lista: true,
+        pista: 'Software, equipos, formatos: «AutoCAD», «Excel con tablas dinámicas».',
+      },
+    },
+    necesita: [{ etapa: 'tsp-fase1-introduccion', campos: ['objetivosEspecificos'] }],
+  },
+
+  'tsp-fase4-resultados': {
+    campos: {
+      indicadores: {
+        titulo: 'Indicadores antes y después',
+        lista: true,
+        maximo: 12,
+        pista: 'Uno por línea: «Tiempo de despacho: 48 h → 26 h (2023 vs 2025)».',
+      },
+      logros: {
+        titulo: 'Logros por objetivo',
+        lista: true,
+        pista: 'Uno por objetivo específico, en una línea cada uno.',
+      },
+      resultados: CIFRAS_OBTENIDAS,
+    },
+    necesita: [
+      { etapa: 'tsp-fase1-introduccion', campos: ['objetivosEspecificos'] },
+      { etapa: 'tsp-fase3-experiencia', campos: ['actividades'] },
+    ],
+  },
 };
 
 /** Los campos que admite una etapa, o null si esa etapa no está registrada. */

@@ -76,7 +76,18 @@ const FASES_DE_TRABAJO = new Set([
   'tema-y-delimitacion',
   'instrumento-investigacion',
   'recoleccion-datos',
+  // La ficha de la experiencia del TSP: empresa, cargo y periodo para las
+  // fases siguientes. Es su «tema y delimitación»: no es capítulo de nadie.
+  'tsp-fase0-experiencia',
 ]);
+
+/**
+ * Las propuestas que no entran al documento ni aunque el esquema las nombre.
+ *
+ * Las otras fases de trabajo sí pueden salir si el reglamento las pide —el
+ * cuestionario como anexo—; estas son notas para el asesor y nada más.
+ */
+const NUNCA_EN_EL_DOCUMENTO = new Set(['tema-y-delimitacion', 'tsp-fase0-experiencia']);
 
 /**
  * Las secciones que solo lleva el PROYECTO de tesis, no el informe final.
@@ -259,10 +270,13 @@ function normalizar(entrada, { catalogo = [], anterior = null, conTexto = new Se
        * propuesta volviera a encabezar la tesis, con índice y todo, que es
        * justo lo que se quitó.
        */
-      if (fase === 'tema-y-delimitacion') {
+      if (NUNCA_EN_EL_DOCUMENTO.has(fase)) {
         throw new EsquemaNoValido(
-          'La fase "tema-y-delimitacion" no va dentro del documento: la propuesta de tema es ' +
-            'lo que el tesista lleva al asesor, no un capítulo de su tesis. Quítala del esquema ' +
+          `La fase "${fase}" no va dentro del documento: ` +
+            (fase === 'tema-y-delimitacion'
+              ? 'la propuesta de tema es lo que el tesista lleva al asesor, no un capítulo de su tesis. '
+              : 'la ficha de la experiencia es la base de los capítulos, no un capítulo. ') +
+            'Quítala del esquema ' +
             'y deja el capítulo con las fases que sí se escriben.',
         );
       }
@@ -370,7 +384,7 @@ function capitulosDelDocumento({
      */
     partes: c.clave
       ? [c.clave]
-      : c.de.filter((code) => incluirFasesDeTrabajo || code !== 'tema-y-delimitacion'),
+      : c.de.filter((code) => incluirFasesDeTrabajo || !NUNCA_EN_EL_DOCUMENTO.has(code)),
     // Un capítulo propio no está en el catálogo: se dice, para poder tratarlo
     // como las secciones aparte del informe.
     ...(c.clave ? { propio: true } : {}),

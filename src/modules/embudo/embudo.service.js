@@ -89,7 +89,7 @@ const embudoService = {
         where: {
           createdAt: { gte: desde },
           plan: { kind: 'LICENSE' },
-          provider: { in: ['PAYPAL', 'CULQI', 'YAPE'] },
+          provider: { in: ['PAYPAL', 'CULQI', 'YAPE', 'WESTERN_UNION'] },
           user: CLIENTE,
         },
       }),

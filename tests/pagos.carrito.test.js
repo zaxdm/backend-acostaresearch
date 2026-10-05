@@ -496,6 +496,78 @@ test('rechazar el comprobante rechaza el carrito entero', async () => {
   assert.ok([...filas.values()].every((f) => f.status === 'REJECTED'));
 });
 
+// ── Western Union ──────────────────────────────────────────────────────────
+
+test('Western Union cobra en dólares, al precio de PayPal, con su propia referencia', async () => {
+  envFalso.westernUnion = { activo: true, beneficiario: 'Acosta', dni: '1', ciudad: 'Trujillo' };
+  descuentos.PROMO40 = { id: 'd1', code: 'PROMO40', amountCents: 4000, discountUsdCents: 1100 };
+
+  const suelto = await manualService.registrar({
+    userId: 'user-1',
+    planCode: 'METODO',
+    discountCode: 'PROMO40',
+    operationCode: '1234567890',
+    buffer: Buffer.from('png'),
+    metodo: 'WESTERN_UNION',
+  });
+
+  // 45 $ − 11 $ de la rebaja en dólares, no 40 soles.
+  assert.equal(suelto.amountCents, 3400);
+  assert.equal(suelto.currency, 'USD');
+  assert.match(suelto.reference, /^WU-/);
+  const fila = filas.get(suelto.paymentId);
+  assert.equal(fila.provider, 'WESTERN_UNION');
+  assert.equal(fila.discountCents, 1100);
+  assert.match(llamadas.avisos[0].titulo, /^Western Union por revisar · US\$ 34\.00/);
+
+  const carro = await manualService.registrarCarrito({
+    userId: 'user-1',
+    items: [{ planCode: 'METODO' }, { planCode: 'ARTICULO' }],
+    operationCode: '1234567890',
+    buffer: Buffer.from('png'),
+    metodo: 'WESTERN_UNION',
+  });
+  assert.equal(carro.amountCents, 4500 + 6000);
+  assert.equal(carro.currency, 'USD');
+});
+
+test('sin beneficiario configurado no se acepta un Western Union', async () => {
+  envFalso.westernUnion = { activo: false };
+
+  await assert.rejects(
+    manualService.registrar({
+      userId: 'user-1',
+      planCode: 'METODO',
+      operationCode: '1234567890',
+      buffer: Buffer.from('png'),
+      metodo: 'WESTERN_UNION',
+    }),
+    /Western Union/,
+  );
+  assert.equal(filas.size, 0);
+  assert.equal(manualService.datosWesternUnion(), null);
+});
+
+test('el MTCN es obligatorio en Western Union y son 10 dígitos', () => {
+  const { registrarQuerySchema } = require('../src/modules/payments/manual.schema');
+
+  const sinMtcn = registrarQuerySchema.safeParse({ planCode: 'METODO', metodo: 'WESTERN_UNION' });
+  assert.equal(sinMtcn.success, false);
+  assert.equal(
+    registrarQuerySchema.safeParse({ planCode: 'METODO', metodo: 'WESTERN_UNION', operationCode: '12345' })
+      .success,
+    false,
+  );
+  const conEspacios = registrarQuerySchema.parse({
+    planCode: 'METODO',
+    metodo: 'WESTERN_UNION',
+    operationCode: '123-456 7890',
+  });
+  assert.equal(conEspacios.operationCode, '1234567890');
+  // Sin método sigue siendo Yape, con el número de operación opcional.
+  assert.equal(registrarQuerySchema.parse({ planCode: 'METODO' }).metodo, 'YAPE');
+});
+
 // ── Descuento sobre el total ───────────────────────────────────────────────
 
 test('un código general rebaja el TOTAL una vez y se reparte entre las filas', async () => {

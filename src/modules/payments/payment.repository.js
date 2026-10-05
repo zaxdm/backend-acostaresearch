@@ -319,7 +319,11 @@ const paymentRepository = {
    */
   listReviewed({ provider, limit = 200 } = {}) {
     return prisma.payment.findMany({
-      where: { provider, status: { not: 'IN_REVIEW' } },
+      // Uno o varios: el historial junta Yape y Western Union.
+      where: {
+        provider: Array.isArray(provider) ? { in: provider } : provider,
+        status: { not: 'IN_REVIEW' },
+      },
       select: {
         ...paymentSelect,
         // La licencia que entregó este cobro y qué producto tiene HOY.

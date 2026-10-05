@@ -5,9 +5,15 @@ const { ok, created } = require('../../shared/http/apiResponse');
 const manualService = require('./manual.service');
 
 const manualController = {
-  /** Datos del cobro por Yape. Público: la web los enseña junto al QR. */
+  /**
+   * Datos del cobro por Yape y por Western Union. Público: la web los enseña
+   * antes de que nadie inicie sesión. `westernUnion` es null si no se ofrece.
+   */
   datosDePago: asyncHandler(async (_req, res) => {
-    return ok(res, { yape: manualService.datosDePago() });
+    return ok(res, {
+      yape: manualService.datosDePago(),
+      westernUnion: manualService.datosWesternUnion(),
+    });
   }),
 
   /**
@@ -30,6 +36,7 @@ const manualController = {
             discountCode: req.query.discountCode,
             operationCode: req.query.operationCode,
             buffer: req.body,
+            metodo: req.query.metodo,
           })
         : await manualService.registrar({
             userId: req.user.id,
@@ -37,6 +44,7 @@ const manualController = {
             discountCode: (items && items[0].discountCode) || req.query.discountCode,
             operationCode: req.query.operationCode,
             buffer: req.body,
+            metodo: req.query.metodo,
           });
 
     return created(

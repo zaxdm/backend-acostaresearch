@@ -42,11 +42,29 @@ const registrarQuerySchema = z
   // encuentra, pero es lo que de verdad permite cuadrarlo con el extracto, así
   // que la web lo pide con insistencia.
   operationCode: z.string().trim().max(40).optional(),
+  // Por dónde pagó. Sin él es Yape, que es lo que mandaba la web de antes.
+  metodo: z.enum(['YAPE', 'WESTERN_UNION']).default('YAPE'),
   })
   .refine((datos) => Boolean(datos.planCode) !== Boolean(datos.items), {
     message: 'Indica el plan que estás pagando.',
     path: ['planCode'],
-  });
+  })
+  // En Western Union el MTCN no es opcional: son los 10 dígitos con los que se
+  // cobra el giro en la agencia. Sin él no hay forma de recibir el dinero.
+  .refine(
+    (datos) =>
+      datos.metodo !== 'WESTERN_UNION' ||
+      /^\d{10}$/.test((datos.operationCode || '').replace(/[\s-]/g, '')),
+    {
+      message: 'Escribe el MTCN de tu envío: son 10 dígitos.',
+      path: ['operationCode'],
+    },
+  )
+  .transform((datos) =>
+    datos.metodo === 'WESTERN_UNION'
+      ? { ...datos, operationCode: datos.operationCode.replace(/[\s-]/g, '') }
+      : datos,
+  );
 
 const paymentParamsSchema = z.object({
   id: z.string().uuid('Identificador de pago no válido.'),

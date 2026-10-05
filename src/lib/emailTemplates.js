@@ -350,50 +350,64 @@ function licenseRevoked({ firstName, reason }) {
   };
 }
 
-/** Importe en soles, para los correos del pago manual. */
-function soles(cents) {
-  return `S/ ${(cents / 100).toFixed(2)}`;
+/** Importe para los correos del pago manual: en soles (Yape) o en dólares (Western Union). */
+function soles(cents, currency = 'PEN') {
+  return `${currency === 'USD' ? 'US$' : 'S/'} ${(cents / 100).toFixed(2)}`;
 }
 
 /**
- * Aviso al administrador: hay un comprobante de Yape esperando.
+ * Aviso al administrador: hay un comprobante de Yape o de Western Union
+ * esperando.
  *
  * Va con todo lo que hace falta para decidir —quién, qué plan, cuánto y qué
  * número de operación— porque quien lo lee suele estar en el móvil: si el
  * correo obliga a abrir el panel para saber siquiera de qué va, el comprador
  * espera más.
  */
-function manualPaymentReceived({ buyer, planName, amountCents, operationCode, paymentId }) {
+function manualPaymentReceived({
+  buyer,
+  planName,
+  amountCents,
+  currency = 'PEN',
+  metodo = 'Yape',
+  operationCode,
+  paymentId,
+}) {
   const enlace = `${appUrl()}/admin?seccion=yape`;
   const operacion = operationCode || 'no lo indicó';
+  const esWU = metodo === 'Western Union';
+  const etiquetaOperacion = esWU ? 'MTCN' : 'Nº de operación';
+  const cotejo = esWU
+    ? 'Cóbralo en una agencia o en la app de Western Union con el MTCN antes de aprobarlo'
+    : 'Compruébalo contra tu Yape antes de aprobarlo';
 
   return {
-    subject: `Yape por revisar: ${buyer.firstName} · ${soles(amountCents)} · ${planName}`,
+    subject: `${metodo} por revisar: ${buyer.firstName} · ${soles(amountCents, currency)} · ${planName}`,
     text: [
       'Hay un comprobante esperando revisión.',
       '',
       `Comprador:  ${buyer.firstName} ${buyer.lastName} <${buyer.email}>`,
       `Plan:       ${planName}`,
-      `Importe:    ${soles(amountCents)}`,
-      `Operación:  ${operacion}`,
+      `Importe:    ${soles(amountCents, currency)}`,
+      `${esWU ? 'MTCN:      ' : 'Operación: '} ${operacion}`,
       `Pago:       ${paymentId}`,
       '',
       `Revísalo aquí: ${enlace}`,
     ].join('\n'),
     html: layout(
-      'Un Yape esperando revisión',
+      `Un ${metodo} esperando revisión`,
       `<p style="margin:0 0 18px;font-size:15px;line-height:1.6">
          <strong>${escapar(buyer.firstName)} ${escapar(buyer.lastName)}</strong> dice haber pagado
-         <strong>${soles(amountCents)}</strong> por «${escapar(planName)}».
+         <strong>${soles(amountCents, currency)}</strong> por «${escapar(planName)}».
        </p>
        <table role="presentation" cellpadding="0" cellspacing="0"
               style="margin:0 0 22px;font-size:14px;color:#52606d">
          <tr><td style="padding:3px 14px 3px 0">Correo</td><td>${escapar(buyer.email)}</td></tr>
-         <tr><td style="padding:3px 14px 3px 0">Nº de operación</td><td>${escapar(operacion)}</td></tr>
+         <tr><td style="padding:3px 14px 3px 0">${etiquetaOperacion}</td><td>${escapar(operacion)}</td></tr>
          <tr><td style="padding:3px 14px 3px 0">Pago</td><td>${escapar(paymentId)}</td></tr>
        </table>
        <p style="margin:0 0 18px;font-size:14px;line-height:1.6">
-         Compruébalo contra tu Yape antes de aprobarlo: la captura demuestra que existe una
+         ${cotejo}: la captura demuestra que existe una
          pantalla, no que el dinero haya entrado.
        </p>
        <p style="margin:0;font-size:14px">

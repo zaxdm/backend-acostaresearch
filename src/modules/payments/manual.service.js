@@ -18,9 +18,9 @@ const carrito = require('./payment.carrito');
 const { AppError, NotFoundError } = require('../../shared/errors/AppError');
 
 /**
- * Pago manual por Yape.
+ * Pago manual por Yape o por Western Union.
  *
- * El comprador paga con el QR, sube la captura y espera; un administrador la
+ * El comprador paga con el QR (o envía el giro), sube la captura y espera; un administrador la
  * mira y aprueba o rechaza. Solo al aprobar se crea la licencia, y con ella la
  * URL del conector.
  *
@@ -47,17 +47,66 @@ const { AppError, NotFoundError } = require('../../shared/errors/AppError');
  * es el dueño de la licencia.
  */
 
-const PROVEEDOR = 'YAPE';
-/** Yape cobra en soles, que es la moneda en la que se anuncian los precios. */
-const MONEDA = 'PEN';
+/**
+ * Los dos cobros manuales. Se revisan igual —captura, persona, entrega—; lo que
+ * cambia es la moneda y, con ella, el precio.
+ *
+ * Yape cobra en soles, que es la moneda en la que se anuncian los precios.
+ * Western Union lo usa quien paga desde fuera del Perú, y a ese comprador se le
+ * cobra el precio en dólares de PayPal: dos precios distintos en dólares por la
+ * misma compra no tendrían explicación.
+ */
+const MEDIOS = Object.freeze({
+  YAPE: {
+    proveedor: 'YAPE',
+    nombre: 'Yape',
+    moneda: 'PEN',
+    prefijo: 'YP',
+    precio: (plan) => plan.priceCents,
+    rebaja: (descuento) => descuento.amountCents,
+  },
+  WESTERN_UNION: {
+    proveedor: 'WESTERN_UNION',
+    nombre: 'Western Union',
+    moneda: 'USD',
+    prefijo: 'WU',
+    precio: (plan) => plan.priceUsdCents,
+    rebaja: (descuento) => descuento.discountUsdCents,
+  },
+});
+
+const PROVEEDORES = Object.values(MEDIOS).map((medio) => medio.proveedor);
+
+/** El medio pedido, o un 409 si no se ofrece (Western Union sin beneficiario). */
+function medioDe(metodo = 'YAPE') {
+  const medio = MEDIOS[metodo] ?? MEDIOS.YAPE;
+
+  if (medio.proveedor === 'WESTERN_UNION' && !env.westernUnion.activo) {
+    throw new AppError('Por ahora no recibimos pagos por Western Union.', {
+      statusCode: 409,
+      code: ERROR_CODES.PAYMENT_FAILED,
+    });
+  }
+  return medio;
+}
+
+/** El medio de un pago ya guardado, para los textos de la revisión. */
+function medioDelPago(payment) {
+  return MEDIOS[payment.provider] ?? MEDIOS.YAPE;
+}
+
+/** Importe para un aviso corto: «S/ 69.00» o «US$ 25.00». */
+function importe(cents, moneda) {
+  return `${moneda === 'USD' ? 'US$' : 'S/'} ${(cents / 100).toFixed(2)}`;
+}
 
 /** Sin O/0 ni I/1: la referencia se dicta por WhatsApp cuando algo se tuerce. */
 const ALFABETO = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
-function generarReferencia() {
+function generarReferencia(prefijo) {
   let cuerpo = '';
   for (let i = 0; i < 8; i += 1) cuerpo += ALFABETO[crypto.randomInt(0, ALFABETO.length)];
-  return `YP-${cuerpo}`;
+  return `${prefijo}-${cuerpo}`;
 }
 
 /** El comprador, con lo justo para escribirle y para que el admin lo reconozca. */
@@ -135,7 +184,7 @@ function capturaManual(payment, adminId) {
     // si el comprador no lo puso, queda nuestra referencia.
     captureId: payment.operationCode || payment.providerOrderId,
     payerEmail: payment.user.email,
-    raw: { metodo: PROVEEDOR, aprobadoPor: adminId, aprobadoEn: new Date().toISOString() },
+    raw: { metodo: payment.provider, aprobadoPor: adminId, aprobadoEn: new Date().toISOString() },
   };
 }
 
@@ -156,7 +205,7 @@ async function aprobarCarrito({ cartId, adminId }) {
       payment: fila,
       estadoEsperado: 'IN_REVIEW',
       captura: capturaManual(fila, adminId),
-      notaBolsa: 'Pago por Yape confirmado a mano (carrito)',
+      notaBolsa: `Pago por ${medioDelPago(fila).nombre} confirmado a mano (carrito)`,
     });
     if (!entrega) continue;
 
@@ -180,7 +229,19 @@ async function aprobarCarrito({ cartId, adminId }) {
 const manualService = {
   /** Datos del cobro que la web enseña junto al QR. */
   datosDePago() {
-    return { titular: env.yape.titular, numero: env.yape.numero, currency: MONEDA };
+    return { titular: env.yape.titular, numero: env.yape.numero, currency: MEDIOS.YAPE.moneda };
+  },
+
+  /** A quién mandar el Western Union. `null` = no se ofrece. */
+  datosWesternUnion() {
+    const wu = env.westernUnion;
+    if (!wu.activo) return null;
+    return {
+      beneficiario: wu.beneficiario,
+      dni: wu.dni,
+      ciudad: wu.ciudad,
+      currency: MEDIOS.WESTERN_UNION.moneda,
+    };
   },
 
   /**
@@ -192,32 +253,35 @@ const manualService = {
    * El importe lo calcula el servidor a partir del plan, igual que en PayPal.
    * Lo que diga el comprador que pagó es un dato del comprobante, no el precio.
    */
-  async registrar({ userId, planCode, discountCode, operationCode, buffer }) {
+  async registrar({ userId, planCode, discountCode, operationCode, buffer, metodo }) {
+    const medio = medioDe(metodo);
     const plan = await billingRepository.findPlanByCode(planCode);
     // Igual que en la pasarela: uno en prueba no se vende aunque esté activo.
     if (!plan || !plan.active || enPrueba(plan)) {
       throw new NotFoundError(`No existe un plan activo con el código ${planCode}.`);
     }
 
-    if (!plan.priceCents || plan.priceCents <= 0) {
-      throw new AppError(`El plan ${plan.name} no se vende por Yape.`, {
+    const precio = medio.precio(plan);
+    if (!precio || precio <= 0) {
+      throw new AppError(`El plan ${plan.name} no se vende por ${medio.nombre}.`, {
         statusCode: 409,
         code: ERROR_CODES.PLAN_NOT_PURCHASABLE,
       });
     }
 
     const descuento = await discountService.resolve({ code: discountCode, plan });
-    const amountCents = plan.priceCents - (descuento ? descuento.amountCents : 0);
+    const rebaja = descuento ? medio.rebaja(descuento) : 0;
+    const amountCents = precio - rebaja;
 
     const payment = await paymentRepository.create({
       userId,
       planId: plan.id,
-      provider: PROVEEDOR,
-      providerOrderId: generarReferencia(),
+      provider: medio.proveedor,
+      providerOrderId: generarReferencia(medio.prefijo),
       amountCents,
-      currency: MONEDA,
+      currency: medio.moneda,
       discountCodeId: descuento ? descuento.id : null,
-      discountCents: descuento ? descuento.amountCents : 0,
+      discountCents: rebaja,
       operationCode: operationCode || null,
     });
 
@@ -248,8 +312,8 @@ const manualService = {
     const comprador = await prisma.user.findUnique({ where: { id: userId }, select: COMPRADOR });
 
     logger.info(
-      { userId, paymentId: payment.id, plan: plan.code, amountCents },
-      'Comprobante de Yape recibido, pendiente de revisión',
+      { userId, paymentId: payment.id, plan: plan.code, amountCents, metodo: medio.proveedor },
+      'Comprobante manual recibido, pendiente de revisión',
     );
 
     avisar(
@@ -258,6 +322,8 @@ const manualService = {
         buyer: comprador,
         planName: plan.name,
         amountCents,
+        currency: medio.moneda,
+        metodo: medio.nombre,
         operationCode: operationCode || null,
         paymentId: payment.id,
       }),
@@ -268,7 +334,7 @@ const manualService = {
     // y esto espera a que alguien lo mire. Va sin el correo del comprador a
     // propósito: ver quién es y su comprobante exige entrar al panel.
     avisarAlAdmin({
-      titulo: `Yape por revisar · S/ ${(amountCents / 100).toFixed(2)}`,
+      titulo: `${medio.nombre} por revisar · ${importe(amountCents, medio.moneda)}`,
       mensaje: `${comprador.firstName} ${(comprador.lastName || '').charAt(0)}. · ${plan.name}`,
       etiquetas: ['moneybag'],
       enlace: `${env.APP_URL}/admin?seccion=yape`,
@@ -278,7 +344,7 @@ const manualService = {
       paymentId: payment.id,
       reference: payment.providerOrderId,
       amountCents,
-      currency: MONEDA,
+      currency: medio.moneda,
       status: 'IN_REVIEW',
       plan: { code: plan.code, name: plan.name },
     };
@@ -291,12 +357,12 @@ const manualService = {
    * la misma captura. El administrador ve UN comprobante por la suma, y al
    * aprobarlo se entregan todos.
    */
-  async registrarCarrito({ userId, items, discountCode, operationCode, buffer }) {
+  async registrarCarrito({ userId, items, discountCode, operationCode, buffer, metodo }) {
+    const medio = medioDe(metodo);
     const { lineas, delTotal } = await carrito.resolverLineas(items, {
-      // Yape cobra en soles, que es el precio del catálogo.
-      precio: (plan) => plan.priceCents,
-      rebaja: (descuento) => descuento.amountCents,
-      medio: 'Yape',
+      precio: medio.precio,
+      rebaja: medio.rebaja,
+      medio: medio.nombre,
       discountCode,
     });
     const amountCents = lineas.reduce((suma, linea) => suma + linea.amountCents, 0);
@@ -307,10 +373,10 @@ const manualService = {
       lineas.map((linea) => ({
         userId,
         planId: linea.plan.id,
-        provider: PROVEEDOR,
-        providerOrderId: generarReferencia(),
+        provider: medio.proveedor,
+        providerOrderId: generarReferencia(medio.prefijo),
         amountCents: linea.amountCents,
-        currency: MONEDA,
+        currency: medio.moneda,
         discountCodeId: carrito.codigoDeLaFila(linea, delTotal),
         discountCents: linea.rebaja,
         operationCode: operationCode || null,
@@ -351,8 +417,8 @@ const manualService = {
     const comprador = await prisma.user.findUnique({ where: { id: userId }, select: COMPRADOR });
 
     logger.info(
-      { userId, cartId, productos: filas.length, amountCents },
-      'Comprobante de Yape de un carrito recibido, pendiente de revisión',
+      { userId, cartId, productos: filas.length, amountCents, metodo: medio.proveedor },
+      'Comprobante manual de un carrito recibido, pendiente de revisión',
     );
 
     // Un solo aviso por la suma: es un solo comprobante que mirar.
@@ -362,13 +428,15 @@ const manualService = {
         buyer: comprador,
         planName: nombre,
         amountCents,
+        currency: medio.moneda,
+        metodo: medio.nombre,
         operationCode: operationCode || null,
         paymentId: lider.id,
       }),
       { paymentId: lider.id, cartId },
     );
     avisarAlAdmin({
-      titulo: `Yape por revisar · S/ ${(amountCents / 100).toFixed(2)}`,
+      titulo: `${medio.nombre} por revisar · ${importe(amountCents, medio.moneda)}`,
       mensaje: `${comprador.firstName} ${(comprador.lastName || '').charAt(0)}. · ${nombre}`,
       etiquetas: ['moneybag'],
       enlace: `${env.APP_URL}/admin?seccion=yape`,
@@ -378,7 +446,7 @@ const manualService = {
       paymentId: lider.id,
       reference: lider.providerOrderId,
       amountCents,
-      currency: MONEDA,
+      currency: medio.moneda,
       status: 'IN_REVIEW',
       plan: { code: 'CARRITO', name: nombre },
       discount: carrito.resumenDelTotal(delTotal),
@@ -437,7 +505,7 @@ const manualService = {
    * pregunta que hace la pantalla: ¿hay imagen que abrir?
    */
   async historial({ limit } = {}) {
-    const pagos = await paymentRepository.listReviewed({ provider: PROVEEDOR, limit });
+    const pagos = await paymentRepository.listReviewed({ provider: PROVEEDORES, limit });
 
     return pagos.map(({ proofPath, ...pago }) => ({ ...pago, tieneComprobante: Boolean(proofPath) }));
   },
@@ -493,7 +561,7 @@ const manualService = {
       payment,
       estadoEsperado: 'IN_REVIEW',
       captura: capturaManual(payment, adminId),
-      notaBolsa: 'Pago por Yape confirmado a mano',
+      notaBolsa: `Pago por ${medioDelPago(payment).nombre} confirmado a mano`,
     });
 
     // Sin entrega: otro administrador lo aprobó un instante antes.

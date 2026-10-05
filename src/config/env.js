@@ -269,6 +269,12 @@ const schema = z.object({
   // Vacíos = no se muestran los datos del titular junto al QR, solo el QR.
   YAPE_TITULAR: vacioComoAusente(z.string()),
   YAPE_NUMERO: vacioComoAusente(z.string()),
+  // Western Union, para quien paga desde fuera del Perú. Son los datos que el
+  // comprador lleva a la agencia o pone en la app: nombre completo tal como
+  // figura en el DNI, el DNI y la ciudad. Sin beneficiario no se ofrece.
+  WU_BENEFICIARIO: vacioComoAusente(z.string()),
+  WU_DNI: vacioComoAusente(z.string()),
+  WU_CIUDAD: vacioComoAusente(z.string()),
   // A quién le llega el aviso de que hay un comprobante esperando. Si se deja
   // vacío se busca en la base de datos el primer administrador activo, para
   // que el aviso no se pierda por un .env sin rellenar.
@@ -674,6 +680,14 @@ const env = Object.freeze({
   yape: {
     titular: raw.YAPE_TITULAR ?? null,
     numero: raw.YAPE_NUMERO ?? null,
+  },
+  // Igual que Yape, sin credenciales: son datos que se le enseñan al comprador.
+  // Lo que lo enciende es el beneficiario, porque sin nombre no hay envío.
+  westernUnion: {
+    activo: Boolean(raw.WU_BENEFICIARIO),
+    beneficiario: raw.WU_BENEFICIARIO ?? null,
+    dni: raw.WU_DNI ?? null,
+    ciudad: raw.WU_CIUDAD ?? null,
   },
   // Se cuelga de donde estén los comprobantes en vez de pedir otra variable.
   // Así, el día que se mueva el almacenamiento persistente, esto se mueve con

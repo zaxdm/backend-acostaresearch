@@ -36,7 +36,8 @@ function avisarAlComprador(payment, entrega) {
 
   // Yape se aprueba a mano y horas después; una pasarela cobra al instante. El
   // correo lo dice de forma distinta en cada caso.
-  const via = payment.provider === 'YAPE' ? 'yape' : 'online';
+  // Western Union también se aprueba a mano, así que lleva la frase de Yape.
+  const via = ['YAPE', 'WESTERN_UNION'].includes(payment.provider) ? 'yape' : 'online';
   const datos = { firstName: usuario.firstName, planName: payment.plan.name, via };
 
   let mensaje;

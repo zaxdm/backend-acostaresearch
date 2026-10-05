@@ -10,6 +10,7 @@ const {
   tutorialPatchSchema,
   ordenSchema,
   idParamSchema,
+  videoIdParamSchema,
 } = require('./tutorial.schema');
 const tutorialController = require('./tutorial.controller');
 
@@ -24,6 +25,11 @@ router.use(authenticate, authorize(ROLES.ADMIN));
 
 router.get('/todos', tutorialController.listAll);
 router.post('/', validate({ body: tutorialBodySchema }), tutorialController.create);
+router.get(
+  '/youtube/:videoId',
+  validate({ params: videoIdParamSchema }),
+  tutorialController.youtube,
+);
 router.put('/orden', validate({ body: ordenSchema }), tutorialController.reorder);
 router.patch(
   '/:id',

@@ -33,6 +33,11 @@ const tutorialController = {
     return ok(res, { tutoriales }, { message: 'Orden guardado. Ya se ve así en la web.' });
   }),
 
+  /** Al pegar el enlace en el panel: el título del video, para no escribirlo. */
+  youtube: asyncHandler(async (req, res) => {
+    return ok(res, await tutorialService.datosDeYouTube(req.params.videoId));
+  }),
+
   remove: asyncHandler(async (req, res) => {
     await tutorialService.remove(req.params.id);
     return noContent(res);

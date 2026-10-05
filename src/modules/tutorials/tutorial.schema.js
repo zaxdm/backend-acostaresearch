@@ -67,6 +67,10 @@ const ordenSchema = z.object({
   ids: z.array(z.string().uuid('Identificador no válido.')).min(1).max(99),
 });
 
+const videoIdParamSchema = z.object({
+  videoId: z.string().regex(/^[\w-]{11}$/, 'Identificador de video no válido.'),
+});
+
 const idParamSchema = z.object({
   id: z.string().uuid('Identificador no válido.'),
 });
@@ -76,5 +80,6 @@ module.exports = {
   tutorialPatchSchema,
   ordenSchema,
   idParamSchema,
+  videoIdParamSchema,
   idDeYouTube,
 };

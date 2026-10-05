@@ -75,6 +75,29 @@ const tutorialService = {
     return tutorialService.listAll();
   },
 
+  /**
+   * El título de un video por oEmbed, que es público y no pide clave.
+   *
+   * Solo el título: la duración no viene en oEmbed, y la página del video al
+   * servidor le pide iniciar sesión. La duración la lee el panel con el
+   * reproductor incrustado (`youtube-datos.ts` en la web). Null si YouTube no
+   * contesta o el video es privado: el título se escribe a mano.
+   */
+  async datosDeYouTube(videoId) {
+    const url = `https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(
+      `https://www.youtube.com/watch?v=${videoId}`,
+    )}`;
+    try {
+      const respuesta = await fetch(url, { signal: AbortSignal.timeout(8000) });
+      if (!respuesta.ok) return { titulo: null };
+      const datos = await respuesta.json();
+      const titulo = typeof datos.title === 'string' ? datos.title.trim().slice(0, 160) : '';
+      return { titulo: titulo || null };
+    } catch {
+      return { titulo: null };
+    }
+  },
+
   async remove(id) {
     const existe = await prisma.tutorial.findUnique({ where: { id }, select: { id: true } });
     if (!existe) throw new NotFoundError('Ese tutorial no existe.');

@@ -374,7 +374,7 @@ async function contratoDelProducto(productCode) {
       costCentsPerMonth: plan?.mcpCostCentsPerMonth ?? 0,
       callsLimitTotal: plan?.mcpCallsTotal ?? 0,
       costCentsLimitTotal: plan?.mcpCostCentsTotal ?? 0,
-      delivery: plan?.mcpDelivery ?? 'EXECUTED',
+      delivery: plan?.mcpDelivery ?? 'INSTRUCTIONS',
     },
   };
 }

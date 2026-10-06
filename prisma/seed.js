@@ -258,7 +258,7 @@ async function sembrarPlanes() {
         mcpCostCentsPerMonth: plan.mcpCostCentsPerMonth ?? 0,
         mcpCallsTotal: plan.mcpCallsTotal ?? 0,
         mcpCostCentsTotal: plan.mcpCostCentsTotal ?? 0,
-        mcpDelivery: plan.mcpDelivery ?? 'EXECUTED',
+        mcpDelivery: plan.mcpDelivery ?? 'INSTRUCTIONS',
         docsPorMes: plan.docsPorMes ?? 0,
         priceCents: plan.priceCents,
         priceUsdCents: plan.priceUsdCents ?? null,

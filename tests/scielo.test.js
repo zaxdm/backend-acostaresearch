@@ -171,3 +171,38 @@ test('acusa solo las palabras que no tiene ningún trabajo', async (t) => {
   });
   assert.deepEqual(await openalex.palabrasSinUso(['inteligencia', 'minbero', 'sector']), ['minbero']);
 });
+
+test('de «sector minero» se busca también «minero», pero solo en español', () => {
+  const { normalizar } = require('../src/modules/scopus/scopus.consulta');
+  const { conceptos } = normalizar({
+    conceptos: [
+      {
+        nombre: 'mining sector',
+        sinonimos: ['mining industry'],
+        espanol: ['sector minero', 'industria minera', 'explotación minera'],
+      },
+    ],
+  });
+  assert.deepEqual(conceptos[0].sinonimos, ['mining industry']);
+  assert.deepEqual(conceptos[0].espanol, [
+    'sector minero',
+    'minero',
+    'industria minera',
+    'minera',
+    'explotación minera',
+  ]);
+});
+
+test('si OpenAlex dice 429, se espera y se vuelve a pedir', async (t) => {
+  let llamadas = 0;
+  t.mock.method(globalThis, 'fetch', async () => {
+    llamadas += 1;
+    return { status: llamadas === 1 ? 429 : 200, ok: llamadas > 1 };
+  });
+  const res = await openalex.pedirConReintento(new URL('https://api.openalex.org/works'), {
+    esperar: async () => {},
+  });
+  assert.equal(res.status, 200);
+  assert.equal(llamadas, 2);
+});
+

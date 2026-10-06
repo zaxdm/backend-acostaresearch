@@ -298,6 +298,22 @@ async function buscar({ tema, idioma = null, pais = null, desdeAnio = null, cuan
   return { fuentes, total: datos.meta?.count ?? fuentes.length, caida: false };
 }
 
+/**
+ * Un `fetch` que, si OpenAlex contesta 429, espera y vuelve a probar.
+ *
+ * Una búsqueda con más de cinco operadores (OR/AND) OpenAlex la cuenta como
+ * «pesada» y solo admite cinco por segundo con clave, y una sin clave. Todos
+ * los tesistas salen por la misma IP, y abrir los filtros del buscador lanza
+ * seis de esas a la vez: el 429 no es raro, y basta esperar un segundo.
+ */
+async function pedirConReintento(url, { intentos = 3, esperar = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
+  for (let intento = 1; ; intento++) {
+    const res = await fetch(url, { signal: AbortSignal.timeout(TIEMPO_LIMITE_MS) });
+    if (res.status !== 429 || intento >= intentos) return res;
+    await esperar(1100 * intento);
+  }
+}
+
 /** Cuántos resultados por página trae la pestaña de SciELO. */
 const POR_PAGINA_SCIELO = 20;
 
@@ -355,7 +371,7 @@ async function buscarEnScielo({
   filtros.push(`title_and_abstract.search:${consulta ?? String(tema).replace(/,/g, ' ')}`);
   url.searchParams.set('filter', filtros.join(','));
 
-  const res = await fetch(url, { signal: AbortSignal.timeout(TIEMPO_LIMITE_MS) }).catch((error) => {
+  const res = await pedirConReintento(url).catch((error) => {
     logger.warn({ err: error, tema }, 'OpenAlex no respondió a la búsqueda en SciELO');
     return null;
   });
@@ -668,7 +684,7 @@ async function agrupar(filtro, grupo, cuantos = 8) {
   url.searchParams.set('per_page', String(cuantos));
   firmar(url);
 
-  const res = await fetch(url, { signal: AbortSignal.timeout(TIEMPO_LIMITE_MS) }).catch(() => null);
+  const res = await pedirConReintento(url).catch(() => null);
   if (!res || !res.ok) {
     if (res) avisarRechazo(res, { grupo }, 'OpenAlex rechazó la consulta agrupada');
     return null;
@@ -971,6 +987,7 @@ module.exports = {
   buscarEnScielo,
   POR_PAGINA_SCIELO,
   palabrasSinUso,
+  pedirConReintento,
   porDoi,
   referenciasDe,
   porIds,

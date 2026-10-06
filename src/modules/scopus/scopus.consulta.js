@@ -69,6 +69,31 @@ Reglas:
 Responde SOLO con un JSON, sin texto antes ni después, con esta forma:
 {"conceptos":[{"nombre":"critical thinking","sinonimos":["critical reasoning"],"espanol":["pensamiento crítico"]}],"nota":"una frase en español para el tesista","sugerencias":[]}`;
 
+/** Cuántos términos en español por concepto, contando los núcleos añadidos. */
+const MAXIMO_ESPANOL = 7;
+
+/**
+ * Las palabras que solo dicen «de qué tipo». El modelo propone «sector minero»
+ * o «industria minera» aunque se le pida la palabra suelta, y en SciELO esa
+ * frase exacta casi no aparece: con «minero» y «minera» sueltas, la misma
+ * búsqueda pasó de 6 a 12 artículos, todos de minería, el 6-oct-2026.
+ *
+ * SOLO EN ESPAÑOL. En inglés el buscador junta las palabras de la misma raíz,
+ * y «mining» suelto traía data mining; «extractive», «extracting».
+ */
+const GENERICAS = new Set(
+  ('sector sectores industria industrias empresa empresas explotación explotaciones ' +
+    'actividad actividades ámbito área rubro').split(' '),
+);
+
+/** El término y, si lleva una palabra genérica, también lo que queda sin ella. */
+function conSuNucleo(termino) {
+  const palabras = termino.split(' ');
+  if (palabras.length < 2) return [termino];
+  const nucleo = palabras.filter((p) => !GENERICAS.has(p.toLowerCase())).join(' ');
+  return nucleo && nucleo !== termino ? [termino, nucleo] : [termino];
+}
+
 /** Un término apto para ir dentro de una ecuación, o nada. */
 function limpiarTermino(valor) {
   if (typeof valor !== 'string') return null;
@@ -111,9 +136,12 @@ function normalizar(bruto) {
     const espanol = [];
     for (const termino of Array.isArray(concepto?.espanol) ? concepto.espanol : []) {
       const limpio = limpiarTermino(termino)?.replace(/\*/g, '').trim();
-      if (!limpio || espanol.some((t) => t.toLowerCase() === limpio.toLowerCase())) continue;
-      espanol.push(limpio);
-      if (espanol.length === MAXIMO_SINONIMOS) break;
+      if (!limpio) continue;
+      for (const t of conSuNucleo(limpio)) {
+        if (espanol.length < MAXIMO_ESPANOL && !espanol.some((e) => e.toLowerCase() === t.toLowerCase())) {
+          espanol.push(t);
+        }
+      }
     }
 
     conceptos.push({ nombre, sinonimos, espanol });

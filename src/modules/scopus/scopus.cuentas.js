@@ -60,12 +60,11 @@ const limpio = (texto) =>
     .slice(0, 80);
 
 /**
- * Los conceptos, en el filtro de OpenAlex: cada concepto con sus sinónimos
- * unidos por OR y todos los conceptos por AND, como la ecuación de Scopus.
- * Exportado para las pruebas.
+ * Los conceptos como búsqueda booleana de OpenAlex: `("a" OR "b") AND ("c")`.
+ * La usan los números aproximados y la mitad SciELO de la lista mezclada.
  */
-function filtroDe({ conceptos, desde = null, hasta = null }) {
-  const grupos = conceptos
+function busquedaDeConceptos(conceptos) {
+  const grupos = (conceptos ?? [])
     .map((concepto) =>
       [concepto.nombre, ...(concepto.sinonimos ?? [])]
         .map(limpio)
@@ -75,9 +74,19 @@ function filtroDe({ conceptos, desde = null, hasta = null }) {
     .filter((terminos) => terminos.length > 0)
     .map((terminos) => `(${terminos.join(' OR ')})`);
 
-  if (grupos.length === 0) return null;
+  return grupos.length > 0 ? grupos.join(' AND ') : null;
+}
 
-  const partes = [`title_and_abstract.search:${grupos.join(' AND ')}`];
+/**
+ * Los conceptos, en el filtro de OpenAlex: cada concepto con sus sinónimos
+ * unidos por OR y todos los conceptos por AND, como la ecuación de Scopus.
+ * Exportado para las pruebas.
+ */
+function filtroDe({ conceptos, desde = null, hasta = null }) {
+  const busqueda = busquedaDeConceptos(conceptos);
+  if (!busqueda) return null;
+
+  const partes = [`title_and_abstract.search:${busqueda}`];
   if (desde || hasta) partes.push(`publication_year:${desde ?? ''}-${hasta ?? ''}`);
   return partes.join(',');
 }
@@ -140,4 +149,4 @@ async function aproximadas(consulta, { agrupar = openalex.agrupar } = {}) {
   return valor;
 }
 
-module.exports = { aproximadas, filtroDe, AREA_POR_CAMPO };
+module.exports = { aproximadas, filtroDe, busquedaDeConceptos, AREA_POR_CAMPO };

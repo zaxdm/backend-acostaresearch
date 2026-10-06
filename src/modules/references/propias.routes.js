@@ -6,6 +6,13 @@ const authenticate = require('../../middlewares/authenticate');
 const env = require('../../config/env');
 const asyncHandler = require('../../shared/http/asyncHandler');
 const { ok } = require('../../shared/http/apiResponse');
+const { z } = require('zod');
+const validate = require('../../middlewares/validate');
+const { scieloLimiter } = require('../../middlewares/rateLimit');
+const { AppError } = require('../../shared/errors/AppError');
+const { ERROR_CODES } = require('../../config/constants');
+const openalex = require('./openalex.client');
+const { busquedaDeConceptos } = require('../scopus/scopus.cuentas');
 const propiasService = require('./propias.service');
 
 const router = Router();
@@ -69,6 +76,91 @@ router.post(
     if (resultado.repetidas > 0) partes.push(`${resultado.repetidas} ya las tenías`);
     if (resultado.noEncontrados.length > 0) {
       partes.push(`${resultado.noEncontrados.length} no aparecen en el catálogo abierto`);
+    }
+
+    return ok(res, resultado, { message: `${partes.join(', ')}.` });
+  }),
+);
+
+/**
+ * Buscar en las revistas de SciELO. Ver `openalex.buscarEnScielo`.
+ *
+ * Aquí y no en `/mi-scopus`: no hay nada que conectar ni cuota de Elsevier que
+ * gastar, y lo que se guarda va a esta misma biblioteca.
+ */
+const anio = z.coerce.number().int().min(1900).max(2100).optional();
+const conceptoSchema = z.object({
+  nombre: z.string().trim().min(1).max(120),
+  sinonimos: z.array(z.string().trim().min(1).max(120)).max(12).default([]),
+});
+const buscarEnScieloSchema = z
+  .object({
+    tema: z
+      .string()
+      .trim()
+      .min(3, 'Escribe al menos tres caracteres.')
+      .max(300, 'Esa búsqueda es demasiado larga.')
+      .optional(),
+    /** Los del buscador de Scopus, para la lista mezclada. */
+    conceptos: z.array(conceptoSchema).min(1).max(8).optional(),
+    pagina: z.coerce.number().int().min(1).max(200).optional(),
+    porPagina: z.coerce.number().int().min(5).max(25).optional(),
+    orden: z.enum(['relevancia', 'citas', 'recientes', 'antiguos']).optional(),
+    idioma: z.enum(['es', 'pt', 'en']).optional(),
+    desdeAnio: anio,
+    hastaAnio: anio,
+  })
+  .refine((cuerpo) => cuerpo.tema || cuerpo.conceptos, { message: 'Escribe qué quieres buscar.' });
+
+router.post(
+  '/scielo/buscar',
+  scieloLimiter,
+  validate({ body: buscarEnScieloSchema }),
+  asyncHandler(async (req, res) => {
+    const { conceptos, ...resto } = req.body;
+    const consulta = conceptos ? busquedaDeConceptos(conceptos) : null;
+    if (conceptos && !consulta) return ok(res, { resultados: [], total: 0, porPagina: 0 });
+
+    const resultado = await openalex.buscarEnScielo({ ...resto, consulta });
+    if (resultado.caida) {
+      throw new AppError('El catálogo de SciELO no responde ahora. Prueba en unos minutos.', {
+        statusCode: 502,
+        code: ERROR_CODES.CATALOG_UNAVAILABLE,
+      });
+    }
+
+    const resultados = await propiasService.marcarLasQueTiene(req.user.id, resultado.resultados);
+    return ok(
+      res,
+      { resultados, total: resultado.total, porPagina: req.body.porPagina ?? openalex.POR_PAGINA_SCIELO },
+      {
+        message:
+          resultado.total === 0
+            ? 'SciELO no tiene nada con esas palabras. Prueba con menos, o en otro idioma.'
+            : undefined,
+      },
+    );
+  }),
+);
+
+router.post(
+  '/scielo',
+  scieloLimiter,
+  validate({
+    body: z.object({
+      ids: z
+        .array(z.string().trim().max(64))
+        .min(1, 'No marcaste ningún artículo.')
+        .max(25, 'Puedes guardar hasta 25 de una vez.'),
+    }),
+  }),
+  asyncHandler(async (req, res) => {
+    const resultado = await propiasService.importarDeScielo({ userId: req.user.id, ids: req.body.ids });
+
+    const partes = [`Guardamos ${resultado.guardadas} fuentes nuevas`];
+    if (resultado.repetidas > 0) partes.push(`${resultado.repetidas} ya las tenías`);
+    if (resultado.noEncontradas > 0) {
+      partes.push(`${resultado.noEncontradas} ya no aparecen en el catálogo`);
     }
 
     return ok(res, resultado, { message: `${partes.join(', ')}.` });

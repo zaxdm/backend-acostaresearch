@@ -8,8 +8,11 @@ const {
   scopusConectarLimiter,
   scopusIaLimiter,
   scopusCuentasLimiter,
+  aliciaLimiter,
 } = require('../../middlewares/rateLimit');
 const {
+  aliciaSchema,
+  aliciaImportarSchema,
   aproximadasSchema,
   cuentasSchema,
   guardadaCambioSchema,
@@ -117,6 +120,18 @@ router.post(
  */
 router.get('/mapeo/destinos', scopusController.destinosDelMapeo);
 router.post('/mapeo', scopusBuscarLimiter, validate({ body: mapeoSchema }), scopusController.mapear);
+/**
+ * La misma búsqueda en ALICIA (CONCYTEC): tesis y revistas peruanas. No gasta
+ * la cuota de Elsevier, así que no depende de que Scopus esté encendido. Con
+ * su propio límite: la web la pide a la vez que cada búsqueda de Scopus.
+ */
+router.post('/alicia', aliciaLimiter, validate({ body: aliciaSchema }), scopusController.buscarEnAlicia);
+router.post(
+  '/alicia/importar',
+  aliciaLimiter,
+  validate({ body: aliciaImportarSchema }),
+  scopusController.importarDeAlicia,
+);
 router.post(
   '/importar',
   scopusBuscarLimiter,

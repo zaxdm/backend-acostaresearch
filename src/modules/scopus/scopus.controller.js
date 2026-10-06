@@ -9,6 +9,7 @@ const { generarConsulta } = require('./scopus.consulta');
 const { resumir, resumenesDeLaPagina } = require('./scopus.resumen');
 const { aproximadas } = require('./scopus.cuentas');
 const guardadas = require('./scopus.guardadas');
+const alicia = require('./scopus.alicia');
 
 /**
  * La cookie que ata el intercambio con Elsevier al navegador que lo empezó.
@@ -168,6 +169,25 @@ const scopusController = {
         ? `${partes.join('; ')}. ${criterio}`
         : 'Los datos llegaron a tu sesión de R, pero no se pudieron leer como exporte bibliográfico.',
     });
+  }),
+
+  /** La misma búsqueda en ALICIA. Ver `scopus.alicia`. */
+  buscarEnAlicia: asyncHandler(async (req, res) => {
+    return ok(res, await alicia.buscar(req.user.id, req.body));
+  }),
+
+  importarDeAlicia: asyncHandler(async (req, res) => {
+    const resultado = await alicia.importar(req.user.id, { ids: req.body.ids });
+
+    const partes = [
+      resultado.guardadas === 1
+        ? '1 fuente guardada en tus fuentes'
+        : `${resultado.guardadas} fuentes guardadas en tus fuentes`,
+    ];
+    if (resultado.repetidas > 0) partes.push(`${resultado.repetidas} ya las tenías`);
+    if (resultado.noEncontradas > 0) partes.push(`${resultado.noEncontradas} ya no están en ALICIA`);
+
+    return ok(res, resultado, { message: `${partes.join(', ')}.` });
   }),
 
   importar: asyncHandler(async (req, res) => {

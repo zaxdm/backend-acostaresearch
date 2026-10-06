@@ -100,6 +100,20 @@ function personasCsl(autores) {
     });
 }
 
+/**
+ * El grado de una tesis, que APA pone entre corchetes: «[Tesis de maestría,
+ * Universidad Privada Antenor Orrego]». Solo se sabe cuando el tipo lo dice
+ * —las de ALICIA lo traen: `masterThesis`—; con un «thesis» a secas no se
+ * inventa.
+ */
+function generoDeTesis(itemType) {
+  const tipo = String(itemType ?? '').toLowerCase();
+  if (tipo.includes('bachelor')) return 'Tesis de pregrado';
+  if (tipo.includes('master')) return 'Tesis de maestría';
+  if (tipo.includes('doctor')) return 'Tesis doctoral';
+  return null;
+}
+
 /** Una ficha de la biblioteca, tal como la entiende citeproc (y Zotero). */
 function comoCsl(fuente) {
   const type = tipoCsl(fuente.itemType);
@@ -108,6 +122,8 @@ function comoCsl(fuente) {
   const autores = personasCsl(fuente.authors);
   if (autores.length > 0) item.author = autores;
   if (fuente.year) item.issued = { 'date-parts': [[Number(fuente.year)]] };
+  const genero = type === 'thesis' ? generoDeTesis(fuente.itemType) : null;
+  if (genero) item.genre = genero;
   if (fuente.source) item[CON_CONTINENTE.has(type) ? 'container-title' : 'publisher'] = String(fuente.source).trim();
   if (fuente.volume) item.volume = String(fuente.volume);
   if (fuente.issue) item.issue = String(fuente.issue);

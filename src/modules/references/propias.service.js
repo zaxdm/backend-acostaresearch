@@ -32,7 +32,10 @@ function comoFila(ficha) {
     zoteroKey: null,
     version: 0,
     origin: 'SCOPUS',
-    sourceRef: `doi:${ficha.doi.toLowerCase()}`.slice(0, 200),
+    // Por el DOI cuando lo tiene, que es como se cruza con lo que entró por
+    // otra puerta. Sin él —pasa en revistas de SciELO—, por su identificador
+    // de OpenAlex, que es estable.
+    sourceRef: (ficha.doi ? `doi:${ficha.doi.toLowerCase()}` : `openalex:${ficha.id}`).slice(0, 200),
     itemType: recortar(ficha.itemType, 40) ?? 'article',
     title: recortar(ficha.title, 500) ?? '(sin título)',
     authors: recortar(ficha.authors, 500) ?? '',
@@ -102,6 +105,9 @@ const TIPOS = [
 
 /** Cuántos DOIs se aceptan de una tacada. Cada uno es una consulta a OpenAlex. */
 const MAXIMO_DOIS = 60;
+
+/** Cuántos de SciELO de una vez: los mismos que una página de Scopus. */
+const MAXIMO_SCIELO = 25;
 
 
 /**
@@ -402,6 +408,82 @@ const propiasService = {
       repetidas,
       /** Los que OpenAlex no conoce. Se devuelven para poder nombrarlos. */
       noEncontrados,
+      total: tiene + guardadas,
+      sinResumenEnTotal: await propiasRepository.contarSinResumen(userId),
+    };
+  },
+
+  /**
+   * Los resultados de SciELO con `tuya` puesto en los que ya tiene guardados.
+   *
+   * Por la misma identidad con la que se guardan (ver `comoFila`): el DOI, o el
+   * identificador de OpenAlex si no lo hay.
+   */
+  async marcarLasQueTiene(userId, resultados) {
+    const ref = (r) => (r.doi ? `doi:${r.doi.toLowerCase()}` : `openalex:${r.id}`).slice(0, 200);
+    const tiene = new Set(await propiasRepository.cualesTiene(userId, resultados.map(ref)));
+    return resultados.map((r) => ({ ...r, tuya: tiene.has(ref(r)) }));
+  },
+
+  /**
+   * Lo que marcó en la pestaña de SciELO.
+   *
+   * Llegan identificadores de OpenAlex, no fichas: la ficha se vuelve a pedir
+   * aquí para no guardar lo que el navegador diga que es un artículo. Las que
+   * tienen DOI pasan además por Crossref, por lo mismo que en `importarPorDoi`:
+   * los autores de OpenAlex llegan como nombre entero y en la bibliografía
+   * salían con el apellido mal cortado. Las que no tienen DOI se guardan con lo
+   * que da OpenAlex.
+   */
+  async importarDeScielo({ userId, ids }) {
+    const lista = [...new Set((ids ?? []).map((id) => openalex.soloElId(String(id).trim())))].filter(
+      (id) => /^W\d+$/i.test(id),
+    );
+
+    if (lista.length === 0) {
+      throw new ValidationError('No marcaste ningún artículo.');
+    }
+
+    if (lista.length > MAXIMO_SCIELO) {
+      throw new ValidationError(`Puedes guardar hasta ${MAXIMO_SCIELO} de una vez.`);
+    }
+
+    const tiene = await propiasRepository.contar(userId);
+    if (tiene + lista.length > propiasRepository.TOPE_POR_USUARIO) {
+      throw new AppError(
+        `Tu biblioteca admite ${propiasRepository.TOPE_POR_USUARIO} fuentes y con esas pasarías ` +
+          `de ahí (tienes ${tiene}).`,
+        { statusCode: 409, code: ERROR_CODES.VALIDATION_ERROR },
+      );
+    }
+
+    const fichas = await openalex.porIds(lista);
+    const filas = [];
+    for (const ficha of fichas) {
+      ficha.id = openalex.soloElId(ficha.id);
+      const deCrossref = ficha.doi ? await crossref.porDoi(ficha.doi) : null;
+      filas.push(comoFila(crossref.unir(ficha, deCrossref, { preferirSusAutores: true })));
+    }
+
+    if (filas.length === 0) {
+      throw new ValidationError(
+        'El catálogo abierto no devolvió esos artículos. Vuelve a buscar y márcalos otra vez.',
+      );
+    }
+
+    const { guardadas, repetidas } = await propiasRepository.guardarLote(userId, filas);
+
+    logger.info(
+      { userId, pedidas: lista.length, guardadas, repetidas },
+      'Fuentes importadas desde SciELO',
+    );
+
+    return {
+      pedidas: lista.length,
+      guardadas,
+      repetidas,
+      noEncontradas: lista.length - filas.length,
+      sinResumen: filas.filter((fila) => !fila.abstract).length,
       total: tiene + guardadas,
       sinResumenEnTotal: await propiasRepository.contarSinResumen(userId),
     };

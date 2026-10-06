@@ -298,6 +298,98 @@ async function buscar({ tema, idioma = null, pais = null, desdeAnio = null, cuan
   return { fuentes, total: datos.meta?.count ?? fuentes.length, caida: false };
 }
 
+/** Cuántos resultados por página trae la pestaña de SciELO. */
+const POR_PAGINA_SCIELO = 20;
+
+/** El orden de la lista de SciELO, en el idioma de OpenAlex. */
+const ORDENES_SCIELO = {
+  relevancia: 'relevance_score:desc',
+  citas: 'cited_by_count:desc',
+  recientes: 'publication_date:desc',
+  antiguos: 'publication_date:asc',
+};
+
+/**
+ * Busca solo en las revistas de SciELO.
+ *
+ * POR QUÉ POR OPENALEX Y NO POR SCIELO
+ * ------------------------------------
+ * El buscador de SciELO (search.scielo.org) no tiene API y desde octubre de
+ * 2026 pone un desafío anti-robots delante de cualquier petición que no venga
+ * de un navegador. OpenAlex, en cambio, marca cada revista con las listas en
+ * las que está, y `scielo` es una de ellas: 1.485 revistas y 1,57 millones de
+ * artículos el 6 de octubre de 2026. El filtro va sobre la revista donde se
+ * PUBLICÓ (`primary_location`), no sobre cualquier copia, para que un artículo
+ * de Elsevier depositado también en un repositorio no se cuele como SciELO.
+ *
+ * Es la mitad SciELO de la lista mezclada del buscador de Scopus: la web pide
+ * las dos a la vez y las junta, sin repetir lo que tiene el mismo DOI.
+ *
+ * Solo en título y resumen, como la búsqueda precisa de `buscar`: el texto
+ * completo de los artículos en español trae «Perú» o «universidad» en casi
+ * todos, y la lista se llenaba de ruido.
+ */
+async function buscarEnScielo({
+  tema = null,
+  consulta = null,
+  pagina = 1,
+  porPagina = POR_PAGINA_SCIELO,
+  orden = 'relevancia',
+  idioma = null,
+  desdeAnio = null,
+  hastaAnio = null,
+}) {
+  const url = new URL(BASE);
+  url.searchParams.set('per_page', String(Math.min(Math.max(porPagina, 1), 25)));
+  url.searchParams.set('page', String(pagina));
+  url.searchParams.set('sort', ORDENES_SCIELO[orden] ?? ORDENES_SCIELO.relevancia);
+  firmar(url);
+
+  const filtros = ['primary_location.source.listed_in:scielo', 'type:article|review'];
+  if (idioma) filtros.push(`language:${idioma}`);
+  if (desdeAnio) filtros.push(`from_publication_date:${desdeAnio}-01-01`);
+  if (hastaAnio) filtros.push(`to_publication_date:${hastaAnio}-12-31`);
+  // `consulta` llega ya armada desde los conceptos del buscador de Scopus
+  // (`scopus.cuentas.busquedaDeConceptos`), sin comas. El `tema` es texto
+  // libre, y sus comas separarían filtros en OpenAlex y romperían la consulta.
+  filtros.push(`title_and_abstract.search:${consulta ?? String(tema).replace(/,/g, ' ')}`);
+  url.searchParams.set('filter', filtros.join(','));
+
+  const res = await fetch(url, { signal: AbortSignal.timeout(TIEMPO_LIMITE_MS) }).catch((error) => {
+    logger.warn({ err: error, tema }, 'OpenAlex no respondió a la búsqueda en SciELO');
+    return null;
+  });
+
+  if (!res) return { resultados: [], total: 0, caida: true };
+
+  if (!res.ok) {
+    const detalle = await res.text().catch(() => '');
+    avisarRechazo(res, { detalle: detalle.slice(0, 160) }, 'OpenAlex rechazó la búsqueda en SciELO');
+    return { resultados: [], total: 0, caida: true };
+  }
+
+  const datos = await res.json().catch(() => null);
+  if (!datos) return { resultados: [], total: 0, caida: true };
+
+  const resultados = (datos.results ?? []).map((w) => ({
+    /** Lo único que vuelve al guardar. Ver `propias.service.importarDeScielo`. */
+    id: soloElId(w.id),
+    doi: limpiarDoi(w.doi),
+    titulo: w.title ?? '(sin título)',
+    autores: autores(w.authorships) || '(Autor no consignado)',
+    anio: w.publication_year ?? null,
+    revista: w.primary_location?.source?.display_name ?? null,
+    idioma: w.language ?? null,
+    citas: w.cited_by_count ?? 0,
+    /** Dónde se lee: la página del artículo en la revista. */
+    enlace: w.primary_location?.landing_page_url ?? w.doi ?? null,
+    pdfLibre: w.best_oa_location?.pdf_url ?? null,
+    resumen: resumenDelIndice(w.abstract_inverted_index),
+  }));
+
+  return { resultados, total: datos.meta?.count ?? resultados.length, caida: false };
+}
+
 /** Un DOI limpio, venga como identificador o como enlace. */
 function limpiarDoi(crudo) {
   const valor = String(crudo ?? '')
@@ -850,6 +942,8 @@ const soloElId = (id) => String(id).replace(/^https?:\/\/openalex\.org\//i, '');
 
 module.exports = {
   buscar,
+  buscarEnScielo,
+  POR_PAGINA_SCIELO,
   porDoi,
   referenciasDe,
   porIds,

@@ -149,6 +149,20 @@ const scopusBuscarLimiter = build({
 });
 
 /**
+ * La pestaña de SciELO: buscar y guardar.
+ *
+ * Cada búsqueda es una consulta a OpenAlex con la clave de la casa, que tiene
+ * presupuesto diario. Lo mismo que Scopus: sobra para trabajar y corta a quien
+ * quiera recorrer el catálogo entero desde aquí.
+ */
+const scieloLimiter = build({
+  windowMs: 10 * 60 * 1000,
+  max: 40,
+  message: 'Has buscado en SciELO muchas veces seguidas. Espera unos minutos.',
+  keyGenerator: porUsuario,
+});
+
+/**
  * La IA del buscador de Scopus: el generador de consultas y el resumen con
  * citas, con sus preguntas de seguimiento.
  *
@@ -171,6 +185,18 @@ const scopusIaLimiter = build({
  * da para abrir todas las secciones de varias búsquedas, y corta a quien
  * abra y cierre sin parar. Lo ya contado se guarda media hora y no gasta.
  */
+/**
+ * ALICIA junto al buscador de Scopus: una petición por cada búsqueda, más las
+ * páginas, los filtros de tipo y el guardar. El doble que Scopus, porque no
+ * gasta cuota de nadie; lo que cuida es el servidor del CONCYTEC.
+ */
+const aliciaLimiter = build({
+  windowMs: 10 * 60 * 1000,
+  max: 60,
+  message: 'Has buscado en ALICIA muchas veces seguidas. Espera unos minutos.',
+  keyGenerator: porUsuario,
+});
+
 const scopusCuentasLimiter = build({
   windowMs: 10 * 60 * 1000,
   max: 40,
@@ -405,9 +431,11 @@ module.exports = {
   mendeleySyncLimiter,
   mendeleyConectarLimiter,
   scopusBuscarLimiter,
+  scieloLimiter,
   scopusConectarLimiter,
   scopusIaLimiter,
   scopusCuentasLimiter,
+  aliciaLimiter,
   mapasLimiter,
   mapasUmbralLimiter,
   asistenteLimiter,

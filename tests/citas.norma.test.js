@@ -238,3 +238,35 @@ test('y la misma clave en dos capas no se cuenta dos veces en la bibliografía',
   assert.equal(r.bibliografia.entradas.length, 1, 'pero una sola entrada en las referencias');
   assert.match(texto(r.bibliografia.entradas[0].tramos), /Warshaw/);
 });
+
+// ── Tesis de ALICIA ─────────────────────────────────────────────────────────
+
+test('APA: una tesis de ALICIA sale con su grado y su universidad', () => {
+  const TESIS = {
+    ref: 'AR44444444',
+    itemType: 'masterThesis',
+    title: 'Pensamiento crítico y vocabulario inglés en estudiantes universitarios, 2020',
+    authors: 'Rodríguez Briceño, Roland Evert',
+    year: 2022,
+    source: 'Universidad Privada Antenor Orrego',
+    url: 'https://hdl.handle.net/20.500.12759/9919',
+  };
+
+  const item = csl.comoCsl(TESIS);
+  assert.equal(item.type, 'thesis');
+  assert.equal(item.genre, 'Tesis de maestría');
+  assert.equal(item.publisher, 'Universidad Privada Antenor Orrego');
+
+  const r = csl.renderizar({
+    norma: 'apa',
+    idioma: 'es-ES',
+    porClave: new Map([[TESIS.ref, TESIS]]),
+    capitulos: [{ texto: 'Según [AR44444444].' }],
+  });
+  const entrada = r.bibliografia.entradas.map((e) => texto(e.tramos)).join('\n');
+  assert.match(entrada, /\[Tesis de maestría, Universidad Privada Antenor Orrego\]/);
+});
+
+test('una tesis sin grado conocido no se inventa el grado', () => {
+  assert.equal(csl.comoCsl({ ref: 'X', itemType: 'thesis', title: 'T' }).genre, undefined);
+});

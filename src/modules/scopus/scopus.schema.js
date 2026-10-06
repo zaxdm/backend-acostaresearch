@@ -171,7 +171,31 @@ const guardadaCambioSchema = guardadaSchema.omit({ tipo: true }).partial();
 
 const guardadaIdSchema = z.object({ id: z.string().uuid('Esa búsqueda no existe.') });
 
+/**
+ * ALICIA con la misma búsqueda. `consulta` solo llega si el tesista corrigió a
+ * mano la que se armó: entonces manda la suya, ya en el lenguaje de ALICIA, y
+ * los años que tenía.
+ */
+const aliciaSchema = z.object({
+  ecuacion,
+  consulta: z.string().trim().max(1500, 'Esa búsqueda es demasiado larga.').optional(),
+  pagina: z.coerce.number().int().min(1).max(50).optional(),
+  tipos: z.array(z.enum(['pregrado', 'maestria', 'doctorado', 'articulos'])).max(4).optional(),
+  desde: z.coerce.number().int().min(1900).max(2100).nullable().optional(),
+  hasta: z.coerce.number().int().min(1900).max(2100).nullable().optional(),
+});
+
+/** Los identificadores de ALICIA; su forma se vuelve a comprobar en el cliente. */
+const aliciaImportarSchema = z.object({
+  ids: z
+    .array(z.string().trim().min(10).max(100))
+    .min(1, 'No marcaste ninguna tesis ni artículo.')
+    .max(20, 'Puedes guardar hasta 20 de una vez.'),
+});
+
 module.exports = {
+  aliciaSchema,
+  aliciaImportarSchema,
   aproximadasSchema,
   cuentasSchema,
   guardadaCambioSchema,

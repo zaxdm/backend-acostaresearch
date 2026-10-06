@@ -459,7 +459,7 @@ function verMarcados(parrafos, reporte, { citados, reescritos, bloqueados, desde
       break;
     }
     const cita = citados[parrafo.id] ? ' [citado]' : '';
-    const linea = `¶${parrafo.id} (${cruce.get(parrafo.id).porcentaje} % IA)${cita} ${citados[parrafo.id] ?? parrafo.texto}`;
+    const linea = `¶${parrafo.id} (${cruce.get(parrafo.id).porcentaje} % ${reporte.tipo === 'similitud' ? 'coincide' : 'IA'})${cita} ${citados[parrafo.id] ?? parrafo.texto}`;
     lineas.push(linea);
     largo += linea.length;
   }

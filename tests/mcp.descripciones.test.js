@@ -243,9 +243,11 @@ test('citar_mi_documento exige copiar el texto tal cual y el visto bueno', () =>
   assert.deepEqual(Object.keys(esquema('citar_mi_documento').properties), ['parrafos']);
 });
 
-test('humanizar_mi_documento guarda de una vez, sin aprobación por bloques, y dice lo que se rechaza', () => {
+test('humanizar_mi_documento guarda lo aprobado por bloques, sin reporte de IA, y dice lo que se rechaza', () => {
   const d = descripcion('humanizar_mi_documento');
-  assert.match(d, /SIN enseñársela ni pedir aprobación por bloques/);
+  assert.match(d, /bloque de hasta 10 párrafos[\s\S]*solo lo que apruebe/);
+  assert.match(descripcion('ver_lo_marcado'), /reporte de IA de Turnitin YA NO SE USA/);
+  assert.match(descripcion('subir_mi_documento'), /el de IA ya no se acepta/);
   assert.match(descripcion('ver_lo_marcado'), /"todo"[\s\S]*ENTRADA POR DEFECTO/);
   assert.deepEqual(Object.keys(esquema('ver_lo_marcado').properties), ['reporte', 'capitulo', 'saltar']);
   assert.match(d, /\[APARTE\]/);

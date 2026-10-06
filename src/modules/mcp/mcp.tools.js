@@ -67,15 +67,6 @@ const N = '\n';
 const SIN_ARGUMENTOS = fromJsonSchema({ type: 'object', properties: {}, additionalProperties: false });
 
 /**
- * Cómo humanizar con el reporte de Turnitin, en lo mínimo.
- *
- * Sale de humanizar a mano un capítulo marcado al 86 % (28-sep-2026): lo que
- * funcionó fue reescribir desde la idea con la voz de los párrafos que Turnitin
- * dio limpios, y lo que delataba era el vocabulario culto y un mismo molde de
- * apertura y cierre en todo el capítulo. Lo que se puede contar (oraciones que
- * siguen iguales, muletillas, rayas) lo cuenta el servidor al guardar.
- */
-/**
  * Cómo bajar la similitud con el reporte subido. Sale de la skill
  * bajar-similitud: lo que no se negocia (las citas textuales) y la doble
  * restricción (alejarse de la fuente sin caer en prosa de modelo).
@@ -120,9 +111,22 @@ const REGLAS_DE_REDACCION = [
     '"reescribir_parrafos" antes de darle el Word.',
 ].join(N);
 
-const REGLAS_CON_REPORTE = [
-  'CÓMO HUMANIZAR. El tesista ya pidió humanizarlo: NO le enseñes los párrafos ni le pidas aprobación ' +
-    'por bloques; trabaja tanda a tanda hasta el final. Solo si él pide ver cada párrafo, enséñaselo.',
+/**
+ * Cómo humanizar, en lo mínimo.
+ *
+ * Sale de humanizar a mano un capítulo marcado al 86 % (28-sep-2026): lo que
+ * funcionó fue reescribir desde la idea con la voz del autor, y lo que delataba
+ * era el vocabulario culto y un mismo molde de apertura y cierre en todo el
+ * capítulo. Lo que se puede contar (oraciones que siguen iguales, muletillas,
+ * rayas) lo cuenta el servidor al guardar.
+ *
+ * Desde el 6-oct-2026 se humaniza por bloques que el tesista aprueba, como en
+ * los videos de la skill, y sin el reporte de IA de Turnitin.
+ */
+const REGLAS_DE_HUMANIZAR = [
+  'CÓMO HUMANIZAR. Trabaja POR BLOQUES de hasta 10 párrafos: enséñale cada párrafo con el ANTES y el ' +
+    'AHORA y espera a que apruebe el bloque en un solo mensaje o te diga cuáles cambiar. Guarda solo lo ' +
+    'que apruebe.',
   '1. Reescribe cada párrafo DESDE LA IDEA: di para ti qué afirma y redáctalo otra vez en otro orden, ' +
     'el cuerpo también. Ninguna oración puede quedar igual; cambiar una palabra suelta no es reescribir.',
   '2. Imita la VOZ DEL AUTOR de abajo: su largo de oración, sus conectores, sus palabras corrientes. No ' +
@@ -141,10 +145,10 @@ const REGLAS_CON_REPORTE = [
     'marcas [AR…] y [FALTA FUENTE]. No añadas ni quites ideas. Un párrafo sale como un párrafo.',
   '6. Si una oración del original no se entiende, conserva su sentido lo más literal que puedas y ' +
     'apúntala para el informe final. Corrige las faltas evidentes del original.',
-  'RITMO: manda la tanda entera a "humanizar_mi_documento" y al tesista dile solo una línea («Tanda 2: ' +
-    '12 párrafos guardados, quedan 30»). Rehaz lo que vuelva rechazado o con aviso de oraciones idénticas ' +
-    'o de vocabulario, y cambia las muletillas que te señale. Al terminar: "enlace_del_word" y un informe ' +
-    'breve. No prometas ningún porcentaje.',
+  'RITMO: cuando apruebe el bloque, guárdalo y enséñale el siguiente. Los párrafos de esta tanda que aún ' +
+    'no le enseñaste vuelven a salir al llamar otra vez. Rehaz lo que vuelva rechazado o con aviso de ' +
+    'oraciones idénticas o de vocabulario, y cambia las muletillas que te señale. Al terminar: ' +
+    '"enlace_del_word" y un informe breve. No prometas ningún porcentaje.',
 ].join(N);
 
 /**
@@ -1454,8 +1458,8 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         'Reemplaza párrafos sueltos de un capítulo ya guardado en el proyecto, por su número (¶7), sin ' +
         'reenviar el capítulo entero. Los números salen de "ver_capitulo" con "texto": true y "numerado": ' +
         'true, o de "ver_lo_marcado". ÚSALA para humanizar, bajar la similitud o corregir los AVISOS DE ' +
-        'REDACCIÓN de "guardar_capitulo". Al humanizar, guarda cada tanda en cuanto la reescribas, sin ' +
-        'pedir aprobación por bloques. Manda el texto NUEVO completo de cada párrafo. El servidor ' +
+        'REDACCIÓN de "guardar_capitulo". Al humanizar, enséñale cada bloque (hasta 10 párrafos, con el ' +
+        'antes y el ahora) y guarda lo que apruebe. Manda el texto NUEVO completo de cada párrafo. El servidor ' +
         'rechaza el párrafo si cambian las cifras o los años, si lo que va entre comillas no se copió tal ' +
         'cual, si desaparece un apellido citado o si las claves [AR…] y [FALTA FUENTE] no son las mismas. ' +
         'Títulos, tablas, figuras, listas y rótulos no se aceptan. Un párrafo sale como un párrafo. Hasta 40 ' +
@@ -1524,18 +1528,16 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
     {
       title: 'Lo que marcó Turnitin',
       description:
-        'Devuelve SOLO los párrafos que marcó un reporte de Turnitin que el tesista subió por el enlace de ' +
-        '"subir_mi_documento": el de IA ("reporte": "ia") para humanizar, o el de similitud ("reporte": ' +
-        '"similitud") para bajar la similitud. Los cruza con su Word subido o, si no subió ninguno, con los ' +
+        'PARA BAJAR LA SIMILITUD ("reporte": "similitud"): devuelve SOLO los párrafos que marcó el reporte de ' +
+        'similitud de Turnitin que el tesista subió por el enlace de "subir_mi_documento". Los cruza con su Word subido o, si no subió ninguno, con los ' +
         'capítulos guardados en el proyecto. Trae las reglas para reescribirlos y la voz del tesista: no ' +
         'hace falta cargar la skill entera ni leer la tesis completa. Lo ya reescrito no vuelve a salir; la ' +
         'tanda siguiente se pide volviendo a llamar. Si quiere trabajar con su reporte y no está subido, dile ' +
-        'que lo suba por ese enlace. ' +
-        'SIN REPORTE, CON SU PROPIO RESALTADO: si el tesista dice que marcó en rojo en su Word lo que hay ' +
+        'que lo suba por ese enlace. El reporte de IA de Turnitin YA NO SE USA: para humanizar no se pide. ' +
+        'PARA HUMANIZAR, CON SU PROPIO RESALTADO: si el tesista dice que marcó en rojo en su Word lo que hay ' +
         'que humanizar (con el resaltador o con la letra en rojo), usa "reporte": "rojo": devuelve solo lo rojo ' +
         'del Word subido, y de los párrafos con solo una parte en rojo, qué parte es. ' +
-        'SIN REPORTE NI ROJO, usa "reporte": "todo": toda la prosa que aún no se humanizó, por el mismo ' +
-        'camino rápido. Con Word subido es ese Word; si no, o si pasas "capitulo", los capítulos ' +
+        'SIN ROJO, usa "reporte": "todo": toda la prosa que aún no se humanizó. Con Word subido es ese Word; si no, o si pasas "capitulo", los capítulos ' +
         'guardados (uno o todos). ES LA ENTRADA POR DEFECTO para «humaniza mi tesis / mi capítulo / mi ' +
         'documento»: no hace falta leer antes con "ver_mi_documento" ni con "ver_capitulo".',
       inputSchema: fromJsonSchema({
@@ -1545,8 +1547,8 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
             type: 'string',
             enum: ['ia', 'similitud', 'rojo', 'todo'],
             description:
-              'Qué reporte leer; "rojo" es lo que el tesista resaltó en rojo en su Word subido; "todo", ' +
-              'sin reporte, toda la prosa aún sin humanizar.',
+              '"similitud" para bajarla con su reporte; "rojo" es lo que el tesista resaltó en rojo en su Word ' +
+              'subido; "todo", toda la prosa aún sin humanizar. "ia" ya no se usa y equivale a "todo".',
           },
           capitulo: {
             type: 'string',
@@ -1568,18 +1570,20 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         additionalProperties: false,
       }),
     },
-    async ({ reporte, saltar, capitulo }) => {
+    async ({ reporte: pedido, saltar, capitulo }) => {
       await licenseService.recordUsage({ licenseId: licencia.id, tool: 'ver_lo_marcado' });
+      // Una skill de antes del 6-oct-2026 todavía puede pedir el de IA: se humaniza sin reporte.
+      const reporte = pedido === 'ia' ? 'todo' : pedido;
       const userId = licencia.user.id;
       const { productCode } = licencia;
       const fuera = (saltar ?? []).map((x) => String(x).replace(/[[\]]/g, '').trim());
       try {
         // El reporte clásico de una entrega en PDF trae las hojas como foto: se leen después de subirlo.
-        if (reporte === 'ia' || reporte === 'similitud') {
+        if (reporte === 'similitud') {
           const lectura = await documentoService.lecturaDelReporte(userId, productCode, reporte);
           if (lectura?.fallo) {
             return texto(
-              `${lectura.fallo} Su reporte de ${reporte === 'ia' ? 'IA' : 'similitud'} trae la tesis como imagen y no ` +
+              `${lectura.fallo} Su reporte de similitud trae la tesis como imagen y no ` +
                 'se terminó de leer. Llama a "subir_mi_documento" y dile que vuelva a subir el mismo PDF por ese enlace.',
             );
           }
@@ -1633,7 +1637,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         }
         if (enCapitulos.sinReporte && !enWord?.tipoReporte) {
           return texto(
-            `No hay ningún reporte de ${reporte === 'ia' ? 'IA' : 'similitud'} subido. Llama a "subir_mi_documento" ` +
+            'No hay ningún reporte de similitud subido. Llama a "subir_mi_documento" ' +
               'y dile que suba el PDF que descargó de Turnitin por ese enlace; si su tesis no está en el proyecto, ' +
               'que suba también su Word.',
           );
@@ -1652,7 +1656,6 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
             tipo: reporte,
             capitulo: capitulo ?? null,
             voz: vozGuardada?.parrafos ?? [],
-            reporteIa: reporte === 'ia' ? enCapitulos.reporte : null,
             reporteSimilitud: reporte === 'similitud' ? enCapitulos.reporte : null,
           }),
         );
@@ -3304,14 +3307,14 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
   );
 
   /**
-   * Lo que recibe Claude para humanizar con el reporte de Turnitin.
+   * Lo que recibe Claude para humanizar lo que pide "ver_mi_documento" con "solo_marcados".
    *
    * Sustituye a la skill entera (mil cuatrocientas líneas) y a las fichas por
    * párrafo: lo que se puede contar lo cuenta `humanizar_mi_documento`, y aquí
    * queda solo lo que hay que saber para reescribir. Sale en la primera tanda.
    */
   function respuestaMarcados(leido) {
-    return respuestaLoMarcado({ ...leido, modo: 'documento', tipo: leido.tipoReporte === 'rojo' ? 'rojo' : 'ia' });
+    return respuestaLoMarcado({ ...leido, modo: 'documento', tipo: leido.tipoReporte });
   }
 
   /**
@@ -3343,10 +3346,10 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
     const similitud = leido.tipo === 'similitud';
     const rojo = leido.tipo === 'rojo';
     const todo = leido.tipo === 'todo';
-    const ficha = rojo || todo ? {} : similitud ? leido.reporteSimilitud : leido.reporteIa;
+    const ficha = similitud ? leido.reporteSimilitud : {};
     if (!ficha) {
       return (
-        `No hay reporte de ${similitud ? 'similitud' : 'IA'} de Turnitin subido. Si lo tiene, llama a ` +
+        'No hay reporte de similitud de Turnitin subido. Si lo tiene, llama a ' +
         '"subir_mi_documento" y dile que lo suba (PDF) por ese enlace.'
       );
     }
@@ -3360,16 +3363,14 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         : `Humanizar «${leido.nombre}» entero`
       : rojo
       ? 'Resaltado en rojo en su Word'
-      : similitud
-        ? `Reporte de similitud: ${ficha.porcentaje ?? '?'} %` +
+      : `Reporte de similitud: ${ficha.porcentaje ?? '?'} %` +
           (ficha.desglose
             ? ` (internet ${ficha.desglose.internet ?? '?'} %, publicaciones ${ficha.desglose.publicaciones ?? '?'} %, ` +
               `trabajos entregados ${ficha.desglose.trabajos ?? '?'} %)`
             : '') +
           (ficha.fuentes?.length
             ? `${N}Fuentes principales: ${ficha.fuentes.slice(0, 8).map((f) => `${f.n}. ${f.nombre} ${f.porcentaje} %`).join(' · ')}`
-            : '')
-        : `Reporte: ${ficha.porcentaje ?? 'menos de 20'} % IA`;
+            : '');
     if (leido.lineas.length === 0 && todo) {
       return (
         `${cabecera} · ${leido.marcados} párrafos · NO QUEDA NINGUNO POR HUMANIZAR.${N}${N}` +
@@ -3393,7 +3394,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
     // Las reglas y la voz van en TODAS las tandas: puede retomar en otra conversación.
     const reglas =
       (rojo ? `${REGLAS_DEL_ROJO}${N}${N}` : '') +
-      `${similitud ? REGLAS_DE_SIMILITUD : REGLAS_CON_REPORTE}${N}${N}` +
+      `${similitud ? REGLAS_DE_SIMILITUD : REGLAS_DE_HUMANIZAR}${N}${N}` +
       (leido.voz?.length > 0
         ? `VOZ DEL AUTOR (párrafos suyos; imita esto):${N}${leido.voz.map((v) => `> ${v}`).join(N)}${N}${N}`
         : '');
@@ -3406,7 +3407,9 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
       reglas +
       `PÁRRAFOS (lo que va entre paréntesis y corchetes al principio NO es del texto):${N}` +
       `${leido.lineas.join(N)}${N}${N}` +
-      `Reescríbelos y guárdalos con ${guardar}. Después vuelve a llamar a ` +
+      (similitud
+        ? `Reescríbelos y guárdalos con ${guardar}. Después vuelve a llamar a `
+        : `Enséñaselos por bloques de hasta 10 y guarda lo que apruebe con ${guardar}. Después vuelve a llamar a `) +
       (leido.modo === 'capitulos' || similitud || rojo || todo
         ? `"ver_lo_marcado" con "reporte": "${leido.tipo}"${leido.capitulo ? ` y "capitulo": "${leido.capitulo}"` : ''}`
         : '"ver_mi_documento" con "solo_marcados": true') +
@@ -3434,10 +3437,10 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         'pulsa, sin escribir la dirección, y dile que vuelva a la conversación cuando lo haya subido; ' +
         'entonces léelo con "ver_mi_documento". Subir uno nuevo reemplaza al anterior, pero conserva ' +
         'las citas y lo humanizado de los párrafos que sigan igual. ' +
-        'EL MISMO ENLACE RECIBE LOS REPORTES DE TURNITIN EN PDF, el de IA y el de similitud, también sin ' +
-        'Word si su tesis ya está guardada en el proyecto. Si quiere humanizar o bajar la similitud, dile que ' +
-        'suba ahí el reporte: con él se trabaja SOLO lo que Turnitin marcó ("ver_lo_marcado"), de una vez y ' +
-        'gastando mucho menos.',
+        'EL MISMO ENLACE RECIBE EL REPORTE DE SIMILITUD DE TURNITIN EN PDF, también sin Word si su tesis ' +
+        'ya está guardada en el proyecto: si quiere BAJAR LA SIMILITUD, dile que lo suba ahí y se trabaja ' +
+        'solo lo que Turnitin marcó ("ver_lo_marcado" con "similitud"). PARA HUMANIZAR NO SE SUBE NINGÚN ' +
+        'REPORTE: el de IA ya no se acepta; se humaniza por bloques con "ver_lo_marcado" ("todo" o "rojo").',
       inputSchema: SIN_ARGUMENTOS,
     },
     async () => {
@@ -3454,20 +3457,17 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
           `con ${ficha.citados} párrafos citados y ${ficha.humanizados} humanizados. Si sube otro, ` +
           'reemplaza a ese: se conservan las citas y lo humanizado de los párrafos que sigan igual.'
         : 'Todavía no hay ningún documento subido.';
-      const reporte =
-        (ficha?.reporteIa
-          ? ` También tiene subido su reporte de IA de Turnitin (${ficha.reporteIa.porcentaje ?? 'menos de 20'} %).`
-          : '') +
-        (ficha?.reporteSimilitud
-          ? ` Y su reporte de similitud (${ficha.reporteSimilitud.porcentaje ?? '?'} %).`
-          : '');
+      const reporte = ficha?.reporteSimilitud
+        ? ` También tiene subido su reporte de similitud (${ficha.reporteSimilitud.porcentaje ?? '?'} %).`
+        : '';
 
       return texto(
-        `${hayUno}${reporte}${N}${N}Enlace para subir su Word (.docx, hasta 40 MB) y, si los tiene, los ` +
-          `reportes de Turnitin en PDF (de IA o de similitud):${N}${enlace}${N}${N}` +
-          'Si lo que quiere es humanizar o bajar la similitud, dile que suba el reporte (y su Word, si la tesis ' +
-          'no está guardada en el proyecto): con él se trabaja solo lo que Turnitin marcó. Dile que vuelva ' +
-          'aquí y te avise cuando lo haya subido; entonces llama a "ver_lo_marcado" con el reporte que subió.',
+        `${hayUno}${reporte}${N}${N}Enlace para subir su Word (.docx, hasta 40 MB) y, si quiere bajar la ` +
+          `similitud, su reporte de similitud de Turnitin en PDF:${N}${enlace}${N}${N}` +
+          'Para BAJAR LA SIMILITUD, dile que suba el reporte de similitud (y su Word, si la tesis no está ' +
+          'guardada en el proyecto); cuando avise que lo subió, llama a "ver_lo_marcado" con "similitud". ' +
+          'Para HUMANIZAR no hace falta ningún reporte (el de IA ya no se acepta): cuando suba su Word, llama ' +
+          'a "ver_lo_marcado" con "todo" (o "rojo" si resaltó en rojo lo que quiere humanizar).',
       );
     },
   );
@@ -3498,8 +3498,9 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         'ANTES DE CITAR O HUMANIZAR, PREGÚNTALE si trabajas con el documento que ya está en el ' +
         'servidor (dile cuál y de qué fecha) o si quiere subir uno nuevo; si es nuevo, o no hay ' +
         'ninguno, dale el enlace de "subir_mi_documento" y espera a que diga que lo subió. ' +
-        'PARA HUMANIZARLO no lo leas entero: usa "ver_lo_marcado" ("ia" con reporte, "rojo" si lo ' +
-        'resaltó, "todo" si no) y guarda cada tanda con "humanizar_mi_documento", de una vez. ' +
+        'PARA HUMANIZARLO no lo leas entero: usa "ver_lo_marcado" ("rojo" si lo resaltó, "todo" si no), ' +
+        'enséñale bloques de hasta 10 párrafos para que los apruebe y guarda lo aprobado con ' +
+        '"humanizar_mi_documento". ' +
         'CÓMO SE CITA, EN ORDEN: ' +
         '1) Si la norma no está elegida, PREGÚNTASELA y guárdala con "guardar_avance" ' +
         '(estiloCitas); las de notas al pie no sirven para un documento subido. ' +
@@ -3513,8 +3514,6 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         '5) Con su visto bueno, guarda con "citar_mi_documento". ' +
         '6) Dale el enlace con "enlace_del_word". ' +
         'NUNCA inventes una fuente: lo que no tenga respaldo va [FALTA FUENTE]. ' +
-        'CON EL REPORTE DE IA DE TURNITIN SUBIDO, para humanizar pide "solo_marcados": true: devuelve ' +
-        'solo lo que Turnitin marcó y las reglas para reescribirlo de una vez, sin cargar la skill entera. ' +
         'Si el tesista resaltó en rojo lo que hay que humanizar, usa "ver_lo_marcado" con "reporte": "rojo".',
       inputSchema: fromJsonSchema({
         type: 'object',
@@ -3529,8 +3528,8 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
           solo_marcados: {
             type: 'boolean',
             description:
-              'true para humanizar con el reporte de IA de Turnitin: solo los párrafos que marcó y aún no ' +
-              'están humanizados. La tanda siguiente se pide volviendo a llamar igual, sin "desde".',
+              'true para humanizar: lo resaltado en rojo o, si no hay, toda la prosa aún sin humanizar, con ' +
+              'las reglas. La tanda siguiente se pide volviendo a llamar igual, sin "desde".',
           },
         },
         additionalProperties: false,
@@ -3597,10 +3596,6 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         `Documento: «${leido.nombre}» · ${leido.total} párrafos con texto (¶${leido.primero} a ` +
           `¶${leido.ultimo}) · ${leido.citados} ya citados · ${leido.humanizados} humanizados.${N}` +
           `${lineaDeNorma}${N}` +
-          (leido.reporteIa
-            ? `Tiene subido su reporte de IA de Turnitin (${leido.reporteIa.porcentaje ?? 'menos de 20'} %): ` +
-              `para HUMANIZAR no leas así, llama con "solo_marcados": true.${N}`
-            : '') +
           (leido.enRojo > 0
             ? `Tiene ${leido.enRojo} párrafos resaltados en rojo ([en rojo], [en parte en rojo]). Si lo rojo es lo ` +
               `que quiere humanizar, no leas así: llama a "ver_lo_marcado" con "reporte": "rojo".${N}`
@@ -3723,9 +3718,8 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         'SOLO PARA EL WORD SUBIDO: para humanizar lo que está guardado en el método, lee el ' +
         'capítulo con "ver_capitulo" ("texto": true), reescríbelo y guárdalo con ' +
         '"guardar_capitulo"; no le mandes descargar su Word para volver a subirlo aquí. ' +
-        'Si pidió humanizar, guarda CADA TANDA de "ver_lo_marcado" en cuanto la reescribas, SIN ' +
-        'enseñársela ni pedir aprobación por bloques: ya pidió que se humanice. Solo si él pide revisar ' +
-        'párrafo por párrafo, enséñaselo antes. Al empezar, si ya hay un Word subido, confírmale una vez ' +
+        'Al humanizar, enséñale cada bloque de hasta 10 párrafos de "ver_lo_marcado" con el antes y el ' +
+        'ahora, y guarda aquí solo lo que apruebe. Al empezar, si ya hay un Word subido, confírmale una vez ' +
         'que trabajas con ese (o que suba uno nuevo con el enlace de "subir_mi_documento"). ' +
         'El Word subido no se sobrescribe: el servidor escribe los párrafos nuevos al descargarlo, ' +
         'con el mismo estilo de párrafo, la misma letra, y las cursivas y notas al pie de las ' +
@@ -3804,19 +3798,14 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
             : '';
         const siguiente =
           r.marcadosPendientes === null
-            ? `Cuando termine el bloque, dale su Word con "enlace_del_word" para que lo revise: ` +
-              'es su mismo documento con su formato. No le armes tú otro Word.'
-            : r.marcadosPor === 'rojo'
-              ? r.marcadosPendientes > 0
-                ? `Quedan ${r.marcadosPendientes} párrafos resaltados en rojo sin humanizar: pide la tanda ` +
-                  'siguiente con "ver_lo_marcado" ("reporte": "rojo").'
-                : 'Ya no queda ningún párrafo resaltado en rojo sin humanizar. Dale su Word con ' +
-                  '"enlace_del_word" y el informe final.'
-              : r.marcadosPendientes > 0
-                ? `Quedan ${r.marcadosPendientes} párrafos marcados por Turnitin sin humanizar: pide la tanda ` +
-                  'siguiente con "ver_mi_documento" ("solo_marcados": true).'
-                : 'Ya no queda ningún párrafo marcado por Turnitin sin humanizar. Dale su Word con ' +
-                  '"enlace_del_word" y el informe final.';
+            ? 'Si quedan párrafos por humanizar, enséñale el bloque siguiente de "ver_lo_marcado" ("reporte": ' +
+              '"todo"). Al terminar, dale su Word con "enlace_del_word" para que lo revise: es su mismo ' +
+              'documento con su formato. No le armes tú otro Word.'
+            : r.marcadosPendientes > 0
+              ? `Quedan ${r.marcadosPendientes} párrafos resaltados en rojo sin humanizar: enséñale el bloque ` +
+                'siguiente de "ver_lo_marcado" ("reporte": "rojo").'
+              : 'Ya no queda ningún párrafo resaltado en rojo sin humanizar. Dale su Word con ' +
+                '"enlace_del_word" y el informe final.';
 
         return texto(
           `Guardados ${r.guardados} párrafos` +

@@ -431,7 +431,7 @@ router.post(
       throw new ForbiddenError('Tu licencia no está vigente, así que no se puede guardar el documento.');
     }
 
-    // El mismo enlace recibe el reporte de IA de Turnitin, que es un PDF.
+    // El mismo enlace recibe el reporte de similitud de Turnitin, que es un PDF. El de IA se rechaza.
     if (reporteIa.esPdf(req.body)) {
       let reporte;
       try {

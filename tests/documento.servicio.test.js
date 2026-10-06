@@ -305,55 +305,32 @@ test('volver a subir el Word conserva lo humanizado, y el ya revisado no cuenta 
   assert.equal(revisado.humanizadosPerdidos, 0);
 });
 
-test('con el reporte de Turnitin: lee solo lo marcado, da la voz limpia y cuenta lo que falta', async () => {
+test('el reporte de IA ya no se acepta: humanizar es toda la prosa, por bloques y sin reporte', async () => {
   const reporteIa = require('../src/modules/projects/project.reporte-ia');
-  const limpio =
-    'Este párrafo lo escribió la autora con sus palabras y Turnitin no le marcó nada, así que sirve de ' +
-    'muestra de cómo escribe ella cuando nadie la ayuda, con oraciones largas y conectores propios que ' +
-    'usa siempre, por lo que se tiene que el tono es llano y la redacción es suya de principio a fin sin duda.';
-  const marcado1 = 'El verdadero desafío dogmático estriba en la imperiosa necesidad de equilibrio. La norma exige filtros.';
-  const marcado2 = 'Asimismo, se presenta el reto de evitar que el parte policial sea prueba plena del hecho denunciado.';
-  await servicio.subir({ userId: 'u1', productCode: 'METODO', buffer: docx([limpio, marcado1, marcado2]), nombre: 't.docx' });
+  const prosa =
+    'Este párrafo lo escribió la autora con sus palabras y sirve de muestra de cómo escribe ella cuando ' +
+    'nadie la ayuda, con oraciones largas y conectores propios que usa siempre.';
+  await servicio.subir({ userId: 'u1', productCode: 'METODO', buffer: docx([prosa, 'Corto.']), nombre: 't.docx' });
 
-  const palabras = [limpio, marcado1, marcado2].map((t) => t.split(/\s+/).map(reporteIa.normalizar));
   const leerReal = reporteIa.leer;
-  reporteIa.leer = async () => ({
-    porcentaje: 60,
-    palabras: palabras.flat().join(' '),
-    ia: palabras.map((ws, i) => (i === 0 ? '0' : '1').repeat(ws.length)).join(''),
-  });
+  reporteIa.leer = async () => ({ tipo: 'ia', porcentaje: 60, palabras: 'una dos tres', ia: '111' });
   try {
-    const subido = await servicio.subirReporte({ userId: 'u1', productCode: 'METODO', buffer: Buffer.from('%PDF-'), nombre: 'ia.pdf' });
-    assert.deepEqual(subido, { tipo: 'ia', nombre: 'ia.pdf', porcentaje: 60, marcados: 2, hayDocumento: true });
-    // Lo que Turnitin dio limpio queda como voz del tesista para las demás skills.
-    assert.deepEqual(disco.get('p1:voz').parrafos, [limpio]);
+    await assert.rejects(
+      servicio.subirReporte({ userId: 'u1', productCode: 'METODO', buffer: Buffer.from('%PDF-'), nombre: 'ia.pdf' }),
+      (e) => e instanceof reporteIa.ReporteNoValido && /reporte de SIMILITUD/.test(e.message),
+    );
   } finally {
     reporteIa.leer = leerReal;
   }
+  assert.equal(disco.has('p1:reporteIa'), false);
 
+  // Uno guardado de antes no cuenta: «solo lo marcado» es toda la prosa aún sin humanizar.
+  disco.set('p1:reporteIa', { tipo: 'ia', porcentaje: 60, palabras: 'x', ia: '1' });
   const leido = await servicio.ver('u1', 'METODO', { soloMarcados: true });
-  assert.equal(leido.reporteIa.porcentaje, 60);
-  assert.deepEqual(leido.lineas.map((l) => l.slice(0, 12)), ['¶2 (100 % IA', '¶3 (100 % IA']);
-  assert.equal(leido.voz[0], limpio);
-  assert.match(await servicio.aviso('u1', 'METODO'), /solo_marcados/);
-
-  // Guardar uno deja el otro pendiente y avisa de la oración que sigue igual.
-  const r = await servicio.humanizar('u1', 'METODO', [
-    { p: 2, texto: 'Hace falta equilibrio, y eso cuesta. La norma exige filtros.' },
-  ]);
-  assert.equal(r.guardados, 1);
-  assert.equal(r.marcadosPendientes, 1);
-  assert.ok(r.avisos.some((a) => /1 de 2 oraciones siguen idénticas/.test(a)), r.avisos.join('\n'));
-
-  const despues = await servicio.ver('u1', 'METODO', { soloMarcados: true });
-  assert.deepEqual(despues.lineas.map((l) => l.slice(0, 2)), ['¶3']);
-  assert.equal(despues.pendientes, 1);
-
-  // Sin reporte, pedir solo lo marcado lee como siempre.
-  disco.delete('p1:reporteIa');
-  const sinReporte = await servicio.ver('u1', 'METODO', { soloMarcados: true });
-  assert.equal(sinReporte.reporteIa, null);
-  assert.equal(sinReporte.lineas.length, 3);
+  assert.equal(leido.tipoReporte, 'todo');
+  assert.equal(leido.reporteIa, undefined);
+  assert.deepEqual(leido.lineas.map((l) => l.slice(0, 2)), ['¶1']);
+  assert.doesNotMatch(await servicio.aviso('u1', 'METODO'), /reporte de IA/);
 });
 
 test('lo resaltado en rojo se trabaja como un reporte: solo eso, por tramos, con la voz del amarillo', async () => {
@@ -443,8 +420,10 @@ test('pedir lo rojo de un Word sin rojo no devuelve nada que trabajar', async ()
   const leido = await servicio.ver('u1', 'METODO', { soloMarcados: true, reporte: 'rojo' });
   assert.equal(leido.tipoReporte, 'rojo');
   assert.equal(leido.marcados, 0);
-  // Y sin rojo ni reporte, "solo lo marcado" lee como siempre.
-  assert.equal((await servicio.ver('u1', 'METODO', { soloMarcados: true })).lineas.length, 2);
+  // Y sin rojo, "solo lo marcado" es toda la prosa: aquí, nada que pase de un rótulo.
+  const todo = await servicio.ver('u1', 'METODO', { soloMarcados: true });
+  assert.equal(todo.tipoReporte, 'todo');
+  assert.equal(todo.lineas.length, 0);
 });
 
 test('partirCitado deja cada marca con su parte', () => {

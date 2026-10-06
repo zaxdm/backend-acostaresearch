@@ -201,11 +201,13 @@ async function quitarEnSuTurno(userId, productCode) {
 }
 
 /**
- * Guarda el reporte de IA de Turnitin (PDF) del documento.
+ * Guarda el reporte de similitud de Turnitin (PDF) del documento.
  *
  * Se puede subir antes o después del Word: se guardan sus palabras y cuáles
  * marcó, y el cruce con los párrafos se hace al leer. Devuelve null sin
  * licencia; lanza `ReporteNoValido` si el PDF no es ese reporte.
+ *
+ * El de IA ya no se acepta (6-oct-2026): se humaniza por bloques sin reporte.
  */
 function subirReporte(argumentos) {
   return enSerie(claveDelDocumento(argumentos.userId, argumentos.productCode), () => subirReporteEnSuTurno(argumentos));
@@ -213,6 +215,12 @@ function subirReporte(argumentos) {
 
 async function subirReporteEnSuTurno({ userId, productCode, buffer, nombre }) {
   const leido = await reporteIa.leer(buffer);
+  if (leido.tipo === 'ia') {
+    throw new reporteIa.ReporteNoValido(
+      'Ese es el reporte de IA de Turnitin, y ya no hace falta: para humanizar, dile a Claude «humaniza mi ' +
+        'documento» y lo hará por bloques, sin reporte. Aquí solo se sube el reporte de SIMILITUD, para bajarla.',
+    );
+  }
   const proyecto = await proyectoConLicencia(userId, productCode);
   if (!proyecto) return null;
 
@@ -320,7 +328,6 @@ async function fichaDelPanel(proyecto) {
   if (!ficha) return null;
   const citados = await almacen.leerCitasDeDocumento(proyecto.id).catch(() => ({}));
   const reescritos = await almacen.leerReescritosDeDocumento(proyecto.id).catch(() => ({}));
-  const reporte = await almacen.leerReporteIaDeDocumento(proyecto.id).catch(() => null);
   const similitud = await almacen.leerReporteSimilitud(proyecto.id).catch(() => null);
   return {
     nombre: ficha.nombre,
@@ -329,7 +336,6 @@ async function fichaDelPanel(proyecto) {
     palabras: ficha.palabras,
     citados: Object.keys(citados).length,
     humanizados: Object.keys(reescritos).length,
-    reporteIa: fichaDelReporte(reporte),
     reporteSimilitud: fichaDelReporte(similitud),
   };
 }
@@ -366,7 +372,6 @@ async function ver(userId, productCode, { desde = 1, soloMarcados = false, repor
   const ficha = await almacen.leerFichaDeDocumento(proyecto.id);
   const citados = await almacen.leerCitasDeDocumento(proyecto.id);
   const reescritos = await almacen.leerReescritosDeDocumento(proyecto.id);
-  const reporte = await almacen.leerReporteIaDeDocumento(proyecto.id);
   const similitud = await almacen.leerReporteSimilitud(proyecto.id);
   const parrafos = documento.leer(buffer);
   const bloqueados = reescritura.bloqueados(buffer);
@@ -380,15 +385,16 @@ async function ver(userId, productCode, { desde = 1, soloMarcados = false, repor
     citados: Object.keys(citados).length,
     humanizados: Object.keys(reescritos).length,
     norma: normaDe(proyecto),
-    reporteIa: fichaDelReporte(reporte),
     reporteSimilitud: fichaDelReporte(similitud),
   };
 
-  // Lo resaltado en rojo se trabaja como un reporte más. Sin reporte de IA, lo
-  // marcado es lo rojo: es lo único que el tesista dejó dicho.
+  // Lo resaltado en rojo se trabaja como un reporte más. Para humanizar sin
+  // decir cómo («ia», de antes de retirar ese reporte), lo marcado es lo rojo:
+  // es lo único que el tesista dejó dicho; si no hay rojo, toda la prosa.
   const enRojo = parrafos.filter((p) => p.rojo.length > 0 && humanizable(p, bloqueados)).length;
   comun.enRojo = enRojo;
-  if (soloMarcados && (tipoReporte === 'rojo' || (tipoReporte === 'ia' && !reporte && enRojo > 0))) {
+  if (tipoReporte === 'ia') tipoReporte = enRojo > 0 ? 'rojo' : 'todo';
+  if (soloMarcados && tipoReporte === 'rojo') {
     return { ...comun, tipoReporte: 'rojo', ...verRojo(parrafos, { citados, reescritos, bloqueados, desde }) };
   }
 
@@ -404,10 +410,9 @@ async function ver(userId, productCode, { desde = 1, soloMarcados = false, repor
     };
   }
 
-  // El de similitud se lee igual que el de IA: lo que marcó y aún no se reescribió.
-  const elegido = tipoReporte === 'similitud' ? similitud : tipoReporte === 'ia' ? reporte : null;
-  if (soloMarcados && elegido) {
-    return { ...comun, tipoReporte, ...verMarcados(parrafos, elegido, { citados, reescritos, bloqueados, desde }) };
+  // El de similitud: lo que marcó y aún no se reescribió.
+  if (soloMarcados && tipoReporte === 'similitud' && similitud) {
+    return { ...comun, tipoReporte, ...verMarcados(parrafos, similitud, { citados, reescritos, bloqueados, desde }) };
   }
 
   const lineas = [];
@@ -757,15 +762,10 @@ async function humanizarEnSuTurno(userId, productCode, cambios, deshacer) {
   await almacen.guardarCitasDeDocumento(proyecto.id, citados);
 
   const todos = Object.values(reescritos);
-  const reporte = await almacen.leerReporteIaDeDocumento(proyecto.id);
   const bloqueados = reescritura.bloqueados(buffer);
   const enRojo = [...parrafos.values()].filter((p) => p.rojo.length > 0 && humanizable(p, bloqueados));
-  // Como en `ver`: sin reporte de IA, lo marcado es lo que resaltó en rojo.
-  const marcados = reporte
-    ? parrafosMarcados([...parrafos.values()], reporte, buffer)
-    : enRojo.length > 0
-      ? enRojo
-      : null;
+  // Como en `ver`: lo marcado para humanizar es lo que resaltó en rojo.
+  const marcados = enRojo.length > 0 ? enRojo : null;
   return {
     guardados,
     deshechos,
@@ -776,7 +776,7 @@ async function humanizarEnSuTurno(userId, productCode, cambios, deshacer) {
     // Sobre todo lo humanizado, no sobre esta tanda: el tic aparece entre tandas.
     muletillas: guardados > 0 ? controles.muletillas(todos.map((r) => r.texto)) : [],
     marcadosPendientes: marcados ? marcados.filter((p) => !reescritos[p.id]).length : null,
-    marcadosPor: reporte ? 'turnitin' : marcados ? 'rojo' : null,
+    marcadosPor: marcados ? 'rojo' : null,
   };
 }
 
@@ -929,10 +929,6 @@ async function aviso(userId, productCode) {
     `DOCUMENTO SUBIDO: «${ficha.nombre}», ${ficha.parrafos} párrafos, ${ficha.citados} ya con citas y ` +
     `${ficha.humanizados} humanizados. Si pide que lo cites, que le pongas las referencias o que lo ` +
     'humanices, empieza con "ver_mi_documento": se trabaja sobre ese Word, no sobre una copia.' +
-    (ficha.reporteIa
-      ? ` Tiene subido su reporte de IA de Turnitin (${ficha.reporteIa.porcentaje ?? 'menos de 20'} % IA): para ` +
-        'humanizar, "ver_mi_documento" con "solo_marcados": true.'
-      : '') +
     (ficha.reporteSimilitud
       ? ` Tiene subido su reporte de similitud (${ficha.reporteSimilitud.porcentaje ?? '?'} %): para bajarla, ` +
         '"ver_lo_marcado" con "reporte": "similitud".'

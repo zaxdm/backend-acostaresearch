@@ -48,6 +48,11 @@ Reglas:
 - NO incluyas palabras de relleno como concepto: effect, impact, relationship, influence, study,
   analysis, level.
 - Nada de operadores (AND, OR), paréntesis, comillas ni códigos de campo: solo los términos.
+- Para cada concepto, en "espanol", de 1 a 4 términos EN ESPAÑOL tal como aparecen en revistas
+  latinoamericanas (SciELO), con las variantes de la palabra que hagan falta, porque en español
+  el buscador no las junta solo: "minería", "minero", "sector minero"; "pensamiento crítico";
+  "estudiantes universitarios", "universitarios". Sin comodines.
+- Si el tema trae erratas ("minbero"), corrígelas en silencio en todos los términos.
 - Si el tema es tan general que no se puede buscar ("tesis", "IA", "educación", "marketing"),
   devuelve "conceptos" vacío, explica en "nota" qué le falta, y en "sugerencias" propón de 3 a 4
   temas de tesis concretos EN ESPAÑOL, cada uno en una línea, con sus variables y su población
@@ -60,7 +65,7 @@ Reglas:
   pymes colombianas"). Si el tema se puede buscar, "sugerencias" va vacío.
 
 Responde SOLO con un JSON, sin texto antes ni después, con esta forma:
-{"conceptos":[{"nombre":"critical thinking","sinonimos":["critical reasoning"]}],"nota":"una frase en español para el tesista","sugerencias":[]}`;
+{"conceptos":[{"nombre":"critical thinking","sinonimos":["critical reasoning"],"espanol":["pensamiento crítico"]}],"nota":"una frase en español para el tesista","sugerencias":[]}`;
 
 /** Un término apto para ir dentro de una ecuación, o nada. */
 function limpiarTermino(valor) {
@@ -99,7 +104,17 @@ function normalizar(bruto) {
       if (sinonimos.length === MAXIMO_SINONIMOS) break;
     }
 
-    conceptos.push({ nombre, sinonimos });
+    // En español, para la mitad SciELO de la lista. Aparte de los sinónimos
+    // a propósito: la ecuación de Scopus sigue en inglés, como siempre.
+    const espanol = [];
+    for (const termino of Array.isArray(concepto?.espanol) ? concepto.espanol : []) {
+      const limpio = limpiarTermino(termino)?.replace(/\*/g, '').trim();
+      if (!limpio || espanol.some((t) => t.toLowerCase() === limpio.toLowerCase())) continue;
+      espanol.push(limpio);
+      if (espanol.length === MAXIMO_SINONIMOS) break;
+    }
+
+    conceptos.push({ nombre, sinonimos, espanol });
     if (conceptos.length === MAXIMO_CONCEPTOS) break;
   }
 
@@ -145,7 +160,7 @@ async function generarConsulta(tema, { generar = generarConRespaldo } = {}) {
       modelos: modelosDeTexto(),
       sistema: SISTEMA,
       mensajes: [{ rol: 'usuario', texto: tema }],
-      maxTokens: 700,
+      maxTokens: 900,
       timeoutMs: 15_000,
       // Lo normal son uno o dos segundos: pasados cuatro, se le pregunta
       // también al siguiente modelo y gana el que conteste antes.

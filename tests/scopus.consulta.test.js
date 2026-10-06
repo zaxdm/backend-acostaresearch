@@ -77,7 +77,7 @@ test('lee el JSON aunque el modelo lo envuelva en texto', async () => {
     ),
   });
 
-  assert.deepEqual(resultado.conceptos, [{ nombre: 'generative AI', sinonimos: ['ChatGPT'] }]);
+  assert.deepEqual(resultado.conceptos, [{ nombre: 'generative AI', sinonimos: ['ChatGPT'], espanol: [] }]);
   assert.equal(resultado.nota, 'Quité Lima.');
 });
 

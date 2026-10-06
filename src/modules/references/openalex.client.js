@@ -390,6 +390,32 @@ async function buscarEnScielo({
   return { resultados, total: datos.meta?.count ?? resultados.length, caida: false };
 }
 
+/**
+ * Las palabras que no aparecen en el título ni en el resumen de NINGÚN trabajo
+ * de OpenAlex. Para cuando una búsqueda sale vacía: casi siempre es una errata
+ * («minbero»), y una sola palabra así deja a cero Scopus, SciELO y ALICIA,
+ * porque los tres exigen todas. Una consulta por palabra, de un resultado y
+ * con un solo campo: céntimos de céntimo. Si OpenAlex no contesta, la palabra
+ * no se acusa.
+ */
+async function palabrasSinUso(palabras) {
+  const ausentes = [];
+  await Promise.all(
+    palabras.map(async (palabra) => {
+      const url = new URL(BASE);
+      url.searchParams.set('filter', `title_and_abstract.search:${palabra}`);
+      url.searchParams.set('per_page', '1');
+      url.searchParams.set('select', 'id');
+      firmar(url);
+      const res = await fetch(url, { signal: AbortSignal.timeout(TIEMPO_LIMITE_MS) }).catch(() => null);
+      if (!res || !res.ok) return;
+      const datos = await res.json().catch(() => null);
+      if (datos?.meta?.count === 0) ausentes.push(palabra);
+    }),
+  );
+  return palabras.filter((p) => ausentes.includes(p));
+}
+
 /** Un DOI limpio, venga como identificador o como enlace. */
 function limpiarDoi(crudo) {
   const valor = String(crudo ?? '')
@@ -944,6 +970,7 @@ module.exports = {
   buscar,
   buscarEnScielo,
   POR_PAGINA_SCIELO,
+  palabrasSinUso,
   porDoi,
   referenciasDe,
   porIds,

@@ -140,3 +140,34 @@ test('con los conceptos del buscador de Scopus, la búsqueda va armada con sus s
   assert.equal(url.searchParams.get('per_page'), '10');
   assert.match(url.searchParams.get('filter'), /title_and_abstract\.search:\("critical thinking" OR "pensamiento crítico"\) AND/);
 });
+
+test('el copiloto devuelve los términos en español aparte, limpios y sin comodines', () => {
+  const { normalizar } = require('../src/modules/scopus/scopus.consulta');
+  const { conceptos } = normalizar({
+    conceptos: [
+      {
+        nombre: 'mining industry',
+        sinonimos: ['mining sector'],
+        espanol: ['minería', 'minero*', 'Minería', 'sector (minero)', 42],
+      },
+    ],
+  });
+  assert.deepEqual(conceptos[0].sinonimos, ['mining sector']);
+  assert.deepEqual(conceptos[0].espanol, ['minería', 'minero', 'sector minero']);
+});
+
+test('los comodines de Scopus no viajan a OpenAlex', () => {
+  const { busquedaDeConceptos } = require('../src/modules/scopus/scopus.cuentas');
+  assert.equal(
+    busquedaDeConceptos([{ nombre: 'undergraduate*', sinonimos: ['undergraduate'] }]),
+    '("undergraduate")',
+  );
+});
+
+test('acusa solo las palabras que no tiene ningún trabajo', async (t) => {
+  t.mock.method(globalThis, 'fetch', async (url) => {
+    const filtro = new URL(url).searchParams.get('filter');
+    return { ok: true, json: async () => ({ meta: { count: filtro.endsWith('minbero') ? 0 : 16527 } }) };
+  });
+  assert.deepEqual(await openalex.palabrasSinUso(['inteligencia', 'minbero', 'sector']), ['minbero']);
+});

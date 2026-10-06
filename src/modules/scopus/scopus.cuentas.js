@@ -53,7 +53,7 @@ const FILTRO_EXTRA = { revista: 'primary_location.source.type:journal|conference
 /** Un término apto para ir dentro de la búsqueda de OpenAlex. */
 const limpio = (texto) =>
   String(texto ?? '')
-    .replace(/[()"{}[\]:,|]/g, ' ')
+    .replace(/[()"{}[\]:,|*]/g, ' ')
     .replace(/\b(AND|OR|NOT)\b/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
@@ -71,6 +71,7 @@ function busquedaDeConceptos(conceptos) {
         .filter(Boolean)
         .map((t) => `"${t}"`),
     )
+    .map((terminos) => [...new Set(terminos)])
     .filter((terminos) => terminos.length > 0)
     .map((terminos) => `(${terminos.join(' OR ')})`);
 

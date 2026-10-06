@@ -143,6 +143,33 @@ router.post(
   }),
 );
 
+/**
+ * Las palabras de una búsqueda vacía que no existen en ningún artículo. Ver
+ * `openalex.palabrasSinUso`. Se quitan las vacías («la», «the»…) y las cortas:
+ * esas existen siempre y solo gastarían consultas.
+ */
+const VACIAS = new Set(
+  ('a al con de del el en la las los para por que un una y the of in on and for to with from ' +
+    'among between its their into at by o e da do das dos em na no nas nos um uma')
+    .split(' '),
+);
+router.post(
+  '/palabras-sin-uso',
+  scieloLimiter,
+  validate({ body: z.object({ texto: z.string().trim().min(1).max(300) }) }),
+  asyncHandler(async (req, res) => {
+    const palabras = [
+      ...new Set(
+        req.body.texto
+          .toLowerCase()
+          .split(/[^\p{L}\p{N}-]+/u)
+          .filter((p) => p.length >= 4 && !VACIAS.has(p)),
+      ),
+    ].slice(0, 10);
+    return ok(res, { palabras: palabras.length ? await openalex.palabrasSinUso(palabras) : [] });
+  }),
+);
+
 router.post(
   '/scielo',
   scieloLimiter,

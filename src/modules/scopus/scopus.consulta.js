@@ -48,10 +48,12 @@ Reglas:
 - NO incluyas palabras de relleno como concepto: effect, impact, relationship, influence, study,
   analysis, level.
 - Nada de operadores (AND, OR), paréntesis, comillas ni códigos de campo: solo los términos.
-- Para cada concepto, en "espanol", de 1 a 4 términos EN ESPAÑOL tal como aparecen en revistas
-  latinoamericanas (SciELO), con las variantes de la palabra que hagan falta, porque en español
-  el buscador no las junta solo: "minería", "minero", "sector minero"; "pensamiento crítico";
-  "estudiantes universitarios", "universitarios". Sin comodines.
+- Para cada concepto, en "espanol", de 2 a 5 términos EN ESPAÑOL tal como aparecen en revistas
+  latinoamericanas (SciELO). El buscador exige el término exacto y no junta las variantes, así
+  que pon PRIMERO la palabra clave suelta en sus formas (sustantivo, masculino, femenino) y
+  después, si hace falta, la expresión: "minería", "minero", "minera" (no solo "sector minero");
+  "universitarios", "estudiantes universitarios"; "inteligencia artificial", "IA". Nada de
+  palabras genéricas solas ("sector", "industria", "estudiantes"). Sin comodines.
 - Si el tema trae erratas ("minbero"), corrígelas en silencio en todos los términos.
 - Si el tema es tan general que no se puede buscar ("tesis", "IA", "educación", "marketing"),
   devuelve "conceptos" vacío, explica en "nota" qué le falta, y en "sugerencias" propón de 3 a 4

@@ -32,6 +32,7 @@ const citas = require('./project.citas');
 const descarga = require('./project.descarga');
 const referenceService = require('../references/reference.service');
 const { enSerie } = require('../../shared/utils/enSerie');
+const logger = require('../../config/logger');
 
 /** Caracteres de texto por cada respuesta de `ver`: lo que cabe holgado en una llamada del conector. */
 const POR_TANDA = 24000;
@@ -217,11 +218,22 @@ async function subirReporteEnSuTurno({ userId, productCode, buffer, nombre }) {
 
   // Los reportes de antes de leer el de similitud no traían el tipo: eran de IA.
   const tipo = leido.tipo ?? 'ia';
-  const reporte = { nombre: nombre || `reporte-${tipo}.pdf`, subidoAt: new Date().toISOString(), ...leido, tipo };
-  if (tipo === 'similitud') await almacen.guardarReporteSimilitud(proyecto.id, reporte);
-  else await almacen.guardarReporteIaDeDocumento(proyecto.id, reporte);
+  const { porLeer, ...cabecera } = leido;
+  const reporte = {
+    nombre: nombre || `reporte-${tipo}.pdf`,
+    subidoAt: new Date().toISOString(),
+    ...cabecera,
+    tipo,
+    ...(porLeer ? { leyendo: true } : {}),
+  };
+  await guardarReporte(proyecto.id, reporte);
 
   const word = await almacen.leerDocumento(proyecto.id);
+  if (porLeer) {
+    // No se espera: tarda más de lo que aguanta la subida. Se cruza al terminar.
+    leerLasFotos({ userId, productCode, proyecto, buffer, reporte }).catch(() => {});
+    return { tipo, nombre: reporte.nombre, porcentaje: reporte.porcentaje ?? null, marcados: null, hayDocumento: Boolean(word), porLeer };
+  }
   let marcados = null;
   if (word) {
     const parrafos = documento.leer(word);
@@ -229,6 +241,59 @@ async function subirReporteEnSuTurno({ userId, productCode, buffer, nombre }) {
     if (tipo === 'ia') await redaccion.recordarVozDelReporte(proyecto, parrafos, reporteIa.cruzar(reporte, parrafos));
   }
   return { tipo, nombre: reporte.nombre, porcentaje: reporte.porcentaje ?? null, marcados, hayDocumento: Boolean(word) };
+}
+
+const guardarReporte = (projectId, reporte) =>
+  reporte.tipo === 'similitud'
+    ? almacen.guardarReporteSimilitud(projectId, reporte)
+    : almacen.guardarReporteIaDeDocumento(projectId, reporte);
+
+const leerReporteGuardado = (projectId, tipo) =>
+  tipo === 'similitud' ? almacen.leerReporteSimilitud(projectId) : almacen.leerReporteIaDeDocumento(projectId);
+
+/**
+ * La segunda parte de subir un reporte cuyas hojas vienen como foto: las lee
+ * con OCR y guarda sus palabras. Si mientras tanto subió otro reporte del mismo
+ * tipo, el nuevo manda y esto no guarda nada.
+ */
+async function leerLasFotos({ userId, productCode, proyecto, buffer, reporte }) {
+  let leido;
+  try {
+    leido = await reporteIa.leer(buffer, { ocr: true });
+  } catch (error) {
+    logger.error({ err: error, projectId: proyecto.id }, 'No se pudo leer con OCR el reporte de Turnitin');
+  }
+  await enSerie(claveDelDocumento(userId, productCode), async () => {
+    const actual = await leerReporteGuardado(proyecto.id, reporte.tipo).catch(() => null);
+    if (actual?.subidoAt !== reporte.subidoAt) return;
+    const { leyendo, ...resto } = actual;
+    await guardarReporte(
+      proyecto.id,
+      leido ? { ...resto, palabras: leido.palabras, ia: leido.ia } : { ...resto, fallo: 'No se pudo leer el PDF.' },
+    );
+    const word = leido && reporte.tipo === 'ia' ? await almacen.leerDocumento(proyecto.id) : null;
+    if (word) {
+      const parrafos = documento.leer(word);
+      await redaccion.recordarVozDelReporte(proyecto, parrafos, reporteIa.cruzar(leido, parrafos));
+    }
+  });
+}
+
+/**
+ * Si el reporte de ese tipo sigue en lectura: `{ hojas, minutos }` lo que lleva,
+ * `{ fallo }` si la lectura se cortó, o null si ya está listo (o no hay).
+ * Una lectura de hace más de media hora se dio por perdida: el servidor se
+ * reinició a mitad.
+ */
+async function lecturaDelReporte(userId, productCode, tipo) {
+  const proyecto = await projectRepository.buscar(userId, productCode);
+  if (!proyecto) return null;
+  const reporte = await leerReporteGuardado(proyecto.id, tipo).catch(() => null);
+  if (!reporte) return null;
+  if (reporte.fallo) return { fallo: reporte.fallo };
+  if (!reporte.leyendo) return null;
+  const minutos = Math.floor((Date.now() - Date.parse(reporte.subidoAt)) / 60_000);
+  return minutos > 30 ? { fallo: 'La lectura se interrumpió.' } : { minutos };
 }
 
 /** Lo que se puede humanizar: ni títulos, ni tablas, ni referencias, ni rótulos, ni lo bloqueado. */
@@ -275,6 +340,7 @@ const fichaDelReporte = (reporte) =>
         nombre: reporte.nombre,
         subidoAt: reporte.subidoAt,
         porcentaje: reporte.porcentaje ?? null,
+        ...(reporte.leyendo ? { leyendo: true } : {}),
         ...(reporte.tipo === 'similitud' ? { desglose: reporte.desglose ?? null, fuentes: reporte.fuentes ?? [] } : {}),
       }
     : null;
@@ -878,6 +944,7 @@ module.exports = {
   aviso,
   subir,
   subirReporte,
+  lecturaDelReporte,
   quitar,
   fichaDelPanel,
   fichaDe,

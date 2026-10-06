@@ -937,6 +937,14 @@ function mensajeDeReporte(reporte) {
         ? 'sin porcentaje legible'
         : 'menos del 20 % detectado como IA'
       : `${reporte.porcentaje} % ${similitud ? 'de similitud' : 'detectado como IA'}`;
+  if (reporte.porLeer) {
+    const minutos = Math.max(1, Math.ceil((reporte.porLeer * 2.5) / 60));
+    return (
+      `Reporte ${similitud ? 'de similitud' : 'de IA'} guardado: ${cuanto}. Turnitin trae tu tesis como imagen, así que ` +
+      `la estamos leyendo hoja por hoja (${reporte.porLeer} hojas, unos ${minutos} min). Cuando pase ese rato, vuelve ` +
+      'a tu conversación y di «ya lo subí».'
+    );
+  }
   const marcados = reporte.hayDocumento
     ? ` Turnitin marcó ${reporte.marcados} párrafos de tu documento.`
     : ' Si tu tesis está guardada en tu proyecto, Claude la cruza con tus capítulos; si es un Word aparte, súbelo también.';

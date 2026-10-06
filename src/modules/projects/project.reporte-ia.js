@@ -27,7 +27,16 @@
  * reporte y el Word dicen lo mismo en el mismo orden, con cortes de renglón,
  * cabeceras y números de página de por medio. Un trigrama tan común que aparece
  * cien veces («de la ley») solo vale si cae cerca de donde íbamos.
+ *
+ * EL REPORTE CLÁSICO DE UNA ENTREGA EN PDF
+ * ----------------------------------------
+ * El «Informe de originalidad» trae cada hoja de la tesis como foto, con los
+ * rectángulos de color de cada fuente pintados encima en vector, y el resumen
+ * (índice de similitud y fuentes primarias) al final. Esas hojas se leen con
+ * OCR (`project.reporte-ocr`) y luego se cruzan igual que el texto.
  */
+
+const ocr = require('./project.reporte-ocr');
 
 /** Por debajo de este porcentaje de sus palabras, el párrafo no se da por marcado. */
 const UMBRAL_MARCADO = 20;
@@ -197,7 +206,41 @@ function cabeceraDeSimilitud(texto) {
     fuentes.push({ n: Number(m[1]), tipo: m[2], nombre: m[3].trim(), porcentaje: m[4].replace(/\s/g, '') });
     if (fuentes.length >= 15) break;
   }
-  return { porcentaje, desglose, fuentes };
+  return { porcentaje, desglose, fuentes: fuentes.length > 0 ? fuentes : fuentesDelClasico(texto) };
+}
+
+const TIPO_DE_FUENTE = /^(fuente de internet|internet source|publicaci[oó]n|publication|trabajo del estudiante|student paper)$/i;
+
+/**
+ * Las «FUENTES PRIMARIAS» del reporte clásico. Ahí no van en una fila: cada
+ * hoja trae primero la columna de números («1 3%», «2 2%»…) y después los
+ * nombres, cada uno cerrado por su tipo («Fuente de Internet»), y un nombre
+ * largo puede seguir en la hoja siguiente. Se emparejan en orden.
+ */
+function fuentesDelClasico(texto) {
+  const desde = /fuentes primarias|primary sources/i.exec(texto);
+  if (!desde) return [];
+  const renglones = (trozo) =>
+    trozo
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean);
+  // En la primera hoja los números salen antes que el título «FUENTES PRIMARIAS».
+  const numeros = [];
+  for (const linea of renglones(texto)) {
+    const m = /^(\d{1,3})\s+(<\s*1|\d{1,2})\s*%$/.exec(linea);
+    if (m && Number(m[1]) === numeros.length + 1) numeros.push({ n: Number(m[1]), porcentaje: m[2].replace(/\s/g, '') });
+  }
+  const nombres = [];
+  let nombre = [];
+  for (const linea of renglones(texto.slice(desde.index + desde[0].length))) {
+    if (/^(\d{1,3})\s+(<\s*1|\d{1,2})\s*%$/.test(linea)) continue;
+    if (TIPO_DE_FUENTE.test(linea)) {
+      if (nombre.length > 0) nombres.push({ nombre: nombre.join(' '), tipo: linea.toLowerCase() });
+      nombre = [];
+    } else if (!/^(excluir|exclude|apagado|activo|off|on)\b/i.test(linea)) nombre.push(linea);
+  }
+  return numeros.slice(0, Math.min(15, nombres.length)).map((f, i) => ({ ...f, ...nombres[i] }));
 }
 
 /** «¿Qué?», «Ley.» y «30364,» → «qué», «ley», «30364». */
@@ -215,12 +258,25 @@ function porcentajeDe(texto) {
 }
 
 /**
+ * Una hoja de la entrega que vino como foto: tiene una imagen grande y, de
+ * texto, solo los numeritos de las fuentes que Turnitin pone encima.
+ */
+function esFoto({ contenido, fnArray, argsArray }, OPS) {
+  const conLetras = contenido.items.flatMap((i) => String(i.str).match(/\S*\p{L}\S*/gu) ?? []);
+  return conLetras.length < 15 && ocr.imagenesDe(fnArray, argsArray, OPS).length > 0;
+}
+
+/**
  * Lee el PDF y devuelve lo que se guarda:
  * `{ tipo, porcentaje, palabras: 'una dos tres…', ia: '0110…' }`, y en el de
  * similitud además `desglose` y `fuentes`. `ia` es la marca de cada palabra:
  * se llama así por el primer reporte que se leyó, y en el de similitud es «coincide».
+ *
+ * Si la entrega viene como foto (el reporte clásico de una tesis subida en PDF),
+ * sin `{ ocr: true }` devuelve la cabecera y `porLeer`, cuántas hojas hay que
+ * leer con OCR; con `{ ocr: true }` las lee, y eso tarda unos segundos por hoja.
  */
-async function leer(buffer) {
+async function leer(buffer, { ocr: conOcr = false } = {}) {
   let pdf;
   let OPS;
   try {
@@ -241,7 +297,11 @@ async function leer(buffer) {
 
   // Los renglones con su salto, para que la cabecera se lea por líneas.
   const textoDe = (p) => p.contenido.items.map((i) => `${i.str}${i.hasEOL ? '\n' : ' '}`).join('');
-  const portada = paginas.slice(0, 3).map(textoDe).join('\n');
+  // El clásico pone el «INFORME DE ORIGINALIDAD» al final, detrás de la entrega,
+  // y con muchas fuentes ocupa varias hojas. Se busca en mayúsculas, como lo
+  // pone Turnitin: una tesis que cite un «informe de originalidad» no cuenta.
+  const resumen = paginas.filter((p, i) => i >= 3 && /INFORME DE ORIGINALIDAD|ORIGINALITY REPORT/.test(textoDe(p)));
+  const portada = [...paginas.slice(0, 3), ...resumen].map(textoDe).join('\n');
   const tipo = tipoDe(portada);
   if (!tipo && esRecibo(portada)) {
     throw new ReporteNoValido(
@@ -258,25 +318,34 @@ async function leer(buffer) {
   }
 
   const esColor = tipo === 'ia' ? esColorDeIa : esColorDeCoincidencia;
-  const palabras = [];
-  const marcas = [];
-  for (const { contenido, fnArray, argsArray } of paginas) {
-    const cajas = resaltados(fnArray, argsArray, OPS, esColor);
-    for (const item of contenido.items) {
-      for (const palabra of palabrasDelRenglon(item)) {
-        const limpia = normalizar(palabra.texto);
-        if (!limpia) continue;
-        palabras.push(limpia);
-        marcas.push(cajas.length > 0 && dentro(cajas, palabra) ? '1' : '0');
-      }
-    }
+  const fotos = new Set(paginas.flatMap((p, i) => (esFoto(p, OPS) ? [i + 1] : [])));
+  const delOcr = new Map();
+  if (conOcr && fotos.size > 0) {
+    await ocr.leerPaginas(pdf, OPS, [...fotos], (n, leidas) => delOcr.set(n, leidas));
   }
 
-  if (palabras.length < 50) {
+  const palabras = [];
+  const marcas = [];
+  paginas.forEach(({ contenido, fnArray, argsArray }, i) => {
+    // En una hoja-foto, el texto son los numeritos de las fuentes: no es de la entrega.
+    const deLaHoja = fotos.has(i + 1)
+      ? (delOcr.get(i + 1) ?? [])
+      : contenido.items.flatMap((item) => palabrasDelRenglon(item));
+    const cajas = resaltados(fnArray, argsArray, OPS, esColor);
+    for (const palabra of deLaHoja) {
+      const limpia = normalizar(palabra.texto);
+      if (!limpia) continue;
+      palabras.push(limpia);
+      marcas.push(cajas.length > 0 && dentro(cajas, palabra) ? '1' : '0');
+    }
+  });
+
+  const porLeer = conOcr ? 0 : fotos.size;
+  if (palabras.length < 50 && porLeer === 0) {
     throw new ReporteNoValido('Ese PDF no tiene el texto de la entrega. Descarga el reporte completo, no solo la portada.');
   }
 
-  const base = { tipo, palabras: palabras.join(' '), ia: marcas.join('') };
+  const base = { tipo, palabras: palabras.join(' '), ia: marcas.join(''), ...(porLeer > 0 ? { porLeer } : {}) };
   if (tipo === 'ia') return { ...base, porcentaje: porcentajeDe(portada) ?? null };
   return { ...base, ...cabeceraDeSimilitud(paginas.map(textoDe).join('\n')) };
 }
@@ -360,6 +429,7 @@ module.exports = {
   tipoDe,
   esRecibo,
   cabeceraDeSimilitud,
+  fuentesDelClasico,
   resaltados,
   palabrasDelRenglon,
   porcentajeDe,

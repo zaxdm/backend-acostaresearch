@@ -116,3 +116,50 @@ test('el recibo digital de la entrega se reconoce y no pasa por reporte', () => 
   assert.equal(r.esRecibo(recibo), true);
   assert.equal(r.esRecibo('Capítulo I. El problema'), false);
 });
+
+// ── El clásico de una entrega en PDF: hojas como foto (6-oct-2026) ──────────
+
+test('las fuentes primarias del clásico se emparejan aunque los números vayan antes y un nombre siga en otra hoja', () => {
+  const resumen = [
+    '21%\nINDICE DE SIMILITUD\n19%\nFUENTES DE INTERNET\n8%\nPUBLICACIONES\n9%\nTRABAJOS DEL ESTUDIANTE',
+    '1 3%\n2 2%\n3 <1%',
+    'TESIS.pdf\nINFORME DE ORIGINALIDAD\nFUENTES PRIMARIAS',
+    'hdl.handle.net\nFuente de Internet\nSubmitted to Universidad Cesar Vallejo\nTrabajo del estudiante',
+    'Villalba Calderon, Hector. "Principio de proporcionalidad',
+    // La hoja siguiente: sus números y el resto del nombre.
+    '4 <1%\nen la prisión preventiva", Universidad Nacional del Altiplano (Peru)\nPublicación',
+    'Excluir citas Activo\nExcluir coincidencias Apagado',
+  ].join('\n');
+  const cabecera = r.cabeceraDeSimilitud(resumen);
+  assert.equal(cabecera.porcentaje, 21);
+  assert.deepEqual(cabecera.desglose, { internet: 19, publicaciones: 8, trabajos: 9 });
+  assert.deepEqual(
+    cabecera.fuentes.map((f) => [f.n, f.porcentaje, f.tipo]),
+    [
+      [1, '3', 'fuente de internet'],
+      [2, '2', 'trabajo del estudiante'],
+      [3, '<1', 'publicación'],
+    ],
+  );
+  assert.match(cabecera.fuentes[2].nombre, /^Villalba Calderon.*Altiplano \(Peru\)$/);
+});
+
+test('la imagen de una hoja se sitúa en la página por su matriz; un logo pequeño no cuenta', () => {
+  const OPS = { save: 1, restore: 2, transform: 3, paintImageXObject: 4 };
+  const fn = [1, 3, 4, 2, 1, 3, 4, 2];
+  const args = [null, [558, 0, 0, 790, 1, 1], ['img_p1_1'], null, null, [60, 0, 0, 40, 10, 700], ['img_p1_2'], null];
+  const imagenes = require('../src/modules/projects/project.reporte-ocr').imagenesDe(fn, args, OPS);
+  assert.deepEqual(
+    imagenes.map((i) => i.nombre),
+    ['img_p1_1'],
+  );
+});
+
+test('los píxeles de pdfjs pasan a PNG, también el gris de un bit', () => {
+  const { aPng } = require('../src/modules/projects/project.reporte-ocr');
+  const { PNG } = require('pngjs');
+  const rgb = PNG.sync.read(aPng({ width: 2, height: 1, kind: 2, data: Uint8Array.from([255, 0, 0, 0, 0, 255]) }));
+  assert.deepEqual([...rgb.data], [255, 0, 0, 255, 0, 0, 255, 255]);
+  const bit = PNG.sync.read(aPng({ width: 3, height: 1, kind: 1, data: Uint8Array.from([0b10100000]) }));
+  assert.deepEqual([bit.data[0], bit.data[4], bit.data[8]], [255, 0, 255]);
+});

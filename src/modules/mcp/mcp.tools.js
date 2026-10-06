@@ -1574,6 +1574,23 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
       const { productCode } = licencia;
       const fuera = (saltar ?? []).map((x) => String(x).replace(/[[\]]/g, '').trim());
       try {
+        // El reporte clásico de una entrega en PDF trae las hojas como foto: se leen después de subirlo.
+        if (reporte === 'ia' || reporte === 'similitud') {
+          const lectura = await documentoService.lecturaDelReporte(userId, productCode, reporte);
+          if (lectura?.fallo) {
+            return texto(
+              `${lectura.fallo} Su reporte de ${reporte === 'ia' ? 'IA' : 'similitud'} trae la tesis como imagen y no ` +
+                'se terminó de leer. Llama a "subir_mi_documento" y dile que vuelva a subir el mismo PDF por ese enlace.',
+            );
+          }
+          if (lectura) {
+            return texto(
+              'Su reporte de Turnitin trae la tesis como imagen y el servidor todavía la está leyendo hoja por hoja ' +
+                `(empezó hace ${lectura.minutos} min; tarda unos dos segundos por hoja). Dile que espere un minuto y ` +
+                'vuelve a llamar aquí. No empieces a reescribir sin lo marcado.',
+            );
+          }
+        }
         // Con "capitulo" se trabaja el capítulo guardado aunque haya un Word subido.
         const enWord =
           reporte === 'todo' && capitulo

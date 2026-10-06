@@ -26,7 +26,7 @@ const { z } = require('zod');
 
 const AMBITOS = ['curso', 'empresa'];
 
-const TIPOS_DE_CURSO = ['curso', 'proyecto', 'caso'];
+const TIPOS_DE_CURSO = ['curso', 'proyecto', 'caso', 'monografia'];
 const TIPOS_DE_EMPRESA = [
   'diagnostico',
   'gestion',
@@ -48,6 +48,7 @@ const NOMBRE_DE_TIPO = {
   curso: 'informe académico de curso',
   proyecto: 'informe de proyecto',
   caso: 'análisis de caso',
+  monografia: 'monografía',
   diagnostico: 'diagnóstico',
   gestion: 'informe de gestión',
   factibilidad: 'estudio de factibilidad',

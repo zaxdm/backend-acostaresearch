@@ -109,7 +109,7 @@ test('la ficha de empresa se admite entera y con sus tipos', () => {
 
 test('el ámbito y los tipos son de su lista', () => {
   assert.equal(guardarAvanceSchema.safeParse({ informe: { ambito: 'gobierno' } }).success, false);
-  assert.equal(guardarAvanceSchema.safeParse({ informe: { tipo: 'monografia' } }).success, false);
+  assert.equal(guardarAvanceSchema.safeParse({ informe: { tipo: 'ensayo' } }).success, false);
   for (const tipo of ficha.TIPOS) {
     assert.equal(guardarAvanceSchema.safeParse({ informe: { tipo } }).success, true, tipo);
   }

@@ -479,13 +479,14 @@ const ESQUEMA_GUARDAR_AVANCE_INFORME = fromJsonSchema({
         tipo: {
           type: 'string',
           enum: [
-            'curso', 'proyecto', 'caso',
+            'curso', 'proyecto', 'caso', 'monografia',
             'diagnostico', 'gestion', 'factibilidad', 'mercado', 'tecnico', 'auditoria', 'avance',
             'incidente', 'sostenibilidad', 'duediligence', 'desempeno', 'clima', 'otro',
           ],
           description:
             'De curso: curso = informe académico sobre un tema del curso; proyecto = informe de un ' +
-            'proyecto que hizo; caso = análisis de un caso que le dieron. De empresa: diagnostico, ' +
+            'proyecto que hizo; caso = análisis de un caso que le dieron; monografia = monografía o ' +
+            'trabajo monográfico, un tema desarrollado a fondo con fuentes. De empresa: diagnostico, ' +
             'gestion (resultados de un periodo), factibilidad (o plan de negocio), mercado, ' +
             'tecnico, auditoria (interna), avance (de un proyecto), incidente, sostenibilidad, ' +
             'duediligence, desempeno, clima u otro.',

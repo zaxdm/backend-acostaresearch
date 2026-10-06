@@ -81,8 +81,13 @@ test('la ficha se admite a medias y descarta lo que no conoce', () => {
 
 test('la fecha de entrega va como AAAA-MM-DD y el tipo es de la lista', () => {
   assert.equal(guardarAvanceSchema.safeParse({ informe: { fechaEntrega: '15/10/2026' } }).success, false);
-  assert.equal(guardarAvanceSchema.safeParse({ informe: { tipo: 'monografia' } }).success, false);
+  assert.equal(guardarAvanceSchema.safeParse({ informe: { tipo: 'ensayo' } }).success, false);
   assert.equal(guardarAvanceSchema.safeParse({ informe: { fechaEntrega: '2026-10-15', tipo: 'caso' } }).success, true);
+});
+
+test('la monografía es un tipo de curso y sale con su nombre', () => {
+  assert.equal(guardarAvanceSchema.safeParse({ informe: { tipo: 'monografia' } }).success, true);
+  assert.deepEqual(ficha.lineasDeFicha({ tipo: 'monografia', docente: '' }), ['Tipo: monografía']);
 });
 
 test('guardar_avance sin ficha sigue validando igual', () => {

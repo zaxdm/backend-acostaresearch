@@ -7,6 +7,7 @@ const { AppError } = require('../shared/errors/AppError');
 const { ocultarSecretosEnUrl } = require('../shared/utils/ocultar');
 const { ERROR_CODES } = require('../config/constants');
 const { esCaidaDeBase } = require('../lib/dbAlert');
+const { revisarRechazo } = require('../lib/subidaRechazada');
 
 /**
  * Segundos que se le piden al cliente antes de reintentar.
@@ -70,9 +71,28 @@ function errorHandler(error, req, res, _next) {
 
   if (error instanceof AppError) {
     ({ statusCode, code, message, details } = error);
+  } else if (error?.type && Number(error.status) >= 400 && Number(error.status) < 500) {
+    // Los de express.raw/json: un archivo que pesa de más o un cuerpo que no se
+    // pudo leer. Salían como 500 «Ocurrió un error inesperado», y el tesista
+    // que subía un Word de 45 MB no tenía forma de saber qué pasaba.
+    statusCode = Number(error.status);
+    code = ERROR_CODES.VALIDATION_ERROR;
+    message =
+      error.type === 'entity.too.large'
+        ? 'El archivo pesa demasiado para esta subida.'
+        : 'No se pudo leer lo que llegó. Vuelve a intentarlo.';
   } else {
     const mapped = fromPrisma(error);
     if (mapped) ({ statusCode, code, message } = mapped);
+  }
+
+  // Un archivo rechazado: al usuario, qué subió y qué se acepta; al
+  // administrador, un aviso (ver lib/subidaRechazada). Nunca puede tumbar la respuesta.
+  try {
+    const propio = revisarRechazo(req, { estado: statusCode, mensaje: message, error });
+    if (propio) message = propio;
+  } catch (fallo) {
+    logger.warn({ err: fallo }, 'No se pudo revisar la subida rechazada');
   }
 
   // 5xx: siempre con traza. 4xx: ruido esperable, nivel warn.

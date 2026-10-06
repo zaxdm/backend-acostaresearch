@@ -467,10 +467,17 @@ router.post(
       throw new ForbiddenError('Tu licencia no está vigente, así que no se puede guardar el documento.');
     }
 
+    // Si su Word ya viene con el formato de su universidad, su tesis sale con él.
+    const formato = await projectService.formatoDesdeSuWord({ userId, productCode, buffer: req.body, nombre: subido.nombre });
+
     return ok(
       res,
-      { documento: subido },
-      { message: mensajeDeSubida(subido, 'Vuelve a tu conversación y di «ya lo subí».') },
+      { documento: subido, formato },
+      {
+        message:
+          mensajeDeSubida(subido, 'Vuelve a tu conversación y di «ya lo subí».') +
+          projectService.mensajeDeFormatoDeSuWord(formato),
+      },
     );
   }),
 );
@@ -906,8 +913,17 @@ router.post(
       throw new ForbiddenError('Necesitas una licencia vigente de este método para subir tu documento.');
     }
 
-    return ok(res, subido, {
-      message: mensajeDeSubida(subido, 'Ahora abre Claude y dile: «cita mi documento» o «humaniza mi documento».'),
+    const formato = await projectService.formatoDesdeSuWord({
+      userId: req.user.id,
+      productCode: req.params.productCode,
+      buffer: req.body,
+      nombre: subido.nombre,
+    });
+
+    return ok(res, { ...subido, formato }, {
+      message:
+        mensajeDeSubida(subido, 'Ahora abre Claude y dile: «cita mi documento» o «humaniza mi documento».') +
+        projectService.mensajeDeFormatoDeSuWord(formato),
     });
   }),
 );
@@ -985,7 +1001,17 @@ router.post(
       throw new ForbiddenError('Necesitas una licencia vigente de este método para subir tu avance.');
     }
 
-    return ok(res, ficha, { message: avanceService.mensajeDeSubida(ficha) });
+    // Si su avance ya viene con el formato de su universidad, su tesis sale con él.
+    const formato = await projectService.formatoDesdeSuWord({
+      userId: req.user.id,
+      productCode: req.params.productCode,
+      buffer: req.body,
+      nombre: ficha.nombre,
+    });
+
+    return ok(res, { ...ficha, formato }, {
+      message: avanceService.mensajeDeSubida(ficha) + projectService.mensajeDeFormatoDeSuWord(formato),
+    });
   }),
 );
 

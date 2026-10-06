@@ -44,12 +44,14 @@ class PlantillaNoValida extends Error {}
  * le puede enseñar al tesista tal cual: aquí los errores los va a leer alguien
  * que subió el archivo equivocado, no un programador.
  */
-function extraerEstilos(buffer) {
+function extraerEstilos(buffer, { maximo = MAXIMO_BYTES } = {}) {
   if (!buffer || buffer.length === 0) {
     throw new PlantillaNoValida('El archivo llegó vacío. Vuelve a subirlo.');
   }
 
-  if (buffer.length > MAXIMO_BYTES) {
+  // El formato tomado de su avance (ver `formatoPropio`) viene de su tesis
+  // entera, con figuras: ahí el tope es el del documento, no el de una plantilla.
+  if (buffer.length > maximo) {
     throw new PlantillaNoValida(
       'Ese archivo pesa demasiado para ser una plantilla. Sube el documento de formato que ' +
         'te dio tu facultad, no tu tesis.',
@@ -640,8 +642,8 @@ const enLista = (cosas) => (cosas.length > 1 ? `${cosas.slice(0, -1).join(', ')}
  * estilo del cuerpo y los títulos como se ven. Devuelve también los cambios, que
  * se le cuentan al tesista al subirla.
  */
-function estilosParaGuardar(buffer) {
-  const { xml: conIds, renombrados } = conIdsDeTitulos(extraerEstilos(buffer));
+function estilosParaGuardar(buffer, opciones = {}) {
+  const { xml: conIds, renombrados } = conIdsDeTitulos(extraerEstilos(buffer, opciones));
   const conCuerpo = conFormatoDelCuerpo(conIds, buffer);
   return conTitulosComoSeVen(conCuerpo, buffer, renombrados);
 }
@@ -773,7 +775,58 @@ function estilosQueTrae(xml) {
   return [...new Set(nombres)];
 }
 
+// ── ¿Su Word ya trae el formato de su universidad? ─────────────────────────
+
+/** Las letras con las que abre un Word nuevo: un avance en ellas no se formateó. */
+const LETRAS_DE_FABRICA = /^(calibri|calibri light|aptos|aptos display|cambria)$/i;
+
+/**
+ * Si el avance que sube el tesista trae un formato propio que conviene usar en
+ * su Word en lugar del formato por defecto.
+ *
+ * Muchos tesistas ya escriben sobre la plantilla de su universidad y suben ESE
+ * Word como avance; antes el formato se tiraba y el Word salía en el de por
+ * defecto (APA 7 según la UNT), distinto del suyo. Pero un avance escrito en un
+ * Word recién abierto (Calibri 11, interlineado 1,08) no trae formato de nadie,
+ * y copiarlo dejaría su tesis peor que el formato por defecto. Se considera
+ * propio si el cuerpo va a 1,5 o más de interlineado, o en letra de 12 puntos
+ * o más que no es la de fábrica de Word.
+ *
+ * Devuelve `{ propio, cuerpo }`, con lo que se vio del cuerpo para decírselo.
+ */
+function formatoPropio(buffer) {
+  let documento;
+  let estilos;
+  try {
+    const zip = abrirZip(buffer);
+    documento = zip.getEntry('word/document.xml')?.getData().toString('utf8');
+    estilos = zip.getEntry('word/styles.xml')?.getData().toString('utf8') ?? '';
+  } catch {
+    return { propio: false, cuerpo: null };
+  }
+  const cuerpo = documento ? formatoDelCuerpo(documento, estilos) : null;
+  if (!cuerpo) return { propio: false, cuerpo: null };
+
+  // Lo que el cuerpo no dice lo dice la hoja: los valores por defecto del documento.
+  const porDefecto = (String(estilos).match(/<w:docDefaults>([\s\S]*?)<\/w:docDefaults>/) || [, ''])[1];
+  const linea = Number(cuerpo.linea ?? atributo(porDefecto, 'spacing', 'line') ?? 240);
+  const regla = cuerpo.reglaLinea ?? atributo(porDefecto, 'spacing', 'lineRule') ?? 'auto';
+  const mediosPuntos = Number(cuerpo.tamano ?? atributo(porDefecto, 'sz', 'val') ?? 22);
+  // Sin letra escrita, la del tema: la de fábrica (Calibri o Aptos).
+  const fuente = cuerpo.fuente ?? atributo(porDefecto, 'rFonts', 'ascii') ?? null;
+
+  const interlineado = regla === 'auto' ? Math.round((linea / 240) * 100) / 100 : null;
+  const espaciado = interlineado !== null && interlineado >= 1.4;
+  const letraDeTesis = mediosPuntos >= 24 && Boolean(fuente) && !LETRAS_DE_FABRICA.test(fuente);
+
+  return {
+    propio: espaciado || letraDeTesis,
+    cuerpo: { fuente, puntos: mediosPuntos / 2, interlineado },
+  };
+}
+
 module.exports = {
+  formatoPropio,
   extraerEstilos,
   extraerPagina,
   estilosQueTrae,

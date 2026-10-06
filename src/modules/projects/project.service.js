@@ -1154,7 +1154,7 @@ async function revisarEvidencia(userId, productCode, { capitulo = null } = {}) {
  * porqué: lo que no se guarda no se puede filtrar, y esos archivos suelen venir
  * con la tesis de otro dentro.
  */
-async function guardarPlantilla({ userId, productCode, buffer, nombre }) {
+async function guardarPlantilla({ userId, productCode, buffer, nombre, desdeSuWord = false }) {
   // Solo con licencia vigente de ese método, y antes de abrir el archivo. Sin
   // esto una cuenta sin comprar nada creaba el proyecto de cualquier método, y
   // con él ya podía subir documentos de 40 MB: el proyecto existía.
@@ -1163,7 +1163,7 @@ async function guardarPlantilla({ userId, productCode, buffer, nombre }) {
 
   // Con el formato del cuerpo y de los títulos como se ven: muchas plantillas
   // los ponen párrafo a párrafo y no en sus estilos, que es lo que lee nuestro Word.
-  const { xml, cambios } = plantilla.estilosParaGuardar(buffer);
+  const { xml, cambios } = plantilla.estilosParaGuardar(buffer, desdeSuWord ? { maximo: Infinity } : {});
   const pagina = plantilla.extraerPagina(buffer);
   // Si la portada no trae marcas, se buscan solas dónde van sus datos.
   // El tipo decide qué etiquetas se buscan en la portada: un informe tiene curso,
@@ -1185,6 +1185,68 @@ async function guardarPlantilla({ userId, productCode, buffer, nombre }) {
 
   const estilos = plantilla.estilosQueTrae(xml);
   return { estilos, mensaje: mensajeDePlantilla(estilos.length, pagina, partes, cambios) };
+}
+
+/**
+ * Cómo empieza el nombre del formato tomado de su propio Word. Lo distingue de
+ * una plantilla de la universidad (que manda siempre) y de los ajustes del chat.
+ */
+const FORMATO_DE_SU_WORD = 'De su avance';
+
+const esFormatoDeSuWord = (nombre) => String(nombre ?? '').startsWith(FORMATO_DE_SU_WORD);
+
+/**
+ * El formato del avance (o del documento) que sube el tesista, puesto como el
+ * de su proyecto cuando todavía no tiene otro.
+ *
+ * Quien ya escribe sobre la plantilla de su universidad sube ese Word, y su
+ * tesis tiene que salir como él la ve, no en el formato por defecto. Nunca
+ * reemplaza una plantilla subida ni los ajustes pedidos en el chat; un avance
+ * más nuevo sí reemplaza al formato de uno anterior. Un Word sin formato
+ * (recién abierto, en Calibri 11) no se toma: ver `plantilla.formatoPropio`.
+ *
+ * Nunca hace fallar la subida: devuelve `{ tomado, porque }`.
+ */
+async function formatoDesdeSuWord({ userId, productCode, buffer, nombre }) {
+  try {
+    const proyecto = await projectRepository.buscar(userId, productCode);
+    if (proyecto?.plantillaAt && !esFormatoDeSuWord(proyecto.plantillaNombre)) {
+      return { tomado: false, porque: 'ya-tiene', nombre: proyecto.plantillaNombre };
+    }
+
+    const { propio, cuerpo } = plantilla.formatoPropio(buffer);
+    if (!propio) return { tomado: false, porque: 'sin-formato', cuerpo };
+
+    const nombreDelFormato = `${FORMATO_DE_SU_WORD}${nombre ? ` «${String(nombre).slice(0, 150)}»` : ''}`;
+    const guardada = await guardarPlantilla({ userId, productCode, buffer, nombre: nombreDelFormato, desdeSuWord: true });
+    if (!guardada) return { tomado: false, porque: 'sin-licencia' };
+    return { tomado: true, nombre: nombreDelFormato, cuerpo };
+  } catch (error) {
+    logger.warn({ err: error, userId, productCode }, 'No se pudo tomar el formato de su Word');
+    return { tomado: false, porque: 'no-se-pudo' };
+  }
+}
+
+/** La frase que se le dice al tesista sobre el formato al subir su Word. */
+function mensajeDeFormatoDeSuWord(formato) {
+  if (!formato) return '';
+  if (formato.tomado) {
+    const c = formato.cuerpo;
+    const detalle = c?.fuente
+      ? ` (${c.fuente} ${c.puntos}${c.interlineado ? `, interlineado ${String(c.interlineado).replace('.', ',')}` : ''})`
+      : '';
+    return (
+      ` Tu Word ya traía su formato${detalle}: tu tesis saldrá con él, con sus márgenes, encabezados y portada, ` +
+      'y no con el formato por defecto. Si tu universidad te dio una plantilla oficial, súbela y mandará esa.'
+    );
+  }
+  if (formato.porque === 'sin-formato') {
+    return (
+      ' Tu Word no trae un formato propio (parece el de fábrica de Word), así que tu tesis sigue con el ' +
+      'formato por defecto. Si tu universidad tiene una plantilla, pídele a Claude el enlace para subirla.'
+    );
+  }
+  return '';
 }
 
 /** Qué se tomó de la plantilla, dicho de forma que se pueda comprobar en el Word. */
@@ -2146,6 +2208,14 @@ function lineaDeNorma(proyecto, { empresa = false } = {}) {
  * formato por defecto sin que el tesista sepa que podía ser otro.
  */
 function lineaDeFormato(proyecto, { empresa = false } = {}) {
+  if (proyecto?.plantillaAt && esFormatoDeSuWord(proyecto.plantillaNombre)) {
+    return (
+      `Formato ${empresa ? 'de la empresa' : 'de la universidad'}: tomado del Word que subió ` +
+      `(${proyecto.plantillaNombre}), que ya venía con su formato; su Word sale con él y NO con el formato ` +
+      'por defecto. Si menciona que su universidad tiene una plantilla oficial, dale el enlace con ' +
+      '"formato_de_la_universidad": la oficial reemplaza a esta.'
+    );
+  }
   if (proyecto?.plantillaAt) {
     const nombre = proyecto.plantillaNombre ? ` («${proyecto.plantillaNombre}»)` : '';
     return `Formato ${empresa ? 'de la empresa' : 'de la universidad'}: puesto${nombre}. Su Word sale con él.`;
@@ -2509,6 +2579,9 @@ module.exports = {
   leerAnalisis,
   consultarAnalisis,
   guardarPlantilla,
+  formatoDesdeSuWord,
+  mensajeDeFormatoDeSuWord,
+  esFormatoDeSuWord,
   quitarPlantilla,
   ajustarFormato,
   reiniciarProyecto,

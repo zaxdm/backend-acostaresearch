@@ -3118,6 +3118,11 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         '· descargar: un enlace para que baje un archivo que creó el análisis.\n' +
         '· subir: un enlace para subir otro archivo cuando ya hay datos (su matriz corregida o un ' +
         'exporte bibliográfico); reemplaza lo que hay en la sesión.\n' +
+        '· SI SUS DATOS ESTÁN EN MUCHOS PDF (un informe por caso: laboratorio, equipo, análisis de ' +
+        'suelo o agua), el mismo enlace acepta la carpeta entera o los PDF a la vez y el servidor arma ' +
+        'la matriz con código: una fila por caso, juntando los informes de un mismo caso por el nombre ' +
+        'del archivo o por su carpeta, y sin los datos personales. NUNCA le pidas que la pase a mano ni ' +
+        'que te pegue los PDF para transcribirlos tú. Al volver, la sesión dice cómo se armó y qué revisar.\n' +
         '· reiniciar: borra los objetos y vuelve a leer sus datos.\n' +
         '· informe: arma el informe en Word del análisis y da el enlace (ver INFORME EN WORD).\n\n' +
         'ANTES DE CORRER PRUEBAS, PREGÚNTALE lo que no sepas —sus variables y dimensiones, qué ' +

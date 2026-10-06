@@ -568,6 +568,9 @@ const schema = z.object({
   // unos 10 KB por documento, así que 2000 documentos rondan los 20 MB. Solo
   // vale para un exporte bibliográfico; una matriz sigue con el tope de arriba.
   R_SUBIDA_BIBLIO_MAX_BYTES: z.coerce.number().int().positive().default(25 * 1024 * 1024),
+  // Una carpeta de informes en PDF (un .zip, o los PDF que el navegador junta en
+  // uno): 80 informes de laboratorio rondan los 20 MB. Cloudflare corta en 100.
+  R_SUBIDA_LOTE_MAX_BYTES: z.coerce.number().int().positive().default(60 * 1024 * 1024),
   // A partir de cuánto ocupa una sesión se le dice a Claude que libere espacio.
   // El techo de verdad es el disco de las sesiones (infra/r/disco-de-sesiones.sh).
   R_AVISO_SESION_MB: z.coerce.number().int().positive().default(300),

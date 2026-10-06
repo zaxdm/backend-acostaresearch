@@ -31,6 +31,7 @@ const enlaces = require('./r.enlaces');
 const rService = require('./r.service');
 const { ArchivoNoValido } = require('./r.formato');
 const bibliografia = require('./r.bibliografia');
+const documentos = require('./r.documentos');
 const { mensajeEnlaceNoVale } = require('../../shared/utils/enlaceNoVale');
 const { MotorNoDisponible, MotorOcupado } = require('./r.motor');
 
@@ -52,20 +53,29 @@ function enlaceDeSubida(token) {
  * muchas columnas. Se abre solo aquí. El tipo no se mira: el formato real se
  * decide leyendo los bytes (ver `r.formato`).
  *
- * Entra hasta el tope de un exporte bibliográfico, que es el mayor; lo que pase
- * del de una matriz y no sea un exporte se para después, con el mismo mensaje.
+ * Entra hasta el tope de una carpeta de informes en PDF, que es el mayor; lo
+ * que pase del de una matriz y no sea un exporte ni esos PDF se para después.
  */
-const TOPE_DE_SUBIDA = Math.max(env.R_SUBIDA_MAX_BYTES, env.R_SUBIDA_BIBLIO_MAX_BYTES);
+const TOPE_DE_SUBIDA = Math.max(env.R_SUBIDA_MAX_BYTES, env.R_SUBIDA_BIBLIO_MAX_BYTES, env.R_SUBIDA_LOTE_MAX_BYTES);
 const cuerpoCrudo = express.raw({ type: () => true, limit: TOPE_DE_SUBIDA });
 
+const megasDe = (bytes) => Math.round(bytes / 1024 / 1024);
+
 function demasiadoGrande() {
-  const megas = Math.round(env.R_SUBIDA_MAX_BYTES / 1024 / 1024);
-  const megasBiblio = Math.round(env.R_SUBIDA_BIBLIO_MAX_BYTES / 1024 / 1024);
   return new ValidationError(
-    `El archivo pasa de ${megas} MB. Una matriz de tesis no suele llegar a uno: comprueba ` +
+    `El archivo pasa de ${megasDe(env.R_SUBIDA_MAX_BYTES)} MB. Una matriz de tesis no suele llegar a uno: comprueba ` +
       'que no sea el Excel con gráficos o varias hojas de más. (Un exporte de Scopus o WoS ' +
-      `para el mapeo bibliométrico puede llegar a ${megasBiblio} MB.)`,
+      `para el mapeo bibliométrico puede llegar a ${megasDe(env.R_SUBIDA_BIBLIO_MAX_BYTES)} MB, y tus ` +
+      `informes en PDF, juntos, a ${megasDe(env.R_SUBIDA_LOTE_MAX_BYTES)} MB.)`,
   );
+}
+
+/** Lo que puede pesar lo subido según lo que es. */
+function topeDe(bytes) {
+  if (bytes.length <= env.R_SUBIDA_MAX_BYTES) return env.R_SUBIDA_MAX_BYTES;
+  if (documentos.esLote(bytes)) return env.R_SUBIDA_LOTE_MAX_BYTES;
+  if (bibliografia.detectar(bytes)) return env.R_SUBIDA_BIBLIO_MAX_BYTES;
+  return env.R_SUBIDA_MAX_BYTES;
 }
 
 function recibirArchivo(req, res, next) {
@@ -130,9 +140,7 @@ router.post(
     if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
       throw new ValidationError('No llegó ningún archivo. Elige tu matriz y vuelve a subirla.');
     }
-    if (req.body.length > env.R_SUBIDA_MAX_BYTES && !bibliografia.detectar(req.body)) {
-      throw demasiadoGrande();
-    }
+    if (req.body.length > topeDe(req.body)) throw demasiadoGrande();
     if (!(await tieneLicenciaVigente(userId, productCode))) {
       throw new ForbiddenError('Tu licencia de este método no está vigente, así que no se puede analizar.');
     }

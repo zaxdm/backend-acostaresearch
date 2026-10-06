@@ -23,6 +23,7 @@ const csl = require('../projects/project.csl');
 const cifras = require('../projects/project.cifras');
 const normas = require('../projects/project.normas');
 const formato = require('./r.formato');
+const documentos = require('./r.documentos');
 const filtro = require('./r.filtro');
 const catalogo = require('./r.catalogo');
 const enlaces = require('./r.enlaces');
@@ -216,7 +217,10 @@ async function guardarEnElProyecto({ userId, productCode, guion, consola, biblio
 function avisoDeSubida({ userId, productCode }) {
   const { url, minutos } = enlaces.enlaceDeSubida({ userId, productCode });
   return (
-    `TODAVÍA NO HAY DATOS. Dale al tesista este enlace para que suba su matriz, en Excel o CSV:${N}` +
+    `TODAVÍA NO HAY DATOS. Dale al tesista este enlace para que suba su matriz, en Excel, CSV o ` +
+    'SPSS. Si NO tiene matriz sino un PDF por caso (informes de laboratorio, de un equipo, de ' +
+    'análisis de suelo o agua…), al mismo enlace sube la carpeta entera o todos los PDF a la vez, y ' +
+    `el servidor arma la matriz: no le pidas que la pase a mano ni que te pegue los PDF.${N}` +
     `${enlaceClic({ texto: 'Haz clic aquí para subir tu matriz de datos', url, minutos })}${N}${N}` +
     'Dile que vuelva aquí cuando la haya subido. Entonces llama otra vez a ' +
     'trabajar_en_r sin código y verás sus columnas.'
@@ -416,9 +420,10 @@ async function subirDatos({ userId, productCode, bytes, origen = null }) {
   const m = motorActual();
   if (!m || !(await m.listo())) throw new MotorNoDisponible('El motor de R está apagado o sin instalar.');
 
-  const preparado = formato.preparar(bytes);
+  // Un PDF suelto o un .zip de informes en PDF: el servidor arma la matriz.
+  const preparado = (await documentos.preparar(bytes)) ?? formato.preparar(bytes);
   const proyecto = await projectRepository.asegurar(userId, productCode);
-  const hecho = await m.subirDatos(proyecto.id, { ...preparado, origen });
+  const hecho = await m.subirDatos(proyecto.id, { ...preparado, origen: origen ?? preparado.origen ?? null });
 
   await guardarEnElProyecto({
     userId,
@@ -434,10 +439,14 @@ async function subirDatos({ userId, productCode, bytes, origen = null }) {
   return {
     leido,
     // «bibliografia» si es un exporte de Scopus, WoS o PubMed: las filas son documentos.
-    tipo: preparado.tipo === 'bibliografia' ? 'bibliografia' : 'matriz',
+    // «documentos» si subió informes en PDF y la matriz la armó el servidor.
+    tipo: preparado.tipo === 'bibliografia' || preparado.tipo === 'documentos' ? preparado.tipo : 'matriz',
     filas: dim?.filas ?? null,
     columnas: hecho.estado.columnas.map((c) => c.nombre),
     aviso: preparado.aviso,
+    // Lo que el tesista tiene que mirar de la matriz armada desde sus PDF.
+    revisar: preparado.revisar ?? [],
+    documentos: preparado.documentos ?? null,
     // Si R no pudo leerlo, las últimas líneas de la consola dicen por qué.
     detalle: leido ? null : recortarConsola(hecho.salida).split('\n').slice(-6).join('\n'),
   };

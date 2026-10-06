@@ -100,3 +100,19 @@ test('las muletillas se cuentan sobre todo lo humanizado, no por tanda', () => {
   assert.equal(muchas[0].frase, 'vale decir que');
   assert.equal(muchas[0].veces, 6);
 });
+
+// ── El reporte clásico y el recibo (6-oct-2026) ─────────────────────────────
+
+test('el reporte clásico de Turnitin («Informe de originalidad») es de similitud, aunque venga en renglones', () => {
+  const portada = 'INFORME DE ORIGINALIDAD\n25%\nÍNDICE DE\nSIMILITUD\n24%\nFUENTES DE INTERNET\n5%\nPUBLICACIONES';
+  assert.equal(r.tipoDe(portada), 'similitud');
+  assert.equal(r.cabeceraDeSimilitud(portada).porcentaje, 25);
+  assert.equal(r.tipoDe('ORIGINALITY REPORT 12% SIMILARITY INDEX'), 'similitud');
+});
+
+test('el recibo digital de la entrega se reconoce y no pasa por reporte', () => {
+  const recibo = 'Recibo digital\nEste recibo confirma que Turnitin recibió su trabajo. A continuación podrá ver la información';
+  assert.equal(r.tipoDe(recibo), null);
+  assert.equal(r.esRecibo(recibo), true);
+  assert.equal(r.esRecibo('Capítulo I. El problema'), false);
+});

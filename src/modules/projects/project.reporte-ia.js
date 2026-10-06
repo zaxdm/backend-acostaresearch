@@ -139,13 +139,35 @@ function palabrasDelRenglon(item) {
 
 const dentro = (cajas, { x, y }) => cajas.some(([x0, y0, x1, y1]) => x >= x0 && x <= x1 && y >= y0 && y <= y1);
 
-/** De qué reporte se trata, por lo que dice la portada. Null si no es de Turnitin. */
+/**
+ * De qué reporte se trata, por lo que dice la portada. Null si no es de Turnitin.
+ *
+ * Los espacios se juntan antes de mirar: en el PDF «ÍNDICE DE» y «SIMILITUD»
+ * suelen ir en dos renglones, y con un espacio literal no se reconocía (6-oct-2026).
+ * Además del reporte nuevo («Similitud general») está el clásico, que muchas
+ * universidades siguen usando: «INFORME DE ORIGINALIDAD · 25 % ÍNDICE DE SIMILITUD».
+ */
 function tipoDe(portada) {
-  if (/detectado como IA|detected as AI/i.test(portada)) return 'ia';
-  if (/similitud general|overall similarity|[ií]ndice de similitud|similarity report|informe de similitud/i.test(portada)) {
+  const texto = String(portada).replace(/\s+/g, ' ');
+  if (/detectado como IA|detected as AI/i.test(texto)) return 'ia';
+  if (
+    /similitud general|overall similarity|[ií]ndice de similitud|similarity index|similarity report|informe de similitud|informe de originalidad|originality report/i.test(
+      texto,
+    )
+  ) {
     return 'similitud';
   }
   return null;
+}
+
+/**
+ * El recibo digital que Turnitin da al entregar: confirma que recibió el
+ * trabajo, pero no trae el porcentaje ni lo marcado. Los tesistas lo suben
+ * creyendo que es el reporte (el archivo se llama «recibo_…»).
+ */
+function esRecibo(portada) {
+  const texto = String(portada).replace(/\s+/g, ' ');
+  return /recibo digital|digital receipt|este recibo (?:le )?(?:confirma|acredita)|this receipt acknowledges/i.test(texto);
 }
 
 const numero = (m) => (m ? Number(m[1]) : null);
@@ -156,7 +178,10 @@ const numero = (m) => (m ? Number(m[1]) : null);
  * o vacío: Turnitin cambia de maqueta y es mejor no inventar nada.
  */
 function cabeceraDeSimilitud(texto) {
-  const porcentaje = numero(/(\d{1,3})\s*%\s*(?:similitud general|overall similarity)/i.exec(texto));
+  // El clásico pone el total como «25 % ÍNDICE DE SIMILITUD» y el nuevo, «25 % Similitud general».
+  const porcentaje = numero(
+    /(\d{1,3})\s*%\s*(?:similitud general|overall similarity|[ií]ndice\s+de\s+similitud|similarity\s+index)/i.exec(texto),
+  );
   const desglose = {
     internet: numero(/(\d{1,3})\s*%\s*(?:\S+\s+)?(?:fuentes de internet|internet sources)/i.exec(texto)),
     publicaciones: numero(/(\d{1,3})\s*%\s*(?:\S+\s+)?(?:publicaciones|publications)/i.exec(texto)),
@@ -218,9 +243,16 @@ async function leer(buffer) {
   const textoDe = (p) => p.contenido.items.map((i) => `${i.str}${i.hasEOL ? '\n' : ' '}`).join('');
   const portada = paginas.slice(0, 3).map(textoDe).join('\n');
   const tipo = tipoDe(portada);
+  if (!tipo && esRecibo(portada)) {
+    throw new ReporteNoValido(
+      'Ese PDF es el recibo de entrega de Turnitin, no el reporte: confirma que lo entregaste, pero no trae ' +
+        'el porcentaje ni lo marcado. En Turnitin, abre la entrega y descarga el reporte de similitud o el de IA en PDF.',
+    );
+  }
   if (!tipo) {
     throw new ReporteNoValido(
-      'Ese PDF no parece un reporte de Turnitin: no dice «% detectado como IA» ni «Similitud general». ' +
+      'Ese PDF no parece un reporte de Turnitin: no dice «% detectado como IA», «Similitud general» ni ' +
+        '«Índice de similitud». ' +
         'En Turnitin, abre la entrega y descarga el reporte de IA o el de similitud en PDF.',
     );
   }
@@ -326,6 +358,7 @@ module.exports = {
   esColorDeIa,
   esColorDeCoincidencia,
   tipoDe,
+  esRecibo,
   cabeceraDeSimilitud,
   resaltados,
   palabrasDelRenglon,

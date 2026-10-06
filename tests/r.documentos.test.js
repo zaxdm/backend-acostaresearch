@@ -115,6 +115,11 @@ test('«CAB 01.pdf» y «CAB01.pdf» son el mismo caso', () => {
     grupos: ['CAB 01:2', 'CAB 02:2'],
   });
   assert.equal(documentos.claveDeNombre('hemograma CAB1.pdf'), documentos.claveDeNombre('Bioquímica - CAB01.pdf'));
+  // Como lo propone Claude al tesista, y mezclado con otros nombres en la misma carpeta.
+  assert.deepEqual(agrupar(['CAB01_hemograma.pdf', 'CAB01_bioquimica.pdf', 'CAB02.pdf', 'CAB02 bioquímica.pdf']), {
+    por: 'nombre',
+    grupos: ['CAB01:2', 'CAB02:2'],
+  });
 });
 
 test('una carpeta por caso', () => {

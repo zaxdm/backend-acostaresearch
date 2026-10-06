@@ -426,7 +426,11 @@ const TIPO_DE_INFORME =
   /\b(hemograma|hemo|bioquimica|bioq|bq|quimica|perfil|analisis|resultados?|informe|reporte|examen|laboratorio|lab|orina|heces|serologia|copia)\b/g;
 
 function claveDeNombre(nombre) {
-  const base = plegar(nombre.replace(/\.pdf$/i, '')).replace(TIPO_DE_INFORME, ' ');
+  // El guion bajo separa palabras: sin esto, en «CAB01_hemograma» la palabra
+  // queda pegada al código y no se quita, y no se junta con «CAB01_bioquimica».
+  const base = plegar(nombre.replace(/\.pdf$/i, ''))
+    .replace(/_/g, ' ')
+    .replace(TIPO_DE_INFORME, ' ');
   const clave = base.replace(/[^a-z0-9]+/g, '').replace(/\d+/g, (n) => String(Number(n)));
   return clave || plegar(nombre).replace(/[^a-z0-9]+/g, '');
 }
@@ -447,7 +451,20 @@ function codigoDeNombre(nombre) {
 }
 
 /** El nombre que se ve: el del archivo sin la extensión, o el de la carpeta. */
-const nombreSinPdf = (ruta) => path.posix.basename(ruta).replace(/\.pdf$/i, '').trim();
+function nombreSinPdf(ruta) {
+  const nombre = path.posix.basename(ruta).replace(/\.pdf$/i, '').trim();
+  // «CAB01_hemograma» → CAB01: el caso, sin la palabra de qué informe es.
+  // Se busca en la copia sin tildes, que tiene la misma longitud que el original.
+  const plegado = plegar(nombre).replace(/_/g, ' ');
+  let sinTipo = '';
+  let desde = 0;
+  for (const m of plegado.matchAll(TIPO_DE_INFORME)) {
+    sinTipo += nombre.slice(desde, m.index);
+    desde = m.index + m[0].length;
+  }
+  sinTipo = (sinTipo + nombre.slice(desde)).replace(/^[\s_\-.]+|[\s_\-.]+$/g, '').replace(/[\s_\-.]{2,}/g, ' ');
+  return sinTipo || nombre;
+}
 
 function agrupar(informes) {
   // Lo que todas las rutas comparten delante («data/»): elegir una carpeta la trae.

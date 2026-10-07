@@ -14,7 +14,7 @@ const { nombreDelMes } = require('./ventas.datos');
  */
 
 const EMISOR = 'Acosta | IA & Research';
-const RESPONSABLE = 'Benicio Gonzalo Acosta Enríquez · Trujillo, Perú';
+const RESPONSABLE = 'Benicio Gonzalo Acosta Enríquez · RUC 10720995960 · Trujillo, Perú';
 const ZONA = 'America/Lima';
 const LOGO = path.join(__dirname, '..', 'payments', 'assets', 'logo-ar.png');
 

@@ -40,6 +40,8 @@ const generateCodesSchema = z
     note: z.string().trim().max(255).optional(),
     // Caducidad del código sin canjear, en días. Omitir = no caduca.
     expiraEnDias: z.coerce.number().int().positive().max(365).optional(),
+    // Días de acceso que entrega al canjearse. Omitir = los del plan.
+    durationDays: z.coerce.number().int().positive().max(3650).optional(),
     // ── El cobro que hay detrás ─────────────────────────────────────────────
     // Mismo vocabulario que las bolsas de palabras: los dos describen dinero que
     // entró fuera de la web, y dos listas distintas para lo mismo acabarían

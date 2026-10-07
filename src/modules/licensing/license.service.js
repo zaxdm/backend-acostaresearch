@@ -677,6 +677,8 @@ const licenseService = {
     paymentMethod = 'CORTESIA',
     paymentRef,
     amountCents,
+    // Plazo pactado en esta venta. Sin él, el canje usa el del plan.
+    durationDays,
     // El sorteo los apaga: allí el correo no se comprueba —lo pidió así el
     // administrador— y el ganador recibe su propio correo, no el de una compra.
     revisarBuzon = true,
@@ -754,6 +756,7 @@ const licenseService = {
           paymentMethod,
           paymentRef: paymentRef || null,
           amountCents: cobrado,
+          durationDays: durationDays ?? null,
         });
       }
 
@@ -878,8 +881,12 @@ const licenseService = {
       });
     }
 
-    // Duración y topes salen del plan del producto, igual que en una compra.
-    const contrato = await contratoDelProducto(registro.productCode);
+    // Duración y topes salen del plan del producto, igual que en una compra,
+    // salvo que la venta pactara otro plazo: entonces manda el del código.
+    const delPlan = await contratoDelProducto(registro.productCode);
+    const contrato = registro.durationDays
+      ? { ...delPlan, durationDays: registro.durationDays }
+      : delPlan;
 
     // No todo lo que se vende por código es una licencia del conector: las
     // membresías de «Preparar documento» también, y entregan documentos al mes
@@ -887,7 +894,12 @@ const licenseService = {
     // los productos de siempre siguen el camino de siempre.
     if (!contrato.planId) {
       const plan = await planDeMembresia(registro.productCode);
-      if (plan) return canjearMembresia({ registro, plan, userId });
+      if (plan) {
+        const pactado = registro.durationDays
+          ? { ...plan, durationDays: registro.durationDays }
+          : plan;
+        return canjearMembresia({ registro, plan: pactado, userId });
+      }
     }
 
     const token = generateOpaqueToken(32);

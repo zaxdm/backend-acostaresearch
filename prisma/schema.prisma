@@ -770,6 +770,11 @@ model ActivationCode {
   proofPath String? @db.VarChar(255)
   proofMime String? @db.VarChar(40)
 
+  /// Días de acceso que entrega este código al canjearse. Nulo = los del plan,
+  /// que es lo normal; se fija cuando una venta pactó otro plazo (un mes de
+  /// prueba, un año al precio de un trimestre).
+  durationDays Int?
+
   createdById  String?   @db.Char(36)
   redeemedById String?   @db.Char(36)
   redeemedAt   DateTime?

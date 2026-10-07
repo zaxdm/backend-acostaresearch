@@ -21,10 +21,8 @@ const PRODUCTOS = Object.freeze({
   METODO_DE_TESIS_HUMANIZADOR: { productId: 8674715, checkout: 'S107921285K' },
   ARTICULO_SCIENTIFICOS: { productId: 8674925, checkout: 'S107921644U' },
   ARTICULOS_REVIEW: { productId: 8674979, checkout: 'X107921736P' },
-  // En análisis en Hotmart: con `checkout: null` la web no los ofrece hasta que
-  // estén aprobados, pero el webhook ya reconoce sus ventas.
-  TSP_SUFICIENCIA_PROFESIONAL: { productId: 8675039, checkout: null }, // H107921854B
-  HUMANIZADOR_ACADEMICO: { productId: 8675102, checkout: null }, // link por confirmar
+  TSP_SUFICIENCIA_PROFESIONAL: { productId: 8675039, checkout: 'H107921854B' },
+  HUMANIZADOR_ACADEMICO: { productId: 8675102, checkout: 'X107921968I' },
 });
 
 /**

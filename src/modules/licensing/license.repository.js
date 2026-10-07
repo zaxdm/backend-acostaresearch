@@ -187,6 +187,14 @@ const licenseRepository = {
    * están, y quien la elige comprueba antes que no lo esté. Pagar de nuevo no
    * puede ser la forma de deshacer una revocación por uso compartido.
    */
+  /**
+   * Adelanta la caducidad sin tocar nada más. Lo usa el reembolso de una
+   * renovación: se quitan los días que pagó ese cobro y se queda lo anterior.
+   */
+  acortar(id, expiresAt) {
+    return prisma.license.update({ where: { id }, data: { expiresAt }, select: licenseSelect });
+  },
+
   extend(id, { expiresAt, topes }, cliente = prisma) {
     return cliente.license.update({
       where: { id },

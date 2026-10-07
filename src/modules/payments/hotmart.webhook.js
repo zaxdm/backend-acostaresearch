@@ -5,6 +5,8 @@ const env = require('../../config/env');
 const logger = require('../../config/logger');
 const { avisarAlAdmin } = require('../../lib/notify');
 const billingRepository = require('../billing/billing.repository');
+const licenseRepository = require('../licensing/license.repository');
+const licenseService = require('../licensing/license.service');
 const userRepository = require('../users/user.repository');
 const paymentRepository = require('./payment.repository');
 const { entregarPago } = require('./payment.delivery');
@@ -193,6 +195,56 @@ async function aprobar(aviso) {
   return { resultado: 'entregado', paymentId: pago.id };
 }
 
+const DIA_MS = 24 * 60 * 60 * 1000;
+/** Margen entre crear la licencia y anotar el pago, que van en la misma transacción. */
+const MISMA_COMPRA_MS = 60 * 1000;
+
+/**
+ * Quita lo que pagó un cobro devuelto.
+ *
+ *   · Compra nueva (la licencia nació con este pago): se revoca entera.
+ *   · Renovación (la licencia ya existía): se le restan los días de este plan y
+ *     conserva lo que había pagado antes. Si con eso ya caducó, se revoca.
+ *
+ * Solo licencias, que es lo único que se vende en Hotmart. Lo demás se deja
+ * para el administrador, que recibe el aviso igual.
+ */
+async function quitarAcceso(pago, errorCode) {
+  if (!pago.licenseId) return 'sin_licencia';
+
+  const licencia = await licenseRepository.findById(pago.licenseId);
+  if (!licencia || licencia.status === 'REVOKED') return 'ya_revocada';
+
+  const motivo =
+    errorCode === 'HOTMART_CONTRACARGO'
+      ? 'Contracargo de la compra en Hotmart'
+      : 'Reembolso de la compra en Hotmart';
+
+  const pagadoEn = pago.paidAt ? new Date(pago.paidAt).getTime() : null;
+  const esRenovacion =
+    pagadoEn !== null && new Date(licencia.createdAt).getTime() < pagadoEn - MISMA_COMPRA_MS;
+
+  if (esRenovacion && licencia.expiresAt && pago.plan.durationDays) {
+    const nuevaCaducidad = new Date(
+      new Date(licencia.expiresAt).getTime() - pago.plan.durationDays * DIA_MS,
+    );
+    if (nuevaCaducidad.getTime() > Date.now()) {
+      await licenseRepository.acortar(licencia.id, nuevaCaducidad);
+      return 'acortada';
+    }
+  }
+
+  await licenseService.revoke(licencia.id, motivo);
+  return 'revocada';
+}
+
+const LO_QUE_SE_HIZO = {
+  revocada: 'acceso revocado',
+  acortada: 'renovación descontada',
+  ya_revocada: 'ya estaba revocado',
+  sin_licencia: 'revisa el acceso a mano',
+};
+
 async function devolver(aviso, errorCode) {
   const compra = aviso.data?.purchase;
   const pago =
@@ -205,14 +257,22 @@ async function devolver(aviso, errorCode) {
     return { resultado: 'desconocido' };
   }
 
+  // Hotmart repite avisos, y a un reembolso le puede seguir un contracargo:
+  // el acceso se quita una sola vez, con el primero.
+  const yaDevuelto = Object.values(DEVUELTA).includes(pago.errorCode);
+
   await paymentRepository.marcarDevolucion(pago.id, { errorCode, rawResponse: crudoParaGuardar(aviso) });
-  logger.warn({ paymentId: pago.id, userId: pago.userId, errorCode }, 'Hotmart: dinero devuelto');
+  if (yaDevuelto) return { resultado: 'ya_devuelto', paymentId: pago.id };
+
+  const acceso = pago.status === 'PAID' ? await quitarAcceso(pago, errorCode) : 'sin_licencia';
+
+  logger.warn({ paymentId: pago.id, userId: pago.userId, errorCode, acceso }, 'Hotmart: dinero devuelto');
   avisarAlAdmin({
     titulo: errorCode === 'HOTMART_CONTRACARGO' ? 'Hotmart: contracargo' : 'Hotmart: reembolso',
-    mensaje: `${pago.user?.firstName ?? 'Cliente'} · ${pago.plan.name} · decide si revocar el acceso`,
+    mensaje: `${pago.user?.firstName ?? 'Cliente'} · ${pago.plan.name} · ${LO_QUE_SE_HIZO[acceso]}`,
     etiquetas: ['warning'],
   });
-  return { resultado: 'devuelto', paymentId: pago.id };
+  return { resultado: 'devuelto', acceso, paymentId: pago.id };
 }
 
 async function cancelar(aviso) {

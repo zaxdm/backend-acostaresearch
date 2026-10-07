@@ -25,15 +25,30 @@ function falsificar(ruta, exports) {
 
 const HOTTOK = 'hottok-de-prueba-123456';
 
-const PLAN = { id: 'plan-tesis', code: 'METODO_DE_TESIS_HUMANIZADOR', name: 'Método de Tesis', priceCents: 15900, kind: 'LICENSE' };
+const PLAN = { id: 'plan-tesis', code: 'METODO_DE_TESIS_HUMANIZADOR', name: 'Método de Tesis', priceCents: 15900, kind: 'LICENSE', durationDays: 360 };
+const DIA = 24 * 60 * 60 * 1000;
 
 const pagos = new Map();
 const usuarios = new Map();
-const llamadas = { entregas: [], devoluciones: [], fallos: [], avisos: [], cuentas: [] };
+const licencias = new Map();
+const llamadas = { entregas: [], devoluciones: [], fallos: [], avisos: [], cuentas: [], revocadas: [], acortadas: [] };
 
 falsificar('../src/config/env', { hotmartEnabled: true, HOTMART_HOTTOK: HOTTOK });
 falsificar('../src/config/logger', { info() {}, warn() {}, error() {} });
 falsificar('../src/lib/notify', { avisarAlAdmin: (aviso) => llamadas.avisos.push(aviso) });
+falsificar('../src/modules/licensing/license.repository', {
+  findById: async (id) => licencias.get(id) ?? null,
+  acortar: async (id, expiresAt) => {
+    llamadas.acortadas.push({ id, expiresAt });
+    licencias.get(id).expiresAt = expiresAt;
+  },
+});
+falsificar('../src/modules/licensing/license.service', {
+  revoke: async (id, motivo) => {
+    llamadas.revocadas.push({ id, motivo });
+    licencias.get(id).status = 'REVOKED';
+  },
+});
 falsificar('../src/modules/billing/billing.repository', {
   findPlanByCode: async (code) => (code === PLAN.code ? PLAN : null),
 });
@@ -63,7 +78,10 @@ falsificar('../src/modules/payments/payment.repository', {
     pagos.set(pago.id, pago);
     return pago;
   },
-  marcarDevolucion: async (id, datos) => llamadas.devoluciones.push({ id, ...datos }),
+  marcarDevolucion: async (id, datos) => {
+    llamadas.devoluciones.push({ id, ...datos });
+    pagos.get(id).errorCode = datos.errorCode;
+  },
   fail: async (id, datos) => {
     llamadas.fallos.push({ id, ...datos });
     pagos.get(id).status = 'FAILED';
@@ -74,7 +92,15 @@ falsificar('../src/modules/payments/payment.delivery', {
     const fila = pagos.get(payment.id);
     if (fila.status !== estadoEsperado) return null;
     llamadas.entregas.push({ payment, captura, estadoEsperado });
-    Object.assign(fila, { status: 'PAID', providerCaptureId: captura.captureId });
+    const ahora = new Date();
+    // Renovación si ya tenía licencia; compra nueva si no.
+    if (!licencias.has('lic-1')) {
+      licencias.set('lic-1', { id: 'lic-1', status: 'ACTIVE', createdAt: ahora, expiresAt: new Date(ahora.getTime() + 360 * DIA) });
+    } else {
+      const lic = licencias.get('lic-1');
+      lic.expiresAt = new Date(lic.expiresAt.getTime() + 360 * DIA);
+    }
+    Object.assign(fila, { status: 'PAID', providerCaptureId: captura.captureId, paidAt: ahora, licenseId: 'lic-1' });
     return { license: { id: 'lic-1' } };
   },
 });
@@ -103,6 +129,7 @@ function aviso(evento, { sck, transaccion = 'HP123', productId = 8674715, email 
 test.beforeEach(() => {
   pagos.clear();
   usuarios.clear();
+  licencias.clear();
   for (const lista of Object.values(llamadas)) lista.length = 0;
 });
 
@@ -194,7 +221,7 @@ test('sin importe en soles, la fila se queda con el precio del plan', async () =
   assert.equal(llamadas.entregas[0].captura.importeReal, undefined);
 });
 
-test('un reembolso se anota y avisa, sin quitar el acceso solo', async () => {
+test('reembolso de una compra nueva: se revoca la licencia y se avisa', async () => {
   usuarios.set('rosa@gmail.com', { id: 'user-rosa', email: 'rosa@gmail.com', firstName: 'Rosa' });
   await webhook.procesarAviso(aviso('PURCHASE_APPROVED'));
   llamadas.avisos.length = 0;
@@ -202,9 +229,51 @@ test('un reembolso se anota y avisa, sin quitar el acceso solo', async () => {
   const r = await webhook.procesarAviso(aviso('PURCHASE_REFUNDED'));
 
   assert.equal(r.resultado, 'devuelto');
+  assert.equal(r.acceso, 'revocada');
   assert.equal(llamadas.devoluciones[0].errorCode, 'HOTMART_REEMBOLSO');
-  assert.equal([...pagos.values()][0].status, 'PAID');
+  assert.deepEqual(llamadas.revocadas, [{ id: 'lic-1', motivo: 'Reembolso de la compra en Hotmart' }]);
   assert.match(llamadas.avisos[0].titulo, /reembolso/);
+  assert.match(llamadas.avisos[0].mensaje, /acceso revocado/);
+});
+
+test('el reembolso repetido o el contracargo posterior no revocan dos veces', async () => {
+  usuarios.set('rosa@gmail.com', { id: 'user-rosa', email: 'rosa@gmail.com' });
+  await webhook.procesarAviso(aviso('PURCHASE_APPROVED'));
+
+  await webhook.procesarAviso(aviso('PURCHASE_REFUNDED'));
+  const otra = await webhook.procesarAviso(aviso('PURCHASE_REFUNDED'));
+  const contracargo = await webhook.procesarAviso(aviso('PURCHASE_CHARGEBACK'));
+
+  assert.equal(otra.resultado, 'ya_devuelto');
+  assert.equal(contracargo.resultado, 'ya_devuelto');
+  assert.equal(llamadas.revocadas.length, 1);
+});
+
+test('reembolso de una renovación: se quitan sus días y conserva lo pagado antes', async () => {
+  usuarios.set('rosa@gmail.com', { id: 'user-rosa', email: 'rosa@gmail.com' });
+  const hace = new Date(Date.now() - 30 * DIA);
+  licencias.set('lic-1', { id: 'lic-1', status: 'ACTIVE', createdAt: hace, expiresAt: new Date(hace.getTime() + 360 * DIA) });
+  const antes = licencias.get('lic-1').expiresAt.getTime();
+
+  await webhook.procesarAviso(aviso('PURCHASE_APPROVED', { transaccion: 'HP-RENUEVA' }));
+  const r = await webhook.procesarAviso(aviso('PURCHASE_REFUNDED', { transaccion: 'HP-RENUEVA' }));
+
+  assert.equal(r.acceso, 'acortada');
+  assert.equal(llamadas.revocadas.length, 0);
+  assert.equal(licencias.get('lic-1').expiresAt.getTime(), antes);
+});
+
+test('reembolso de una renovación que ya no deja días: se revoca', async () => {
+  usuarios.set('rosa@gmail.com', { id: 'user-rosa', email: 'rosa@gmail.com' });
+  // Caducada hace tiempo: la renovación es lo único que le daba acceso.
+  const hace = new Date(Date.now() - 400 * DIA);
+  licencias.set('lic-1', { id: 'lic-1', status: 'ACTIVE', createdAt: hace, expiresAt: new Date(Date.now() - 40 * DIA) });
+
+  await webhook.procesarAviso(aviso('PURCHASE_APPROVED', { transaccion: 'HP-RENUEVA' }));
+  const r = await webhook.procesarAviso(aviso('PURCHASE_CHARGEBACK', { transaccion: 'HP-RENUEVA' }));
+
+  assert.equal(r.acceso, 'revocada');
+  assert.equal(llamadas.revocadas[0].motivo, 'Contracargo de la compra en Hotmart');
 });
 
 test('una compra cancelada cierra la orden abierta; un evento ajeno no toca nada', async () => {

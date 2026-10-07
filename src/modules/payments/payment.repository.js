@@ -50,8 +50,7 @@ const paymentRepository = {
 
   /**
    * Anota en un pago cobrado que la pasarela devolvió el dinero (reembolso o
-   * contracargo). No cambia el estado ni quita lo entregado: eso lo decide el
-   * administrador, que es quien sabe si fue una renovación o una compra nueva.
+   * contracargo). No cambia el estado: el acceso lo quita `hotmart.webhook`.
    */
   marcarDevolucion(id, { errorCode, rawResponse }) {
     return prisma.payment.update({

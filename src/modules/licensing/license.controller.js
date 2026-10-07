@@ -210,6 +210,33 @@ const licenseController = {
     );
   }),
 
+  duracion: asyncHandler(async (req, res) => {
+    const license = await licenseService.setDuracion({
+      id: req.params.id,
+      dias: req.body.dias,
+      byId: req.user.id,
+    });
+
+    const fecha = license.expiresAt
+      ? new Date(license.expiresAt).toLocaleDateString('es-PE', {
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric',
+          timeZone: 'America/Lima',
+        })
+      : null;
+
+    return ok(
+      res,
+      { license },
+      {
+        message: fecha
+          ? `Listo: ahora vence el ${fecha}. Su URL no cambia.`
+          : 'Listo: ahora no caduca. Su URL no cambia.',
+      },
+    );
+  }),
+
   cambiarCorreo: asyncHandler(async (req, res) => {
     const { anterior, email } = await userService.cambiarCorreoPorAdmin({
       userId: await licenseService.duenoDe(req.params.id),

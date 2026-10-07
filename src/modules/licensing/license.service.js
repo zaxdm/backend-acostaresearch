@@ -1435,6 +1435,28 @@ const licenseService = {
     return actualizada;
   },
 
+  /**
+   * Cambia cuánto dura el acceso: `dias` desde el canje, o nulo para que no
+   * caduque. Se cuenta desde el canje, igual que la duración que se pone al
+   * vender el método, para que el número del panel signifique lo mismo en los
+   * dos sitios.
+   *
+   * No toca el estado: una revocada sigue revocada aunque se le alargue el
+   * plazo. Reactivar es otro botón, y a propósito.
+   */
+  async setDuracion({ id, dias, byId }) {
+    const licencia = await licenseRepository.findById(id);
+    if (!licencia) throw new NotFoundError('No encontramos esa licencia.');
+
+    const expiresAt = dias === null ? null : addDays(new Date(licencia.createdAt), dias);
+    const actualizada = await licenseRepository.setCaducidad(id, expiresAt);
+    logger.info(
+      { licenseId: id, dias, antes: licencia.expiresAt, ahora: expiresAt, porAdmin: byId },
+      'Duración de la licencia cambiada desde el panel',
+    );
+    return actualizada;
+  },
+
   /** De qué cuenta es la licencia. Para tocar la cuenta desde la ficha del acceso. */
   async duenoDe(id) {
     const licencia = await licenseRepository.findById(id);

@@ -146,9 +146,21 @@ const variasTesisSchema = z.object({
   activar: z.boolean({ required_error: 'Dime si lo activo o lo quito.' }),
 });
 
+// Días contados desde el canje, como el «Duración de la membresía» al vender el
+// método. Nulo = sin caducidad. Diez años de techo: más es un dedo de más.
+const duracionSchema = z.object({
+  dias: z
+    .number({ invalid_type_error: 'La duración va en días.' })
+    .int('La duración va en días enteros.')
+    .min(1, 'La duración es de un día como mínimo.')
+    .max(3650, 'Como mucho, diez años (3650 días).')
+    .nullable(),
+});
+
 module.exports = {
   cambiarCorreoSchema,
   variasTesisSchema,
+  duracionSchema,
   generateCodesSchema,
   checkEmailsSchema,
   redeemSchema,

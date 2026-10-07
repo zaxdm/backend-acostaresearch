@@ -15,6 +15,7 @@ const {
   revokeSchema,
   changeProductSchema,
   variasTesisSchema,
+  duracionSchema,
   cambiarCorreoSchema,
   idParamSchema,
   listQuerySchema,
@@ -102,6 +103,14 @@ router.post(
   '/:id/varias-tesis',
   validate({ params: idParamSchema, body: variasTesisSchema }),
   licenseController.variasTesis,
+);
+
+// Cuánto dura el acceso, en días desde el canje. Para los plazos pactados
+// después de vender: ampliar a quien se le prometió más o recortar un error.
+router.post(
+  '/:id/duracion',
+  validate({ params: idParamSchema, body: duracionSchema }),
+  licenseController.duracion,
 );
 
 // Cambiar el correo de la cuenta dueña de la licencia: con el que entra y al que

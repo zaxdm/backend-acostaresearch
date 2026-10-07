@@ -195,6 +195,18 @@ const licenseRepository = {
     return prisma.license.update({ where: { id }, data: { expiresAt }, select: licenseSelect });
   },
 
+  /**
+   * Fija la caducidad desde el panel. Borra el aviso de «por caducar» para que,
+   * si la fecha nueva cae más lejos, el aviso vuelva a salir a su tiempo.
+   */
+  setCaducidad(id, expiresAt) {
+    return prisma.license.update({
+      where: { id },
+      data: { expiresAt, expiryWarnedAt: null },
+      select: licenseSelect,
+    });
+  },
+
   extend(id, { expiresAt, topes }, cliente = prisma) {
     return cliente.license.update({
       where: { id },

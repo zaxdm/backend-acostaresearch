@@ -37,6 +37,29 @@ const paymentRepository = {
     return prisma.$transaction(filas.map((data) => prisma.payment.create({ data })));
   },
 
+  /** El pago de un cobro ya hecho, por el identificador que da la pasarela. */
+  findByCaptureId(provider, providerCaptureId) {
+    return prisma.payment.findFirst({
+      where: { provider, providerCaptureId },
+      include: {
+        plan: true,
+        user: { select: { id: true, email: true, firstName: true, lastName: true } },
+      },
+    });
+  },
+
+  /**
+   * Anota en un pago cobrado que la pasarela devolvió el dinero (reembolso o
+   * contracargo). No cambia el estado ni quita lo entregado: eso lo decide el
+   * administrador, que es quien sabe si fue una renovación o una compra nueva.
+   */
+  marcarDevolucion(id, { errorCode, rawResponse }) {
+    return prisma.payment.update({
+      where: { id },
+      data: { errorCode, rawResponse: JSON.stringify(rawResponse ?? null) },
+    });
+  },
+
   /** Las filas de un carrito, con lo mismo que trae `findByOrderId`. */
   findCart(cartId) {
     return prisma.payment.findMany({
@@ -125,6 +148,9 @@ const paymentRepository = {
           payerEmail: captura.payerEmail,
           rawResponse: JSON.stringify(captura.raw ?? null),
           paidAt: new Date(),
+          // Hotmart cobra su propio precio fijo, que puede no ser el del plan:
+          // la fila se queda con lo que de verdad se cobró.
+          ...(captura.importeReal ?? {}),
         },
       });
 

@@ -2,7 +2,9 @@
 
 const asyncHandler = require('../../shared/http/asyncHandler');
 const { ok, created, noContent } = require('../../shared/http/apiResponse');
+const logger = require('../../config/logger');
 const paymentService = require('./payment.service');
+const hotmartWebhook = require('./hotmart.webhook');
 
 const paymentController = {
   providers: asyncHandler(async (_req, res) => {
@@ -57,6 +59,23 @@ const paymentController = {
       motivo: req.body?.motivo ?? null,
     });
     return noContent(res);
+  }),
+
+  /**
+   * El aviso de Hotmart. Sin el Hottok correcto no se toca nada. Un error al
+   * entregar sube como 500 a propósito: Hotmart reintenta lo que no recibe 200.
+   */
+  hotmart: asyncHandler(async (req, res) => {
+    // La 2.0 lo manda en la cabecera; la 1.0, en el cuerpo.
+    const firma = req.get('X-HOTMART-HOTTOK') ?? req.body?.hottok;
+    if (!hotmartWebhook.firmaValida(firma)) {
+      logger.warn({ evento: req.body?.event }, 'Hotmart: aviso con Hottok inválido');
+      return res.status(401).json({ success: false });
+    }
+
+    const resultado = await hotmartWebhook.procesarAviso(req.body);
+    logger.info({ evento: req.body?.event, ...resultado }, 'Hotmart: aviso procesado');
+    return ok(res, resultado);
   }),
 
   mine: asyncHandler(async (req, res) => {

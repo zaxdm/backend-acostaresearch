@@ -39,6 +39,29 @@ const userRepository = {
     return prisma.user.create({ data, select: publicSelect });
   },
 
+  /**
+   * La cuenta que abrió una compra en Hotmart y que su dueño aún no reclamó.
+   *
+   * Quien paga en Hotmart sin cuenta en la web recibe una, sin contraseña ni
+   * Google y sin verificar, para entregarle lo comprado. Registrarse después
+   * con ese correo la reclama en vez de chocar con «ya existe». Se exige todo
+   * a la vez para que ninguna otra cuenta —una de Google, un invitado de un
+   * enlace de prueba, una que ya se usa— se pueda reclamar así.
+   */
+  findPorReclamar(email) {
+    return prisma.user.findFirst({
+      where: {
+        email,
+        passwordHash: null,
+        googleId: null,
+        trialLinkId: null,
+        emailVerifiedAt: null,
+        payments: { some: { provider: 'HOTMART' } },
+      },
+      select: { id: true },
+    });
+  },
+
   update(id, data) {
     return prisma.user.update({ where: { id }, data, select: publicSelect });
   },

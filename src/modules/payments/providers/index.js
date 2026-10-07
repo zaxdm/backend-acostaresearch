@@ -2,6 +2,7 @@
 
 const { paypalProvider } = require('./paypal.provider');
 const { culqiProvider } = require('./culqi.provider');
+const { hotmartProvider } = require('./hotmart.provider');
 
 /**
  * Registro de pasarelas.
@@ -32,6 +33,10 @@ const { culqiProvider } = require('./culqi.provider');
  *   needsToken              true si el cobro no se confirma sin el token que da
  *                           el formulario de la pasarela en el navegador (Culqi)
  *   publicKey()             llave pública que el navegador necesita, o null
+ *   confirmaPorAviso        el cobro lo confirma un webhook y no `captureOrder`
+ *                           (Hotmart): el navegador solo sigue `approveUrl`
+ *   sinDescuentos           no admite nuestros códigos de descuento
+ *   soloCompraSuelta        no admite carrito: un producto por pago
  *
  * Culqi cobra en soles, así que su `priceForPlan` devuelve `plan.priceCents` y
  * no necesita el precio en dólares.
@@ -39,6 +44,7 @@ const { culqiProvider } = require('./culqi.provider');
 const PROVIDERS = Object.freeze({
   [paypalProvider.code]: paypalProvider,
   [culqiProvider.code]: culqiProvider,
+  [hotmartProvider.code]: hotmartProvider,
 });
 
 function getProvider(code) {

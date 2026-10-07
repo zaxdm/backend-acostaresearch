@@ -59,6 +59,18 @@ const pendingRegistrationRepository = {
    * El momento del alta: nace el usuario y desaparece el pendiente, en una
    * transacción para que no pueda quedar a medias.
    */
+  /**
+   * Como `promoteToUser`, pero sobre la cuenta que ya abrió una compra en
+   * Hotmart: le pone la contraseña y los datos del alta en vez de crear otra.
+   */
+  claimUser(pendingId, userId, datosUsuario, select) {
+    return prisma.$transaction(async (tx) => {
+      const user = await tx.user.update({ where: { id: userId }, data: datosUsuario, select });
+      await tx.pendingRegistration.delete({ where: { id: pendingId } });
+      return user;
+    });
+  },
+
   promoteToUser(pendingId, datosUsuario, select) {
     return prisma.$transaction(async (tx) => {
       const user = await tx.user.create({ data: datosUsuario, select });

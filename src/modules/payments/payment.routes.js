@@ -23,6 +23,9 @@ const router = Router();
 // necesita un cuerpo crudo y un techo de tamaño propio.
 router.use('/manual', manualRoutes);
 
+// El webhook de Hotmart: sin sesión, lo protege el Hottok. Ver `hotmart.webhook`.
+router.post('/hotmart/webhook', paymentController.hotmart);
+
 // Público: la web de venta necesita saber si hay pago en línea sin pedir sesión.
 router.get('/providers', paymentController.providers);
 

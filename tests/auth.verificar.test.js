@@ -25,7 +25,7 @@ function sustituir(ruta, exports) {
   require.cache[id] = { id, filename: id, loaded: true, exports };
 }
 
-const estado = { pendiente: null, usuario: null, fallos: 0, creados: [] };
+const estado = { pendiente: null, usuario: null, porReclamar: null, fallos: 0, creados: [], reclamados: [] };
 
 sustituir('../src/config/env', {
   EMAIL_VERIFICATION_TTL_MINUTES: 15,
@@ -36,6 +36,7 @@ sustituir('../src/config/env', {
 sustituir('../src/config/logger', { info() {}, warn() {}, error() {} });
 sustituir('../src/modules/users/user.repository', {
   findByEmail: async () => estado.usuario,
+  findPorReclamar: async () => estado.porReclamar,
   publicSelect: {},
 });
 sustituir('../src/modules/auth/token.repository', {});
@@ -45,6 +46,10 @@ sustituir('../src/modules/auth/pendingRegistration.repository', {
   promoteToUser: async (id, datos) => {
     estado.creados.push(datos);
     return { id: 'u-nuevo', email: datos.email };
+  },
+  claimUser: async (id, userId, datos) => {
+    estado.reclamados.push({ userId, datos });
+    return { id: userId, email: datos.email };
   },
 });
 sustituir('../src/modules/auth/google.verifier', {});
@@ -74,8 +79,10 @@ async function altaPendiente(contrasena) {
 test.beforeEach(() => {
   estado.pendiente = null;
   estado.usuario = null;
+  estado.porReclamar = null;
   estado.fallos = 0;
   estado.creados = [];
+  estado.reclamados = [];
 });
 
 test('con la cuenta ya creada, verificar de nuevo sale bien pero no devuelve sus datos', async () => {
@@ -115,4 +122,25 @@ test('el código bueno con la contraseña del registro crea la cuenta', async ()
   assert.equal(user.id, 'u-nuevo');
   assert.equal(estado.creados.length, 1);
   assert.equal(estado.creados[0].passwordHash, estado.pendiente.passwordHash);
+});
+
+test('quien compró en Hotmart sin cuenta la reclama al registrarse: no se crea otra', async () => {
+  estado.pendiente = await altaPendiente('ContrasenaDeRosa1');
+  estado.porReclamar = { id: 'u-hotmart' };
+
+  const user = await authService.verifyEmail({ email: CORREO, code: CODIGO, password: 'ContrasenaDeRosa1' });
+
+  assert.equal(user.id, 'u-hotmart');
+  assert.equal(estado.creados.length, 0);
+  assert.equal(estado.reclamados.length, 1);
+  assert.equal(estado.reclamados[0].datos.passwordHash, estado.pendiente.passwordHash);
+  assert.ok(estado.reclamados[0].datos.emailVerifiedAt instanceof Date);
+});
+
+test('registrarse con el correo de una cuenta normal sigue chocando', async () => {
+  estado.usuario = { id: 'u1' };
+  await assert.rejects(
+    authService.register({ firstName: 'Rosa', lastName: 'T', email: CORREO, password: 'ContrasenaDeRosa1' }),
+    (error) => error.code === 'EMAIL_ALREADY_REGISTERED',
+  );
 });

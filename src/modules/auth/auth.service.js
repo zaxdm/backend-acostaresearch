@@ -86,8 +86,10 @@ const authService = {
    * la tabla de usuarios solo contiene correos verificados.
    */
   async register({ firstName, lastName, email, password }) {
+    // La cuenta que abrió una compra en Hotmart sí se puede registrar: es la
+    // forma de ponerle contraseña. El código al correo prueba que es suya.
     const existing = await userRepository.findByEmail(email);
-    if (existing) {
+    if (existing && !(await userRepository.findPorReclamar(email))) {
       throw new ConflictError(
         'Ya existe una cuenta con ese correo.',
         ERROR_CODES.EMAIL_ALREADY_REGISTERED,
@@ -138,6 +140,15 @@ const authService = {
     // filtrarlo. Se acepta a conciencia: la alternativa es responder «contraseña
     // incorrecta» a alguien que nunca tuvo una, y dejarlo probando indefinidamente
     // con su propia cuenta delante.
+    if (!user.passwordHash && !user.googleId) {
+      // La cuenta que abrió una compra en Hotmart: todavía no tiene contraseña.
+      throw new UnauthorizedError(
+        'Tu cuenta se creó con tu compra y aún no tiene contraseña. Pulsa «Crear cuenta» ' +
+          'con este mismo correo para ponerle una, o entra con Google.',
+        ERROR_CODES.INVALID_CREDENTIALS,
+      );
+    }
+
     if (!user.passwordHash) {
       throw new UnauthorizedError(
         'Esta cuenta entra con Google. Usa el botón «Continuar con Google».',
@@ -309,17 +320,25 @@ const authService = {
       );
     }
 
-    const user = await pendingRepository.promoteToUser(
-      pending.id,
-      {
-        email: pending.email,
-        passwordHash: pending.passwordHash,
-        firstName: pending.firstName,
-        lastName: pending.lastName,
-        emailVerifiedAt: new Date(),
-      },
-      userRepository.publicSelect,
-    );
+    const datosUsuario = {
+      email: pending.email,
+      passwordHash: pending.passwordHash,
+      firstName: pending.firstName,
+      lastName: pending.lastName,
+      emailVerifiedAt: new Date(),
+    };
+
+    // Si compró en Hotmart antes de registrarse, la cuenta ya existe con lo
+    // comprado dentro: se completa esa en vez de crear otra.
+    const porReclamar = await userRepository.findPorReclamar(pending.email);
+    const user = porReclamar
+      ? await pendingRepository.claimUser(
+          pending.id,
+          porReclamar.id,
+          datosUsuario,
+          userRepository.publicSelect,
+        )
+      : await pendingRepository.promoteToUser(pending.id, datosUsuario, userRepository.publicSelect);
 
     // Prueba gratuita del humanizador. Si falla, la cuenta ya está creada y no
     // debe romperse el alta por esto: el admin siempre puede activarla a mano.

@@ -285,6 +285,11 @@ const paymentService = {
       // Solo la pasarela que abre su formulario en el navegador (Culqi) la
       // necesita. Es la llave pública: no protege nada por sí sola.
       ...(provider.publicKey ? { publicKey: provider.publicKey() } : {}),
+      // Hotmart: se paga en su página y solo vende algunos planes, uno por pago.
+      ...(provider.confirmaPorAviso ? { confirmaPorAviso: true } : {}),
+      ...(provider.soloCompraSuelta ? { soloCompraSuelta: true } : {}),
+      ...(provider.sinDescuentos ? { sinDescuentos: true } : {}),
+      ...(provider.planesQueVende ? { planes: provider.planesQueVende() } : {}),
     }));
   },
 
@@ -309,6 +314,15 @@ const paymentService = {
         statusCode: 409,
         code: ERROR_CODES.PLAN_NOT_PURCHASABLE,
       });
+    }
+
+    // Hotmart cobra su precio fijo: un código no se podría restar, y aceptarlo
+    // en silencio le haría creer al comprador que pagó menos.
+    if (provider.sinDescuentos && discountCode) {
+      throw new AppError(
+        `Los códigos de descuento no se aplican al pagar con ${provider.label}. Quita el código o elige otro medio de pago.`,
+        { statusCode: 409, code: ERROR_CODES.PLAN_NOT_PURCHASABLE },
+      );
     }
 
     // El descuento lo resuelve el servidor a partir del código: el navegador
@@ -374,6 +388,13 @@ const paymentService = {
    */
   async createCartOrder({ userId, items, providerCode, discountCode }) {
     const provider = obtenerPasarela(providerCode);
+
+    if (provider.soloCompraSuelta) {
+      throw new AppError(
+        `Con ${provider.label} se paga un producto a la vez. Compra cada uno por separado o elige otro medio de pago.`,
+        { statusCode: 409, code: ERROR_CODES.PLAN_NOT_PURCHASABLE },
+      );
+    }
 
     const { lineas, delTotal } = await carrito.resolverLineas(items, {
       precio: (plan) => provider.priceForPlan(plan),
@@ -449,6 +470,14 @@ const paymentService = {
    */
   async captureOrder({ userId, orderId, providerCode, datosDelCobro = {} }) {
     const provider = obtenerPasarela(providerCode);
+
+    // Hotmart lo confirma su webhook: desde el navegador no se cobra nada.
+    if (provider.confirmaPorAviso) {
+      throw new AppError(`Los pagos con ${provider.label} se confirman solos al aprobarse.`, {
+        statusCode: 409,
+        code: ERROR_CODES.PAYMENT_FAILED,
+      });
+    }
 
     // Se mira antes de tocar nada: sin token no hay cobro posible, y dejar que
     // la pasarela lo rechace marcaría el pago como fallido sin motivo.

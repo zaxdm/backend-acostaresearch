@@ -263,6 +263,13 @@ const schema = z.object({
   CULQI_PUBLIC_KEY: vacioComoAusente(z.string().trim()),
   CULQI_SECRET_KEY: vacioComoAusente(z.string().trim()),
 
+  // ── Pasarela de pago (Hotmart) ──────────────────────────────────────────
+  // Hotmart cobra en su propia página: aquí no hay llave para cobrar, solo el
+  // Hottok con el que Hotmart firma cada aviso del webhook (Herramientas →
+  // Webhook → Autentificación). Qué producto de Hotmart vende cada plan está
+  // en `modules/payments/providers/hotmart.productos`.
+  HOTMART_HOTTOK: vacioComoAusente(z.string().trim().min(10)),
+
   // ── Pago manual (Yape o transferencia) ──────────────────────────────────
   // El comprador paga con el QR y sube la captura; un administrador la mira y
   // activa el acceso. Es la vía principal en Perú, donde PayPal es minoritario.
@@ -678,6 +685,7 @@ const env = Object.freeze({
   // Las dos llaves, con su forma, y del MISMO entorno: una pública de prueba
   // con una secreta real genera tokens que el cobro rechaza siempre.
   culqiEnabled: llavesCulqiValidas(raw.CULQI_PUBLIC_KEY, raw.CULQI_SECRET_KEY),
+  hotmartEnabled: Boolean(raw.HOTMART_HOTTOK),
   // El pago manual no depende de credenciales: basta con que haya un QR en la
   // web. Estos datos son solo el texto que lo acompaña.
   yape: {

@@ -4,6 +4,7 @@ const rateLimit = require('express-rate-limit');
 const env = require('../config/env');
 const { ERROR_CODES } = require('../config/constants');
 const { ipCliente } = require('../shared/utils/ipCliente');
+const { verifyAccessToken } = require('../shared/utils/tokens');
 
 /**
  * Por persona cuando hay sesión, y por IP si no.
@@ -13,6 +14,32 @@ const { ipCliente } = require('../shared/utils/ipCliente');
  * sentido que el botón de uno se gaste con los clics de otro.
  */
 const porUsuario = (req) => (req.user?.id ? `usuario:${req.user.id}` : ipCliente(req));
+
+/**
+ * Como `porUsuario`, pero para el límite general, que corre ANTES de
+ * `authenticate` y por tanto sin `req.user`.
+ *
+ * Mira el token de acceso él mismo: solo la firma, sin tocar la BD, así que no
+ * cuesta nada. Un token válido cuenta por persona; sin token, caducado o falso,
+ * por IP. Un token no se puede inventar sin la clave, así que nadie se fabrica
+ * cubos nuevos para saltarse el límite.
+ *
+ * Por qué (8-oct-2026): con todo por IP, treinta alumnos en la wifi de una
+ * universidad —o abonados de un operador que reparte una IP entre muchos— se
+ * comían entre todos el mismo cupo y a todos les respondía 429.
+ */
+function porSesionOIp(req) {
+  const [esquema, token] = (req.get('authorization') ?? '').split(' ');
+  if (esquema === 'Bearer' && token) {
+    try {
+      const payload = verifyAccessToken(token);
+      if (payload.typ === 'access' && payload.sub) return `usuario:${payload.sub}`;
+    } catch {
+      // Caducado o inválido: cuenta por IP, y `authenticate` dirá lo que toca.
+    }
+  }
+  return ipCliente(req);
+}
 
 function build({ windowMs, max, message, keyGenerator = ipCliente }) {
   return rateLimit({
@@ -35,15 +62,17 @@ function build({ windowMs, max, message, keyGenerator = ipCliente }) {
 /**
  * Límite general de la API.
  *
- * 600 por cuarto de hora y por IP (300 hasta el 8-oct-2026). Con 300, una sola
- * persona navegando el panel con un par de pestañas lo agotaba, y desde ahí
- * TODO respondía 429: entrar, salir, los planes, las reseñas. Los límites que
- * de verdad frenan el abuso son los específicos de abajo.
+ * 600 por cuarto de hora (300 hasta el 8-oct-2026): por persona si trae sesión
+ * y por IP si no (`porSesionOIp`). Con 300 por IP, una sola persona navegando
+ * el panel con un par de pestañas lo agotaba, y desde ahí TODO respondía 429:
+ * entrar, salir, los planes, las reseñas. Los límites que de verdad frenan el
+ * abuso son los específicos de abajo.
  */
 const globalLimiter = build({
   windowMs: 15 * 60 * 1000,
   max: 600,
   message: 'Demasiadas peticiones. Inténtalo de nuevo en unos minutos.',
+  keyGenerator: porSesionOIp,
 });
 
 /**
@@ -439,6 +468,7 @@ module.exports = {
   invitacionLimiter,
   mcpFallosLimiter,
   globalLimiter,
+  porSesionOIp,
   authLimiter,
   emailLimiter,
   rewriteLimiter,

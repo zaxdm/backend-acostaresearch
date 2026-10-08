@@ -67,23 +67,62 @@ function esId(id) {
   return /^[A-Za-z0-9]{2,30}_[A-Za-z0-9]{8,64}$/.test(String(id ?? ''));
 }
 
-async function pedir(ruta, params) {
-  const url = new URL(`${BASE}${ruta}`);
-  for (const [clave, valor] of params) url.searchParams.append(clave, valor);
+/** Pausa antes del segundo intento. */
+const PAUSA_ANTES_DE_REINTENTAR_MS = 1500;
 
-  const res = await fetch(url, {
-    headers: { Accept: 'application/json' },
-    signal: AbortSignal.timeout(TIEMPO_LIMITE_MS),
-  });
+/**
+ * Un fallo que pasa solo: no contestó a tiempo, se cortó la conexión, dio un
+ * 5xx o devolvió una página de error en vez de JSON. Un 4xx o un `status`
+ * distinto de OK no se arregla repitiendo la misma pregunta.
+ */
+class FalloPasajero extends Error {}
+
+async function pedirUnaVez(url, ruta) {
+  let res;
+  try {
+    res = await fetch(url, {
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(TIEMPO_LIMITE_MS),
+    });
+  } catch (fallo) {
+    throw new FalloPasajero(fallo.message);
+  }
 
   if (!res.ok) {
     logger.warn({ estado: res.status, ruta }, 'ALICIA no contestó bien');
-    throw new Error(`ALICIA respondió ${res.status}`);
+    const mensaje = `ALICIA respondió ${res.status}`;
+    throw res.status >= 500 ? new FalloPasajero(mensaje) : new Error(mensaje);
   }
 
-  const json = await res.json();
+  let json;
+  try {
+    json = await res.json();
+  } catch (fallo) {
+    // Cuando su servidor está caído contesta 200 con una página HTML.
+    throw new FalloPasajero(fallo.message);
+  }
   if (json.status && json.status !== 'OK') throw new Error(`ALICIA: ${json.status}`);
   return json;
+}
+
+/**
+ * ALICIA tiene ratos malos de un minuto: el 8-oct-2026 seis búsquedas
+ * seguidas se quedaron sin respuesta y al momento contestaba en medio segundo.
+ * Por eso un fallo pasajero se repite una vez antes de decirle al tesista que
+ * pruebe más tarde.
+ */
+async function pedir(ruta, params, { pausaMs = PAUSA_ANTES_DE_REINTENTAR_MS } = {}) {
+  const url = new URL(`${BASE}${ruta}`);
+  for (const [clave, valor] of params) url.searchParams.append(clave, valor);
+
+  try {
+    return await pedirUnaVez(url, ruta);
+  } catch (fallo) {
+    if (!(fallo instanceof FalloPasajero)) throw fallo;
+    logger.warn({ err: fallo.message, ruta }, 'ALICIA: primer intento fallido, se reintenta');
+    await new Promise((listo) => setTimeout(listo, pausaMs));
+    return pedirUnaVez(url, ruta);
+  }
 }
 
 /** El primero de una lista del registro, o nada. */
@@ -217,4 +256,4 @@ async function porIds(ids) {
   return (json.records ?? []).map(comoFicha).filter((f) => f.id && f.title);
 }
 
-module.exports = { buscar, porIds, esId, comoFicha, POR_PAGINA, TIPOS };
+module.exports = { buscar, porIds, esId, comoFicha, pedir, POR_PAGINA, TIPOS };

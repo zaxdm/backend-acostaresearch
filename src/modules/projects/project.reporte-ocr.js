@@ -168,4 +168,24 @@ function leerPaginas(pdf, OPS, numeros, porPagina) {
   });
 }
 
-module.exports = { imagenesDe, aPng, leerPaginas };
+/**
+ * El texto de una imagen suelta (PNG, JPEG o WebP), en la misma cola y con el
+ * mismo trabajador que el reporte: el servidor no puede con dos OCR a la vez.
+ *
+ * `vigente()` se consulta al llegar el turno: si quien lo pidió ya se cansó
+ * de esperar, la imagen no se lee y se devuelve null.
+ */
+function leerImagen(buffer, { vigente = () => true } = {}) {
+  return enCola(async () => {
+    if (!vigente()) return null;
+    try {
+      const t = await elTrabajador();
+      const { data } = await t.recognize(buffer);
+      return data.text ?? '';
+    } finally {
+      dormir();
+    }
+  });
+}
+
+module.exports = { imagenesDe, aPng, leerPaginas, leerImagen };

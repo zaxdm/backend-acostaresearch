@@ -32,10 +32,17 @@ function build({ windowMs, max, message, keyGenerator = ipCliente }) {
   });
 }
 
-/** Límite general de la API. */
+/**
+ * Límite general de la API.
+ *
+ * 600 por cuarto de hora y por IP (300 hasta el 8-oct-2026). Con 300, una sola
+ * persona navegando el panel con un par de pestañas lo agotaba, y desde ahí
+ * TODO respondía 429: entrar, salir, los planes, las reseñas. Los límites que
+ * de verdad frenan el abuso son los específicos de abajo.
+ */
 const globalLimiter = build({
   windowMs: 15 * 60 * 1000,
-  max: 300,
+  max: 600,
   message: 'Demasiadas peticiones. Inténtalo de nuevo en unos minutos.',
 });
 
@@ -72,6 +79,17 @@ const paymentLimiter = build({
   windowMs: 10 * 60 * 1000,
   max: 15,
   message: 'Has abierto demasiados pagos seguidos. Espera unos minutos.',
+});
+
+/**
+ * Revisar la captura antes de enviarla: cada llamada es un OCR, que comparte
+ * cola con los reportes de Turnitin. Va aparte del de pagos para que elegir
+ * otra imagen no gaste los intentos de pagar.
+ */
+const capturaLimiter = build({
+  windowMs: 10 * 60 * 1000,
+  max: 20,
+  message: 'Has revisado demasiadas capturas seguidas. Espera unos minutos.',
 });
 
 /**
@@ -425,6 +443,7 @@ module.exports = {
   emailLimiter,
   rewriteLimiter,
   paymentLimiter,
+  capturaLimiter,
   trialClaimLimiter,
   zoteroSyncLimiter,
   zoteroConectarLimiter,

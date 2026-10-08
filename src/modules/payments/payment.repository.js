@@ -289,6 +289,7 @@ const paymentRepository = {
         ...paymentSelect,
         operationCode: true,
         proofMime: true,
+        proofCheck: true,
         discountCents: true,
         user: { select: { id: true, email: true, firstName: true, lastName: true } },
       },
@@ -304,6 +305,14 @@ const paymentRepository = {
    * captura, que sería la forma evidente de colar un comprobante distinto del
    * que se aprobó.
    */
+  /** Apunta el veredicto de la revisión automática de la captura. */
+  saveProofCheck(ids, revision) {
+    return prisma.payment.updateMany({
+      where: { id: { in: ids } },
+      data: { proofCheck: JSON.stringify(revision).slice(0, 255) },
+    });
+  },
+
   async attachProof(id, { userId, proofPath, proofMime, operationCode }) {
     const { count } = await prisma.payment.updateMany({
       where: { id, userId, status: { in: ['PENDING', 'IN_REVIEW'] } },

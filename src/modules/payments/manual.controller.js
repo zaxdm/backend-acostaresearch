@@ -54,6 +54,19 @@ const manualController = {
     );
   }),
 
+  /**
+   * Revisión previa de la captura, antes de enviarla: si parece un
+   * comprobante y qué número de operación se lee. No guarda nada.
+   */
+  revisarCaptura: asyncHandler(async (req, res) => {
+    const revision = await manualService.revisarAntesDeEnviar({
+      buffer: req.body,
+      metodo: req.query.metodo,
+      monto: req.query.monto,
+    });
+    return ok(res, revision);
+  }),
+
   pendientes: asyncHandler(async (_req, res) => {
     const payments = await manualService.pendientes();
     return ok(res, { payments });

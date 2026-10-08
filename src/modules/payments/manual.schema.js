@@ -38,9 +38,9 @@ const registrarQuerySchema = z
   planCode: z.string().trim().toUpperCase().max(40).optional(),
   items: carritoEnLaQuery.optional(),
   discountCode: z.string().trim().max(40).optional(),
-  // El número de operación de Yape. Es opcional porque no todo el mundo lo
-  // encuentra, pero es lo que de verdad permite cuadrarlo con el extracto, así
-  // que la web lo pide con insistencia.
+  // El número de operación de Yape (o el MTCN). Obligatorio desde el 8-oct:
+  // es lo que de verdad permite cuadrarlo con el extracto, y opcional llegaban
+  // fotos cualquiera sin nada que cotejar.
   operationCode: z.string().trim().max(40).optional(),
   // Por dónde pagó. Sin él es Yape, que es lo que mandaba la web de antes.
   metodo: z.enum(['YAPE', 'WESTERN_UNION']).default('YAPE'),
@@ -60,11 +60,29 @@ const registrarQuerySchema = z
       path: ['operationCode'],
     },
   )
-  .transform((datos) =>
-    datos.metodo === 'WESTERN_UNION'
-      ? { ...datos, operationCode: datos.operationCode.replace(/[\s-]/g, '') }
-      : datos,
-  );
+  // En Yape (o Plin), el número de operación de la constancia: solo cifras,
+  // entre 6 y 12. Yape enseña 8; el margen es para Plin y los bancos.
+  .refine(
+    (datos) =>
+      datos.metodo !== 'YAPE' ||
+      /^\d{6,12}$/.test((datos.operationCode || '').replace(/[\s-]/g, '')),
+    {
+      message:
+        'Escribe el número de operación de tu Yape: está en la constancia, debajo del monto (solo números).',
+      path: ['operationCode'],
+    },
+  )
+  .transform((datos) => ({ ...datos, operationCode: datos.operationCode.replace(/[\s-]/g, '') }));
+
+/**
+ * La revisión previa de la captura, antes de enviarla. El importe lo manda la
+ * web y no se le cree para nada: solo sirve para buscarlo en la imagen y
+ * avisar si no aparece.
+ */
+const revisarCapturaQuerySchema = z.object({
+  metodo: z.enum(['YAPE', 'WESTERN_UNION']).default('YAPE'),
+  monto: z.coerce.number().int().min(0).max(10_000_000).optional(),
+});
 
 const paymentParamsSchema = z.object({
   id: z.string().uuid('Identificador de pago no válido.'),
@@ -85,4 +103,9 @@ const rechazarSchema = z.object({
     .max(255),
 });
 
-module.exports = { registrarQuerySchema, paymentParamsSchema, rechazarSchema };
+module.exports = {
+  registrarQuerySchema,
+  revisarCapturaQuerySchema,
+  paymentParamsSchema,
+  rechazarSchema,
+};

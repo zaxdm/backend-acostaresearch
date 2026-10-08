@@ -57,19 +57,16 @@ function rutaAbsoluta(relativa) {
 
 const proofStorage = {
   /**
-   * Guarda la captura y devuelve la ruta relativa que se anota en el pago.
-   *
-   * Se reparte por año y mes para que la carpeta no acabe con diez mil
-   * archivos sueltos, que es lo que hace insoportable buscar uno a mano.
+   * Los mismos controles que al guardar, sin guardar: tamaño y firma. Lanza
+   * el error de siempre; devuelve el formato si la imagen vale.
    */
-  async guardar(buffer, { paymentId }) {
-    if (buffer.length > env.PROOF_MAX_BYTES) {
+  comprobarImagen(buffer) {
+    if (!Buffer.isBuffer(buffer) || buffer.length > env.PROOF_MAX_BYTES) {
       throw new AppError(
         `La imagen no puede pesar más de ${Math.round(env.PROOF_MAX_BYTES / (1024 * 1024))} MB.`,
         { statusCode: 413, code: ERROR_CODES.VALIDATION_ERROR },
       );
     }
-
     const firma = detectar(buffer);
     if (!firma) {
       throw new AppError('Eso no parece una imagen. Sube una captura en PNG, JPG o WebP.', {
@@ -77,6 +74,17 @@ const proofStorage = {
         code: ERROR_CODES.VALIDATION_ERROR,
       });
     }
+    return firma;
+  },
+
+  /**
+   * Guarda la captura y devuelve la ruta relativa que se anota en el pago.
+   *
+   * Se reparte por año y mes para que la carpeta no acabe con diez mil
+   * archivos sueltos, que es lo que hace insoportable buscar uno a mano.
+   */
+  async guardar(buffer, { paymentId }) {
+    const firma = proofStorage.comprobarImagen(buffer);
 
     const ahora = new Date();
     const carpeta = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}`;

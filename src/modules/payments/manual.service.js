@@ -13,6 +13,7 @@ const { enPrueba } = require('../billing/plan.visibilidad');
 const discountService = require('../billing/discount.service');
 const paymentRepository = require('./payment.repository');
 const proofStorage = require('./proof.storage');
+const { revisarCaptura } = require('./proof.revision');
 const { entregarPago } = require('./payment.delivery');
 const carrito = require('./payment.carrito');
 const { AppError, NotFoundError } = require('../../shared/errors/AppError');
@@ -107,6 +108,30 @@ function generarReferencia(prefijo) {
   let cuerpo = '';
   for (let i = 0; i < 8; i += 1) cuerpo += ALFABETO[crypto.randomInt(0, ALFABETO.length)];
   return `${prefijo}-${cuerpo}`;
+}
+
+/**
+ * Lee la captura ya guardada y apunta el veredicto en sus filas, para que el
+ * administrador lo vea en la bandeja. Va después de responder al comprador:
+ * el OCR tarda y comparte cola con los reportes de Turnitin. Si falla, la
+ * bandeja simplemente no enseña nada.
+ */
+function revisarEnSegundoPlano(ids, buffer, { amountCents, metodo, operationCode }) {
+  revisarCaptura(buffer, { amountCents, metodo, operationCode, esperaMs: 5 * 60_000 })
+    .then((revision) => paymentRepository.saveProofCheck(ids, revision))
+    .catch((error) => {
+      logger.warn({ err: error, ids }, 'No se pudo apuntar la revisión automática de la captura');
+    });
+}
+
+/** El veredicto guardado, de vuelta a objeto. Null si no hay o no se entiende. */
+function leerRevision(texto) {
+  if (!texto) return null;
+  try {
+    return JSON.parse(texto);
+  } catch {
+    return null;
+  }
 }
 
 /** El comprador, con lo justo para escribirle y para que el admin lo reconozca. */
@@ -340,6 +365,12 @@ const manualService = {
       enlace: `${env.APP_URL}/admin?seccion=yape`,
     });
 
+    revisarEnSegundoPlano([payment.id], buffer, {
+      amountCents,
+      metodo: medio.proveedor,
+      operationCode,
+    });
+
     return {
       paymentId: payment.id,
       reference: payment.providerOrderId,
@@ -442,6 +473,12 @@ const manualService = {
       enlace: `${env.APP_URL}/admin?seccion=yape`,
     });
 
+    revisarEnSegundoPlano(
+      filas.map((fila) => fila.id),
+      buffer,
+      { amountCents, metodo: medio.proveedor, operationCode },
+    );
+
     return {
       paymentId: lider.id,
       reference: lider.providerOrderId,
@@ -467,7 +504,8 @@ const manualService = {
     const porCarrito = new Map();
     const bandeja = [];
 
-    for (const fila of filas) {
+    for (const { proofCheck, ...resto } of filas) {
+      const fila = { ...resto, revision: leerRevision(proofCheck) };
       if (!fila.cartId) {
         bandeja.push({ ...fila, carrito: null });
         continue;
@@ -508,6 +546,21 @@ const manualService = {
     const pagos = await paymentRepository.listReviewed({ provider: PROVEEDORES, limit });
 
     return pagos.map(({ proofPath, ...pago }) => ({ ...pago, tieneComprobante: Boolean(proofPath) }));
+  },
+
+  /**
+   * La revisión previa, antes de enviar: la web la pide al elegir la imagen
+   * para avisar si no parece un comprobante y, de paso, rellenar el número de
+   * operación si lo lee. No guarda nada.
+   */
+  async revisarAntesDeEnviar({ buffer, metodo, monto }) {
+    proofStorage.comprobarImagen(buffer);
+    const revision = await revisarCaptura(buffer, { amountCents: monto, metodo });
+    return {
+      veredicto: revision.veredicto,
+      operacionLeida: revision.operacionLeida ?? null,
+      montoVisto: revision.montoVisto ?? null,
+    };
   },
 
   contarPendientes() {

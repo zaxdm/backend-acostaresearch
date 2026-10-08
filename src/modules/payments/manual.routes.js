@@ -5,11 +5,12 @@ const { Router } = require('express');
 const authenticate = require('../../middlewares/authenticate');
 const authorize = require('../../middlewares/authorize');
 const validate = require('../../middlewares/validate');
-const { paymentLimiter } = require('../../middlewares/rateLimit');
+const { paymentLimiter, capturaLimiter } = require('../../middlewares/rateLimit');
 const { ROLES } = require('../../config/constants');
 const env = require('../../config/env');
 const {
   registrarQuerySchema,
+  revisarCapturaQuerySchema,
   paymentParamsSchema,
   rechazarSchema,
 } = require('./manual.schema');
@@ -42,6 +43,17 @@ router.post(
   cuerpoDeImagen,
   validate({ query: registrarQuerySchema }),
   manualController.registrar,
+);
+
+// Lee la captura antes de enviarla y avisa si no parece un comprobante. Usa el
+// su propio limitador: cada llamada es un OCR.
+router.post(
+  '/revisar-captura',
+  authenticate,
+  capturaLimiter,
+  cuerpoDeImagen,
+  validate({ query: revisarCapturaQuerySchema }),
+  manualController.revisarCaptura,
 );
 
 // ── Revisión: solo administradores ────────────────────────────────────────

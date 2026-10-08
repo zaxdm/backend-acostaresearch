@@ -76,7 +76,7 @@ const PLANES = {
 };
 
 const filas = new Map(); // id → fila
-const llamadas = { fetch: [], entregas: [], fail: [], cancelCart: [], cancelOtherOpen: [], avisos: [] };
+const llamadas = { fetch: [], entregas: [], fail: [], cancelCart: [], cancelOtherOpen: [], avisos: [], revisiones: [], proofChecks: [] };
 let respuestasFetch = [];
 let descuentos = {}; // código → descuento
 let generales = {}; // código del carrito sin plan → registro
@@ -124,6 +124,13 @@ falsificar('../src/modules/billing/discount.service', {
 });
 falsificar('../src/modules/licensing/license.repository', {
   findById: async (id) => ({ id, productCode: 'X' }),
+});
+// El OCR de verdad carga tesseract: aquí basta con apuntar qué se le pidió.
+falsificar('../src/modules/payments/proof.revision', {
+  revisarCaptura: async (_buffer, opciones) => {
+    llamadas.revisiones.push(opciones);
+    return { veredicto: 'OK', operacionLeida: opciones.operationCode ?? null };
+  },
 });
 falsificar('../src/modules/payments/proof.storage', {
   guardar: async () => ({ path: 'captura-1.png', mime: 'image/png' }),
@@ -177,6 +184,9 @@ falsificar('../src/modules/payments/payment.repository', {
     return true;
   },
   cancel: async () => true,
+  saveProofCheck: async (ids, revision) => {
+    llamadas.proofChecks.push({ ids, revision });
+  },
   attachProof: async (id, { proofPath }) => {
     Object.assign(filas.get(id), { proofPath, status: 'IN_REVIEW' });
     return true;
@@ -564,8 +574,38 @@ test('el MTCN es obligatorio en Western Union y son 10 dígitos', () => {
     operationCode: '123-456 7890',
   });
   assert.equal(conEspacios.operationCode, '1234567890');
-  // Sin método sigue siendo Yape, con el número de operación opcional.
-  assert.equal(registrarQuerySchema.parse({ planCode: 'METODO' }).metodo, 'YAPE');
+  // Sin método sigue siendo Yape.
+  assert.equal(
+    registrarQuerySchema.parse({ planCode: 'METODO', operationCode: '01234567' }).metodo,
+    'YAPE',
+  );
+});
+
+test('en Yape el número de operación es obligatorio: solo cifras, de 6 a 12', () => {
+  const { registrarQuerySchema } = require('../src/modules/payments/manual.schema');
+  const intento = (operationCode) =>
+    registrarQuerySchema.safeParse({ planCode: 'METODO', operationCode });
+
+  assert.equal(registrarQuerySchema.safeParse({ planCode: 'METODO' }).success, false);
+  assert.equal(intento('').success, false);
+  assert.equal(intento('12345').success, false);
+  assert.equal(intento('1234567890123').success, false);
+  assert.equal(intento('ABC12345').success, false);
+  assert.equal(intento('0123 4567').data.operationCode, '01234567');
+  assert.equal(intento('123456').success, true);
+});
+
+test('la captura se revisa sola tras enviarla y el veredicto queda en todas las filas', async () => {
+  await yapeDeCarrito();
+  // Corre en segundo plano: se le da un turno para que termine.
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(llamadas.revisiones.length, 1);
+  assert.equal(llamadas.revisiones[0].amountCents, 33900);
+  assert.equal(llamadas.revisiones[0].operationCode, '123456');
+  assert.equal(llamadas.proofChecks.length, 1);
+  assert.equal(llamadas.proofChecks[0].ids.length, 2);
+  assert.equal(llamadas.proofChecks[0].revision.veredicto, 'OK');
 });
 
 // ── Descuento sobre el total ───────────────────────────────────────────────
@@ -657,7 +697,10 @@ test('la ventana comprueba el código del carrito y dice a qué se aplica', asyn
 
 test('la query del Yape lleva el carrito como PLAN:CODIGO separados por comas', () => {
   const { registrarQuerySchema } = require('../src/modules/payments/manual.schema');
-  const leido = registrarQuerySchema.parse({ items: 'metodo:PROMO40, articulo' });
+  const leido = registrarQuerySchema.parse({
+    items: 'metodo:PROMO40, articulo',
+    operationCode: '01234567',
+  });
 
   assert.deepEqual(leido.items, [
     { planCode: 'METODO', discountCode: 'PROMO40' },

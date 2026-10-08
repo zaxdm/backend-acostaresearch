@@ -659,6 +659,10 @@ model Payment {
   /// Número de operación que muestra Yape. Es lo que permite cuadrar el
   /// comprobante con el extracto real sin fiarse de la captura.
   operationCode String?   @db.VarChar(40)
+  /// Revisión automática de la captura (OCR), en JSON: `{ veredicto,
+  /// operacionLeida, montoVisto, operacionCoincide }`. Es un aviso para el
+  /// administrador, nunca una decisión. Null mientras no se ha leído.
+  proofCheck    String?   @db.VarChar(255)
   /// Quién revisó el comprobante y qué decidió. Como el `createdById` de los
   /// códigos, va sin relación: es un apunte de auditoría, no algo que se
   /// navegue desde el usuario.

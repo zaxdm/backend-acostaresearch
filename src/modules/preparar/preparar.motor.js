@@ -602,9 +602,25 @@ async function prepararParrafos({
   aLaVez = env.PREPARAR_TANDAS_A_LA_VEZ,
   porTanda = env.PREPARAR_PALABRAS_POR_TANDA,
   reintento,
+  // Se llama con (hechas, total) cada vez que termina una tanda, para que la
+  // web enseñe «sección 4 de 12». Un fallo aquí no puede tumbar el trabajo.
+  alAvanzar = () => {},
 }) {
   const opciones = { servicio, idioma };
   const tandas = tandasDe(parrafos, porTanda);
+  let hechas = 0;
+  const contar = () => {
+    try {
+      alAvanzar(hechas, tandas.length);
+    } catch {
+      // El progreso es un adorno: si falla, el documento sigue.
+    }
+  };
+  const avanzar = () => {
+    hechas += 1;
+    contar();
+  };
+  contar();
 
   // El corte del proveedor, si llega. A partir de ahí no se manda ni una
   // petición más: lo que falta es cupo, no suerte, y cada intento se lo come.
@@ -624,8 +640,11 @@ async function prepararParrafos({
       if (cortado) return comoMalos(cortado.message, true);
 
       try {
-        return await pedirTanda(tanda, opciones, pedir);
+        const hecha = await pedirTanda(tanda, opciones, pedir);
+        avanzar();
+        return hecha;
       } catch (error) {
+        avanzar();
         const sinCupo = seAcaboElCupo(error);
         if (sinCupo && !cortado) {
           cortado = error;

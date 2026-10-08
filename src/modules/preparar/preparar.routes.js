@@ -121,6 +121,14 @@ router.get(
   ),
 );
 
+/** El original y el resultado, párrafo a párrafo, para la vista «Lado a lado». */
+router.get(
+  '/trabajos/:id/comparacion',
+  asyncHandler(async (req, res) =>
+    ok(res, await prepararService.comparacion({ userId: req.user.id, id: req.params.id })),
+  ),
+);
+
 /** El .docx terminado. */
 router.get(
   '/trabajos/:id/descargar',

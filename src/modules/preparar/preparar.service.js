@@ -60,6 +60,7 @@ const motor = require('./preparar.motor');
 const cambios = require('./preparar.cambios');
 const traduccion = require('./preparar.traduccion');
 const aviso = require('./preparar.aviso');
+const { comparar } = require('./preparar.comparar');
 const { IDIOMAS } = require('./preparar.prompt');
 const { correosDe } = require('../pedidos/beta');
 
@@ -98,6 +99,24 @@ const COLGADA_MS = 30 * 60_000;
 
 /** Todos los trabajos van de uno en uno en este proceso. Ver `trabajar`. */
 const COLA = 'preparar:documentos';
+
+/**
+ * Por dónde va cada trabajo en marcha, para la pantalla de «Procesando…».
+ *
+ * En memoria y no en la base, a propósito: cambia cada pocos segundos, solo
+ * importa mientras el trabajo corre y, si el proceso se reinicia, el trabajo se
+ * pierde igual (ver `rescatar`). Escribirlo en MySQL serían decenas de UPDATE
+ * por documento para algo que nadie va a mirar mañana.
+ *
+ * `paso` es uno de LEYENDO, PROTEGIENDO, EDITANDO o ARMANDO; `hechas` y
+ * `total`, las tandas del motor («sección 4 de 12»).
+ */
+const progreso = new Map();
+
+function marcarPaso(preparacionId, paso, tandas = {}) {
+  const antes = progreso.get(preparacionId) ?? {};
+  progreso.set(preparacionId, { hechas: antes.hechas ?? 0, total: antes.total ?? 0, ...tandas, paso });
+}
 
 const servicioNoDisponible = () =>
   new AppError('«Preparar documento» no está disponible ahora mismo.', {
@@ -259,7 +278,9 @@ async function producir({ preparacion, buffer, parrafos }) {
     parrafos,
     servicio: preparacion.servicio,
     idioma: preparacion.idioma,
+    alAvanzar: (hechas, total) => marcarPaso(preparacion.id, 'EDITANDO', { hechas, total }),
   });
+  marcarPaso(preparacion.id, 'ARMANDO');
 
   // EDICION, con control de cambios: es lo que distingue una corrección de
   // lengua de un texto cambiado por detrás. Ver `preparar.cambios`.
@@ -349,9 +370,11 @@ function trabajar(preparacionId) {
     let preparacion;
     try {
       preparacion = await repository.marcar(preparacionId, { estado: 'EN_CURSO' });
+      marcarPaso(preparacionId, 'LEYENDO');
 
       const buffer = await almacen.leerEntrada(preparacionId);
       const { parrafos } = cuerpo.cuerpoDe(buffer, alcanceDe(preparacion.servicio));
+      marcarPaso(preparacionId, 'PROTEGIENDO');
 
       const hecho = await producir({ preparacion, buffer, parrafos });
       await almacen.guardarSalida(preparacionId, hecho.buffer);
@@ -387,6 +410,7 @@ function trabajar(preparacionId) {
         .catch(() => null);
     }
 
+    progreso.delete(preparacionId);
     if (!preparacion) return;
     const dueno = await repository.duenoDe(preparacionId).catch(() => null);
     avisar({ ...preparacion, id: preparacionId }, dueno?.user);
@@ -504,7 +528,7 @@ function paraLaWeb(fila) {
     }
   }
 
-  return { ...fila, avisos };
+  return { ...fila, avisos, progreso: progreso.get(fila.id) ?? null };
 }
 
 const prepararService = {
@@ -552,7 +576,28 @@ const prepararService = {
   async ver({ userId, id }) {
     const preparacion = await repository.mia(userId, id);
     if (!preparacion) throw new NotFoundError('Ese documento no existe o no es tuyo.');
-    return preparacion;
+    return paraLaWeb(preparacion);
+  },
+
+  /**
+   * El original y el resultado, párrafo a párrafo, con la verificación. Es lo
+   * que pinta la vista «Lado a lado». Ver `preparar.comparar`.
+   */
+  async comparacion({ userId, id }) {
+    const { preparacion, buffer: salida } = await prepararService.descargar({ userId, id });
+    const entrada = await almacen.leerEntrada(id).catch(() => null);
+    if (!entrada) {
+      throw new AppError('El documento original ya no está en el servidor: no se puede comparar.', {
+        statusCode: 410,
+        code: ERROR_CODES.NOT_FOUND,
+      });
+    }
+    return comparar({
+      entrada,
+      salida,
+      servicio: preparacion.servicio,
+      idioma: preparacion.idioma,
+    });
   },
 
   /** El .docx terminado. */

@@ -119,7 +119,7 @@ function marcarPaso(preparacionId, paso, tandas = {}) {
 }
 
 const servicioNoDisponible = () =>
-  new AppError('«Preparar documento» no está disponible ahora mismo.', {
+  new AppError('«Edición y Traducción» no está disponible ahora mismo.', {
     statusCode: 503,
     code: ERROR_CODES.PREPARAR_UNAVAILABLE,
   });

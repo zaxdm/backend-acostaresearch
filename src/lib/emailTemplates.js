@@ -881,7 +881,7 @@ function documentosReady({ firstName, planName, docsPorMes, expiresAt, via, reno
 
   const titulo = renovada
     ? 'Tu membresía está renovada'
-    : 'Tu membresía de Preparar documento está activa';
+    : 'Tu membresía de Edición y Traducción está activa';
 
   return {
     subject: `${titulo} · Acosta Research`,
@@ -889,7 +889,7 @@ function documentosReady({ firstName, planName, docsPorMes, expiresAt, via, reno
       `Hola ${firstName}:`,
       '',
       `${enMayuscula(confirmacion)}. Puedes preparar hasta ${docsPorMes} documentos al mes:`,
-      'corregir tu inglés académico, traducirlo o sacarle el resumen y el abstract.' + hasta,
+      'corregir tu inglés académico o traducirlo.' + hasta,
       '',
       `Empezar: ${enlace}`,
     ].join('\n'),
@@ -898,11 +898,10 @@ function documentosReady({ firstName, planName, docsPorMes, expiresAt, via, reno
       `<p style="margin:0 0 20px;font-size:15px;line-height:1.6">Hola ${escapar(firstName)}:
          ${confirmacionDePago(via, escapar(planName))}. Puedes preparar hasta
          <strong>${docsPorMes} documentos al mes</strong>: corregir tu inglés académico,
-         traducirlo a español, inglés, portugués o chino, o sacarle el resumen y el
-         abstract.${hasta}</p>
+         o traducirlo a español, inglés, portugués o chino.${hasta}</p>
 
        <p style="margin:0;font-size:14px">
-         <a href="${enlace}" style="color:#1a56db">Preparar mi primer documento</a>
+         <a href="${enlace}" style="color:#1a56db">Subir mi primer documento</a>
        </p>`,
       { preheader: `Hasta ${docsPorMes} documentos al mes.` },
     ),

@@ -51,7 +51,7 @@ const SUBIDAS = [
   { ruta: /\/proyectos\/[^/]+\/documento$/, nombre: 'Documento de la tesis (panel)', acepta: ['docx'] },
   { ruta: /\/proyectos\/[^/]+\/plantilla$/, nombre: 'Plantilla de la universidad (panel)', acepta: ['docx'] },
   { ruta: /\/cualitativo\/entrevistas\//, nombre: 'Entrevistas', acepta: ['docx', 'pdf', 'texto'] },
-  { ruta: /\/preparar\/[^/]+$/, nombre: 'Preparar documento', acepta: ['docx'] },
+  { ruta: /\/preparar\/[^/]+$/, nombre: 'Edición y Traducción', acepta: ['docx'] },
   { ruta: /\/pedidos\//, nombre: 'Revisión con asesor', acepta: ['docx'] },
   { ruta: /\/mis-fuentes/, nombre: 'Importar fuentes', acepta: ['texto', 'pdf'] },
   { ruta: /\/payments\/manual/, nombre: 'Comprobante de pago', acepta: ['imagen'] },

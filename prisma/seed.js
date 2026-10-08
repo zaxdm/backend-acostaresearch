@@ -172,9 +172,9 @@ const PLANES = [
   // `durationDays`. Ver `DocPack` y `preparar.membresia`.
   {
     code: 'PREPARAR_MENSUAL',
-    name: 'Preparar documento · mensual',
+    name: 'Edición y Traducción · mensual',
     description:
-      'Un mes para corregir tu inglés académico, traducir a cuatro idiomas y sacar resúmenes. ' +
+      'Un mes para corregir tu inglés académico o traducir a cuatro idiomas. ' +
       'Hasta 10 documentos al mes, del tamaño que sean.',
     kind: 'DOCUMENTO',
     // Un plan de documentos no entrega palabras ni licencia el conector; los
@@ -182,16 +182,19 @@ const PLANES = [
     words: 0,
     productCode: null,
     docsPorMes: 10,
-    priceCents: 2900,
-    // S/29 son unos $7,80. Se cobra algo más para absorber la comisión
-    // internacional de PayPal, igual que en el método.
-    priceUsdCents: 899,
+    // Subido el 8-oct-2026 de S/29 ($8,99) a S/34 y $10 (dólar a 3,44 ese
+    // día; en dólares algo más, por la comisión de PayPal). El modelo cuesta
+    // menos de un dólar al mes aun con diez tesis grandes (Bedrock: ≈0,03 USD
+    // por trece mil palabras); lo que más pesa son las comisiones de PayPal y
+    // Hotmart.
+    priceCents: 3400,
+    priceUsdCents: 1000,
     durationDays: 30,
     sortOrder: 20,
   },
   {
     code: 'PREPARAR_TRIMESTRAL',
-    name: 'Preparar documento · trimestral',
+    name: 'Edición y Traducción · trimestral',
     description:
       'Tres meses con lo mismo, a mejor precio. Hasta 10 documentos cada mes, del tamaño que sean.',
     kind: 'DOCUMENTO',
@@ -201,9 +204,11 @@ const PLANES = [
     // Tres meses por el precio de dos y pico: es el tiempo de un envío a
     // revista de principio a fin, que es cuando de verdad se usan los tres
     // servicios seguidos.
-    priceCents: 6900,
-    listPriceCents: 8700,
-    priceUsdCents: 2090,
+    // S/88 desde el 8-oct-2026 (antes S/69); tachado, tres meses sueltos.
+    // En dólares $26 (S/88 son $25,60 a 3,44, más la comisión de PayPal).
+    priceCents: 8800,
+    listPriceCents: 10200,
+    priceUsdCents: 2600,
     durationDays: 90,
     sortOrder: 21,
   },

@@ -17,7 +17,7 @@
  * desde que se activó la membresía, no el mes del calendario.
  *
  * Con el calendario, quien compra el 28 de septiembre tiene diez documentos
- * hasta el 30 y otros diez el día 1: veinte en cuatro días por S/ 29. Con
+ * hasta el 30 y otros diez el día 1: veinte en cuatro días por S/ 34. Con
  * ventanas propias, el primer mes acaba el 28 de octubre y cada mes de
  * membresía vale exactamente un mes.
  *
@@ -96,7 +96,7 @@ function cupoDe(pack, usados, ahora = new Date()) {
  */
 function porQueNo(pack, usados, ahora = new Date()) {
   if (!pack) {
-    return 'Necesitas una membresía de «Preparar documento» para mandar un trabajo.';
+    return 'Necesitas una membresía de «Edición y Traducción» para mandar un trabajo.';
   }
   if (pack.status === 'REVOKED') {
     return 'Tu membresía está anulada. Escríbenos y lo miramos.';

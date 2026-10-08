@@ -194,6 +194,16 @@ const COMPATIBLES = {
     clave: () => null,
     esfuerzoBajo: false,
   },
+  // Solo con el prefijo explícito: no está en `modelosDeTexto`. Ver `BEDROCK_API_KEY`.
+  bedrock: {
+    nombre: 'Amazon Bedrock',
+    get url() {
+      return `https://bedrock-mantle.${env.BEDROCK_REGION}.api.aws/v1/chat/completions`;
+    },
+    clave: () => env.BEDROCK_API_KEY,
+    // Sin comprobar contra el endpoint real: mejor no mandar lo que no conoce.
+    esfuerzoBajo: false,
+  },
 };
 
 /**

@@ -145,6 +145,14 @@ const schema = z.object({
   // aquí porque es europeo y porque sin clave no hay nada que caducar. Vacío =
   // fuera.
   OVH_MODEL: vacioComoAusente(z.string()),
+  // Amazon Bedrock, por su endpoint compatible con OpenAI («bedrock-mantle»).
+  // NO entra en la carrera del chat: solo se usa si se pide con el prefijo
+  // `bedrock:` —en `PREPARAR_MODELO`, por ejemplo—, para no gastar el crédito
+  // en conversaciones. De pago y sin entrenar con lo que se manda, al revés
+  // que los gratuitos de arriba. Los Claude no van por aquí (Mantle los sirve
+  // con la API de Anthropic, no con la de OpenAI). Puesto el 8-oct-2026.
+  BEDROCK_API_KEY: vacioComoAusente(z.string()),
+  BEDROCK_REGION: z.string().default('us-east-1'),
   // El de los vectores con los que la búsqueda semántica de Scopus ordena por
   // significado. Probado en el servidor el 19-sep-2026: los 002 y
   // text-embedding-004 ya dan 404.

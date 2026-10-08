@@ -22,6 +22,8 @@ process.env.GROQ_MODEL = 'openai/gpt-oss-120b';
 process.env.NVIDIA_API_KEY = 'nvapi-de-prueba';
 process.env.NVIDIA_MODEL = 'openai/gpt-oss-120b';
 process.env.OVH_MODEL = 'gpt-oss-120b';
+process.env.BEDROCK_API_KEY = 'clave-bedrock';
+process.env.BEDROCK_REGION = 'us-west-2';
 
 const env = require('../src/config/env');
 const { generarEnCompatible, generarConRespaldo, modelosDeTexto, olvidarReposos } = require('../src/lib/gemini');
@@ -48,6 +50,7 @@ test('cada proveedor recibe la petición en su propia dirección, con su clave',
   for (const [proveedor, dominio, clave] of [
     ['groq', 'api.groq.com', 'Bearer clave-groq'],
     ['nvidia', 'integrate.api.nvidia.com', 'Bearer nvapi-de-prueba'],
+    ['bedrock', 'bedrock-mantle.us-west-2.api.aws', 'Bearer clave-bedrock'],
   ]) {
     const { pedidos, fetchImpl } = espia(RESPUESTA_COMPATIBLE);
     const { texto } = await generarEnCompatible({ ...unaPregunta, proveedor, modelo: 'm', fetchImpl });
@@ -72,6 +75,13 @@ test('OVH va sin cabecera de clave y sin el parámetro de razonamiento', async (
     pedidos[0].cuerpo.reasoning_effort,
     undefined,
     'no está comprobado que lo acepte, y un parámetro desconocido tira la petición',
+  );
+});
+
+test('Bedrock no entra solo en la carrera del chat: hay que pedirlo con su prefijo', () => {
+  assert.ok(
+    !modelosDeTexto().some((modelo) => modelo.startsWith('bedrock:')),
+    'el crédito de Amazon es para «Preparar documento», no para conversaciones',
   );
 });
 

@@ -81,6 +81,7 @@ let respuestasFetch = [];
 let descuentos = {}; // código → descuento
 let generales = {}; // código del carrito sin plan → registro
 let fallaLaEntregaDe = null; // código de plan cuya entrega revienta
+let veredictoDelOcr = 'OK'; // lo que «lee» el OCR falso en la captura
 
 function conPlan(fila) {
   const plan = Object.values(PLANES).find((p) => p.id === fila.planId);
@@ -129,10 +130,11 @@ falsificar('../src/modules/licensing/license.repository', {
 falsificar('../src/modules/payments/proof.revision', {
   revisarCaptura: async (_buffer, opciones) => {
     llamadas.revisiones.push(opciones);
-    return { veredicto: 'OK', operacionLeida: opciones.operationCode ?? null };
+    return { veredicto: veredictoDelOcr, operacionLeida: opciones.operationCode ?? null };
   },
 });
 falsificar('../src/modules/payments/proof.storage', {
+  comprobarImagen: () => ({ mime: 'image/png' }),
   guardar: async () => ({ path: 'captura-1.png', mime: 'image/png' }),
   borrar: async () => {},
 });
@@ -229,6 +231,7 @@ test.beforeEach(() => {
   descuentos = {};
   generales = {};
   fallaLaEntregaDe = null;
+  veredictoDelOcr = 'OK';
 });
 
 /** La orden de PayPal recién creada. */
@@ -595,9 +598,9 @@ test('en Yape el número de operación es obligatorio: solo cifras, de 6 a 12', 
   assert.equal(intento('123456').success, true);
 });
 
-test('la captura se revisa sola tras enviarla y el veredicto queda en todas las filas', async () => {
+test('la captura se lee antes de abrir el pago y el veredicto queda en todas las filas', async () => {
   await yapeDeCarrito();
-  // Corre en segundo plano: se le da un turno para que termine.
+  // Se apunta sin esperar: se le da un turno para que termine.
   await new Promise((resolve) => setImmediate(resolve));
 
   assert.equal(llamadas.revisiones.length, 1);
@@ -724,4 +727,29 @@ test('la orden admite el plan suelto o la lista, nunca los dos', () => {
     false,
   );
   assert.equal(createOrderSchema.safeParse({ items: [] }).success, false);
+});
+
+test('una imagen que no parece un comprobante no abre ningún pago', async () => {
+  veredictoDelOcr = 'NO_PARECE';
+
+  await assert.rejects(yapeDeCarrito(), /no parece un comprobante/);
+  await assert.rejects(
+    manualService.registrar({
+      userId: 'user-1',
+      planCode: 'METODO',
+      operationCode: '01234567',
+      buffer: Buffer.from('png'),
+    }),
+    /no parece un comprobante/,
+  );
+  assert.equal(filas.size, 0);
+  assert.equal(llamadas.avisos.length, 0);
+});
+
+test('si el OCR duda o no pudo leer, el pago pasa igual', async () => {
+  for (const veredicto of ['DUDOSO', 'SIN_LEER']) {
+    veredictoDelOcr = veredicto;
+    const enviado = await yapeDeCarrito();
+    assert.equal(enviado.status, 'IN_REVIEW');
+  }
 });

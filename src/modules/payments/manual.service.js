@@ -111,17 +111,30 @@ function generarReferencia(prefijo) {
 }
 
 /**
- * Lee la captura ya guardada y apunta el veredicto en sus filas, para que el
- * administrador lo vea en la bandeja. Va después de responder al comprador:
- * el OCR tarda y comparte cola con los reportes de Turnitin. Si falla, la
- * bandeja simplemente no enseña nada.
+ * Lee la captura ANTES de abrir el pago y la rechaza si no parece un
+ * comprobante (8-oct: lo pidió el dueño tras recibir la foto de un auto).
+ *
+ * Solo frena `NO_PARECE`, que es no encontrar ninguna huella. `DUDOSO` pasa,
+ * y `SIN_LEER` (OCR caído o cola llena) también: un fallo nuestro no puede
+ * dejar sin pagar a nadie. El veredicto se devuelve para guardarlo en el pago.
  */
-function revisarEnSegundoPlano(ids, buffer, { amountCents, metodo, operationCode }) {
-  revisarCaptura(buffer, { amountCents, metodo, operationCode, esperaMs: 5 * 60_000 })
-    .then((revision) => paymentRepository.saveProofCheck(ids, revision))
-    .catch((error) => {
-      logger.warn({ err: error, ids }, 'No se pudo apuntar la revisión automática de la captura');
-    });
+async function exigirComprobante(buffer, { amountCents, metodo, operationCode }) {
+  proofStorage.comprobarImagen(buffer);
+  const revision = await revisarCaptura(buffer, { amountCents, metodo, operationCode });
+  if (revision.veredicto === 'NO_PARECE') {
+    throw new AppError(
+      'Esa imagen no parece un comprobante de pago. Sube la pantalla que te muestra Yape (o tu recibo de Western Union) con el monto, la fecha y el número de operación.',
+      { statusCode: 422, code: ERROR_CODES.VALIDATION_ERROR },
+    );
+  }
+  return revision;
+}
+
+/** Apunta el veredicto en las filas. Si falla, la bandeja no lo enseña y ya. */
+function apuntarRevision(ids, revision) {
+  paymentRepository.saveProofCheck(ids, revision).catch((error) => {
+    logger.warn({ err: error, ids }, 'No se pudo apuntar la revisión automática de la captura');
+  });
 }
 
 /** El veredicto guardado, de vuelta a objeto. Null si no hay o no se entiende. */
@@ -298,6 +311,12 @@ const manualService = {
     const rebaja = descuento ? medio.rebaja(descuento) : 0;
     const amountCents = precio - rebaja;
 
+    const revision = await exigirComprobante(buffer, {
+      amountCents,
+      metodo: medio.proveedor,
+      operationCode,
+    });
+
     const payment = await paymentRepository.create({
       userId,
       planId: plan.id,
@@ -365,11 +384,7 @@ const manualService = {
       enlace: `${env.APP_URL}/admin?seccion=yape`,
     });
 
-    revisarEnSegundoPlano([payment.id], buffer, {
-      amountCents,
-      metodo: medio.proveedor,
-      operationCode,
-    });
+    apuntarRevision([payment.id], revision);
 
     return {
       paymentId: payment.id,
@@ -399,6 +414,12 @@ const manualService = {
     const amountCents = lineas.reduce((suma, linea) => suma + linea.amountCents, 0);
     const nombre = carrito.nombreDelCarrito(lineas.map((linea) => linea.plan));
     const cartId = crypto.randomUUID();
+
+    const revision = await exigirComprobante(buffer, {
+      amountCents,
+      metodo: medio.proveedor,
+      operationCode,
+    });
 
     const filas = await paymentRepository.createCart(
       lineas.map((linea) => ({
@@ -473,10 +494,9 @@ const manualService = {
       enlace: `${env.APP_URL}/admin?seccion=yape`,
     });
 
-    revisarEnSegundoPlano(
+    apuntarRevision(
       filas.map((fila) => fila.id),
-      buffer,
-      { amountCents, metodo: medio.proveedor, operationCode },
+      revision,
     );
 
     return {

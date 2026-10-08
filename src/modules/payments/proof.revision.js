@@ -11,12 +11,11 @@ const { leerImagen } = require('../projects/project.reporte-ocr');
  * reporte de Turnitin y se buscan las tres huellas de una constancia: palabras
  * de Yape o del banco, el importe y el número de operación.
  *
- * NO DECIDE NADA. El veredicto es un aviso: al comprador, antes de enviar, para
- * que cambie la imagen si se equivocó; y al administrador, en la bandeja, para
- * que mire con más cuidado. Las capturas varían y el OCR se equivoca, así que
- * bloquear por esto dejaría fuera pagos buenos. Y al revés: una captura que
- * «parece buena» se falsifica igual de fácil; lo que cuenta sigue siendo el
- * número de operación cotejado con el extracto.
+ * SOLO FRENA LO EVIDENTE. Desde el 8-oct `NO_PARECE` (ninguna huella) no se
+ * puede enviar; `DUDOSO` sí, con aviso, porque las capturas varían y el OCR
+ * se equivoca: exigir más dejaría fuera pagos buenos. Y al revés: una captura
+ * que «parece buena» se falsifica igual de fácil; lo que cuenta sigue siendo
+ * el número de operación cotejado con el extracto.
  *
  * Veredictos:
  *   OK         palabras de un comprobante y, además, el importe o la operación.

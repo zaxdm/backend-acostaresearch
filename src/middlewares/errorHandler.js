@@ -95,15 +95,8 @@ function errorHandler(error, req, res, _next) {
     logger.warn({ err: fallo }, 'No se pudo revisar la subida rechazada');
   }
 
-  // 5xx: siempre con traza. 4xx: ruido esperable, nivel warn. También va como
-  // warn el 5xx de un servicio de fuera que no contesta (`avisar: false`):
-  // ALICIA lenta mandó 112 avisos al administrador en dos días (10-oct-2026)
-  // y no había nada que arreglar aquí. `app.js` lee la marca para que la
-  // línea de pino-http tampoco salga como error.
-  const esAjeno = error instanceof AppError && error.avisar === false;
-  if (esAjeno && res.locals) res.locals.falloAjeno = true;
-  const log =
-    statusCode >= 500 && !esAjeno ? logger.error.bind(logger) : logger.warn.bind(logger);
+  // 5xx: siempre con traza. 4xx: ruido esperable, nivel warn.
+  const log = statusCode >= 500 ? logger.error.bind(logger) : logger.warn.bind(logger);
   log(
     {
       err: error,

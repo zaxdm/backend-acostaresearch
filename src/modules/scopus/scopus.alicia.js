@@ -265,15 +265,10 @@ async function consultaParaAlicia(ecuacion, opciones = {}) {
 
 // ── Lo que pide la web ─────────────────────────────────────────────────────
 
-/**
- * No es un fallo nuestro ni se arregla desde aquí: el tesista ve el mensaje y
- * puede reintentar, pero no sale como error en el registro (`avisar: false`).
- */
 const noResponde = () =>
   new AppError('El repositorio ALICIA no responde ahora. Prueba en unos minutos.', {
     statusCode: 503,
     code: ERROR_CODES.ASSISTANT_UNAVAILABLE,
-    avisar: false,
   });
 
 /**

@@ -69,12 +69,6 @@ function createApp() {
   app.use(
     pinoHttp({
       logger,
-      // Lo de siempre —error en un 5xx—, salvo cuando el manejador de errores
-      // marcó la respuesta como fallo de un servicio de fuera: esa no avisa.
-      customLogLevel: (_req, res, err) => {
-        if (res.locals?.falloAjeno) return 'warn';
-        return err || res.statusCode >= 500 ? 'error' : 'info';
-      },
       // La URL del conector ES la licencia, y el `redact` de pino no mira dentro
       // de una cadena. Sin esto, cada llamada dejaba una licencia usable en el
       // journal. Ver `shared/utils/ocultar`.

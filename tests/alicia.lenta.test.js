@@ -1,13 +1,11 @@
 'use strict';
 
 /**
- * ALICIA lenta no es un error nuestro. El 9 y el 10-oct-2026 tardaba veinte
- * segundos por búsqueda y cada una que se perdía mandaba un aviso al
- * administrador: 112 en dos días, sin nada que arreglar aquí. Lo que tiene
- * que ser cierto:
+ * ALICIA lenta. El 9 y el 10-oct-2026 tardaba veinte segundos por búsqueda y
+ * casi todas se perdían. Lo que tiene que ser cierto:
  *
- *   · Un 5xx marcado `avisar: false` responde igual al usuario, pero se anota
- *     como aviso y no como error. Los demás 5xx siguen saliendo como error.
+ *   · «ALICIA no responde» sigue saliendo como error: el aviso al
+ *     administrador es a propósito, es como se entera de que no funciona.
  *   · La misma búsqueda no se le vuelve a pedir a ALICIA durante media hora.
  *   · Pasada la media hora se pide otra vez; si ALICIA no contesta, se enseña
  *     lo guardado. Sin nada guardado, el fallo llega.
@@ -30,14 +28,21 @@ sustituir('../src/config/logger', {
   warn: anotar('warn'),
   error: anotar('error'),
 });
+sustituir('../src/modules/references/alicia.client', {
+  POR_PAGINA: 20,
+  esId: () => true,
+  buscar: async () => {
+    throw new Error('The operation was aborted due to timeout');
+  },
+});
 
 const errorHandler = require('../src/middlewares/errorHandler');
-const { AppError } = require('../src/shared/errors/AppError');
-const { buscarConMemoria } = require('../src/modules/scopus/scopus.alicia');
+const alicia = require('../src/modules/scopus/scopus.alicia');
+
+const { buscarConMemoria } = alicia;
 
 function respuestaFalsa() {
   return {
-    locals: {},
     codigo: null,
     cuerpo: null,
     set() {
@@ -54,30 +59,21 @@ function respuestaFalsa() {
   };
 }
 
-const peticionFalsa = { method: 'POST', originalUrl: '/api/v1/mi-scopus/alicia' };
+test('«ALICIA no responde» es un 503 que sale como error: el aviso se mantiene', async () => {
+  let fallo;
+  try {
+    await alicia.buscar('usuario-1', { consulta: '"sin respuesta"' });
+  } catch (e) {
+    fallo = e;
+  }
+  assert.ok(fallo, 'la búsqueda tiene que fallar');
 
-test('un 503 de un servicio de fuera responde igual, pero no sale como error', () => {
   niveles.length = 0;
   const res = respuestaFalsa();
-  const fallo = new AppError('El repositorio ALICIA no responde ahora.', {
-    statusCode: 503,
-    avisar: false,
-  });
-  errorHandler(fallo, peticionFalsa, res, () => {});
+  errorHandler(fallo, { method: 'POST', originalUrl: '/api/v1/mi-scopus/alicia' }, res, () => {});
 
   assert.equal(res.codigo, 503);
   assert.match(res.cuerpo.error.message, /ALICIA no responde/);
-  assert.equal(res.locals.falloAjeno, true);
-  assert.deepEqual(niveles, ['warn']);
-});
-
-test('los demás 5xx siguen saliendo como error', () => {
-  niveles.length = 0;
-  const res = respuestaFalsa();
-  errorHandler(new AppError('La pasarela no responde.', { statusCode: 503 }), peticionFalsa, res, () => {});
-
-  assert.equal(res.codigo, 503);
-  assert.equal(res.locals.falloAjeno, undefined);
   assert.deepEqual(niveles, ['error']);
 });
 

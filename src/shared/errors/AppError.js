@@ -7,22 +7,12 @@ const { ERROR_CODES } = require('../../config/constants');
  * JSON estable; cualquier otro error se reporta como 500 sin filtrar detalles.
  */
 class AppError extends Error {
-  /**
-   * `avisar: false` es para un 5xx que no es un fallo nuestro ni se arregla
-   * desde aquí —un catálogo de fuera que no contesta—: el usuario recibe su
-   * mensaje igual, pero queda en el registro como aviso y no despierta al
-   * administrador. Ver `middlewares/errorHandler`.
-   */
-  constructor(
-    message,
-    { statusCode = 400, code = ERROR_CODES.INTERNAL_ERROR, details, avisar = true } = {},
-  ) {
+  constructor(message, { statusCode = 400, code = ERROR_CODES.INTERNAL_ERROR, details } = {}) {
     super(message);
     this.name = this.constructor.name;
     this.statusCode = statusCode;
     this.code = code;
     this.details = details;
-    this.avisar = avisar;
     this.isOperational = true;
     Error.captureStackTrace(this, this.constructor);
   }

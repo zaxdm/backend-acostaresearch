@@ -63,6 +63,7 @@ const AdmZip = require('adm-zip');
 
 const { HUECO_RE } = require('./project.citas');
 const zoteroCampos = require('./project.zotero-campos');
+const fuentesDeWord = require('./project.fuentes-word');
 const partesDePlantilla = require('./project.plantilla-partes');
 const indice = require('./project.indice');
 const esquema = require('./project.esquema');
@@ -1302,6 +1303,10 @@ async function armar({
   partes = null,
   citas = null,
   zotero = null,
+  // Las fuentes citadas y su norma, para el gestor de citas del propio Word
+  // («Referencias → Administrar fuentes»). Ver `project.fuentes-word`.
+  fuentes = null,
+  norma = null,
   /**
    * Los PNG de las figuras, por nombre de archivo, cuando el servidor los tiene
    * (ver `figurasDeLaSesion` en `project.service`). Sin ellos, cada figura sale
@@ -1535,6 +1540,7 @@ async function armar({
     });
   }
   if (zotero) buffer = zoteroCampos.coser(buffer, zotero.codigos);
+  if (fuentes?.length) buffer = fuentesDeWord.incrustar(buffer, fuentes, { norma });
   // El índice, relleno: sin esto salía vacío en la vista protegida de Word y
   // en cualquier visor (ver `project.indice`).
   return indice.conIndice(buffer);

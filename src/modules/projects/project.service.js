@@ -957,6 +957,8 @@ async function armarEnLaNorma({ userId, proyecto, capitulos, porClave }) {
       citas: r.citas,
       referencias: r.bibliografia ?? [],
       zotero,
+      fuentes: [...r.usadas.values()],
+      norma: r.norma.id,
     },
     usadas: r.usadas.size,
     perdidas: r.perdidas,
@@ -980,6 +982,8 @@ function armarEnApa(capitulos, porClave) {
     documento: {
       capitulos: resueltos,
       referencias: citas.bibliografiaConCursivas([...usadas.values()]),
+      fuentes: [...usadas.values()],
+      norma: 'apa',
     },
     usadas: usadas.size,
     perdidas: [...perdidas],

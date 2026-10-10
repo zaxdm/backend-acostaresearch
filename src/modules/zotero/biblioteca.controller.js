@@ -83,11 +83,17 @@ const bibliotecaController = {
 
   sincronizar: asyncHandler(async (req, res) => {
     const resultado = await servicio.sincronizar(req.user.id);
+
+    // Las que ya tenía por DOI y ahora son las de su Zotero también cuentan:
+    // sin decirlo, vería subir la cifra con un «ya estaba al día».
+    const partes = [];
+    if (resultado.guardadas > 0) partes.push(`${resultado.guardadas} fuentes nuevas de tu Zotero`);
+    if (resultado.adoptadas > 0) {
+      partes.push(`${resultado.adoptadas} que ya tenías quedaron enlazadas a tu Zotero`);
+    }
+
     return ok(res, resultado, {
-      message:
-        resultado.guardadas > 0
-          ? `${resultado.guardadas} fuentes nuevas de tu Zotero.`
-          : 'Tu biblioteca ya estaba al día.',
+      message: partes.length > 0 ? `${partes.join(' y ')}.` : 'Tu biblioteca ya estaba al día.',
     });
   }),
 

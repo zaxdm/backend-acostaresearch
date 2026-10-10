@@ -51,18 +51,29 @@ async function guardarLote(userId, filas) {
   // tenía tres repetidos así, y cada uno sale dos veces en las búsquedas. Lo
   // nuevo cuyo DOI ya tiene por otro camino no se crea: se cuenta como repetido
   // y se queda la que llegó primero.
+  //
+  // SALVO QUE LO NUEVO VENGA DE SU GESTOR. Un tesista añadió 50 fuentes por DOI
+  // y después conectó su Zotero, donde tenía esas mismas: las 50 se contaron
+  // como repetidas, el panel decía «7 fuentes traídas» de una biblioteca de 54,
+  // Claude le enseñaba 7 «de tu Zotero» y en el Word solo esas 7 citas quedaban
+  // enlazadas a sus ítems (10-oct-2026). La fuente de su Zotero o su Mendeley
+  // ADOPTA la fila que ya estaba: la misma fila, con el mismo `id` —y por
+  // tanto la misma clave de cita, ver `citadas`—, pasa a ser la de su gestor.
   const dois = [...new Set(filas.map((fila) => claveDoi(fila.doi)).filter(Boolean))];
   const conEseDoi =
     dois.length === 0
       ? []
       : await prisma.reference.findMany({
           where: { ownerUserId: userId, doi: { in: dois } },
-          select: { doi: true, sourceRef: true },
+          select: { doi: true, sourceRef: true, origin: true },
         });
-  const doiTomado = new Map(conEseDoi.map((fila) => [claveDoi(fila.doi), fila.sourceRef]));
+  const doiTomado = new Map(
+    conEseDoi.map((fila) => [claveDoi(fila.doi), { sourceRef: fila.sourceRef, origin: fila.origin }]),
+  );
 
   let guardadas = 0;
   let repetidas = 0;
+  let adoptadas = 0;
 
   // De una en una y no en una sentencia gigante: son cientos de filas, no
   // decenas de miles como en el fondo de la casa, y el `upsert` de Prisma acierta
@@ -72,8 +83,16 @@ async function guardarLote(userId, filas) {
     const doi = claveDoi(fila.doi);
     const nueva = !conocidas.has(sourceRef);
 
-    if (nueva && doi && doiTomado.has(doi) && doiTomado.get(doi) !== sourceRef) {
-      repetidas += 1;
+    const tomado = doi ? doiTomado.get(doi) : null;
+    if (nueva && tomado && tomado.sourceRef !== sourceRef) {
+      const laAdopta = DE_SU_GESTOR.has(fila.origin) && !DE_SU_GESTOR.has(tomado.origin);
+      if (laAdopta && (await adoptar(userId, tomado.sourceRef, fila))) {
+        adoptadas += 1;
+        conocidas.add(sourceRef);
+        doiTomado.set(doi, { sourceRef, origin: fila.origin });
+      } else {
+        repetidas += 1;
+      }
       continue;
     }
 
@@ -87,13 +106,49 @@ async function guardarLote(userId, filas) {
     if (nueva) {
       guardadas += 1;
       conocidas.add(sourceRef);
-      if (doi) doiTomado.set(doi, sourceRef);
+      if (doi) doiTomado.set(doi, { sourceRef, origin: fila.origin });
     } else {
       repetidas += 1;
     }
   }
 
-  return { guardadas, repetidas };
+  // `adoptadas` solo aparece cuando las hubo: quien no viene de un gestor
+  // recibe lo de siempre.
+  return adoptadas > 0 ? { guardadas, repetidas, adoptadas } : { guardadas, repetidas };
+}
+
+/** Lo que el tesista trae de su Zotero o su Mendeley conectados. */
+const DE_SU_GESTOR = new Set(['ZOTERO', 'MENDELEY']);
+
+/**
+ * La fila que ya tenía por DOI pasa a ser la de su gestor.
+ *
+ * Se cambia su identidad (`sourceRef`, `origin`) y se refresca la ficha con lo
+ * del gestor, que es lo que él cuida. Pero un campo que el gestor trae vacío no
+ * borra el que ya había: el resumen que se trajo por DOI vale más que ninguno.
+ * No se toca el `id`: las citas de sus capítulos siguen resolviendo.
+ */
+async function adoptar(userId, sourceRefAnterior, fila) {
+  const anterior = await prisma.reference.findUnique({
+    where: { ownerUserId_sourceRef: { ownerUserId: userId, sourceRef: sourceRefAnterior } },
+  });
+  if (!anterior) return false;
+
+  const vacio = (valor) => valor === null || valor === undefined || valor === '';
+  const datos = {};
+  let seConservoAlgo = false;
+  for (const [campo, valor] of Object.entries(fila)) {
+    if (vacio(valor) && !vacio(anterior[campo])) seConservoAlgo = true;
+    else datos[campo] = valor;
+  }
+  // El texto de búsqueda se arma con la ficha: si se quedó algo de la anterior
+  // (el resumen, casi siempre), el suyo es el que lo incluye.
+  if (seConservoAlgo && String(anterior.busqueda ?? '').length > String(fila.busqueda ?? '').length) {
+    delete datos.busqueda;
+  }
+
+  await prisma.reference.update({ where: { id: anterior.id }, data: datos });
+  return true;
 }
 
 /** El DOI para comparar: sin espacios y en minúsculas, que es como es único. */

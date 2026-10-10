@@ -97,7 +97,8 @@ const cliente = {
   TODA_LA_BIBLIOTECA: '*',
   colecciones: async () => zotero.colecciones,
   cuantasEnLaBiblioteca: async () => zotero.enLaBiblioteca,
-  paginasDeItems: async function* () {
+  paginasDeItems: async function* (_contexto, { desdeVersion }) {
+    zotero.pedidoDesde = desdeVersion;
     if (zotero.revocada) {
       const fallo = new Error('Zotero ya no acepta esta conexión.');
       fallo.revocada = true;
@@ -117,8 +118,12 @@ const propias = {
   TOPE_POR_USUARIO: 5000,
   contar: async () => propias.yaTiene,
   yaTiene: 0,
+  adoptadasPorLote: 0,
   guardarLote: async (_userId, filas) => {
     escritas.push(...filas);
+    if (propias.adoptadasPorLote > 0) {
+      return { guardadas: 0, repetidas: 0, adoptadas: propias.adoptadasPorLote };
+    }
     return { guardadas: filas.length, repetidas: 0 };
   },
 };
@@ -151,6 +156,7 @@ const articulo = (clave, titulo) => ({
 function empezar({ coleccion = 'ABCD1234', version = 0 } = {}) {
   escritas.length = 0;
   propias.yaTiene = 0;
+  propias.adoptadasPorLote = 0;
   Object.assign(baseDeDatos, {
     cuenta: {
       userId: 'u1',
@@ -171,7 +177,7 @@ function empezar({ coleccion = 'ABCD1234', version = 0 } = {}) {
     borradoCon: null,
     cuantasDeZotero: 0,
   });
-  Object.assign(zotero, { items: [], clavesVivas: [], revocada: false });
+  Object.assign(zotero, { items: [], clavesVivas: [], revocada: false, pedidoDesde: null });
 }
 
 // ── Las pruebas ─────────────────────────────────────────────────────────────
@@ -369,4 +375,31 @@ test('la limpieza no se lleva lo que ya cita en sus capítulos', async () => {
 
   assert.deepEqual(baseDeDatos.citadasConservadas, ['AR5CCC19E0']);
   citadas.claves = [];
+});
+
+// ── Cuando aquí hay menos de las que tiene allí (10-oct-2026) ───────────────
+
+test('con las mismas aquí que allí, la pasada sigue siendo incremental', async () => {
+  empezar({ version: 361 });
+  zotero.clavesVivas = ['AAAA1111', 'BBBB2222'];
+  baseDeDatos.cuantasDeZotero = 2;
+
+  await servicio.sincronizar('u1');
+
+  assert.equal(zotero.pedidoDesde, 361);
+});
+
+test('si aquí hay menos de las que tiene en Zotero, se trae todo desde el principio', async () => {
+  empezar({ version: 361 });
+  zotero.items = [articulo('AAAA1111', 'Una'), articulo('BBBB2222', 'Otra')];
+  zotero.clavesVivas = ['AAAA1111', 'BBBB2222'];
+  // Le quedó una sola: la otra ya la tenía por DOI y no se guardó como de Zotero.
+  baseDeDatos.cuantasDeZotero = 1;
+  propias.adoptadasPorLote = 1;
+
+  const resultado = await servicio.sincronizar('u1');
+
+  assert.equal(zotero.pedidoDesde, 0, 'sin «desde»: la incremental nunca la habría traído');
+  assert.equal(resultado.adoptadas, 1);
+  assert.equal(baseDeDatos.pasada.libraryVersion, 4242);
 });

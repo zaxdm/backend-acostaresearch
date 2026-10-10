@@ -216,9 +216,22 @@ async function correr(userId) {
   }
 
   const contexto = contextoDe(cuenta);
-  const desde = cuenta.libraryVersion;
-  let version = desde;
+
+  // SI AQUÍ HAY MENOS DE LAS QUE TIENE ALLÍ, SE TRAE TODO OTRA VEZ.
+  //
+  // La pasada incremental solo pide lo tocado desde la última, y da por hecho
+  // que lo anterior ya está aquí. No siempre: a un tesista con 54 fuentes le
+  // quedaron 7, porque las demás ya las tenía por DOI y entonces no se
+  // guardaban como suyas de Zotero (10-oct-2026). Como en Zotero no las volvió
+  // a tocar, ninguna pasada posterior las habría traído nunca. Contar antes es
+  // una petición, y arregla esa cuenta y cualquier pasada que se quedara a medias.
+  const alli = await cliente.clavesDeLaColeccion(contexto, cuenta.collectionKey);
+  const aqui = await repositorio.contarDeZotero(userId, cuenta.zoteroUserId);
+  const desde = aqui < alli.length ? 0 : cuenta.libraryVersion;
+
+  let version = cuenta.libraryVersion;
   let guardadas = 0;
+  let adoptadas = 0;
 
   const yaTiene = await propiasRepository.contar(userId);
   let cupo = propiasRepository.TOPE_POR_USUARIO - yaTiene;
@@ -250,6 +263,7 @@ async function correr(userId) {
     if (lote.length > 0) {
       const escrito = await propiasRepository.guardarLote(userId, lote);
       guardadas += escrito.guardadas;
+      adoptadas += escrito.adoptadas ?? 0;
       cupo -= escrito.guardadas;
     }
     if (cupo <= 0) break;
@@ -271,11 +285,11 @@ async function correr(userId) {
   await repositorio.guardarPasada(userId, { libraryVersion: version, lastCount: total });
 
   logger.info(
-    { userId, desde, hasta: version, guardadas, retiradas, total },
+    { userId, desde, hasta: version, guardadas, adoptadas, retiradas, total },
     'Biblioteca de un comprador sincronizada desde su Zotero',
   );
 
-  return { guardadas, retiradas, total };
+  return { guardadas, adoptadas, retiradas, total };
 }
 
 /**

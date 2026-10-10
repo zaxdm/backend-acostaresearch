@@ -104,6 +104,10 @@ const licenseController = {
       );
     }
 
+    if (resultado.renovada) {
+      return created(res, resultado, 'Acceso renovado. Tu conector de siempre sigue funcionando.');
+    }
+
     return created(res, resultado, 'Licencia activada. Pega la URL en Claude para empezar.');
   }),
 

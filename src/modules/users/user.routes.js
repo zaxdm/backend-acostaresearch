@@ -12,6 +12,8 @@ const {
   changePasswordSchema,
   createAdminSchema,
   deleteAccountSchema,
+  cambiarEstadoSchema,
+  idDeUsuarioSchema,
 } = require('./user.schema');
 const userController = require('./user.controller');
 
@@ -59,5 +61,13 @@ router.post(
   userController.createAdmin,
 );
 router.get('/', authorize(ROLES.ADMIN), validate({ query: listQuerySchema }), userController.list);
+
+// Suspender o reactivar una cuenta. Corta sus sesiones y su conector al momento.
+router.patch(
+  '/:id/status',
+  authorize(ROLES.ADMIN),
+  validate({ params: idDeUsuarioSchema, body: cambiarEstadoSchema }),
+  userController.cambiarEstado,
+);
 
 module.exports = router;

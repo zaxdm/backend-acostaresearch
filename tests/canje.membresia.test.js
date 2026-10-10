@@ -51,6 +51,8 @@ sustituir('../src/lib/prisma', {
   user: {
     findUnique: async () => ({ email: 'ana@example.com', firstName: 'Ana' }),
   },
+  // Sin licencia previa de ese producto: el canje emite una nueva.
+  license: { findFirst: async () => null },
 });
 
 sustituir('../src/lib/mailer', {

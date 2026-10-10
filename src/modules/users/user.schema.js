@@ -75,6 +75,15 @@ const createAdminSchema = z.object({
   password: password.optional(),
 });
 
+/** Suspender o reactivar una cuenta desde el panel. `DELETED` no se elige: es del dueño. */
+const cambiarEstadoSchema = z.object({
+  status: z.enum(['ACTIVE', 'SUSPENDED'], {
+    errorMap: () => ({ message: 'El estado tiene que ser ACTIVE o SUSPENDED.' }),
+  }),
+});
+
+const idDeUsuarioSchema = z.object({ id: z.string().uuid('Ese identificador no es válido.') });
+
 /**
  * Borrar la propia cuenta.
  *
@@ -106,4 +115,6 @@ module.exports = {
   changePasswordSchema,
   createAdminSchema,
   deleteAccountSchema,
+  cambiarEstadoSchema,
+  idDeUsuarioSchema,
 };

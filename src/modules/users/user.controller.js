@@ -61,6 +61,26 @@ const userController = {
     return created(res, resultado, 'Cuenta de administrador creada.');
   }),
 
+  cambiarEstado: asyncHandler(async (req, res) => {
+    const { user, cambiado } = await userService.cambiarEstadoPorAdmin({
+      userId: req.params.id,
+      status: req.body.status,
+      adminId: req.user.id,
+    });
+    const suspendida = user.status === 'SUSPENDED';
+    return ok(
+      res,
+      { user },
+      {
+        message: !cambiado
+          ? `La cuenta ya estaba ${suspendida ? 'suspendida' : 'activa'}.`
+          : suspendida
+            ? 'Cuenta suspendida. Sus sesiones y su conector dejan de funcionar ahora.'
+            : 'Cuenta reactivada. Tiene que volver a iniciar sesión.',
+      },
+    );
+  }),
+
   list: asyncHandler(async (req, res) => {
     const { items, meta } = await userService.list(req.query);
     return ok(res, { users: items, meta });

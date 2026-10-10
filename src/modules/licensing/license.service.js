@@ -95,6 +95,32 @@ function avisarDeLaEntrega({ userId, planName, connectorUrl, expiresAt }) {
 }
 
 /**
+ * Al comprador, cuando canjea un código de un producto que ya tenía: se le
+ * alargó la licencia y no hay URL nueva que mandarle. Sin await, como el de la
+ * entrega.
+ */
+function avisarDeLaRenovacion({ userId, planName, expiresAt }) {
+  prisma.user
+    .findUnique({ where: { id: userId }, select: { email: true, firstName: true } })
+    .then((usuario) => {
+      if (!usuario?.email) return null;
+
+      return sendMail({
+        to: usuario.email,
+        ...plantillas.licenseRenewed({
+          firstName: usuario.firstName,
+          planName,
+          expiresAt,
+          via: 'codigo',
+        }),
+      });
+    })
+    .catch((error) => {
+      logger.error({ err: error, userId }, 'No se pudo enviar el correo de la renovación por código');
+    });
+}
+
+/**
  * Al comprador, cuando su licencia pasa a otro producto.
  *
  * Se cuentan los capítulos para poder decirle cuántos tiene ahora: «tienes 19
@@ -902,8 +928,59 @@ const licenseService = {
       }
     }
 
-    const token = generateOpaqueToken(32);
     const pago = pagoDelCodigo({ registro, contrato, userId });
+
+    // ¿Ya tiene este producto? Entonces el código RENUEVA: se le alarga la
+    // licencia que tiene en vez de emitirle otra, igual que en la compra por la
+    // web (`prepareForPurchase`). Antes el canje creaba siempre una nueva y el
+    // comprador se quedaba con dos licencias activas y dos conectores del
+    // mismo método, el segundo sin su tesis dentro.
+    //
+    // Una revocada no cuenta: canjear no deshace una revocación por uso
+    // compartido. En ese caso se emite una limpia, como hasta ahora.
+    const vigente = await prisma.license.findFirst({
+      where: { userId, productCode: registro.productCode, status: { not: 'REVOKED' } },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, expiresAt: true },
+    });
+
+    if (vigente) {
+      // Desde su caducidad si aún no llegó, y desde hoy si ya pasó. Una licencia
+      // sin caducidad se queda sin ella: canjear no puede empeorar lo que tenía.
+      const sinCaducidad = vigente.expiresAt === null;
+      const desde = vigente.expiresAt > new Date() ? vigente.expiresAt : new Date();
+      const expiresAt =
+        sinCaducidad || !(contrato.durationDays > 0) ? null : addDays(desde, contrato.durationDays);
+
+      const renovada = await licenseRepository.redeemCon({
+        codeId: registro.id,
+        userId,
+        pago,
+        entregar: async (tx) => ({
+          fila: await licenseRepository.extend(vigente.id, { expiresAt, topes: contrato.topes }, tx),
+          enlace: { licenseId: vigente.id },
+        }),
+      });
+
+      if (!renovada) throw codigoInvalido(ERROR_CODES.LICENSE_CODE_USED);
+
+      logger.info(
+        { userId, licenseId: vigente.id, producto: registro.productCode },
+        'Código canjeado: licencia renovada',
+      );
+
+      avisarDeLaRenovacion({ userId, planName: contrato.nombre, expiresAt: renovada.expiresAt });
+
+      // Sin `connectorUrl`: su URL de siempre sigue valiendo. Y sin premio de
+      // referido, que es por traer a alguien nuevo.
+      return {
+        license: { ...renovada, productName: contrato.nombre },
+        connectorUrl: null,
+        renovada: true,
+      };
+    }
+
+    const token = generateOpaqueToken(32);
     const licencia = await licenseRepository.redeem({
       codeId: registro.id,
       // El cobro que se apuntó al generar el código. Se pasa al repositorio para
@@ -947,7 +1024,9 @@ const licenseService = {
     // del referido. Una cortesía no (no trajo a nadie que pagara).
     if (pago) referidosService.premiarCompra({ userId, licenseId: licencia.id });
 
-    return { license: licencia, connectorUrl: url };
+    // Con el nombre de venta: la pantalla del canje dice «Tu acceso a … está
+    // activo», y sin esto ponía el código interno del producto.
+    return { license: { ...licencia, productName: contrato.nombre }, connectorUrl: url };
   },
 
   /**

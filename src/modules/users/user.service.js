@@ -386,6 +386,39 @@ const userService = {
    * hacer sin querer: el correo se teclea, y un dedo puede escribir el de un
    * cliente.
    */
+  /**
+   * El administrador suspende una cuenta o la vuelve a abrir.
+   *
+   * Suspender corta en la petición siguiente: `authenticate` mira el estado en
+   * cada llamada y el conector también, y el trigger `users_session_version`
+   * sube la versión, así que reactivarla después no resucita las sesiones que
+   * tenía. Se cierran además sus refresh tokens, para que no quede ninguno
+   * vivo en la tabla.
+   *
+   * Nadie se suspende a sí mismo: dejaría el panel sin la única persona que
+   * estaba dentro. Y una cuenta borrada por su dueño no se reabre desde aquí:
+   * ya no tiene datos que devolverle.
+   */
+  async cambiarEstadoPorAdmin({ userId, status, adminId }) {
+    if (userId === adminId) {
+      throw new ConflictError('No puedes suspender tu propia cuenta.');
+    }
+
+    const usuario = await userRepository.findById(userId);
+    if (!usuario) throw new NotFoundError('Esa cuenta no existe.');
+    if (usuario.status === 'DELETED') {
+      throw new ConflictError('Esa cuenta la eliminó su dueño y no se puede cambiar.');
+    }
+    if (usuario.status === status) return { user: usuario, cambiado: false };
+
+    const user = await userRepository.update(userId, { status });
+    await tokenRepository.revokeAllForUser(userId);
+
+    logger.warn({ userId, status, adminId }, 'Estado de una cuenta cambiado por un administrador');
+
+    return { user, cambiado: true };
+  },
+
   async createAdmin({ firstName, lastName, email, password }, creadoPor) {
     const existe = await userRepository.findByEmail(email);
     if (existe) {

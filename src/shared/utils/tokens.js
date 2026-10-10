@@ -4,9 +4,9 @@ const crypto = require('node:crypto');
 const jwt = require('jsonwebtoken');
 const env = require('../../config/env');
 
-/** Access token: JWT firmado, corto, sin estado en la BD. */
-function signAccessToken({ userId, role, email }) {
-  return jwt.sign({ role, email, typ: 'access' }, env.JWT_ACCESS_SECRET, {
+/** JWT corto; authenticate contrasta su versión con la cuenta vigente. */
+function signAccessToken({ userId, role, email, sessionVersion = 0 }) {
+  return jwt.sign({ role, email, sessionVersion, typ: 'access' }, env.JWT_ACCESS_SECRET, {
     subject: userId,
     expiresIn: env.JWT_ACCESS_TTL,
     issuer: env.JWT_ISSUER,

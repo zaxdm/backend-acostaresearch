@@ -69,7 +69,7 @@ falsificar('../src/modules/billing/billing.service', { getBalance: async () => (
 falsificar('../src/modules/billing/discount.service', {
   resolve: async ({ code }) => (code ? descuentoFalso : null),
 });
-falsificar('../src/modules/licensing/license.repository', { findById: async () => null });
+falsificar('../src/modules/licensing/license.repository', { findById: async () => null, listForUser: async () => [] });
 falsificar('../src/modules/payments/proof.storage', { borrar: async () => {} });
 falsificar('../src/modules/payments/payment.delivery', {
   entregarPago: async ({ payment, captura, estadoEsperado }) => {

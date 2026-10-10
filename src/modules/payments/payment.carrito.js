@@ -3,6 +3,7 @@
 const { ERROR_CODES } = require('../../config/constants');
 const billingRepository = require('../billing/billing.repository');
 const { enPrueba } = require('../billing/plan.visibilidad');
+const { comprobarRenovacion } = require('./payment.renovacion');
 const discountService = require('../billing/discount.service');
 const { AppError, NotFoundError } = require('../../shared/errors/AppError');
 
@@ -60,7 +61,7 @@ function noComprable(mensaje) {
  * Se rechaza el carrito entero si una línea falla: cobrar una parte de lo que
  * eligió no es lo que pidió.
  */
-async function resolverLineas(items, { precio, rebaja, medio, discountCode }) {
+async function resolverLineas(items, { precio, rebaja, medio, discountCode, userId }) {
   if (!Array.isArray(items) || items.length < 2) {
     throw noComprable('Un carrito necesita al menos dos productos.');
   }
@@ -86,6 +87,8 @@ async function resolverLineas(items, { precio, rebaja, medio, discountCode }) {
       throw noComprable(`«${plan.name}» ya está en el carrito.`);
     }
     productos.add(producto);
+
+    await comprobarRenovacion(userId, plan);
 
     const base = precio(plan);
     if (!base || base <= 0) {

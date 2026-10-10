@@ -14,6 +14,7 @@ const proofStorage = require('./proof.storage');
 const constancia = require('./payment.constancia');
 const { entregarPago } = require('./payment.delivery');
 const carrito = require('./payment.carrito');
+const { comprobarRenovacion } = require('./payment.renovacion');
 const { avisarAlAdmin } = require('../../lib/notify');
 const { getProvider, enabledProviders } = require('./providers');
 const { AppError, NotFoundError, ValidationError } = require('../../shared/errors/AppError');
@@ -308,6 +309,8 @@ const paymentService = {
       throw new NotFoundError(`No existe un plan activo con el código ${planCode}.`);
     }
 
+    await comprobarRenovacion(userId, plan);
+
     const precioBase = provider.priceForPlan(plan);
     if (!precioBase || precioBase <= 0) {
       throw new AppError(`El plan ${plan.name} no se puede pagar con ${provider.label}.`, {
@@ -397,6 +400,7 @@ const paymentService = {
     }
 
     const { lineas, delTotal } = await carrito.resolverLineas(items, {
+      userId,
       precio: (plan) => provider.priceForPlan(plan),
       rebaja: (descuento) => rebajaEnLaMoneda(descuento, provider.currency),
       medio: provider.label,

@@ -124,6 +124,7 @@ falsificar('../src/modules/billing/discount.service', {
   }),
 });
 falsificar('../src/modules/licensing/license.repository', {
+  listForUser: async () => [],
   findById: async (id) => ({ id, productCode: 'X' }),
 });
 // El OCR de verdad carga tesseract: aquí basta con apuntar qué se le pidió.

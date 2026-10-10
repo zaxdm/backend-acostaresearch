@@ -16,6 +16,7 @@ const proofStorage = require('./proof.storage');
 const { revisarCaptura } = require('./proof.revision');
 const { entregarPago } = require('./payment.delivery');
 const carrito = require('./payment.carrito');
+const { comprobarRenovacion } = require('./payment.renovacion');
 const { AppError, NotFoundError } = require('../../shared/errors/AppError');
 
 /**
@@ -299,6 +300,8 @@ const manualService = {
       throw new NotFoundError(`No existe un plan activo con el código ${planCode}.`);
     }
 
+    await comprobarRenovacion(userId, plan);
+
     const precio = medio.precio(plan);
     if (!precio || precio <= 0) {
       throw new AppError(`El plan ${plan.name} no se vende por ${medio.nombre}.`, {
@@ -406,6 +409,7 @@ const manualService = {
   async registrarCarrito({ userId, items, discountCode, operationCode, buffer, metodo }) {
     const medio = medioDe(metodo);
     const { lineas, delTotal } = await carrito.resolverLineas(items, {
+      userId,
       precio: medio.precio,
       rebaja: medio.rebaja,
       medio: medio.nombre,

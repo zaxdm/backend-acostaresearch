@@ -10,6 +10,7 @@ const publicSelect = {
   lastName: true,
   role: true,
   status: true,
+  sessionVersion: true,
   emailVerifiedAt: true,
   lastLoginAt: true,
   createdAt: true,

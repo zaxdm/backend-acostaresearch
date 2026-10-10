@@ -33,13 +33,14 @@ const {
 } = require('../../shared/errors/AppError');
 
 /** Emite un refresh token nuevo y devuelve el valor en claro (solo aquí existe). */
-async function issueRefreshToken({ userId, familyId, context }) {
+async function issueRefreshToken({ userId, familyId, context, sessionVersion = 0 }) {
   const token = generateOpaqueToken();
   const expiresAt = addDays(new Date(), env.JWT_REFRESH_TTL_DAYS);
 
   const data = {
     tokenHash: hashToken(token),
     familyId: familyId ?? crypto.randomUUID(),
+    sessionVersion,
     userId,
     expiresAt,
     ip: context?.ip ?? null,
@@ -176,14 +177,14 @@ const authService = {
       );
     }
 
-    const { token, expiresAt, data } = await issueRefreshToken({ userId: user.id, context });
+    const { token, expiresAt, data } = await issueRefreshToken({ userId: user.id, context, sessionVersion: user.sessionVersion ?? 0 });
     await tokenRepository.createRefreshToken(data);
 
     const publicUser = await userRepository.update(user.id, { lastLoginAt: new Date() });
 
     return {
       user: publicUser,
-      accessToken: signAccessToken({ userId: user.id, role: user.role, email: user.email }),
+      accessToken: signAccessToken({ userId: user.id, role: user.role, email: user.email, sessionVersion: user.sessionVersion ?? 0 }),
       refreshToken: token,
       refreshExpiresAt: expiresAt,
     };
@@ -221,9 +222,15 @@ const authService = {
       throw new ForbiddenError('La cuenta no está activa.', ERROR_CODES.ACCOUNT_SUSPENDED);
     }
 
+    if ((stored.sessionVersion ?? 0) !== (stored.user.sessionVersion ?? 0)) {
+      await tokenRepository.revokeAllForUser(stored.userId);
+      throw new UnauthorizedError('La sesión fue invalidada. Inicia sesión de nuevo.', ERROR_CODES.INVALID_TOKEN);
+    }
+
     const { token, expiresAt, data } = await issueRefreshToken({
       userId: stored.userId,
       familyId: stored.familyId,
+      sessionVersion: stored.user.sessionVersion ?? 0,
       context,
     });
     await tokenRepository.rotate(stored.id, data);
@@ -232,6 +239,7 @@ const authService = {
       accessToken: signAccessToken({
         userId: stored.user.id,
         role: stored.user.role,
+        sessionVersion: stored.user.sessionVersion ?? 0,
         email: stored.user.email,
       }),
       refreshToken: token,
@@ -413,7 +421,7 @@ const authService = {
       throw new ForbiddenError('Tu cuenta está suspendida.', ERROR_CODES.ACCOUNT_SUSPENDED);
     }
 
-    const { token, expiresAt, data } = await issueRefreshToken({ userId: user.id, context });
+    const { token, expiresAt, data } = await issueRefreshToken({ userId: user.id, context, sessionVersion: user.sessionVersion ?? 0 });
     await tokenRepository.createRefreshToken(data);
 
     const publicUser = await userRepository.update(user.id, { lastLoginAt: new Date() });
@@ -421,7 +429,7 @@ const authService = {
     return {
       user: publicUser,
       creada,
-      accessToken: signAccessToken({ userId: user.id, role: user.role, email: user.email }),
+      accessToken: signAccessToken({ userId: user.id, role: user.role, email: user.email, sessionVersion: user.sessionVersion ?? 0 }),
       refreshToken: token,
       refreshExpiresAt: expiresAt,
     };

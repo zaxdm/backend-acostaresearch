@@ -53,6 +53,8 @@ model User {
   lastName     String     @db.VarChar(80)
   role         Role       @default(USER)
   status       UserStatus @default(ACTIVE)
+  /// Se incrementa al cambiar rol o estado para invalidar sesiones existentes.
+  sessionVersion Int @default(0)
 
   emailVerifiedAt DateTime?
   lastLoginAt     DateTime?
@@ -335,6 +337,7 @@ model Grupo {
 /// `familyId` agrupa toda la cadena de rotaciones de una sesión, de modo que al
 /// detectar la reutilización de un token ya rotado se revoca la familia completa.
 model RefreshToken {
+  sessionVersion Int @default(0)
   id        String @id @default(uuid()) @db.Char(36)
   tokenHash String @unique @db.Char(64)
   familyId  String @db.Char(36)

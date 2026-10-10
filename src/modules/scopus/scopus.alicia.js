@@ -265,11 +265,50 @@ async function consultaParaAlicia(ecuacion, opciones = {}) {
 
 // ── Lo que pide la web ─────────────────────────────────────────────────────
 
+/**
+ * No es un fallo nuestro ni se arregla desde aquí: el tesista ve el mensaje y
+ * puede reintentar, pero no sale como error en el registro (`avisar: false`).
+ */
 const noResponde = () =>
   new AppError('El repositorio ALICIA no responde ahora. Prueba en unos minutos.', {
     statusCode: 503,
     code: ERROR_CODES.ASSISTANT_UNAVAILABLE,
+    avisar: false,
   });
+
+/**
+ * Lo que ALICIA ya contestó. Cuando va lenta tarda veinte segundos por
+ * página, y la misma búsqueda se repite: al volver de la página 2 a la 1, al
+ * quitar un filtro, o entre tesistas del mismo tema. Media hora vale como
+ * recién pedido; pasado ese tiempo se vuelve a pedir, pero lo guardado se
+ * sigue enseñando si ALICIA no contesta: mejor una lista de hace un rato que
+ * un «no responde».
+ */
+const respuestas = new Map();
+const RESPUESTA_FRESCA_MS = 30 * 60 * 1000;
+const TOPE_DE_RESPUESTAS = 300;
+
+async function buscarConMemoria(peticion, { buscarEnAlicia = alicia.buscar, ahora = Date.now } = {}) {
+  const { consulta, desde = null, hasta = null, pagina = 1, tipos = [] } = peticion;
+  const clave = JSON.stringify([consulta, desde, hasta, pagina, [...tipos].sort()]);
+
+  const guardada = respuestas.get(clave);
+  if (guardada && ahora() - guardada.en < RESPUESTA_FRESCA_MS) return guardada.respuesta;
+
+  let respuesta;
+  try {
+    respuesta = await buscarEnAlicia(peticion);
+  } catch (fallo) {
+    if (!guardada) throw fallo;
+    logger.warn({ err: fallo.message }, 'ALICIA: no contestó, se enseña lo guardado');
+    return guardada.respuesta;
+  }
+
+  respuestas.delete(clave);
+  if (respuestas.size >= TOPE_DE_RESPUESTAS) respuestas.delete(respuestas.keys().next().value);
+  respuestas.set(clave, { en: ahora(), respuesta });
+  return respuesta;
+}
 
 const sourceRefDe = (id) => `alicia:${id}`.slice(0, 200);
 
@@ -291,7 +330,7 @@ async function buscar(userId, { ecuacion, consulta, pagina = 1, tipos = [], desd
 
   let respuesta;
   try {
-    respuesta = await alicia.buscar({ ...armada, pagina, tipos });
+    respuesta = await buscarConMemoria({ ...armada, pagina, tipos });
   } catch (fallo) {
     logger.warn({ err: fallo.message }, 'ALICIA: la búsqueda falló');
     throw noResponde();
@@ -418,4 +457,12 @@ async function importar(userId, { ids }) {
   };
 }
 
-module.exports = { buscar, importar, consultaParaAlicia, leer, comoFila, MAXIMO_POR_IMPORTACION };
+module.exports = {
+  buscar,
+  importar,
+  consultaParaAlicia,
+  buscarConMemoria,
+  leer,
+  comoFila,
+  MAXIMO_POR_IMPORTACION,
+};

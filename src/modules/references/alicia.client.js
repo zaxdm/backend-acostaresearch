@@ -26,8 +26,12 @@ const BASE = 'https://alicia.concytec.gob.pe/vufind/api/v1';
  * con la tabla de Scopus, que ordena por citas; va en su propio bloque.
  */
 
-/** Cuánto se espera como mucho. Es un servicio del Estado y a veces va lento. */
-const TIEMPO_LIMITE_MS = 15_000;
+/**
+ * Cuánto se espera como mucho. Es un servicio del Estado y a veces va lento:
+ * el 9 y el 10-oct-2026 tardaba de 9 a 23 segundos en contestar bien, y con el
+ * tope de 15 que había casi todas las búsquedas se daban por perdidas.
+ */
+const TIEMPO_LIMITE_MS = 30_000;
 
 /** Los que se enseñan por página. */
 const POR_PAGINA = 20;
@@ -77,6 +81,18 @@ const PAUSA_ANTES_DE_REINTENTAR_MS = 1500;
  */
 class FalloPasajero extends Error {}
 
+/**
+ * El JSON de la respuesta, sin lo que su PHP escribe delante.
+ *
+ * Cuando su servidor no puede guardar la sesión contesta bien, pero con el
+ * aviso pegado antes: «Cannot write session to /tmp/vufind_sessions/sess_…»
+ * y a continuación el JSON entero (10-oct-2026). Se lee desde la primera llave.
+ */
+function leerJson(texto) {
+  const inicio = texto.indexOf('{');
+  return JSON.parse(inicio > 0 ? texto.slice(inicio) : texto);
+}
+
 async function pedirUnaVez(url, ruta) {
   let res;
   try {
@@ -96,7 +112,7 @@ async function pedirUnaVez(url, ruta) {
 
   let json;
   try {
-    json = await res.json();
+    json = leerJson(await res.text());
   } catch (fallo) {
     // Cuando su servidor está caído contesta 200 con una página HTML.
     throw new FalloPasajero(fallo.message);

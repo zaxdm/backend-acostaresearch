@@ -7,6 +7,7 @@
  *     JSON) se repite una vez, y si la segunda va bien el tesista ni se entera.
  *   · Si la segunda también falla, el error llega como antes.
  *   · Un 4xx no se repite: la misma pregunta daría lo mismo.
+ *   · Si su PHP escribe un aviso delante del JSON, el JSON se lee igual.
  */
 
 const test = require('node:test');
@@ -29,7 +30,7 @@ test.afterEach(() => {
 const respuesta = (status, cuerpo) => ({
   ok: status >= 200 && status < 300,
   status,
-  json: async () => (typeof cuerpo === 'string' ? JSON.parse(cuerpo) : cuerpo),
+  text: async () => (typeof cuerpo === 'string' ? cuerpo : JSON.stringify(cuerpo)),
 });
 
 /** Un fetch que contesta, por turnos, lo que se le pase. */
@@ -64,6 +65,19 @@ test('una página HTML en vez de JSON también se reintenta', async () => {
   const json = await pedir('/search', [], SIN_PAUSA);
   assert.equal(json.resultCount, 1);
   assert.equal(llamadas.length, 2);
+});
+
+test('el aviso de PHP delante del JSON no estropea la respuesta', async () => {
+  const llamadas = fetchPorTurnos(
+    respuesta(
+      200,
+      'Cannot write session to /tmp/vufind_sessions/sess_0si4e2kf335r4ped2ith\n' +
+        '{"resultCount":5942,"records":[],"status":"OK"}',
+    ),
+  );
+  const json = await pedir('/search', [], SIN_PAUSA);
+  assert.equal(json.resultCount, 5942);
+  assert.equal(llamadas.length, 1);
 });
 
 test('un 503 se reintenta; si vuelve a fallar, el error llega', async () => {

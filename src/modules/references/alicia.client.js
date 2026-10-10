@@ -63,12 +63,14 @@ const NOMBRE_DEL_TIPO = {
 
 /**
  * Su identificador: el acrónimo del repositorio y un hash, `UPAO_820c4089…`.
+ * El acrónimo puede llevar guion —`EESPPM-RI_…`— o ser el ISSN de la revista
+ * —`2519-5743_…`—: sin el guion en la regla, esas no se podían guardar.
  *
  * Se comprueba antes de pedir nada con él: viaja en la URL de la API y lo
  * manda el navegador.
  */
 function esId(id) {
-  return /^[A-Za-z0-9]{2,30}_[A-Za-z0-9]{8,64}$/.test(String(id ?? ''));
+  return /^[A-Za-z0-9-]{2,30}_[A-Za-z0-9]{8,64}$/.test(String(id ?? ''));
 }
 
 /** Pausa antes del segundo intento. */
@@ -126,15 +128,23 @@ async function pedirUnaVez(url, ruta) {
  * seguidas se quedaron sin respuesta y al momento contestaba en medio segundo.
  * Por eso un fallo pasajero se repite una vez antes de decirle al tesista que
  * pruebe más tarde.
+ *
+ * `reintentar: false` es para la búsqueda, que tiene a dónde ir si ALICIA no
+ * contesta (ver `scopus.alicia.buscarEnPeruanas`): repetir serían otros
+ * treinta segundos de espera para el tesista.
  */
-async function pedir(ruta, params, { pausaMs = PAUSA_ANTES_DE_REINTENTAR_MS } = {}) {
+async function pedir(
+  ruta,
+  params,
+  { pausaMs = PAUSA_ANTES_DE_REINTENTAR_MS, reintentar = true } = {},
+) {
   const url = new URL(`${BASE}${ruta}`);
   for (const [clave, valor] of params) url.searchParams.append(clave, valor);
 
   try {
     return await pedirUnaVez(url, ruta);
   } catch (fallo) {
-    if (!(fallo instanceof FalloPasajero)) throw fallo;
+    if (!reintentar || !(fallo instanceof FalloPasajero)) throw fallo;
     logger.warn({ err: fallo.message, ruta }, 'ALICIA: primer intento fallido, se reintenta');
     await new Promise((listo) => setTimeout(listo, pausaMs));
     return pedirUnaVez(url, ruta);
@@ -239,7 +249,10 @@ const CAMPOS = [
  * `tipos` son claves de `TIPOS`; varias se juntan con OR (el `~` de VuFind).
  * `desde` y `hasta` son años.
  */
-async function buscar({ consulta, pagina = 1, tipos = [], desde = null, hasta = null }) {
+async function buscar(
+  { consulta, pagina = 1, tipos = [], desde = null, hasta = null },
+  { reintentar = true } = {},
+) {
   const params = [
     ['lookfor', consulta],
     ['type', 'AllFields'],
@@ -256,7 +269,7 @@ async function buscar({ consulta, pagina = 1, tipos = [], desde = null, hasta = 
     params.push(['filter[]', `publishDate:[${desde ?? '*'} TO ${hasta ?? '*'}]`]);
   }
 
-  const json = await pedir('/search', params);
+  const json = await pedir('/search', params, { reintentar });
   return {
     total: json.resultCount ?? 0,
     fichas: (json.records ?? []).map(comoFicha).filter((f) => f.id && f.title),
@@ -272,4 +285,4 @@ async function porIds(ids) {
   return (json.records ?? []).map(comoFicha).filter((f) => f.id && f.title);
 }
 
-module.exports = { buscar, porIds, esId, comoFicha, pedir, POR_PAGINA, TIPOS };
+module.exports = { buscar, porIds, esId, comoFicha, pedir, leerJson, POR_PAGINA, TIPOS };

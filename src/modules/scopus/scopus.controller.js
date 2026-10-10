@@ -185,7 +185,7 @@ const scopusController = {
         : `${resultado.guardadas} fuentes guardadas en tus fuentes`,
     ];
     if (resultado.repetidas > 0) partes.push(`${resultado.repetidas} ya las tenías`);
-    if (resultado.noEncontradas > 0) partes.push(`${resultado.noEncontradas} ya no están en ALICIA`);
+    if (resultado.noEncontradas > 0) partes.push(`${resultado.noEncontradas} no se pudieron traer del repositorio`);
 
     return ok(res, resultado, { message: `${partes.join(', ')}.` });
   }),

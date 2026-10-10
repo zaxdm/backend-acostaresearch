@@ -6,6 +6,7 @@ const { AppError, ValidationError } = require('../../shared/errors/AppError');
 const { ERROR_CODES } = require('../../config/constants');
 const { generarConRespaldo, modelosDeTexto } = require('../../lib/gemini');
 const alicia = require('../references/alicia.client');
+const lareferencia = require('../references/lareferencia.client');
 const { normalizar } = require('../references/zotero.mapper');
 const propiasRepository = require('../references/propias.repository');
 
@@ -265,47 +266,159 @@ async function consultaParaAlicia(ecuacion, opciones = {}) {
 
 // ── Lo que pide la web ─────────────────────────────────────────────────────
 
-const noResponde = () =>
-  new AppError('El repositorio ALICIA no responde ahora. Prueba en unos minutos.', {
-    statusCode: 503,
-    code: ERROR_CODES.ASSISTANT_UNAVAILABLE,
-  });
+const noResponde = (mensaje = 'El repositorio ALICIA no responde ahora. Prueba en unos minutos.') =>
+  new AppError(mensaje, { statusCode: 503, code: ERROR_CODES.ASSISTANT_UNAVAILABLE });
 
 /**
- * Lo que ALICIA ya contestó. Cuando va lenta tarda veinte segundos por
- * página, y la misma búsqueda se repite: al volver de la página 2 a la 1, al
- * quitar un filtro, o entre tesistas del mismo tema. Media hora vale como
- * recién pedido; pasado ese tiempo se vuelve a pedir, pero lo guardado se
- * sigue enseñando si ALICIA no contesta: mejor una lista de hace un rato que
- * un «no responde».
+ * DE DÓNDE SALE LA LISTA: ALICIA, LO GUARDADO O LA REFERENCIA
+ * ----------------------------------------------------------
+ * ALICIA es la buena: tiene las tesis de pregrado, el asesor y la revista. Pero
+ * es un servidor del Estado y el 9 y el 10-oct-2026 pasó de lenta (veinte
+ * segundos por página) a no contestar en toda la mañana. Tres cosas hacen que
+ * el tesista no se quede mirando un «no responde»:
+ *
+ * 1. LO GUARDADO. Lo que ALICIA ya contestó vale media hora como recién
+ *    pedido: volver de la página 2 a la 1, quitar un filtro, o el tesista de al
+ *    lado con el mismo tema. Y pasado ese tiempo sigue sirviendo si ALICIA no
+ *    contesta: mejor su lista de hace un rato que la de otro catálogo.
+ * 2. LA REFERENCIA. Si ALICIA falla y no hay nada guardado, se busca lo mismo
+ *    en el nodo peruano de LA Referencia, que cosecha a la propia ALICIA y
+ *    contesta en un segundo. No tiene pregrado (ver `lareferencia.client`), así
+ *    que la respuesta dice de dónde viene y la web lo avisa.
+ * 3. NO INSISTIR. Tras un fallo no se le vuelve a preguntar a ALICIA en cada
+ *    búsqueda —serían treinta segundos de espera cada vez—: se va derecho al
+ *    respaldo y, cada tres minutos, una búsqueda la sondea por detrás sin
+ *    hacer esperar a nadie. Cuando contesta, todo vuelve a ALICIA.
+ *
+ * LOS AVISOS SE QUEDAN. Cada vez que ALICIA falla de verdad —la primera vez y
+ * en cada sondeo— se anota como error, y eso llega al móvil del administrador
+ * aunque el tesista haya visto resultados. Es a propósito: es como se entera.
  */
 const respuestas = new Map();
 const RESPUESTA_FRESCA_MS = 30 * 60 * 1000;
 const TOPE_DE_RESPUESTAS = 300;
+const SONDEAR_CADA_MS = 3 * 60 * 1000;
 
-async function buscarConMemoria(peticion, { buscarEnAlicia = alicia.buscar, ahora = Date.now } = {}) {
+const estado = { fallando: false, proximoSondeo: 0, sondeando: false };
+
+/**
+ * Las fichas que ya se enseñaron, por identificador. «Añadir a mis fuentes»
+ * las toma de aquí en vez de volver a pedírselas al repositorio: sale al
+ * momento y no depende de que ALICIA siga contestando un minuto después. Son
+ * las que mandó el repositorio, no las que diga el navegador.
+ */
+const fichasVistas = new Map();
+const TOPE_DE_FICHAS = 3000;
+
+function recordarFichas(fichas) {
+  for (const ficha of fichas) {
+    fichasVistas.delete(ficha.id);
+    if (fichasVistas.size >= TOPE_DE_FICHAS) fichasVistas.delete(fichasVistas.keys().next().value);
+    fichasVistas.set(ficha.id, ficha);
+  }
+}
+
+/** Para las pruebas: como recién arrancado. */
+function reiniciar() {
+  respuestas.clear();
+  fichasVistas.clear();
+  Object.assign(estado, { fallando: false, proximoSondeo: 0, sondeando: false });
+}
+
+function guardar(clave, respuesta, en) {
+  respuestas.delete(clave);
+  if (respuestas.size >= TOPE_DE_RESPUESTAS) respuestas.delete(respuestas.keys().next().value);
+  respuestas.set(clave, { en, respuesta });
+  recordarFichas(respuesta.fichas ?? []);
+}
+
+/** Un solo intento: si falla, hay a dónde ir. */
+const unaVezEnAlicia = (peticion) => alicia.buscar(peticion, { reintentar: false });
+
+/** Pregunta a ALICIA sin que nadie espere la respuesta. */
+function sondear(peticion, clave, { enAlicia, ahora }) {
+  estado.sondeando = true;
+  estado.proximoSondeo = ahora() + SONDEAR_CADA_MS;
+  enAlicia(peticion)
+    .then((respuesta) => {
+      guardar(clave, respuesta, ahora());
+      estado.fallando = false;
+      logger.info('ALICIA volvió a responder');
+    })
+    .catch((fallo) => {
+      logger.error({ err: fallo.message }, 'ALICIA sigue sin responder: se busca en LA Referencia');
+    })
+    .finally(() => {
+      estado.sondeando = false;
+    });
+}
+
+async function desdeElRespaldo(peticion, enRespaldo) {
+  const tipos = peticion.tipos ?? [];
+  const losQueTiene = tipos.filter((tipo) => lareferencia.TIPOS[tipo]);
+  if (tipos.length > 0 && losQueTiene.length === 0) {
+    throw noResponde(
+      'ALICIA no responde ahora, y las tesis de pregrado solo están ahí. Prueba en unos minutos o quita ese filtro.',
+    );
+  }
+
+  try {
+    const respuesta = await enRespaldo({ ...peticion, tipos: losQueTiene });
+    recordarFichas(respuesta.fichas ?? []);
+    return { ...respuesta, fuente: 'lareferencia' };
+  } catch (fallo) {
+    logger.warn({ err: fallo.message }, 'LA Referencia tampoco contestó');
+    throw noResponde();
+  }
+}
+
+/**
+ * La lista de tesis y revistas peruanas, venga de donde venga. Devuelve lo de
+ * `alicia.client.buscar` más `fuente`: `alicia` o `lareferencia`.
+ */
+async function buscarEnPeruanas(
+  peticion,
+  { enAlicia = unaVezEnAlicia, enRespaldo = lareferencia.buscar, ahora = Date.now } = {},
+) {
   const { consulta, desde = null, hasta = null, pagina = 1, tipos = [] } = peticion;
   const clave = JSON.stringify([consulta, desde, hasta, pagina, [...tipos].sort()]);
 
   const guardada = respuestas.get(clave);
-  if (guardada && ahora() - guardada.en < RESPUESTA_FRESCA_MS) return guardada.respuesta;
-
-  let respuesta;
-  try {
-    respuesta = await buscarEnAlicia(peticion);
-  } catch (fallo) {
-    if (!guardada) throw fallo;
-    logger.warn({ err: fallo.message }, 'ALICIA: no contestó, se enseña lo guardado');
-    return guardada.respuesta;
+  if (guardada && ahora() - guardada.en < RESPUESTA_FRESCA_MS) {
+    return { ...guardada.respuesta, fuente: 'alicia' };
   }
 
-  respuestas.delete(clave);
-  if (respuestas.size >= TOPE_DE_RESPUESTAS) respuestas.delete(respuestas.keys().next().value);
-  respuestas.set(clave, { en: ahora(), respuesta });
-  return respuesta;
+  if (!estado.fallando) {
+    try {
+      const respuesta = await enAlicia(peticion);
+      guardar(clave, respuesta, ahora());
+      return { ...respuesta, fuente: 'alicia' };
+    } catch (fallo) {
+      estado.fallando = true;
+      estado.proximoSondeo = ahora() + SONDEAR_CADA_MS;
+      logger.error({ err: fallo.message }, 'ALICIA no responde: se busca en LA Referencia');
+    }
+  } else if (ahora() >= estado.proximoSondeo && !estado.sondeando) {
+    sondear(peticion, clave, { enAlicia, ahora });
+  }
+
+  if (guardada) return { ...guardada.respuesta, fuente: 'alicia' };
+  return desdeElRespaldo(peticion, enRespaldo);
 }
 
-const sourceRefDe = (id) => `alicia:${id}`.slice(0, 200);
+/**
+ * Por dónde entró: `alicia:UPAO_…` o `lareferencia:PE_…`. Los de LA Referencia
+ * ya traen su prefijo.
+ */
+const sourceRefDe = (id) =>
+  (String(id).startsWith(lareferencia.PREFIJO) ? String(id) : `alicia:${id}`).slice(0, 200);
+
+/**
+ * Lo que los dos catálogos tienen en común: el hash del final. Es el mismo
+ * registro en `UPAO_820c…` y en `PE_820c…`, y con él se sabe que el tesista
+ * ya tiene una tesis aunque la guardara desde el otro sitio.
+ */
+const hashDe = (id) => String(id).slice(String(id).lastIndexOf('_') + 1);
 
 /**
  * Busca. Con `consulta`, la que el tesista corrigió a mano en el bloque; sin
@@ -323,18 +436,12 @@ async function buscar(userId, { ecuacion, consulta, pagina = 1, tipos = [], desd
     return { consulta: '', total: 0, pagina: 1, paginas: 1, porPagina: alicia.POR_PAGINA, resultados: [] };
   }
 
-  let respuesta;
-  try {
-    respuesta = await buscarConMemoria({ ...armada, pagina, tipos });
-  } catch (fallo) {
-    logger.warn({ err: fallo.message }, 'ALICIA: la búsqueda falló');
-    throw noResponde();
-  }
+  const respuesta = await buscarEnPeruanas({ ...armada, pagina, tipos });
 
   const tiene = new Set(
-    await propiasRepository.cualesTiene(
+    await propiasRepository.hashesDeRepositorioQueTiene(
       userId,
-      respuesta.fichas.map((f) => sourceRefDe(f.id)),
+      respuesta.fichas.map((f) => hashDe(f.id)),
     ),
   );
 
@@ -342,6 +449,8 @@ async function buscar(userId, { ecuacion, consulta, pagina = 1, tipos = [], desd
     consulta: armada.consulta,
     desde: armada.desde,
     hasta: armada.hasta,
+    // `alicia` o `lareferencia`: la web avisa cuando es el respaldo.
+    fuente: respuesta.fuente,
     total: respuesta.total,
     pagina,
     // VuFind no pasa de la página 500, y nadie llega ahí; se acota igual.
@@ -354,11 +463,13 @@ async function buscar(userId, { ecuacion, consulta, pagina = 1, tipos = [], desd
       anio: ficha.year,
       tipo: ficha.tipo,
       universidad: ficha.universidad,
-      revista: ficha.formato === 'article' ? ficha.source : null,
+      // LA Referencia no trae la revista y en su sitio queda la universidad.
+      revista:
+        ficha.formato === 'article' && ficha.source !== ficha.universidad ? ficha.source : null,
       asesor: ficha.asesor,
       url: ficha.url,
       resumen: ficha.abstract,
-      yaLaTienes: tiene.has(sourceRefDe(ficha.id)),
+      yaLaTienes: tiene.has(hashDe(ficha.id)),
     })),
   };
 }
@@ -409,8 +520,14 @@ function comoFila(ficha) {
  * ALICIA: lo que entra en su biblioteca es lo que dice el repositorio, no lo
  * que diga una petición del navegador. Mismo criterio que con Scopus.
  */
-async function importar(userId, { ids }) {
-  const lista = [...new Set((ids ?? []).map((id) => String(id).trim()))].filter(alicia.esId);
+async function importar(
+  userId,
+  { ids },
+  { pedirFichas = { alicia: alicia.porIds, lareferencia: lareferencia.porIds } } = {},
+) {
+  const lista = [...new Set((ids ?? []).map((id) => String(id).trim()))].filter(
+    (id) => alicia.esId(id) || lareferencia.esId(id),
+  );
 
   if (lista.length === 0) throw new ValidationError('No marcaste ninguna tesis ni artículo.');
   if (lista.length > MAXIMO_POR_IMPORTACION) {
@@ -426,27 +543,46 @@ async function importar(userId, { ids }) {
     );
   }
 
-  let fichas;
-  try {
-    fichas = await alicia.porIds(lista);
-  } catch (fallo) {
-    logger.warn({ err: fallo.message }, 'ALICIA: no se pudieron pedir las fichas');
-    throw noResponde();
+  // Primero las que ya se enseñaron; al repositorio solo las que falten (el
+  // servidor se reinició, o pasó mucho rato desde la búsqueda).
+  const fichas = lista.map((id) => fichasVistas.get(id)).filter(Boolean);
+  const faltan = lista.filter((id) => !fichasVistas.has(id));
+
+  if (faltan.length > 0) {
+    try {
+      const deAlicia = faltan.filter(alicia.esId);
+      const deLaReferencia = faltan.filter(lareferencia.esId);
+      if (deAlicia.length > 0) fichas.push(...(await pedirFichas.alicia(deAlicia)));
+      if (deLaReferencia.length > 0) fichas.push(...(await pedirFichas.lareferencia(deLaReferencia)));
+    } catch (fallo) {
+      logger.warn({ err: fallo.message }, 'ALICIA: no se pudieron pedir las fichas');
+      // Con las que sí hay se sigue; sin ninguna, no hay nada que guardar.
+      if (fichas.length === 0) throw noResponde();
+    }
   }
 
-  const filas = fichas.map(comoFila);
-  if (filas.length === 0) {
-    throw new ValidationError('ALICIA ya no devuelve esas fichas. Vuelve a buscar y márcalas otra vez.');
+  if (fichas.length === 0) {
+    throw new ValidationError('El repositorio ya no devuelve esas fichas. Vuelve a buscar y márcalas otra vez.');
   }
 
-  const { guardadas, repetidas } = await propiasRepository.guardarLote(userId, filas);
+  // Las que ya tiene, aunque entraran por el otro catálogo, no se repiten.
+  const yaTiene = new Set(
+    await propiasRepository.hashesDeRepositorioQueTiene(
+      userId,
+      fichas.map((ficha) => hashDe(ficha.id)),
+    ),
+  );
+  const filas = fichas.filter((ficha) => !yaTiene.has(hashDe(ficha.id))).map(comoFila);
+  const lote = await propiasRepository.guardarLote(userId, filas);
+  const guardadas = lote.guardadas;
+  const repetidas = lote.repetidas + (fichas.length - filas.length);
   logger.info({ userId, pedidas: lista.length, guardadas, repetidas }, 'Fuentes importadas desde ALICIA');
 
   return {
     pedidas: lista.length,
     guardadas,
     repetidas,
-    noEncontradas: lista.length - filas.length,
+    noEncontradas: lista.length - fichas.length,
     sinResumen: filas.filter((fila) => !fila.abstract).length,
     total: tiene + guardadas,
   };
@@ -456,7 +592,8 @@ module.exports = {
   buscar,
   importar,
   consultaParaAlicia,
-  buscarConMemoria,
+  buscarEnPeruanas,
+  reiniciar,
   leer,
   comoFila,
   MAXIMO_POR_IMPORTACION,

@@ -144,6 +144,33 @@ async function cualesTiene(userId, referencias) {
   return filas.map((fila) => fila.sourceRef);
 }
 
+/**
+ * De estas tesis de repositorios peruanos, cuáles tiene ya, entraran por
+ * ALICIA o por LA Referencia.
+ *
+ * Los dos catálogos nombran el mismo registro con el mismo hash y distinto
+ * prefijo —`alicia:UPAO_820c…` y `lareferencia:PE_820c…`—, y el prefijo de
+ * ALICIA no se puede deducir desde el otro lado (`REVUNIFE`, `2519-5743`). Así
+ * que se pregunta por cómo termina. Devuelve los hashes que ya tiene.
+ */
+async function hashesDeRepositorioQueTiene(userId, hashes) {
+  const validos = [...new Set(hashes)].filter((hash) => /^[a-f0-9]{16,64}$/.test(hash));
+  if (validos.length === 0) return [];
+
+  const filas = await prisma.reference.findMany({
+    where: {
+      ownerUserId: userId,
+      AND: [
+        { OR: [{ sourceRef: { startsWith: 'alicia:' } }, { sourceRef: { startsWith: 'lareferencia:' } }] },
+        { OR: validos.map((hash) => ({ sourceRef: { endsWith: `_${hash}` } })) },
+      ],
+    },
+    select: { sourceRef: true },
+  });
+
+  return filas.map((fila) => fila.sourceRef.slice(fila.sourceRef.lastIndexOf('_') + 1));
+}
+
 /** Cuántas tiene ya. Se consulta antes de importar, para aplicar el tope. */
 function contar(userId) {
   return prisma.reference.count({ where: { ownerUserId: userId } });
@@ -277,6 +304,7 @@ module.exports = {
   guardarLote,
   doisDe,
   cualesTiene,
+  hashesDeRepositorioQueTiene,
   contar,
   contarSinResumen,
   contarDeZotero,

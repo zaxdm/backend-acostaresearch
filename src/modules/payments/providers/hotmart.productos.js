@@ -23,6 +23,11 @@ const PRODUCTOS = Object.freeze({
   ARTICULOS_REVIEW: { productId: 8674979, checkout: 'X107921736P' },
   TSP_SUFICIENCIA_PROFESIONAL: { productId: 8675039, checkout: 'H107921854B' },
   HUMANIZADOR_ACADEMICO: { productId: 8675102, checkout: 'X107921968I' },
+  // Añadidos el 8-oct-2026. El código del plan de Informes es el que tiene en
+  // producción, aunque diga «PRUEBA».
+  INFORME_PRUEBA01: { productId: 8690462, checkout: 'F107951946A' },
+  PREPARAR_MENSUAL: { productId: 8690476, checkout: 'N107951965N' },
+  PREPARAR_TRIMESTRAL: { productId: 8690506, checkout: 'M107952016E' },
 });
 
 /**

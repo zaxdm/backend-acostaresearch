@@ -2,6 +2,8 @@
 
 const { z } = require('zod');
 
+const { productosSchema } = require('../../shared/utils/productosDeAyuda');
+
 /**
  * El identificador de un video de YouTube, venga como venga el enlace.
  *
@@ -52,6 +54,8 @@ const tutorialBodySchema = z.object({
         'Studio (empieza por youtu.be/ o youtube.com/watch), no la dirección de la barra ' +
         'del navegador.',
     }),
+  /** A qué productos les sirve. Lista vacía = a todos. */
+  productos: productosSchema.optional().default(''),
   active: z.boolean().optional().default(true),
 });
 

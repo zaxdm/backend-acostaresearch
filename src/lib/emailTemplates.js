@@ -500,6 +500,17 @@ function enMayuscula(frase) {
  * Si alguien reordena esto, que sea con un número que diga que el orden nuevo
  * funciona mejor. Este viene de los tres que se perdieron.
  */
+/**
+ * El video que va en el correo del acceso: cómo conectarlo y empezar.
+ *
+ * Va el video directo y no solo la página de tutoriales (10-oct-2026, a pedido):
+ * quien acaba de pagar abre YouTube con un toque, y la página, con trece videos,
+ * le pide elegir antes de haber visto nada. Sin el `?si=` con el que YouTube
+ * copia el enlace: es su seguimiento de quién lo compartió, no parte del video.
+ * Si se regraba, se cambia aquí.
+ */
+const VIDEO_DE_INICIO = 'https://youtu.be/7L3FihV7seI';
+
 function licenseReady({ firstName, planName, connectorUrl, expiresAt, via }) {
   const panel = `${appUrl()}/perfil`;
   const guia = guiaUrl();
@@ -525,9 +536,11 @@ function licenseReady({ firstName, planName, connectorUrl, expiresAt, via }) {
       // una línea partida a mano no se encuentra al buscar en la bandeja.
       'GUÁRDALA. Por seguridad no la almacenamos en claro, así que no podemos volver a enviártela. Si la pierdes, genera una nueva desde tu panel.',
       '',
-      'EMPIEZA POR AQUÍ — los videos, de cinco minutos:',
-      videos,
-      'Conectarlo, tu primer capítulo entero, y qué hacer si algo no funciona.',
+      'EMPIEZA POR AQUÍ — mira este video:',
+      VIDEO_DE_INICIO,
+      'Cómo conectarlo y empezar, paso a paso.',
+      '',
+      `Todos los videos (tu primer capítulo, tus fuentes, qué hacer si algo falla): ${videos}`,
       '',
       'Si prefieres leerlo, son tres pasos:',
       '  1. Abre Claude y entra en Configuración → Conectores.',
@@ -564,17 +577,20 @@ function licenseReady({ firstName, planName, connectorUrl, expiresAt, via }) {
             primera decepción del producto. Al añadir el de las fuentes de
             Scopus, esta línea y su gemela del texto plano se amplían. -->
        <p style="margin:0 0 14px;font-size:14px;line-height:1.6;color:#52606d">
-         Cinco minutos de video: conectarlo, tu primer capítulo entero, y qué hacer si algo no
-         funciona.
+         Mira este video antes de nada: cómo conectarlo y empezar, paso a paso.
        </p>
-       <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 26px">
+       <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 12px">
          <tr>
            <td style="border-radius:10px;background:#1a56db">
-             <a href="${videos}" style="display:inline-block;padding:13px 26px;font-size:15px;
-                       font-weight:650;color:#ffffff;text-decoration:none">Ver los videos</a>
+             <a href="${VIDEO_DE_INICIO}" style="display:inline-block;padding:13px 26px;font-size:15px;
+                       font-weight:650;color:#ffffff;text-decoration:none">▶ Ver el video</a>
            </td>
          </tr>
        </table>
+       <p style="margin:0 0 26px;font-size:13.5px;line-height:1.6;color:#52606d">
+         Después, <a href="${videos}" style="color:#1a56db">todos los videos</a>: tu primer capítulo,
+         tus fuentes y qué hacer si algo no funciona.
+       </p>
 
        <p style="margin:0 0 10px;font-size:14px;font-weight:650;color:#52606d">
          ¿Prefieres leerlo? Son tres pasos

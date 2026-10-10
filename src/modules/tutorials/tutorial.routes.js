@@ -21,6 +21,10 @@ const router = Router();
 // alcanza quien compró y no ha vuelto a entrar a la web.
 router.get('/', tutorialController.list);
 
+// Con sesión: lo que compró, para que la página le enseñe solo sus videos y
+// sus guías. La lista sigue siendo pública; esto solo ordena lo que ve.
+router.get('/mis-productos', authenticate, tutorialController.misProductos);
+
 router.use(authenticate, authorize(ROLES.ADMIN));
 
 router.get('/todos', tutorialController.listAll);

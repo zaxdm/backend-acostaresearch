@@ -4,6 +4,7 @@ const env = require('../../config/env');
 const logger = require('../../config/logger');
 const prisma = require('../../lib/prisma');
 const { AppError, ConflictError, NotFoundError } = require('../../shared/errors/AppError');
+const productosDeAyuda = require('../../shared/utils/productosDeAyuda');
 
 /**
  * Lo que se le pide a Gemini al ver el video. Corto y en segunda persona,
@@ -33,7 +34,11 @@ const aLista = (texto) =>
     .map((linea) => linea.trim())
     .filter(Boolean);
 
-const salida = (fila) => ({ ...fila, puntos: aLista(fila.puntos) });
+const salida = (fila) => ({
+  ...fila,
+  puntos: aLista(fila.puntos),
+  productos: productosDeAyuda.aLista(fila.productos),
+});
 
 const tutorialService = {
   /** Lo que ve el visitante: solo lo activo, en su orden. */
@@ -43,6 +48,32 @@ const tutorialService = {
       orderBy: [{ orden: 'asc' }, { createdAt: 'asc' }],
     });
     return filas.map(salida);
+  },
+
+  /**
+   * Los productos que compró esa cuenta, para enseñarle solo sus videos y sus
+   * guías.
+   *
+   * Cuenta lo que no esté revocado, aunque haya caducado: a quien se le acabó
+   * el plazo no se le cambia la página de ayuda por la de un desconocido. Sale
+   * vacío si no compró nada, y entonces la web le enseña todo, como a un
+   * visitante.
+   */
+  async productosDe(userId) {
+    const vivo = { userId, status: { not: 'REVOKED' } };
+    const [licencias, bolsa, membresia] = await Promise.all([
+      prisma.license.findMany({ where: vivo, select: { productCode: true } }),
+      prisma.wordPack.findFirst({
+        where: { ...vivo, plan: { priceCents: { gt: 0 } } },
+        select: { id: true },
+      }),
+      prisma.docPack.findFirst({ where: vivo, select: { id: true } }),
+    ]);
+    return productosDeAyuda.deLoComprado({
+      accesos: licencias.map((licencia) => licencia.productCode),
+      palabras: bolsa !== null,
+      documentos: membresia !== null,
+    });
   },
 
   /** Lo que ve el panel: todo, incluido lo apagado. */

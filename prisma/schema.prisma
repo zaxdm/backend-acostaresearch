@@ -1421,6 +1421,10 @@ model Tutorial {
   /// en lugar de dejar un hueco negro.
   videoUrl String @default("") @db.VarChar(500)
 
+  /// A qué productos les sirve, con comas: «tesis,tsp». Puede estar en varios.
+  /// Vacío = en todos. La lista de códigos, en `shared/utils/productosDeAyuda.js`.
+  productos String @default("") @db.VarChar(120)
+
   /// Apagado se queda fuera de la página pública pero no se pierde. Sirve para
   /// retirar un video que quedó viejo —la interfaz de Claude cambia— mientras
   /// se regraba, en vez de borrarlo y volver a escribirlo todo.
@@ -1446,6 +1450,9 @@ model Guia {
   /// Cómo se llamaba el archivo subido y cuánto pesa. Vacío = sin PDF todavía.
   archivoNombre String @default("") @db.VarChar(200)
   bytes         Int    @default(0)
+
+  /// A qué productos les sirve, con comas. Vacío = en todos. Como en `Tutorial`.
+  productos String @default("") @db.VarChar(120)
 
   /// Apagada se queda fuera de la página pública pero no se pierde.
   active Boolean @default(true)

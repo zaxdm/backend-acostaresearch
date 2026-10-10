@@ -6,6 +6,7 @@ const path = require('node:path');
 const env = require('../../config/env');
 const prisma = require('../../lib/prisma');
 const { NotFoundError, ValidationError } = require('../../shared/errors/AppError');
+const productosDeAyuda = require('../../shared/utils/productosDeAyuda');
 
 /**
  * Las guías en PDF de la página de guías.
@@ -53,18 +54,23 @@ function nombreDeDescarga(titulo) {
   return `${base || 'guia'}.pdf`;
 }
 
+/** Los productos salen como lista; en la base van con comas. */
+const salida = (fila) => ({ ...fila, productos: productosDeAyuda.aLista(fila.productos) });
+
 const guiaService = {
   /** Lo que ve el visitante: solo lo visible y con PDF, en su orden. */
-  listPublic() {
-    return prisma.guia.findMany({
+  async listPublic() {
+    const filas = await prisma.guia.findMany({
       where: { active: true, bytes: { gt: 0 } },
       orderBy: [{ orden: 'asc' }, { createdAt: 'asc' }],
     });
+    return filas.map(salida);
   },
 
   /** Lo que ve el panel: todo, incluido lo oculto. */
-  listAll() {
-    return prisma.guia.findMany({ orderBy: [{ orden: 'asc' }, { createdAt: 'asc' }] });
+  async listAll() {
+    const filas = await prisma.guia.findMany({ orderBy: [{ orden: 'asc' }, { createdAt: 'asc' }] });
+    return filas.map(salida);
   },
 
   /**
@@ -82,12 +88,12 @@ const guiaService = {
       await prisma.guia.delete({ where: { id: fila.id } }).catch(() => {});
       throw error;
     }
-    return fila;
+    return salida(fila);
   },
 
   async update(id, datos) {
     await buscar(id);
-    return prisma.guia.update({ where: { id }, data: datos });
+    return salida(await prisma.guia.update({ where: { id }, data: datos }));
   },
 
   /** Cambia el PDF y deja la ficha como estaba. */
@@ -95,10 +101,11 @@ const guiaService = {
     comprobarPdf(archivo);
     await buscar(id);
     await escribir(id, archivo);
-    return prisma.guia.update({
+    const fila = await prisma.guia.update({
       where: { id },
       data: { archivoNombre: nombreLimpio(nombre), bytes: archivo.length },
     });
+    return salida(fila);
   },
 
   async remove(id) {

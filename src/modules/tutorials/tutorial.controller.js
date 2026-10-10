@@ -2,12 +2,22 @@
 
 const asyncHandler = require('../../shared/http/asyncHandler');
 const { ok, created, noContent } = require('../../shared/http/apiResponse');
+const { ROLES } = require('../../config/constants');
 const tutorialService = require('./tutorial.service');
 
 const tutorialController = {
   /** Público: es lo que pinta la página de tutoriales. */
   list: asyncHandler(async (_req, res) => {
     return ok(res, { tutoriales: await tutorialService.listPublic() });
+  }),
+
+  /**
+   * Qué productos compró quien pregunta: la web le enseña solo esos videos y
+   * esas guías. El administrador los ve todos (`todos`), que es quien los sube.
+   */
+  misProductos: asyncHandler(async (req, res) => {
+    if (req.user.role === ROLES.ADMIN) return ok(res, { todos: true, productos: [] });
+    return ok(res, { todos: false, productos: await tutorialService.productosDe(req.user.id) });
   }),
 
   listAll: asyncHandler(async (_req, res) => {

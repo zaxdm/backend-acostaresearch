@@ -35,6 +35,23 @@ test('el correo de una licencia nueva lleva la URL en el texto y en el HTML', ()
   assert.match(mail.subject, /acceso/i);
 });
 
+test('el correo del acceso lleva el video de inicio, además de la página de videos', () => {
+  const mail = plantillas.licenseReady({
+    firstName: 'María',
+    planName: PLAN,
+    connectorUrl: URL_CONECTOR,
+    expiresAt: VENCE,
+    via: 'online',
+  });
+
+  for (const cuerpo of [mail.text, mail.html]) {
+    assert.ok(cuerpo.includes('https://youtu.be/7L3FihV7seI'), 'falta el video de inicio');
+    assert.ok(cuerpo.includes('/tutoriales'), 'falta el enlace a todos los videos');
+    // El «?si=» de YouTube es su seguimiento de quién compartió: no va en el correo.
+    assert.ok(!cuerpo.includes('si='), 'el enlace del video lleva el seguimiento de YouTube');
+  }
+});
+
 test('avisa de que la URL no se puede reenviar', () => {
   const mail = plantillas.licenseReady({
     firstName: 'María',

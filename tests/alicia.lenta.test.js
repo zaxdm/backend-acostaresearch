@@ -7,8 +7,9 @@
  *   · La misma búsqueda no se le vuelve a pedir a ALICIA durante media hora.
  *   · Si ALICIA no contesta, se enseña lo que ya había contestado; si no hay
  *     nada, se busca en LA Referencia y la respuesta dice de dónde viene.
- *   · Tras un fallo no se hace esperar a nadie más: se va al respaldo y ALICIA
- *     se sondea por detrás cada tres minutos. Cuando contesta, se vuelve a ella.
+ *   · Tras un fallo no se hace esperar a nadie más: se va al respaldo con
+ *     ALICIA por detrás. Solo tres fallos seguidos son una caída: entonces se
+ *     la sondea cada tres minutos y nada más. Cuando contesta, se vuelve a ella.
  *   · Cada fallo de ALICIA se anota como ERROR aunque el tesista vea
  *     resultados: el aviso al administrador es a propósito.
  *   · LA Referencia no tiene pregrado: pedir solo pregrado con ALICIA caída es
@@ -156,12 +157,34 @@ test('lo que ALICIA contestó antes gana al respaldo, por viejo que sea', async 
   assert.equal(e.llamadasRespaldo.length, 0);
 });
 
-test('tras un fallo nadie más espera a ALICIA; se la sondea cada tres minutos y se vuelve a ella', async () => {
+test('un fallo suelto no es una caída: se le sigue preguntando por detrás', async () => {
+  const e = entorno();
+  e.aliciaCaida = true;
+  await buscarEnPeruanas({ consulta: '"a"', pagina: 1, tipos: [] }, e.opciones);
+
+  // Falló una vez y ahora contesta: la siguiente no la espera, pero le pregunta.
+  e.aliciaCaida = false;
+  const b = await buscarEnPeruanas({ consulta: '"b"', pagina: 1, tipos: [] }, e.opciones);
+  assert.equal(b.fuente, 'lareferencia');
+  assert.equal(b.aliciaEnCamino, true);
+  assert.equal(e.llamadasAlicia, 2);
+  assert.equal((await alicia.loQueTraigaAlicia({ consulta: '"b"', pagina: 1, tipos: [] }, e.opciones)).total, 102);
+
+  // Y como contestó a tiempo, vuelve a ser la de siempre.
+  assert.equal((await buscarEnPeruanas({ consulta: '"c"', pagina: 1, tipos: [] }, e.opciones)).fuente, 'alicia');
+});
+
+test('tres fallos seguidos: caída; se la sondea cada tres minutos y se vuelve a ella', async () => {
   const e = entorno();
   e.aliciaCaida = true;
 
-  await buscarEnPeruanas({ consulta: '"a"', pagina: 1, tipos: [] }, e.opciones);
-  assert.equal(e.llamadasAlicia, 1);
+  for (const letra of ['x', 'y', 'a']) {
+    await buscarEnPeruanas({ consulta: `"${letra}"`, pagina: 1, tipos: [] }, e.opciones);
+    await tick();
+  }
+  assert.equal(e.llamadasAlicia, 3);
+  registro.length = 0;
+  e.llamadasAlicia = 1;
 
   // Un minuto después: derecho al respaldo, sin preguntarle a ALICIA.
   e.reloj += 60 * 1000;
@@ -174,7 +197,7 @@ test('tras un fallo nadie más espera a ALICIA; se la sondea cada tres minutos y
   assert.equal(c.fuente, 'lareferencia');
   assert.equal(e.llamadasAlicia, 2);
   await tick();
-  assert.equal(registro.filter((l) => l.nivel === 'error').length, 2, 'el sondeo fallido también avisa');
+  assert.equal(registro.filter((l) => l.nivel === 'error').length, 1, 'el sondeo fallido también avisa');
 
   // ALICIA vuelve: el siguiente sondeo lo descubre y la búsqueda de después ya es suya.
   e.aliciaCaida = false;
@@ -196,10 +219,19 @@ test('LA Referencia no tiene pregrado: se le piden los demás tipos, o se explic
   await buscarEnPeruanas({ consulta: '"x"', pagina: 1, tipos: ['pregrado', 'maestria'] }, e.opciones);
   assert.deepEqual(e.llamadasRespaldo[0].tipos, ['maestria']);
 
-  await assert.rejects(
-    buscarEnPeruanas({ consulta: '"y"', pagina: 1, tipos: ['pregrado'] }, e.opciones),
-    (fallo) => fallo.statusCode === 503 && /pregrado solo están ahí/.test(fallo.message),
-  );
+  // Solo pregrado: se le pregunta a ALICIA aunque acabe de fallar, que no hay otro sitio.
+  const soloPregrado = (consulta) =>
+    assert.rejects(
+      buscarEnPeruanas({ consulta, pagina: 1, tipos: ['pregrado'] }, e.opciones),
+      (fallo) => fallo.statusCode === 503 && /pregrado solo están ahí/.test(fallo.message),
+    );
+  await soloPregrado('"y"');
+  await soloPregrado('"z"');
+  assert.equal(e.llamadasAlicia, 3);
+
+  // Ya son tres fallos: caída, y se explica sin hacerle esperar otra vez.
+  await soloPregrado('"w"');
+  assert.equal(e.llamadasAlicia, 3);
 });
 
 /** Una ALICIA que contesta cuando se le dice. */
@@ -310,10 +342,11 @@ test('la pregunta de por detrás falla: avisa, y quien esperaba se queda con el 
     ['ALICIA no responde: se busca en LA Referencia'],
   );
 
-  // Y ya cuenta como caída: la siguiente va al respaldo sin preguntarle.
+  // Un fallo no es una caída: a la siguiente se le pregunta, por detrás.
   const otra = await buscarEnPeruanas({ consulta: '"otra"', pagina: 1, tipos: [] }, e.opciones);
-  assert.equal(otra.aliciaEnCamino, false);
-  assert.equal(e.llamadasAlicia, 1);
+  assert.equal(otra.fuente, 'lareferencia');
+  assert.equal(otra.aliciaEnCamino, true);
+  assert.equal(e.llamadasAlicia, 2);
 });
 
 test('si el respaldo tampoco contesta, «ALICIA no responde» es un 503 que sale como error', async () => {

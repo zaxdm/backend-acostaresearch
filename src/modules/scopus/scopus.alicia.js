@@ -291,8 +291,12 @@ const noResponde = (mensaje = 'El repositorio ALICIA no responde ahora. Prueba e
  * 3. LENTA. Desde que ALICIA se pasa de los seis segundos, las búsquedas
  *    siguientes ni la esperan: respaldo al momento y ALICIA por detrás. Deja
  *    de estar lenta cuando una respuesta suya llega a tiempo.
- * 4. CAÍDA. Si falla, no se le pregunta en cada búsqueda: solo cada tres
- *    minutos, por detrás. Cuando contesta, vuelve.
+ * 4. CAÍDA. Un fallo suelto no la da por caída: el 11-oct fallaba una de cada
+ *    tres («Problem connecting to Solr») y contestaba las otras dos en 20 a
+ *    35 s, y con un solo fallo todo el mundo se quedaba tres minutos sin
+ *    ALICIA, una y otra vez. Un fallo la deja en LENTA; solo TRES SEGUIDOS son
+ *    una caída, y entonces sí: no se le pregunta en cada búsqueda, solo cada
+ *    tres minutos, por detrás. Cuando contesta, vuelve.
  *
  * Solo hay un caso en que el tesista espera a ALICIA lo que tarde: cuando
  * filtra SOLO pregrado, que no está en ningún otro sitio.
@@ -314,7 +318,10 @@ const TIEMPO_POR_DETRAS_MS = 45_000;
 /** Preguntas a la vez mientras va lenta: no se le echa más carga encima. */
 const MAXIMO_EN_CAMINO = 4;
 
-const estado = { fallando: false, lenta: false, proximoSondeo: 0 };
+/** Fallos seguidos para darla por caída. */
+const FALLOS_PARA_CAIDA = 3;
+
+const estado = { fallando: false, lenta: false, fallosSeguidos: 0, proximoSondeo: 0 };
 
 /** Las preguntas a ALICIA que no han vuelto, por búsqueda: `{ promesa, desde }`. */
 const enCamino = new Map();
@@ -341,7 +348,7 @@ function reiniciar() {
   respuestas.clear();
   fichasVistas.clear();
   enCamino.clear();
-  Object.assign(estado, { fallando: false, lenta: false, proximoSondeo: 0 });
+  Object.assign(estado, { fallando: false, lenta: false, fallosSeguidos: 0, proximoSondeo: 0 });
 }
 
 function guardar(clave, respuesta, en) {
@@ -379,6 +386,7 @@ function preguntar(peticion, clave, { enAlicia, ahora, pacienciaMs }) {
         guardar(clave, respuesta, ahora());
         if (estado.fallando) logger.info('ALICIA volvió a responder');
         estado.fallando = false;
+        estado.fallosSeguidos = 0;
         estado.lenta = ahora() - desde > pacienciaMs;
         return respuesta;
       },
@@ -389,8 +397,13 @@ function preguntar(peticion, clave, { enAlicia, ahora, pacienciaMs }) {
             ? 'ALICIA sigue sin responder: se busca en LA Referencia'
             : 'ALICIA no responde: se busca en LA Referencia',
         );
-        estado.fallando = true;
-        estado.proximoSondeo = ahora() + SONDEAR_CADA_MS;
+        // Falle como falle, la siguiente búsqueda no se queda esperándola.
+        estado.lenta = true;
+        estado.fallosSeguidos += 1;
+        if (estado.fallosSeguidos >= FALLOS_PARA_CAIDA) {
+          estado.fallando = true;
+          estado.proximoSondeo = ahora() + SONDEAR_CADA_MS;
+        }
         return null;
       },
     )

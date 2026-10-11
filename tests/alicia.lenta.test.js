@@ -13,6 +13,11 @@
  *     resultados: el aviso al administrador es a propósito.
  *   · LA Referencia no tiene pregrado: pedir solo pregrado con ALICIA caída es
  *     un «no responde» que lo explica, no una lista vacía.
+ *   · LENTA no es caída (10-oct por la tarde: contestaba en 16 a 31 s). Se la
+ *     espera seis segundos; pasados, se enseña el respaldo y la pregunta sigue
+ *     viva por detrás. Mientras vaya lenta nadie más la espera, salvo quien
+ *     filtra solo pregrado. Lo que llega se guarda y se le da a quien lo
+ *     esperaba; que tarde no es un error.
  *   · «Añadir a mis fuentes» usa las fichas ya enseñadas y no repite una tesis
  *     que el tesista guardó desde el otro catálogo.
  */
@@ -195,6 +200,120 @@ test('LA Referencia no tiene pregrado: se le piden los demás tipos, o se explic
     buscarEnPeruanas({ consulta: '"y"', pagina: 1, tipos: ['pregrado'] }, e.opciones),
     (fallo) => fallo.statusCode === 503 && /pregrado solo están ahí/.test(fallo.message),
   );
+});
+
+/** Una ALICIA que contesta cuando se le dice. */
+function aliciaLenta(e) {
+  const pendientes = [];
+  e.opciones.enAlicia = () => {
+    e.llamadasAlicia += 1;
+    return new Promise((listo, falla) => pendientes.push({ listo, falla }));
+  };
+  return {
+    contesta: (total = 500) => pendientes.shift().listo({ total, fichas: [ficha(`UPAO_${H1}`)] }),
+    falla: () => pendientes.shift().falla(TIMEOUT),
+  };
+}
+
+test('ALICIA lenta: a los seis segundos se enseña el respaldo y ella sigue por detrás', async () => {
+  const e = entorno();
+  const lenta = aliciaLenta(e);
+  e.opciones.pacienciaMs = 20;
+  const peticion = { consulta: '"lenta"', pagina: 1, tipos: [] };
+
+  const r = await buscarEnPeruanas(peticion, e.opciones);
+  assert.equal(r.fuente, 'lareferencia');
+  assert.equal(r.aliciaEnCamino, true);
+
+  // La web se queda esperando; pedir lo mismo otra vez no le pregunta dos veces.
+  const esperando = alicia.loQueTraigaAlicia(peticion, e.opciones);
+  assert.equal((await buscarEnPeruanas(peticion, e.opciones)).aliciaEnCamino, true);
+  assert.equal(e.llamadasAlicia, 1);
+
+  e.reloj += 25_000;
+  lenta.contesta(500);
+  assert.equal((await esperando).total, 500);
+
+  // Quedó guardado, y que tardara no es un error.
+  const despues = await buscarEnPeruanas(peticion, e.opciones);
+  assert.equal(despues.fuente, 'alicia');
+  assert.equal(despues.aliciaEnCamino, false);
+  assert.equal(e.llamadasAlicia, 1);
+  assert.equal(registro.filter((l) => l.nivel === 'error').length, 0);
+});
+
+test('mientras va lenta nadie la espera; cuando contesta a tiempo se la vuelve a esperar', async () => {
+  const e = entorno();
+  const lenta = aliciaLenta(e);
+  e.opciones.pacienciaMs = 20;
+  await buscarEnPeruanas({ consulta: '"uno"', pagina: 1, tipos: [] }, e.opciones);
+
+  // Con una paciencia enorme: si la esperase, esta prueba no acabaría.
+  e.opciones.pacienciaMs = 60_000;
+  const dos = await buscarEnPeruanas({ consulta: '"dos"', pagina: 1, tipos: [] }, e.opciones);
+  assert.equal(dos.fuente, 'lareferencia');
+  assert.equal(dos.aliciaEnCamino, true);
+  assert.equal(e.llamadasAlicia, 2);
+
+  // Sin pregunta de camino no hay nada que esperar.
+  assert.equal(await alicia.loQueTraigaAlicia({ consulta: '"otra"', pagina: 1, tipos: [] }, e.opciones), null);
+
+  // La segunda vuelve enseguida: ALICIA ya no está lenta.
+  lenta.contesta();
+  lenta.contesta();
+  await tick();
+  const e2 = { ...e.opciones, enAlicia: async () => ({ total: 9, fichas: [] }) };
+  assert.equal((await buscarEnPeruanas({ consulta: '"tres"', pagina: 1, tipos: [] }, e2)).fuente, 'alicia');
+});
+
+test('lenta y con muchas preguntas de camino: no se le echan más encima', async () => {
+  const e = entorno();
+  aliciaLenta(e);
+  e.opciones.pacienciaMs = 10;
+  for (const letra of ['a', 'b', 'c', 'd', 'e', 'f']) {
+    await buscarEnPeruanas({ consulta: `"${letra}"`, pagina: 1, tipos: [] }, e.opciones);
+  }
+  assert.equal(e.llamadasAlicia, 4);
+  const ultima = await buscarEnPeruanas({ consulta: '"g"', pagina: 1, tipos: [] }, e.opciones);
+  assert.equal(ultima.fuente, 'lareferencia');
+  assert.equal(ultima.aliciaEnCamino, false);
+});
+
+test('solo pregrado con ALICIA lenta: se la espera lo que tarde', async () => {
+  const e = entorno();
+  const lenta = aliciaLenta(e);
+  e.opciones.pacienciaMs = 10;
+  await buscarEnPeruanas({ consulta: '"uno"', pagina: 1, tipos: [] }, e.opciones);
+
+  const pregrado = buscarEnPeruanas({ consulta: '"tesis"', pagina: 1, tipos: ['pregrado'] }, e.opciones);
+  await new Promise((listo) => setTimeout(listo, 40));
+  lenta.contesta(1);
+  lenta.contesta(77);
+  const r = await pregrado;
+  assert.equal(r.fuente, 'alicia');
+  assert.equal(r.total, 77);
+  assert.equal(e.llamadasRespaldo.length, 1);
+});
+
+test('la pregunta de por detrás falla: avisa, y quien esperaba se queda con el respaldo', async () => {
+  const e = entorno();
+  const lenta = aliciaLenta(e);
+  e.opciones.pacienciaMs = 10;
+  const peticion = { consulta: '"cae"', pagina: 1, tipos: [] };
+  await buscarEnPeruanas(peticion, e.opciones);
+
+  const esperando = alicia.loQueTraigaAlicia(peticion, e.opciones);
+  lenta.falla();
+  assert.equal(await esperando, null);
+  assert.deepEqual(
+    registro.filter((l) => l.nivel === 'error').map((l) => l.msg),
+    ['ALICIA no responde: se busca en LA Referencia'],
+  );
+
+  // Y ya cuenta como caída: la siguiente va al respaldo sin preguntarle.
+  const otra = await buscarEnPeruanas({ consulta: '"otra"', pagina: 1, tipos: [] }, e.opciones);
+  assert.equal(otra.aliciaEnCamino, false);
+  assert.equal(e.llamadasAlicia, 1);
 });
 
 test('si el respaldo tampoco contesta, «ALICIA no responde» es un 503 que sale como error', async () => {

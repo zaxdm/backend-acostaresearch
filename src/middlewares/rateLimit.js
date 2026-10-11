@@ -239,7 +239,9 @@ const scopusIaLimiter = build({
  */
 const aliciaLimiter = build({
   windowMs: 10 * 60 * 1000,
-  max: 60,
+  // Cuando ALICIA va lenta cada búsqueda son dos peticiones: la que trae el
+  // respaldo y la que se queda esperando a ALICIA.
+  max: 120,
   message: 'Has buscado en ALICIA muchas veces seguidas. Espera unos minutos.',
   keyGenerator: porUsuario,
 });

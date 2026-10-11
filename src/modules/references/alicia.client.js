@@ -95,12 +95,12 @@ function leerJson(texto) {
   return JSON.parse(inicio > 0 ? texto.slice(inicio) : texto);
 }
 
-async function pedirUnaVez(url, ruta) {
+async function pedirUnaVez(url, ruta, tiempoMs = TIEMPO_LIMITE_MS) {
   let res;
   try {
     res = await fetch(url, {
       headers: { Accept: 'application/json' },
-      signal: AbortSignal.timeout(TIEMPO_LIMITE_MS),
+      signal: AbortSignal.timeout(tiempoMs),
     });
   } catch (fallo) {
     throw new FalloPasajero(fallo.message);
@@ -131,23 +131,28 @@ async function pedirUnaVez(url, ruta) {
  *
  * `reintentar: false` es para la búsqueda, que tiene a dónde ir si ALICIA no
  * contesta (ver `scopus.alicia.buscarEnPeruanas`): repetir serían otros
- * treinta segundos de espera para el tesista.
+ * treinta segundos de espera para el tesista. Y `tiempoMs`, para cuando la
+ * pregunta va por detrás y nadie la espera: ahí se le puede dar más margen.
  */
 async function pedir(
   ruta,
   params,
-  { pausaMs = PAUSA_ANTES_DE_REINTENTAR_MS, reintentar = true } = {},
+  {
+    pausaMs = PAUSA_ANTES_DE_REINTENTAR_MS,
+    reintentar = true,
+    tiempoMs = TIEMPO_LIMITE_MS,
+  } = {},
 ) {
   const url = new URL(`${BASE}${ruta}`);
   for (const [clave, valor] of params) url.searchParams.append(clave, valor);
 
   try {
-    return await pedirUnaVez(url, ruta);
+    return await pedirUnaVez(url, ruta, tiempoMs);
   } catch (fallo) {
     if (!reintentar || !(fallo instanceof FalloPasajero)) throw fallo;
     logger.warn({ err: fallo.message, ruta }, 'ALICIA: primer intento fallido, se reintenta');
     await new Promise((listo) => setTimeout(listo, pausaMs));
-    return pedirUnaVez(url, ruta);
+    return pedirUnaVez(url, ruta, tiempoMs);
   }
 }
 
@@ -251,7 +256,7 @@ const CAMPOS = [
  */
 async function buscar(
   { consulta, pagina = 1, tipos = [], desde = null, hasta = null },
-  { reintentar = true } = {},
+  { reintentar = true, tiempoMs } = {},
 ) {
   const params = [
     ['lookfor', consulta],
@@ -269,7 +274,7 @@ async function buscar(
     params.push(['filter[]', `publishDate:[${desde ?? '*'} TO ${hasta ?? '*'}]`]);
   }
 
-  const json = await pedir('/search', params, { reintentar });
+  const json = await pedir('/search', params, { reintentar, tiempoMs });
   return {
     total: json.resultCount ?? 0,
     fichas: (json.records ?? []).map(comoFicha).filter((f) => f.id && f.title),

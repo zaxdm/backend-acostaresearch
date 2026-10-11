@@ -174,7 +174,8 @@ const guardadaIdSchema = z.object({ id: z.string().uuid('Esa búsqueda no existe
 /**
  * ALICIA con la misma búsqueda. `consulta` solo llega si el tesista corrigió a
  * mano la que se armó: entonces manda la suya, ya en el lenguaje de ALICIA, y
- * los años que tenía.
+ * los años que tenía. Con `esperar` no se busca: se aguarda lo que ALICIA
+ * conteste a la búsqueda que se enseñó con el respaldo.
  */
 const aliciaSchema = z.object({
   ecuacion,
@@ -183,6 +184,7 @@ const aliciaSchema = z.object({
   tipos: z.array(z.enum(['pregrado', 'maestria', 'doctorado', 'articulos'])).max(4).optional(),
   desde: z.coerce.number().int().min(1900).max(2100).nullable().optional(),
   hasta: z.coerce.number().int().min(1900).max(2100).nullable().optional(),
+  esperar: z.boolean().optional(),
 });
 
 /** Los identificadores de ALICIA; su forma se vuelve a comprobar en el cliente. */

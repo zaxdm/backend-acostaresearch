@@ -273,33 +273,51 @@ const noResponde = (mensaje = 'El repositorio ALICIA no responde ahora. Prueba e
  * DE DÓNDE SALE LA LISTA: ALICIA, LO GUARDADO O LA REFERENCIA
  * ----------------------------------------------------------
  * ALICIA es la buena: tiene las tesis de pregrado, el asesor y la revista. Pero
- * es un servidor del Estado y el 9 y el 10-oct-2026 pasó de lenta (veinte
- * segundos por página) a no contestar en toda la mañana. Tres cosas hacen que
- * el tesista no se quede mirando un «no responde»:
+ * es un servidor del Estado y el 9 y el 10-oct-2026 pasó de lenta a caída y de
+ * caída a lenta otra vez: contestaba, pero en 16 a 31 segundos. Con «contesta o
+ * no contesta» no bastaba —el tesista esperaba medio minuto cada vez que el
+ * sondeo la daba por buena—, así que lo que se mide es si contesta A TIEMPO:
  *
  * 1. LO GUARDADO. Lo que ALICIA ya contestó vale media hora como recién
  *    pedido: volver de la página 2 a la 1, quitar un filtro, o el tesista de al
  *    lado con el mismo tema. Y pasado ese tiempo sigue sirviendo si ALICIA no
  *    contesta: mejor su lista de hace un rato que la de otro catálogo.
- * 2. LA REFERENCIA. Si ALICIA falla y no hay nada guardado, se busca lo mismo
- *    en el nodo peruano de LA Referencia, que cosecha a la propia ALICIA y
- *    contesta en un segundo. No tiene pregrado (ver `lareferencia.client`), así
- *    que la respuesta dice de dónde viene y la web lo avisa.
- * 3. NO INSISTIR. Tras un fallo no se le vuelve a preguntar a ALICIA en cada
- *    búsqueda —serían treinta segundos de espera cada vez—: se va derecho al
- *    respaldo y, cada tres minutos, una búsqueda la sondea por detrás sin
- *    hacer esperar a nadie. Cuando contesta, todo vuelve a ALICIA.
+ * 2. SEIS SEGUNDOS DE PACIENCIA. Se le pregunta a ALICIA y se la espera eso.
+ *    Si no llegó, el tesista ve ya lo de LA Referencia (el nodo peruano, que
+ *    cosecha a la propia ALICIA y contesta en un segundo; sin pregrado, ver
+ *    `lareferencia.client`) y la pregunta a ALICIA SIGUE VIVA por detrás.
+ *    Cuando llega se guarda, y la web —que se quedó esperándola con
+ *    `esperar`— cambia la lista sola.
+ * 3. LENTA. Desde que ALICIA se pasa de los seis segundos, las búsquedas
+ *    siguientes ni la esperan: respaldo al momento y ALICIA por detrás. Deja
+ *    de estar lenta cuando una respuesta suya llega a tiempo.
+ * 4. CAÍDA. Si falla, no se le pregunta en cada búsqueda: solo cada tres
+ *    minutos, por detrás. Cuando contesta, vuelve.
+ *
+ * Solo hay un caso en que el tesista espera a ALICIA lo que tarde: cuando
+ * filtra SOLO pregrado, que no está en ningún otro sitio.
  *
  * LOS AVISOS SE QUEDAN. Cada vez que ALICIA falla de verdad —la primera vez y
  * en cada sondeo— se anota como error, y eso llega al móvil del administrador
  * aunque el tesista haya visto resultados. Es a propósito: es como se entera.
+ * Que vaya lenta y acabe contestando no es un fallo y no avisa.
  */
 const respuestas = new Map();
 const RESPUESTA_FRESCA_MS = 30 * 60 * 1000;
 const TOPE_DE_RESPUESTAS = 300;
 const SONDEAR_CADA_MS = 3 * 60 * 1000;
 
-const estado = { fallando: false, proximoSondeo: 0, sondeando: false };
+/** Lo que se espera a ALICIA antes de enseñar el respaldo. */
+const PACIENCIA_MS = 6_000;
+/** Por detrás no espera nadie: se le da más que los 30 s de siempre. */
+const TIEMPO_POR_DETRAS_MS = 45_000;
+/** Preguntas a la vez mientras va lenta: no se le echa más carga encima. */
+const MAXIMO_EN_CAMINO = 4;
+
+const estado = { fallando: false, lenta: false, proximoSondeo: 0 };
+
+/** Las preguntas a ALICIA que no han vuelto, por búsqueda: `{ promesa, desde }`. */
+const enCamino = new Map();
 
 /**
  * Las fichas que ya se enseñaron, por identificador. «Añadir a mis fuentes»
@@ -322,7 +340,8 @@ function recordarFichas(fichas) {
 function reiniciar() {
   respuestas.clear();
   fichasVistas.clear();
-  Object.assign(estado, { fallando: false, proximoSondeo: 0, sondeando: false });
+  enCamino.clear();
+  Object.assign(estado, { fallando: false, lenta: false, proximoSondeo: 0 });
 }
 
 function guardar(clave, respuesta, en) {
@@ -332,35 +351,80 @@ function guardar(clave, respuesta, en) {
   recordarFichas(respuesta.fichas ?? []);
 }
 
-/** Un solo intento: si falla, hay a dónde ir. */
-const unaVezEnAlicia = (peticion) => alicia.buscar(peticion, { reintentar: false });
+/** La misma búsqueda, se pida como se pida. */
+const claveDe = ({ consulta, desde = null, hasta = null, pagina = 1, tipos = [] }) =>
+  JSON.stringify([consulta, desde ?? null, hasta ?? null, pagina, [...tipos].sort()]);
 
-/** Pregunta a ALICIA sin que nadie espere la respuesta. */
-function sondear(peticion, clave, { enAlicia, ahora }) {
-  estado.sondeando = true;
-  estado.proximoSondeo = ahora() + SONDEAR_CADA_MS;
-  enAlicia(peticion)
-    .then((respuesta) => {
-      guardar(clave, respuesta, ahora());
-      estado.fallando = false;
-      logger.info('ALICIA volvió a responder');
-    })
-    .catch((fallo) => {
-      logger.error({ err: fallo.message }, 'ALICIA sigue sin responder: se busca en LA Referencia');
-    })
+/** Un solo intento: si falla, hay a dónde ir. */
+const unaVezEnAlicia = (peticion) =>
+  alicia.buscar(peticion, { reintentar: false, tiempoMs: TIEMPO_POR_DETRAS_MS });
+
+/**
+ * Le pregunta a ALICIA, o se suma a la pregunta igual que ya iba de camino.
+ * La promesa nunca falla: da la respuesta, o `null` si ALICIA no contestó. Es
+ * ella la que guarda lo que llega y la que lleva la cuenta de cómo está
+ * ALICIA, espere alguien o no.
+ */
+function preguntar(peticion, clave, { enAlicia, ahora, pacienciaMs }) {
+  const yaIba = enCamino.get(clave);
+  if (yaIba) return yaIba;
+
+  const desde = ahora();
+  const pedido = { promesa: null, desde };
+
+  // `async` para que un fallo al armar la petición también sea un «no contestó».
+  pedido.promesa = (async () => enAlicia(peticion))()
+    .then(
+      (respuesta) => {
+        guardar(clave, respuesta, ahora());
+        if (estado.fallando) logger.info('ALICIA volvió a responder');
+        estado.fallando = false;
+        estado.lenta = ahora() - desde > pacienciaMs;
+        return respuesta;
+      },
+      (fallo) => {
+        logger.error(
+          { err: fallo.message },
+          estado.fallando
+            ? 'ALICIA sigue sin responder: se busca en LA Referencia'
+            : 'ALICIA no responde: se busca en LA Referencia',
+        );
+        estado.fallando = true;
+        estado.proximoSondeo = ahora() + SONDEAR_CADA_MS;
+        return null;
+      },
+    )
     .finally(() => {
-      estado.sondeando = false;
+      if (enCamino.get(clave) === pedido) enCamino.delete(clave);
     });
+
+  enCamino.set(clave, pedido);
+  return pedido;
 }
+
+const TARDA = Symbol('tarda');
+
+/** La respuesta, o `TARDA` si no llegó en `ms`. */
+async function conPaciencia(promesa, ms) {
+  if (ms <= 0) return TARDA;
+  let reloj;
+  const tope = new Promise((listo) => {
+    reloj = setTimeout(() => listo(TARDA), ms);
+  });
+  try {
+    return await Promise.race([promesa, tope]);
+  } finally {
+    clearTimeout(reloj);
+  }
+}
+
+const SOLO_PREGRADO =
+  'ALICIA no responde ahora, y las tesis de pregrado solo están ahí. Prueba en unos minutos o quita ese filtro.';
 
 async function desdeElRespaldo(peticion, enRespaldo) {
   const tipos = peticion.tipos ?? [];
   const losQueTiene = tipos.filter((tipo) => lareferencia.TIPOS[tipo]);
-  if (tipos.length > 0 && losQueTiene.length === 0) {
-    throw noResponde(
-      'ALICIA no responde ahora, y las tesis de pregrado solo están ahí. Prueba en unos minutos o quita ese filtro.',
-    );
-  }
+  if (tipos.length > 0 && losQueTiene.length === 0) throw noResponde(SOLO_PREGRADO);
 
   try {
     const respuesta = await enRespaldo({ ...peticion, tipos: losQueTiene });
@@ -374,36 +438,75 @@ async function desdeElRespaldo(peticion, enRespaldo) {
 
 /**
  * La lista de tesis y revistas peruanas, venga de donde venga. Devuelve lo de
- * `alicia.client.buscar` más `fuente`: `alicia` o `lareferencia`.
+ * `alicia.client.buscar` más `fuente` (`alicia` o `lareferencia`) y
+ * `aliciaEnCamino`: la lista no es la de ALICIA de ahora, pero se le preguntó
+ * y puede llegar (ver `loQueTraigaAlicia`).
  */
 async function buscarEnPeruanas(
   peticion,
-  { enAlicia = unaVezEnAlicia, enRespaldo = lareferencia.buscar, ahora = Date.now } = {},
+  {
+    enAlicia = unaVezEnAlicia,
+    enRespaldo = lareferencia.buscar,
+    ahora = Date.now,
+    pacienciaMs = PACIENCIA_MS,
+  } = {},
 ) {
-  const { consulta, desde = null, hasta = null, pagina = 1, tipos = [] } = peticion;
-  const clave = JSON.stringify([consulta, desde, hasta, pagina, [...tipos].sort()]);
+  const clave = claveDe(peticion);
+  const tipos = peticion.tipos ?? [];
 
   const guardada = respuestas.get(clave);
   if (guardada && ahora() - guardada.en < RESPUESTA_FRESCA_MS) {
-    return { ...guardada.respuesta, fuente: 'alicia' };
+    return { ...guardada.respuesta, fuente: 'alicia', aliciaEnCamino: false };
   }
 
-  if (!estado.fallando) {
-    try {
-      const respuesta = await enAlicia(peticion);
-      guardar(clave, respuesta, ahora());
-      return { ...respuesta, fuente: 'alicia' };
-    } catch (fallo) {
-      estado.fallando = true;
-      estado.proximoSondeo = ahora() + SONDEAR_CADA_MS;
-      logger.error({ err: fallo.message }, 'ALICIA no responde: se busca en LA Referencia');
+  // Lo que pide no está en el respaldo: a ALICIA se la espera lo que tarde.
+  const soloEnAlicia = tipos.length > 0 && !tipos.some((tipo) => lareferencia.TIPOS[tipo]);
+  // Cómo estaba antes de esta búsqueda: de eso depende cuánto se la espera.
+  const { fallando, lenta } = estado;
+
+  let pedido = enCamino.get(clave) ?? null;
+  if (!pedido) {
+    const toca = fallando
+      ? ahora() >= estado.proximoSondeo
+      : !lenta || soloEnAlicia || enCamino.size < MAXIMO_EN_CAMINO;
+    if (toca) {
+      // Caída: el siguiente sondeo, dentro de tres minutos, salga este como salga.
+      if (fallando) estado.proximoSondeo = ahora() + SONDEAR_CADA_MS;
+      pedido = preguntar(peticion, clave, { enAlicia, ahora, pacienciaMs });
     }
-  } else if (ahora() >= estado.proximoSondeo && !estado.sondeando) {
-    sondear(peticion, clave, { enAlicia, ahora });
   }
 
-  if (guardada) return { ...guardada.respuesta, fuente: 'alicia' };
-  return desdeElRespaldo(peticion, enRespaldo);
+  let fallo = false;
+  if (pedido) {
+    let respuesta;
+    if (soloEnAlicia) respuesta = await pedido.promesa;
+    else if (fallando || lenta) respuesta = TARDA;
+    else respuesta = await conPaciencia(pedido.promesa, pacienciaMs - (ahora() - pedido.desde));
+
+    if (respuesta === TARDA) estado.lenta = estado.lenta || !fallando;
+    else if (respuesta) return { ...respuesta, fuente: 'alicia', aliciaEnCamino: false };
+    else fallo = true;
+  }
+
+  const aliciaEnCamino = Boolean(pedido) && !fallo;
+  if (guardada) return { ...guardada.respuesta, fuente: 'alicia', aliciaEnCamino };
+  return { ...(await desdeElRespaldo(peticion, enRespaldo)), aliciaEnCamino };
+}
+
+/**
+ * Lo que ALICIA acabe contestando a una búsqueda que se enseñó con el respaldo.
+ * Es la segunda petición de la web, la que se queda esperando: la respuesta de
+ * ALICIA si llega (o si ya llegó), y `null` si falló o si nadie le preguntó.
+ */
+async function loQueTraigaAlicia(peticion, { ahora = Date.now } = {}) {
+  const clave = claveDe(peticion);
+  const fresca = () => {
+    const guardada = respuestas.get(clave);
+    return guardada && ahora() - guardada.en < RESPUESTA_FRESCA_MS ? guardada.respuesta : null;
+  };
+
+  const pedido = enCamino.get(clave);
+  return fresca() ?? (pedido ? await pedido.promesa : null);
 }
 
 /**
@@ -423,8 +526,16 @@ const hashDe = (id) => String(id).slice(String(id).lastIndexOf('_') + 1);
 /**
  * Busca. Con `consulta`, la que el tesista corrigió a mano en el bloque; sin
  * ella, la que sale de su ecuación de Scopus.
+ *
+ * Con `esperar` no busca: se queda a la espera de lo que ALICIA conteste a la
+ * búsqueda que se acaba de enseñar con el respaldo (la web manda la `consulta`
+ * que recibió, para que sea la misma). Devuelve la lista de ALICIA con
+ * `llego: true`, o solo `llego: false` si al final no contestó.
  */
-async function buscar(userId, { ecuacion, consulta, pagina = 1, tipos = [], desde, hasta }) {
+async function buscar(
+  userId,
+  { ecuacion, consulta, pagina = 1, tipos = [], desde, hasta, esperar = false },
+) {
   let armada;
   if (consulta) {
     armada = { consulta, desde: desde ?? null, hasta: hasta ?? null };
@@ -436,7 +547,14 @@ async function buscar(userId, { ecuacion, consulta, pagina = 1, tipos = [], desd
     return { consulta: '', total: 0, pagina: 1, paginas: 1, porPagina: alicia.POR_PAGINA, resultados: [] };
   }
 
-  const respuesta = await buscarEnPeruanas({ ...armada, pagina, tipos });
+  let respuesta;
+  if (esperar) {
+    const deAlicia = await loQueTraigaAlicia({ ...armada, pagina, tipos });
+    if (!deAlicia) return { llego: false };
+    respuesta = { ...deAlicia, fuente: 'alicia', aliciaEnCamino: false };
+  } else {
+    respuesta = await buscarEnPeruanas({ ...armada, pagina, tipos });
+  }
 
   const tiene = new Set(
     await propiasRepository.hashesDeRepositorioQueTiene(
@@ -451,6 +569,9 @@ async function buscar(userId, { ecuacion, consulta, pagina = 1, tipos = [], desd
     hasta: armada.hasta,
     // `alicia` o `lareferencia`: la web avisa cuando es el respaldo.
     fuente: respuesta.fuente,
+    // La lista no es la de ALICIA de ahora, pero puede llegar: la web la espera.
+    aliciaEnCamino: respuesta.aliciaEnCamino,
+    ...(esperar ? { llego: true } : {}),
     total: respuesta.total,
     pagina,
     // VuFind no pasa de la página 500, y nadie llega ahí; se acota igual.
@@ -593,6 +714,7 @@ module.exports = {
   importar,
   consultaParaAlicia,
   buscarEnPeruanas,
+  loQueTraigaAlicia,
   reiniciar,
   leer,
   comoFila,

@@ -832,4 +832,4 @@ function leer(buffer) {
   return { formato, filas, leidas: fichas.length, descartadas };
 }
 
-module.exports = { leer, MAXIMO_FILAS, leerCsv };
+module.exports = { leer, MAXIMO_FILAS, leerCsv, aFila };

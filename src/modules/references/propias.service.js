@@ -106,6 +106,21 @@ const TIPOS = [
 /** Cuántos DOIs se aceptan de una tacada. Cada uno es una consulta a OpenAlex. */
 const MAXIMO_DOIS = 60;
 
+/** Cuántas fichas escritas a mano de una vez: una tanda de PDF sin DOI. */
+const MAXIMO_A_MANO = 20;
+
+/**
+ * Los tipos que se ofrecen al escribir una ficha a mano, con el nombre que
+ * entienden la bibliografía del Word y el BibTeX (ver `tipoCsl`).
+ */
+const TIPOS_A_MANO = {
+  articulo: 'journalArticle',
+  tesis: 'thesis',
+  libro: 'book',
+  informe: 'report',
+  otro: 'document',
+};
+
 /** Cuántos de SciELO de una vez: los mismos que una página de Scopus. */
 const MAXIMO_SCIELO = 25;
 
@@ -304,6 +319,8 @@ const propiasService = {
   biblioteca,
   TIPOS,
   MAXIMO_DOIS,
+  MAXIMO_A_MANO,
+  TIPOS_A_MANO,
 
   resumen(userId) {
     return propiasRepository.resumen(userId);
@@ -408,6 +425,95 @@ const propiasService = {
       repetidas,
       /** Los que OpenAlex no conoce. Se devuelven para poder nombrarlos. */
       noEncontrados,
+      total: tiene + guardadas,
+      sinResumenEnTotal: await propiasRepository.contarSinResumen(userId),
+    };
+  },
+
+  /**
+   * Fuentes que el tesista describe a mano, porque no tienen DOI.
+   *
+   * PARA QUÉ
+   * --------
+   * La vía de los PDF se apoya en el DOI: se lee del archivo y la ficha llega
+   * del catálogo abierto. Pero una tesis de repositorio, un libro, un informe
+   * de un ministerio o un artículo viejo no tienen DOI, y hasta el 11-oct-2026
+   * la ventana se quedaba en «pégalo abajo» sin nada que pegar. Son justo las
+   * fuentes locales que un jurado peruano espera ver citadas.
+   *
+   * QUÉ LLEGA
+   * ---------
+   * La ficha, no el archivo: el PDF sigue sin salir del equipo. El navegador
+   * propone el título que el PDF declara de sí mismo (o el nombre del archivo)
+   * y la persona corrige y completa.
+   *
+   * Entran por el mismo `aFila` que un export: misma tabla, misma identidad
+   * por título cuando no hay DOI, mismo `busqueda`. Subir dos veces la misma
+   * ficha la refresca, no la duplica.
+   */
+  async importarAMano({ userId, fuentes }) {
+    const lista = Array.isArray(fuentes) ? fuentes : [];
+
+    if (lista.length === 0) {
+      throw new ValidationError('No llegó ninguna ficha que guardar.');
+    }
+    if (lista.length > MAXIMO_A_MANO) {
+      throw new ValidationError(`Puedes guardar hasta ${MAXIMO_A_MANO} fichas de una vez.`);
+    }
+
+    const tiene = await propiasRepository.contar(userId);
+    if (tiene + lista.length > propiasRepository.TOPE_POR_USUARIO) {
+      throw new AppError(
+        `Tu biblioteca admite ${propiasRepository.TOPE_POR_USUARIO} fuentes y con esas pasarías ` +
+          `de ahí (tienes ${tiene}).`,
+        { statusCode: 409, code: ERROR_CODES.VALIDATION_ERROR },
+      );
+    }
+
+    const vistas = new Set();
+    const filas = [];
+    for (const fuente of lista) {
+      const fila = parser.aFila({
+        title: fuente.titulo,
+        // Los autores van aparte: `aFila` los espera como en un export de
+        // Scopus («Hernández R., Fernández C.») y aquí llegan ya escritos para
+        // citar («Hernández, R.; Fernández, C.»). Pasados por ahí, un solo
+        // autor «Hernández, R.» saldría partido en dos personas.
+        authors: '',
+        year: fuente.anio,
+        source: fuente.fuente,
+        url: fuente.url,
+        abstract: fuente.resumen,
+        itemType: TIPOS_A_MANO[fuente.tipo] ?? TIPOS_A_MANO.otro,
+      });
+      if (!fila || vistas.has(fila.sourceRef)) continue;
+      vistas.add(fila.sourceRef);
+
+      fila.authors = recortar(String(fuente.autores ?? '').replace(/\s*;\s*/g, '; '), 500) ?? '';
+      fila.busqueda = normalizar(
+        [fila.title, fila.authors, fila.source, fila.year, fila.abstract, fila.tags]
+          .filter(Boolean)
+          .join(' '),
+      );
+      filas.push(fila);
+    }
+
+    if (filas.length === 0) {
+      throw new ValidationError('Ninguna de esas fichas trae título. Sin título no se puede citar.');
+    }
+
+    const { guardadas, repetidas } = await propiasRepository.guardarLote(userId, filas);
+
+    logger.info(
+      { userId, pedidas: lista.length, guardadas, repetidas },
+      'Fuentes propias escritas a mano (sin DOI)',
+    );
+
+    return {
+      pedidas: lista.length,
+      guardadas,
+      repetidas,
+      sinResumen: filas.filter((fila) => !fila.abstract).length,
       total: tiene + guardadas,
       sinResumenEnTotal: await propiasRepository.contarSinResumen(userId),
     };

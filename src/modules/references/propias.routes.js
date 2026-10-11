@@ -83,6 +83,53 @@ router.post(
 );
 
 /**
+ * Fuentes sin DOI, con la ficha escrita a mano. Ver `propiasService.importarAMano`.
+ *
+ * Llega JSON: el PDF tampoco viaja por aquí. El resumen es lo único largo y
+ * con su tope cabe en el parser normal aunque vengan varias.
+ */
+const texto = (largo) => z.string().trim().max(largo).optional().default('');
+const aManoSchema = z.object({
+  fuentes: z
+    .array(
+      z.object({
+        titulo: z
+          .string()
+          .trim()
+          .min(5, 'Escribe el título completo de la fuente.')
+          .max(500, 'Ese título es demasiado largo.'),
+        autores: texto(500),
+        anio: z.coerce.number().int().min(1500).max(2100).nullish(),
+        fuente: texto(300),
+        tipo: z.enum(Object.keys(propiasService.TIPOS_A_MANO)).default('otro'),
+        url: texto(500),
+        resumen: texto(4000),
+      }),
+    )
+    .min(1, 'No llegó ninguna ficha que guardar.')
+    .max(
+      propiasService.MAXIMO_A_MANO,
+      `Puedes guardar hasta ${propiasService.MAXIMO_A_MANO} fichas de una vez.`,
+    ),
+});
+
+router.post(
+  '/a-mano',
+  validate({ body: aManoSchema }),
+  asyncHandler(async (req, res) => {
+    const resultado = await propiasService.importarAMano({
+      userId: req.user.id,
+      fuentes: req.body.fuentes,
+    });
+
+    const partes = [`Guardamos ${resultado.guardadas} fuentes nuevas`];
+    if (resultado.repetidas > 0) partes.push(`${resultado.repetidas} ya las tenías`);
+
+    return ok(res, resultado, { message: `${partes.join(', ')}. Ya puedes pedírselas a Claude.` });
+  }),
+);
+
+/**
  * Buscar en las revistas de SciELO. Ver `openalex.buscarEnScielo`.
  *
  * Aquí y no en `/mi-scopus`: no hay nada que conectar ni cuota de Elsevier que

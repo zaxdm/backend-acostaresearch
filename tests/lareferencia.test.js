@@ -64,6 +64,22 @@ function fetchDeLaReferencia() {
   return llamadas;
 }
 
+test('dos búsquedas a la vez recién arrancado: las dos pasan al tipo de repuesto', async () => {
+  // Un módulo sin estrenar, como tras reiniciar el servidor.
+  delete require.cache[ruta('../src/modules/references/lareferencia.client')];
+  const recien = require('../src/modules/references/lareferencia.client');
+  const llamadas = fetchDeLaReferencia();
+
+  const [a, b] = await Promise.all([
+    recien.buscar({ consulta: 'liderazgo' }),
+    recien.buscar({ consulta: 'tutoria' }),
+  ]);
+
+  assert.equal(a.total, 1);
+  assert.equal(b.total, 1);
+  assert.equal(llamadas.length, 4);
+});
+
 test('busca en el nodo peruano, sin sílabos, y pasa al tipo de repuesto una sola vez', async () => {
   const llamadas = fetchDeLaReferencia();
 

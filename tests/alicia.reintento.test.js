@@ -86,6 +86,20 @@ test('un 503 se reintenta; si vuelve a fallar, el error llega', async () => {
   assert.equal(llamadas.length, 2);
 });
 
+test('el 400 de «Problem connecting to Solr» sí se reintenta: es su buscador, no la pregunta', async () => {
+  const llamadas = fetchPorTurnos(
+    respuesta(
+      400,
+      'Cannot write session to /tmp/vufind_sessions/sess_blvdp12eba39\n' +
+        '{"status":"ERROR","statusMessage":"Problem connecting to Solr."}',
+    ),
+    respuesta(200, { status: 'OK', resultCount: 8 }),
+  );
+  const json = await pedir('/search', [], SIN_PAUSA);
+  assert.equal(json.resultCount, 8);
+  assert.equal(llamadas.length, 2);
+});
+
 test('un 400 no se reintenta', async () => {
   const llamadas = fetchPorTurnos(respuesta(400, {}));
   await assert.rejects(pedir('/search', [], SIN_PAUSA), /ALICIA respondió 400/);

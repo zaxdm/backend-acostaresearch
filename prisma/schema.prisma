@@ -22,6 +22,14 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model AliciaCache {
+  clave     String   @id @db.VarChar(64)
+  respuesta Json
+  en        DateTime @db.DateTime(3)
+
+  @@index([en])
+}
+
 enum Role {
   USER
   EDITOR

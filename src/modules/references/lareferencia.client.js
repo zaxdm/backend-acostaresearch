@@ -134,14 +134,21 @@ async function buscar({ consulta, pagina = 1, tipos = [], desde = null, hasta = 
     ...CAMPOS,
   ];
 
+  // El tipo con el que salió ESTA búsqueda. Dos a la vez, recién arrancado el
+  // servidor, salen las dos con el normal: la segunda en fallar ya encuentra
+  // cambiado el de todos, y mirando ese se quedaba sin su segundo intento
+  // (11-oct-2026: el tesista esperó 46 s a ALICIA con el respaldo en pie).
+  const usado = tipoDeBusqueda;
   let json;
   try {
-    json = await pedir('/search', params(tipoDeBusqueda));
+    json = await pedir('/search', params(usado));
   } catch (fallo) {
-    if (!fallo.busquedaInvalida || tipoDeBusqueda !== TIPO_NORMAL) throw fallo;
-    logger.warn('LA Referencia rechaza AllFields: se busca con el tipo de repuesto');
-    tipoDeBusqueda = TIPO_DE_REPUESTO;
-    json = await pedir('/search', params(tipoDeBusqueda));
+    if (!fallo.busquedaInvalida || usado !== TIPO_NORMAL) throw fallo;
+    if (tipoDeBusqueda === TIPO_NORMAL) {
+      logger.warn('LA Referencia rechaza AllFields: se busca con el tipo de repuesto');
+      tipoDeBusqueda = TIPO_DE_REPUESTO;
+    }
+    json = await pedir('/search', params(TIPO_DE_REPUESTO));
   }
 
   return { total: json.resultCount ?? 0, fichas: fichas(json) };

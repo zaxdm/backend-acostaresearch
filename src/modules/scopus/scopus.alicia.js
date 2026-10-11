@@ -9,6 +9,7 @@ const alicia = require('../references/alicia.client');
 const lareferencia = require('../references/lareferencia.client');
 const { normalizar } = require('../references/zotero.mapper');
 const propiasRepository = require('../references/propias.repository');
+const cachePersistente = require('./alicia.cache');
 
 /**
  * LO MISMO QUE BUSCÓ EN SCOPUS, EN LAS TESIS Y REVISTAS PERUANAS.
@@ -266,7 +267,7 @@ async function consultaParaAlicia(ecuacion, opciones = {}) {
 
 // ── Lo que pide la web ─────────────────────────────────────────────────────
 
-const noResponde = (mensaje = 'El repositorio ALICIA no responde ahora. Prueba en unos minutos.') =>
+const noResponde = (mensaje = 'Los repositorios no responden ahora. Prueba en unos minutos.') =>
   new AppError(mensaje, { statusCode: 503, code: ERROR_CODES.ASSISTANT_UNAVAILABLE });
 
 /**
@@ -280,17 +281,16 @@ const noResponde = (mensaje = 'El repositorio ALICIA no responde ahora. Prueba e
  *
  * 1. LO GUARDADO. Lo que ALICIA ya contestó vale media hora como recién
  *    pedido: volver de la página 2 a la 1, quitar un filtro, o el tesista de al
- *    lado con el mismo tema. Y pasado ese tiempo sigue sirviendo si ALICIA no
- *    contesta: mejor su lista de hace un rato que la de otro catálogo.
- * 2. SEIS SEGUNDOS DE PACIENCIA. Se le pregunta a ALICIA y se la espera eso.
- *    Si no llegó, el tesista ve ya lo de LA Referencia (el nodo peruano, que
+ *    lado con el mismo tema. Pasado ese tiempo se enseña inmediatamente y
+ *    se actualiza por detrás. La base conserva las respuestas siete días.
+ * 2. RESPALDO INMEDIATO. Se le pregunta a ALICIA por detrás.
+ *    El tesista ve ya lo de LA Referencia (el nodo peruano, que
  *    cosecha a la propia ALICIA y contesta en un segundo; sin pregrado, ver
  *    `lareferencia.client`) y la pregunta a ALICIA SIGUE VIVA por detrás.
  *    Cuando llega se guarda, y la web —que se quedó esperándola con
  *    `esperar`— cambia la lista sola.
- * 3. LENTA. Desde que ALICIA se pasa de los seis segundos, las búsquedas
- *    siguientes ni la esperan: respaldo al momento y ALICIA por detrás. Deja
- *    de estar lenta cuando una respuesta suya llega a tiempo.
+ * 3. LENTA. El respaldo se consulta inmediatamente incluso con ALICIA sana.
+ *    La lentitud se mide por separado para el seguimiento del servicio.
  * 4. CAÍDA. Un fallo suelto no la da por caída: el 11-oct fallaba una de cada
  *    tres («Problem connecting to Solr») y contestaba las otras dos en 20 a
  *    35 s, y con un solo fallo todo el mundo se quedaba tres minutos sin
@@ -311,11 +311,11 @@ const RESPUESTA_FRESCA_MS = 30 * 60 * 1000;
 const TOPE_DE_RESPUESTAS = 300;
 const SONDEAR_CADA_MS = 3 * 60 * 1000;
 
-/** Lo que se espera a ALICIA antes de enseñar el respaldo. */
-const PACIENCIA_MS = 6_000;
+/** El respaldo se consulta inmediatamente; ALICIA continúa por detrás. */
+const PACIENCIA_MS = 0;
 /** Por detrás no espera nadie: se le da más que los 30 s de siempre. */
 const TIEMPO_POR_DETRAS_MS = 45_000;
-/** Preguntas a la vez mientras va lenta: no se le echa más carga encima. */
+/** Máximo de preguntas con respaldo. Solo pregrado queda exento. */
 const MAXIMO_EN_CAMINO = 4;
 
 /** Fallos seguidos para darla por caída. */
@@ -362,9 +362,15 @@ function guardar(clave, respuesta, en) {
 const claveDe = ({ consulta, desde = null, hasta = null, pagina = 1, tipos = [] }) =>
   JSON.stringify([consulta, desde ?? null, hasta ?? null, pagina, [...tipos].sort()]);
 
-/** Un solo intento: si falla, hay a dónde ir. */
+/**
+ * La pregunta a ALICIA, con su reintento. Va por detrás y nadie la espera
+ * —salvo quien filtra solo pregrado—, así que repetir no le cuesta a nadie y
+ * lo que acabe llegando se queda guardado siete días. El 11-oct-2026 fallaba
+ * siete de cada nueve a la primera («Problem connecting to Solr»). Lo peor:
+ * dos intentos de 45 s, minuto y medio.
+ */
 const unaVezEnAlicia = (peticion) =>
-  alicia.buscar(peticion, { reintentar: false, tiempoMs: TIEMPO_POR_DETRAS_MS });
+  alicia.buscar(peticion, { reintentar: true, tiempoMs: TIEMPO_POR_DETRAS_MS });
 
 /**
  * Le pregunta a ALICIA, o se suma a la pregunta igual que ya iba de camino.
@@ -372,7 +378,7 @@ const unaVezEnAlicia = (peticion) =>
  * ella la que guarda lo que llega y la que lleva la cuenta de cómo está
  * ALICIA, espere alguien o no.
  */
-function preguntar(peticion, clave, { enAlicia, ahora, pacienciaMs }) {
+function preguntar(peticion, clave, { enAlicia, ahora, pacienciaMs, cache }) {
   const yaIba = enCamino.get(clave);
   if (yaIba) return yaIba;
 
@@ -384,10 +390,11 @@ function preguntar(peticion, clave, { enAlicia, ahora, pacienciaMs }) {
     .then(
       (respuesta) => {
         guardar(clave, respuesta, ahora());
+        if (cache) void cache.guardar(clave, { ...respuesta, fuente: 'alicia' }, ahora());
         if (estado.fallando) logger.info('ALICIA volvió a responder');
         estado.fallando = false;
         estado.fallosSeguidos = 0;
-        estado.lenta = ahora() - desde > pacienciaMs;
+        estado.lenta = ahora() - desde > 6_000;
         return respuesta;
       },
       (fallo) => {
@@ -432,7 +439,7 @@ async function conPaciencia(promesa, ms) {
 }
 
 const SOLO_PREGRADO =
-  'ALICIA no responde ahora, y las tesis de pregrado solo están ahí. Prueba en unos minutos o quita ese filtro.';
+  'Las tesis de pregrado no están disponibles ahora. Prueba en unos minutos o quita ese filtro.';
 
 async function desdeElRespaldo(peticion, enRespaldo) {
   const tipos = peticion.tipos ?? [];
@@ -462,14 +469,16 @@ async function buscarEnPeruanas(
     enRespaldo = lareferencia.buscar,
     ahora = Date.now,
     pacienciaMs = PACIENCIA_MS,
+    cache = enAlicia === unaVezEnAlicia ? cachePersistente : null,
   } = {},
 ) {
   const clave = claveDe(peticion);
   const tipos = peticion.tipos ?? [];
 
-  const guardada = respuestas.get(clave);
+  const guardada = respuestas.get(clave) ?? (cache ? await cache.leer(clave) : null);
+  if (guardada) guardar(clave, guardada.respuesta, guardada.en);
   if (guardada && ahora() - guardada.en < RESPUESTA_FRESCA_MS) {
-    return { ...guardada.respuesta, fuente: 'alicia', aliciaEnCamino: false };
+    return { ...guardada.respuesta, fuente: guardada.respuesta.fuente ?? 'alicia', aliciaEnCamino: false };
   }
 
   // Lo que pide no está en el respaldo: a ALICIA se la espera lo que tarde.
@@ -479,15 +488,15 @@ async function buscarEnPeruanas(
 
   let pedido = enCamino.get(clave) ?? null;
   if (!pedido) {
-    const toca = fallando
-      ? ahora() >= estado.proximoSondeo
-      : !lenta || soloEnAlicia || enCamino.size < MAXIMO_EN_CAMINO;
-    if (toca) {
+    const toca = !fallando || ahora() >= estado.proximoSondeo;
+    if (toca && (soloEnAlicia || enCamino.size < MAXIMO_EN_CAMINO)) {
       // Caída: el siguiente sondeo, dentro de tres minutos, salga este como salga.
       if (fallando) estado.proximoSondeo = ahora() + SONDEAR_CADA_MS;
-      pedido = preguntar(peticion, clave, { enAlicia, ahora, pacienciaMs });
+      pedido = preguntar(peticion, clave, { enAlicia, ahora, pacienciaMs, cache });
     }
   }
+
+  if (guardada) return { ...guardada.respuesta, fuente: guardada.respuesta.fuente ?? 'alicia', aliciaEnCamino: Boolean(pedido) };
 
   let fallo = false;
   if (pedido) {
@@ -502,8 +511,14 @@ async function buscarEnPeruanas(
   }
 
   const aliciaEnCamino = Boolean(pedido) && !fallo;
-  if (guardada) return { ...guardada.respuesta, fuente: 'alicia', aliciaEnCamino };
-  return { ...(await desdeElRespaldo(peticion, enRespaldo)), aliciaEnCamino };
+  try {
+    const respaldo = await desdeElRespaldo(peticion, enRespaldo);
+    return { ...respaldo, aliciaEnCamino };
+  } catch (error) {
+    const respuesta = pedido ? await pedido.promesa : null;
+    if (respuesta) return { ...respuesta, fuente: 'alicia', aliciaEnCamino: false };
+    throw error;
+  }
 }
 
 /**

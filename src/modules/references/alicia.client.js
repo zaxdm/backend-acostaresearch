@@ -80,6 +80,11 @@ const PAUSA_ANTES_DE_REINTENTAR_MS = 1500;
  * Un fallo que pasa solo: no contestó a tiempo, se cortó la conexión, dio un
  * 5xx o devolvió una página de error en vez de JSON. Un 4xx o un `status`
  * distinto de OK no se arregla repitiendo la misma pregunta.
+ *
+ * Con una excepción: su «Problem connecting to Solr» llega como 400, a los 35
+ * segundos, y es su buscador que no contestó a tiempo, no una pregunta mal
+ * hecha. El 11-oct-2026 lo daba en siete de cada nueve búsquedas y la misma
+ * pregunta, repetida, salía bien.
  */
 class FalloPasajero extends Error {}
 
@@ -108,8 +113,10 @@ async function pedirUnaVez(url, ruta, tiempoMs = TIEMPO_LIMITE_MS) {
 
   if (!res.ok) {
     logger.warn({ estado: res.status, ruta }, 'ALICIA no contestó bien');
-    const mensaje = `ALICIA respondió ${res.status}`;
-    throw res.status >= 500 ? new FalloPasajero(mensaje) : new Error(mensaje);
+    const cuerpo = await res.text().catch(() => '');
+    const deSolr = /connecting to solr/i.test(cuerpo);
+    const mensaje = `ALICIA respondió ${res.status}${deSolr ? ' (su buscador no contestó)' : ''}`;
+    throw res.status >= 500 || deSolr ? new FalloPasajero(mensaje) : new Error(mensaje);
   }
 
   let json;

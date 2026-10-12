@@ -26,7 +26,7 @@ async function authenticate(req, _res, next) {
 
     const user = await prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, role: true, email: true, status: true, sessionVersion: true },
+      select: { id: true, role: true, email: true, status: true, sessionVersion: true, pais: true },
     });
     if (!user || user.status !== 'ACTIVE') {
       return next(new ForbiddenError('La cuenta no está activa.', ERROR_CODES.ACCOUNT_SUSPENDED));
@@ -34,7 +34,7 @@ async function authenticate(req, _res, next) {
     if ((payload.sessionVersion ?? 0) !== user.sessionVersion || payload.role !== user.role) {
       return next(new UnauthorizedError('La sesión fue invalidada. Inicia sesión de nuevo.', ERROR_CODES.INVALID_TOKEN));
     }
-    req.user = { id: user.id, role: user.role, email: user.email };
+    req.user = { id: user.id, role: user.role, email: user.email, pais: user.pais };
     return next();
   } catch (error) {
     if (error instanceof jwt.TokenExpiredError) {

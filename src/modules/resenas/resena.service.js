@@ -80,6 +80,18 @@ const CAMPOS_PROPIOS = {
 };
 
 /** Lo que ve el panel. Añade de quién es, que es lo que allí hace falta. */
+/**
+ * Las reseñas de un país: las que escribieron sus clientes. Las que se dieron
+ * de alta desde el panel a nombre de alguien sin cuenta son de la casa.
+ *
+ * `undefined` = todas; `null` = las de la casa.
+ */
+function delPais(pais) {
+  if (pais === undefined) return {};
+  if (pais === null) return { OR: [{ userId: null }, { user: { pais: null } }] };
+  return { user: { pais } };
+}
+
 const CAMPOS_PANEL = {
   ...CAMPOS_PROPIOS,
   nombre: true,
@@ -373,9 +385,9 @@ const resenaService = {
   },
 
   /** El panel: todas, o las de un estado. La más reciente primero. */
-  async listar(estado) {
+  async listar(estado, { pais } = {}) {
     const filas = await prisma.resenaServicio.findMany({
-      where: estado === 'TODAS' ? {} : { estado },
+      where: { ...(estado === 'TODAS' ? {} : { estado }), ...delPais(pais) },
       orderBy: { createdAt: 'desc' },
       take: 500,
       select: CAMPOS_PANEL,
@@ -386,8 +398,8 @@ const resenaService = {
   },
 
   /** Cuántas esperan. Es el contador de la barra lateral del panel. */
-  async pendientes() {
-    return prisma.resenaServicio.count({ where: { estado: 'PENDIENTE' } });
+  async pendientes({ pais } = {}) {
+    return prisma.resenaServicio.count({ where: { estado: 'PENDIENTE', ...delPais(pais) } });
   },
 
   /**

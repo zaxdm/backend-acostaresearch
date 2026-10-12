@@ -22,8 +22,29 @@ const paymentSelect = {
   },
 };
 
+/**
+ * Los pagos de un país: los de sus clientes y los que se pagaron con uno de sus
+ * descuentos (un cliente no lleva la etiqueta hasta que su primer pago se
+ * confirma, y mientras espera revisión también tiene que salir).
+ *
+ * `undefined` = todos; `null` = los de la casa, que son justo el resto.
+ */
+function delPais(pais) {
+  if (pais === undefined) return {};
+  if (pais === null) {
+    return {
+      user: { pais: null },
+      OR: [{ discountCodeId: null }, { discountCode: { pais: null } }],
+    };
+  }
+  return { OR: [{ user: { pais } }, { discountCode: { pais } }] };
+}
+
+const COMPRADOR = { id: true, email: true, firstName: true, lastName: true, pais: true };
+
 const paymentRepository = {
   paymentSelect,
+  delPais,
 
   create(data) {
     return prisma.payment.create({ data });
@@ -282,16 +303,16 @@ const paymentRepository = {
    * El orden no es el habitual a propósito: aquí hay gente esperando su
    * acceso, y el que lleva más tiempo esperando es el que hay que mirar antes.
    */
-  listInReview({ limit = 100 } = {}) {
+  listInReview({ limit = 100, pais } = {}) {
     return prisma.payment.findMany({
-      where: { status: 'IN_REVIEW' },
+      where: { status: 'IN_REVIEW', ...delPais(pais) },
       select: {
         ...paymentSelect,
         operationCode: true,
         proofMime: true,
         proofCheck: true,
         discountCents: true,
-        user: { select: { id: true, email: true, firstName: true, lastName: true } },
+        user: { select: COMPRADOR },
       },
       orderBy: [{ createdAt: 'asc' }, { providerOrderId: 'asc' }],
       take: limit,
@@ -351,12 +372,13 @@ const paymentRepository = {
    * CANCELLED— porque un pago de Yape que se quedó a medias es justo lo que se
    * busca cuando alguien escribe «pagué y no me llegó nada».
    */
-  listReviewed({ provider, limit = 200 } = {}) {
+  listReviewed({ provider, limit = 200, pais } = {}) {
     return prisma.payment.findMany({
       // Uno o varios: el historial junta Yape y Western Union.
       where: {
         provider: Array.isArray(provider) ? { in: provider } : provider,
         status: { not: 'IN_REVIEW' },
+        ...delPais(pais),
       },
       select: {
         ...paymentSelect,
@@ -371,7 +393,7 @@ const paymentRepository = {
         discountCents: true,
         proofPath: true,
         reviewedAt: true,
-        user: { select: { id: true, email: true, firstName: true, lastName: true } },
+        user: { select: COMPRADOR },
       },
       orderBy: { createdAt: 'desc' },
       take: limit,
@@ -400,8 +422,9 @@ const paymentRepository = {
    * Todos los pagos, del más reciente al más antiguo. Antes eran los últimos
    * 50 y los gráficos de ingresos del panel se quedaban cortos.
    */
-  listRecent({ limit } = {}) {
+  listRecent({ limit, pais } = {}) {
     return prisma.payment.findMany({
+      where: delPais(pais),
       select: {
         ...paymentSelect,
         licenseId: true,
@@ -409,7 +432,7 @@ const paymentRepository = {
         providerCaptureId: true,
         payerEmail: true,
         errorCode: true,
-        user: { select: { id: true, email: true, firstName: true, lastName: true } },
+        user: { select: COMPRADOR },
       },
       orderBy: { createdAt: 'desc' },
       take: limit,

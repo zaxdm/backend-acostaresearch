@@ -34,6 +34,10 @@ enum Role {
   USER
   EDITOR
   ADMIN
+  /// Administrador de un país: entra al panel y solo ve lo de su `pais`. No es
+  /// un ADMIN recortado sino un rol aparte, para que todo lo que ya comprueba
+  /// «es ADMIN» lo deje fuera sin tocarlo. Ver `middlewares/panelDePais`.
+  ADMIN_PAIS
 }
 
 enum UserStatus {
@@ -61,6 +65,11 @@ model User {
   lastName     String     @db.VarChar(80)
   role         Role       @default(USER)
   status       UserStatus @default(ACTIVE)
+  /// Etiqueta de país (ISO de dos letras). En un ADMIN_PAIS, el país que
+  /// administra; en un cliente, el país que lo consiguió: se le pone la primera
+  /// vez que canjea un código o paga con un descuento de ese país. Nulo = de la
+  /// casa.
+  pais         String?    @db.VarChar(2)
   /// Se incrementa al cambiar rol o estado para invalidar sesiones existentes.
   sessionVersion Int @default(0)
 
@@ -135,6 +144,7 @@ model User {
   trialLink   TrialLink? @relation(fields: [trialLinkId], references: [id], onDelete: Cascade)
 
   @@index([trialLinkId])
+  @@index([pais])
   @@map("users")
 }
 
@@ -189,6 +199,9 @@ model TrialLink {
   /// entregar nuevos. Se comprueba al autenticar cada llamada, así que el corte
   /// es inmediato y volver a encenderlo los recupera tal como estaban.
   active Boolean @default(true)
+
+  /// País del administrador que lo creó. Nulo = de la casa. Ver `User.pais`.
+  pais String? @db.VarChar(2)
 
   createdById String?  @db.Char(36)
   createdAt   DateTime @default(now())
@@ -790,6 +803,10 @@ model ActivationCode {
   /// prueba, un año al precio de un trimestre).
   durationDays Int?
 
+  /// País del administrador que lo emitió. Nulo = de la casa. Quien lo canjea
+  /// queda con esta etiqueta. Ver `User.pais`.
+  pais String? @db.VarChar(2)
+
   createdById  String?   @db.Char(36)
   redeemedById String?   @db.Char(36)
   redeemedAt   DateTime?
@@ -802,6 +819,7 @@ model ActivationCode {
   license License?
 
   @@index([productCode, status])
+  @@index([pais])
   @@map("activation_codes")
 }
 
@@ -1142,6 +1160,10 @@ model DiscountCode {
   /// valor por defecto al revés, cualquier código creado con prisa acabaría
   /// anunciado en la portada.
   publico Boolean @default(false)
+
+  /// País del administrador que lo creó. Nulo = de la casa. Quien paga con él
+  /// queda con esta etiqueta. Ver `User.pais`.
+  pais String? @db.VarChar(2)
 
   createdById String?  @db.Char(36)
   createdAt   DateTime @default(now())

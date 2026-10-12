@@ -19,6 +19,8 @@ const codeSelect = {
   redeemedAt: true,
   expiresAt: true,
   createdAt: true,
+  // De qué país es el administrador que lo emitió. Nulo = de la casa.
+  pais: true,
 };
 
 const licenseSelect = {
@@ -65,9 +67,14 @@ const licenseRepository = {
   },
 
   /** Todos, salvo que se pida un límite: el panel suma sus ventas en los ingresos. */
-  listCodes({ productCode, status, limit } = {}) {
+  listCodes({ productCode, status, limit, pais } = {}) {
     return prisma.activationCode.findMany({
-      where: { ...(productCode && { productCode }), ...(status && { status }) },
+      where: {
+        ...(productCode && { productCode }),
+        ...(status && { status }),
+        // `undefined` = todos; `null` = solo los de la casa.
+        ...(pais !== undefined && { pais }),
+      },
       // `productCode` de la licencia además del del código: son cosas distintas
       // desde que se puede mover una licencia de producto. El del código es lo
       // que se vendió y no cambia nunca; el de la licencia es lo que esa
@@ -338,12 +345,16 @@ const licenseRepository = {
    * encontraba a nadie más antiguo: con 647 licencias, una revocada del 9-sep
    * no salía ni buscándola por su correo.
    */
-  listAll({ status, limit } = {}) {
+  listAll({ status, limit, pais } = {}) {
     return prisma.license.findMany({
-      where: { ...(status && { status }), user: { trialLinkId: null } },
+      where: {
+        ...(status && { status }),
+        // El país es el del cliente. `undefined` = todos.
+        user: { trialLinkId: null, ...(pais !== undefined && { pais }) },
+      },
       select: {
         ...licenseSelect,
-        user: { select: { id: true, email: true, firstName: true, lastName: true } },
+        user: { select: { id: true, email: true, firstName: true, lastName: true, pais: true } },
       },
       orderBy: { createdAt: 'desc' },
       take: limit,

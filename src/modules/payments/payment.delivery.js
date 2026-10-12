@@ -11,6 +11,7 @@ const prepararService = require('../preparar/preparar.service');
 const prepararRepository = require('../preparar/preparar.repository');
 const referidosService = require('../referidos/referidos.service');
 const paymentRepository = require('./payment.repository');
+const { etiquetarCliente } = require('../../shared/utils/paisDelCliente');
 const constancia = require('./payment.constancia');
 
 /**
@@ -150,6 +151,13 @@ async function entregarPago({ payment, captura, estadoEsperado = 'PENDING', nota
       // El código solo se gasta si el pago llegó a confirmarse.
       if (payment.discountCodeId) {
         await discountService.registrarUso(payment.discountCodeId, tx);
+        // Quien paga con el descuento de un administrador de país queda como
+        // cliente suyo.
+        const codigo = await tx.discountCode.findUnique({
+          where: { id: payment.discountCodeId },
+          select: { pais: true },
+        });
+        await etiquetarCliente(payment.userId, codigo?.pais, tx);
       }
 
       if (esLicencia) {

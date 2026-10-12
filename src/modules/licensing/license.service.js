@@ -12,6 +12,8 @@ const { analizar, NIVELES } = require('./license.detector');
 const limites = require('./license.limits');
 const watch = require('./license.watch');
 const prisma = require('../../lib/prisma');
+const { exigirPais } = require('../../middlewares/panelDePais');
+const { etiquetarCliente } = require('../../shared/utils/paisDelCliente');
 const { visiblePara } = require('../billing/plan.visibilidad');
 const { traeHerramientas } = require('../productos/producto.perfil');
 const proofStorage = require('../payments/proof.storage');
@@ -705,6 +707,8 @@ const licenseService = {
     amountCents,
     // Plazo pactado en esta venta. Sin él, el canje usa el del plan.
     durationDays,
+    // El país del administrador que los emite. Nulo = de la casa.
+    pais = null,
     // El sorteo los apaga: allí el correo no se comprueba —lo pidió así el
     // administrador— y el ganador recibe su propio correo, no el de una compra.
     revisarBuzon = true,
@@ -783,6 +787,7 @@ const licenseService = {
           paymentRef: paymentRef || null,
           amountCents: cobrado,
           durationDays: durationDays ?? null,
+          pais,
         });
       }
 
@@ -924,7 +929,9 @@ const licenseService = {
         const pactado = registro.durationDays
           ? { ...plan, durationDays: registro.durationDays }
           : plan;
-        return canjearMembresia({ registro, plan: pactado, userId });
+        const membresia = await canjearMembresia({ registro, plan: pactado, userId });
+        await etiquetarCliente(userId, registro.pais);
+        return membresia;
       }
     }
 
@@ -964,6 +971,8 @@ const licenseService = {
 
       if (!renovada) throw codigoInvalido(ERROR_CODES.LICENSE_CODE_USED);
 
+      await etiquetarCliente(userId, registro.pais);
+
       logger.info(
         { userId, licenseId: vigente.id, producto: registro.productCode },
         'Código canjeado: licencia renovada',
@@ -1001,6 +1010,9 @@ const licenseService = {
 
     // Sin licencia: otra petición canjeó el mismo código un instante antes.
     if (!licencia) throw codigoInvalido(ERROR_CODES.LICENSE_CODE_USED);
+
+    // Quien canjea el código de un administrador de país queda como cliente suyo.
+    await etiquetarCliente(userId, registro.pais);
 
     logger.info(
       { userId, licenseId: licencia.id, producto: registro.productCode },
@@ -1235,8 +1247,8 @@ const licenseService = {
     return watch.listarAlertas(licenseId);
   },
 
-  openAlerts() {
-    return watch.alertasAbiertas();
+  openAlerts(alcance) {
+    return watch.alertasAbiertas({ pais: alcance?.filtro });
   },
 
   /**
@@ -1543,8 +1555,28 @@ const licenseService = {
     return licencia.userId;
   },
 
-  listAll(filtros) {
-    return licenseRepository.listAll(filtros);
+  listAll(filtros, alcance) {
+    return licenseRepository.listAll({ ...filtros, pais: alcance?.filtro });
+  },
+
+  /**
+   * Corta el paso si la licencia no es de un cliente del país de quien pregunta.
+   * Al dueño no le afecta. Ver `middlewares/panelDePais`.
+   */
+  async exigirAlcance(id, alcance) {
+    if (!alcance?.dePais) return;
+    const licencia = await prisma.license.findUnique({
+      where: { id },
+      select: { user: { select: { pais: true } } },
+    });
+    exigirPais(alcance, licencia?.user?.pais, 'No encontramos esa licencia.');
+  },
+
+  /** Lo mismo para un código de activación: el país es el de quien lo emitió. */
+  async exigirAlcanceDelCodigo(id, alcance) {
+    if (!alcance?.dePais) return;
+    const codigo = await prisma.activationCode.findUnique({ where: { id }, select: { pais: true } });
+    exigirPais(alcance, codigo?.pais, 'Ese código no existe.');
   },
 
   /** Ficha completa de una licencia: estado, uso reciente y diagnóstico. */
@@ -1654,8 +1686,8 @@ const licenseService = {
     return licenseRepository.setStatus(id, { status: 'ACTIVE', adminId });
   },
 
-  listCodes(filtros) {
-    return licenseRepository.listCodes(filtros);
+  listCodes(filtros, alcance) {
+    return licenseRepository.listCodes({ ...filtros, pais: alcance?.filtro });
   },
 
   async voidCode(id) {

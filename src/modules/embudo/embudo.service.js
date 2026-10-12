@@ -73,15 +73,32 @@ const embudoService = {
   },
 
   /** El embudo de los últimos `dias` días, para el panel. */
-  async resumen({ dias = 30, ahora = new Date() } = {}) {
+  async resumen({ dias = 30, ahora = new Date(), pais } = {}) {
     const { primerDia, hoy, desde } = periodo(dias, ahora);
+
+    // Por país: `undefined` = todo, un código = sus clientes, `null` = los de la
+    // casa. Una visita a /planes es anónima y no tiene país; solo se le puede
+    // poner el de quien la hizo con sesión, así que por país ese primer escalón
+    // cuenta de menos. Las que no tienen sesión se quedan con la casa.
+    const cliente = { ...CLIENTE, ...(pais !== undefined && { pais }) };
+    const delPais = pais === undefined ? {} : { pais };
+    let visitasDelPais = {};
+    if (pais !== undefined) {
+      const etiquetados = await prisma.user.findMany({
+        where: { pais: { not: null } },
+        select: { id: true, pais: true },
+      });
+      visitasDelPais = pais
+        ? { userId: { in: etiquetados.filter((u) => u.pais === pais).map((u) => u.id) } }
+        : { OR: [{ userId: null }, { userId: { notIn: etiquetados.map((u) => u.id) } }] };
+    }
 
     const [visitas, cuentas, empezaronPago, licencias, referidos, avisos] = await Promise.all([
       prisma.visitaEmbudo.groupBy({
         by: ['visitante'],
-        where: { pagina: 'planes', dia: { gte: primerDia, lte: hoy } },
+        where: { pagina: 'planes', dia: { gte: primerDia, lte: hoy }, ...visitasDelPais },
       }),
-      prisma.user.count({ where: { ...CLIENTE, createdAt: { gte: desde } } }),
+      prisma.user.count({ where: { ...cliente, createdAt: { gte: desde } } }),
       // Abrir PayPal o Culqi, o mandar un Yape: quiso pagar el método, lo
       // lograra o no.
       prisma.payment.groupBy({
@@ -90,11 +107,11 @@ const embudoService = {
           createdAt: { gte: desde },
           plan: { kind: 'LICENSE' },
           provider: { in: ['PAYPAL', 'CULQI', 'YAPE', 'WESTERN_UNION'] },
-          user: CLIENTE,
+          user: cliente,
         },
       }),
       prisma.license.findMany({
-        where: { createdAt: { gte: desde }, user: CLIENTE },
+        where: { createdAt: { gte: desde }, user: cliente },
         select: {
           userId: true,
           productCode: true,
@@ -105,12 +122,12 @@ const embudoService = {
       }),
       prisma.referido.groupBy({
         by: ['estado'],
-        where: { createdAt: { gte: desde } },
+        where: { createdAt: { gte: desde }, ...(pais !== undefined && { invitador: delPais }) },
         _count: { _all: true },
       }),
       prisma.avisoAvance.groupBy({
         by: ['tipo'],
-        where: { enviadoAt: { gte: desde } },
+        where: { enviadoAt: { gte: desde }, ...(pais !== undefined && { user: delPais }) },
         _count: { _all: true },
       }),
     ]);

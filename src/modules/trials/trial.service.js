@@ -7,6 +7,7 @@ const { ERROR_CODES } = require('../../config/constants');
 const prisma = require('../../lib/prisma');
 const { generateOpaqueToken, hashToken } = require('../../shared/utils/tokens');
 const { AppError, NotFoundError, ValidationError } = require('../../shared/errors/AppError');
+const { exigirPais } = require('../../middlewares/panelDePais');
 const {
   urlDelConector,
   contratoDelProducto,
@@ -113,6 +114,8 @@ const enlaceSelect = {
   callsPerDay: true,
   active: true,
   createdAt: true,
+  // De qué país es el administrador que lo creó. Nulo = de la casa.
+  pais: true,
 };
 
 /** Lo que el panel enseña de un enlace, con su URL y su estado ya resueltos. */
@@ -132,7 +135,7 @@ function presentar(enlace, nombres, uso) {
 }
 
 const trialService = {
-  async create({ name, productCode, seats, accessMinutes, callsPerDay, createdById }) {
+  async create({ name, productCode, seats, accessMinutes, callsPerDay, createdById, pais = null }) {
     // Sin plan activo no hay catálogo que servir: el invitado recibiría un
     // conector vacío. Mejor negarse aquí que descubrirlo en mitad del taller.
     const contrato = await contratoDelProducto(productCode);
@@ -149,6 +152,7 @@ const trialService = {
         accessMinutes,
         callsPerDay,
         createdById,
+        pais,
       },
       select: enlaceSelect,
     });
@@ -161,8 +165,10 @@ const trialService = {
     return presentar(enlace, new Map([[productCode, contrato.nombre]]));
   },
 
-  async list() {
+  async list({ pais } = {}) {
     const enlaces = await prisma.trialLink.findMany({
+      // `undefined` = todos; `null` = solo los de la casa.
+      where: pais === undefined ? {} : { pais },
       select: enlaceSelect,
       orderBy: { createdAt: 'desc' },
     });
@@ -196,6 +202,16 @@ const trialService = {
   },
 
   /** Los conectores entregados por un enlace, uno por invitado. */
+  /**
+   * Corta el paso si el enlace no es del país de quien pregunta. Al dueño no le
+   * afecta. Ver `middlewares/panelDePais`.
+   */
+  async exigirAlcance(id, alcance) {
+    if (!alcance?.dePais) return;
+    const enlace = await prisma.trialLink.findUnique({ where: { id }, select: { pais: true } });
+    exigirPais(alcance, enlace?.pais, 'Ese enlace de prueba no existe.');
+  },
+
   async guests(id) {
     const enlace = await prisma.trialLink.findUnique({
       where: { id },

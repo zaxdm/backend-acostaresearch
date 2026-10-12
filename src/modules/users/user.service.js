@@ -419,7 +419,62 @@ const userService = {
     return { user, cambiado: true };
   },
 
-  async createAdmin({ firstName, lastName, email, password }, creadoPor) {
+  /**
+   * Le da a una cuenta que ya existe acceso de administrador, o se lo quita.
+   *
+   * Es lo que faltaba al lado de `createAdmin`, que solo sirve para un correo
+   * sin cuenta: a un cliente que ya compró no se le puede crear otra.
+   *
+   * Con `pais` queda como administrador de ese país; sin él, general. No se le
+   * manda contraseña ni se le toca nada más: entra con lo que ya tenía —su
+   * clave o su Google— y conserva sus licencias, sus compras y su tesis.
+   *
+   * Cambiar el rol deja sin valor sus sesiones (trigger `users_session_version`)
+   * y aquí se cierran además sus refresh tokens, como al suspender: tiene que
+   * volver a entrar, y es al entrar cuando ve o deja de ver el panel.
+   *
+   * Nadie se cambia el rol a sí mismo: quitárselo dejaría el panel sin quien
+   * estaba dentro.
+   */
+  async cambiarRolPorAdmin({ userId, role, pais, adminId }) {
+    if (userId === adminId) {
+      throw new ConflictError('No puedes cambiar tu propio rol.');
+    }
+
+    const usuario = await userRepository.findById(userId);
+    if (!usuario) throw new NotFoundError('Esa cuenta no existe.');
+    if (usuario.status === 'DELETED') {
+      throw new ConflictError('Esa cuenta la eliminó su dueño y no se puede cambiar.');
+    }
+
+    const nuevo = role === ROLES.ADMIN ? (pais ? ROLES.ADMIN_PAIS : ROLES.ADMIN) : ROLES.USER;
+    const mismoPais = nuevo !== ROLES.ADMIN_PAIS || usuario.pais === pais;
+    if (usuario.role === nuevo && mismoPais) return { user: usuario, cambiado: false };
+
+    const datos = { role: nuevo };
+    if (nuevo === ROLES.ADMIN_PAIS) {
+      datos.pais = pais;
+    } else if (usuario.role === ROLES.ADMIN_PAIS) {
+      // Su etiqueta decía qué país administraba. Al dejar de administrarlo no
+      // puede quedarse puesta: en un cliente significaría «lo consiguió ese
+      // país», y en un administrador general no significa nada. La de un
+      // cliente que pasa a administrador general sí se conserva: sus compras
+      // siguen siendo de quien lo consiguió.
+      datos.pais = null;
+    }
+
+    const user = await userRepository.update(userId, datos);
+    await tokenRepository.revokeAllForUser(userId);
+
+    logger.warn(
+      { userId, de: usuario.role, a: nuevo, pais: datos.pais ?? null, adminId },
+      'Rol de una cuenta cambiado por un administrador',
+    );
+
+    return { user, cambiado: true };
+  },
+
+  async createAdmin({ firstName, lastName, email, password, pais }, creadoPor) {
     const existe = await userRepository.findByEmail(email);
     if (existe) {
       throw new ConflictError(
@@ -436,7 +491,8 @@ const userService = {
       firstName,
       lastName,
       passwordHash: await hashPassword(clave),
-      role: ROLES.ADMIN,
+      role: pais ? ROLES.ADMIN_PAIS : ROLES.ADMIN,
+      pais: pais ?? null,
       status: 'ACTIVE',
       emailVerifiedAt: new Date(),
     });
@@ -452,7 +508,7 @@ const userService = {
       logger.error({ err: error, email }, 'No se pudo enviar el correo de alta de administrador');
     }
 
-    logger.warn({ email, creadoPor, emailSent }, 'Cuenta de administrador creada');
+    logger.warn({ email, creadoPor, emailSent, pais: pais ?? null }, 'Cuenta de administrador creada');
 
     return {
       user,

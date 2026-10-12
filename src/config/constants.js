@@ -66,6 +66,8 @@ const ROLES = Object.freeze({
   USER: 'USER',
   EDITOR: 'EDITOR',
   ADMIN: 'ADMIN',
+  // Administrador de un país: ve el panel recortado a su `pais`.
+  ADMIN_PAIS: 'ADMIN_PAIS',
 });
 
 module.exports = {

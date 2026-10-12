@@ -143,9 +143,26 @@ const reclamoService = {
     return { reclamo, correoEnviado };
   },
 
-  async listar() {
+  /**
+   * Las hojas, de la última a la primera.
+   *
+   * Por país: una hoja no cuelga de ninguna cuenta —reclama cualquiera, sin
+   * sesión—, así que es de un país cuando su correo es el de un cliente de ese
+   * país. `undefined` = todas; `null` = las de la casa, que son el resto.
+   */
+  async listar({ pais } = {}) {
     const filas = await prisma.reclamo.findMany({ orderBy: { numero: 'desc' }, take: 500 });
-    return filas.map(salida);
+    if (pais === undefined) return filas.map(salida);
+
+    const cuentas = await prisma.user.findMany({
+      where: { email: { in: [...new Set(filas.map((fila) => fila.email))] }, pais: { not: null } },
+      select: { email: true, pais: true },
+    });
+    const paisDe = new Map(cuentas.map((cuenta) => [cuenta.email.toLowerCase(), cuenta.pais]));
+
+    return filas
+      .filter((fila) => (paisDe.get(fila.email.toLowerCase()) ?? null) === pais)
+      .map(salida);
   },
 
   /**

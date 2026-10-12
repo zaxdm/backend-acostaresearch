@@ -10,6 +10,9 @@ const publicSelect = {
   lastName: true,
   role: true,
   status: true,
+  // La etiqueta de país: en un administrador de país, el que administra; en un
+  // cliente, el que lo consiguió.
+  pais: true,
   sessionVersion: true,
   emailVerifiedAt: true,
   lastLoginAt: true,

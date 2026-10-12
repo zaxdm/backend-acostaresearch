@@ -54,8 +54,8 @@ const resenaController = {
   /** Panel: todas, o las de un estado. */
   listar: asyncHandler(async (req, res) => {
     const [resenas, pendientes] = await Promise.all([
-      resenaService.listar(req.query.estado),
-      resenaService.pendientes(),
+      resenaService.listar(req.query.estado, { pais: req.alcance.filtro }),
+      resenaService.pendientes({ pais: req.alcance.filtro }),
     ]);
     return ok(res, { resenas, pendientes });
   }),

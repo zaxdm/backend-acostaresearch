@@ -47,14 +47,17 @@ const billingController = {
     const { expiraEnDias, ...resto } = req.body;
     const discount = await discountService.create({
       ...resto,
+      // Anunciar un código en la página de precios es cosa de la casa: el de un
+      // administrador de país nace con su etiqueta y sin publicar.
+      ...(req.alcance.dePais && { publico: false, pais: req.alcance.pais }),
       createdById: req.user.id,
       expiresAt: expiraEnDias ? addDays(new Date(), expiraEnDias) : undefined,
     });
     return created(res, { discount }, 'Código de descuento creado.');
   }),
 
-  discounts: asyncHandler(async (_req, res) => {
-    const discounts = await discountService.list();
+  discounts: asyncHandler(async (req, res) => {
+    const discounts = await discountService.list({ pais: req.alcance.filtro });
     return ok(res, { discounts });
   }),
 
@@ -72,14 +75,18 @@ const billingController = {
   toggleDiscount: asyncHandler(async (req, res) => {
     // Cada interruptor solo se toca si viene: apagar un código no puede
     // despublicarlo de rebote, ni publicarlo encenderlo.
+    await discountService.exigirAlcance(req.params.id, req.alcance);
     const discount = await discountService.setActive(req.params.id, {
       active: typeof req.body.active === 'boolean' ? req.body.active : undefined,
-      publico: typeof req.body.publico === 'boolean' ? req.body.publico : undefined,
+      // Publicarlo en la página de precios no lo decide un administrador de país.
+      publico:
+        typeof req.body.publico === 'boolean' && !req.alcance.dePais ? req.body.publico : undefined,
     });
     return ok(res, { discount });
   }),
 
   deleteDiscount: asyncHandler(async (req, res) => {
+    await discountService.exigirAlcance(req.params.id, req.alcance);
     const discount = await discountService.remove(req.params.id);
     return ok(res, { discount }, { message: `Código «${discount.code}» borrado.` });
   }),

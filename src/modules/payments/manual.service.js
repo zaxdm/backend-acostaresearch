@@ -523,8 +523,8 @@ const manualService = {
    * imagen y cifras que no cuadran con ella invitaba a aprobar una y olvidar
    * la otra.
    */
-  async pendientes() {
-    const filas = await paymentRepository.listInReview();
+  async pendientes({ pais } = {}) {
+    const filas = await paymentRepository.listInReview({ pais });
     const porCarrito = new Map();
     const bandeja = [];
 
@@ -566,8 +566,8 @@ const manualService = {
    * de nada a quien mira el panel. Se cambia por un booleano, que es la única
    * pregunta que hace la pantalla: ¿hay imagen que abrir?
    */
-  async historial({ limit } = {}) {
-    const pagos = await paymentRepository.listReviewed({ provider: PROVEEDORES, limit });
+  async historial({ limit, pais } = {}) {
+    const pagos = await paymentRepository.listReviewed({ provider: PROVEEDORES, limit, pais });
 
     return pagos.map(({ proofPath, ...pago }) => ({ ...pago, tieneComprobante: Boolean(proofPath) }));
   },
@@ -592,6 +592,19 @@ const manualService = {
   },
 
   /** La imagen del comprobante, para verla en el panel. */
+  /**
+   * Corta el paso si el pago no es de un cliente del país de quien pregunta. Al
+   * dueño no le afecta. Ver `middlewares/panelDePais`.
+   */
+  async exigirAlcance(paymentId, alcance) {
+    if (!alcance?.dePais) return;
+    const suyo = await prisma.payment.findFirst({
+      where: { id: paymentId, ...paymentRepository.delPais(alcance.pais) },
+      select: { id: true },
+    });
+    if (!suyo) throw new NotFoundError('No encontramos ese pago.');
+  },
+
   async comprobante(paymentId) {
     const payment = await paymentRepository.findByIdWithPlan(paymentId);
     if (!payment || !payment.proofPath) {

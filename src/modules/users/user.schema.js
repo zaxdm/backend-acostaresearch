@@ -73,6 +73,14 @@ const createAdminSchema = z.object({
     .email('El correo no tiene un formato válido.')
     .max(255),
   password: password.optional(),
+  // Con país, la cuenta es de un administrador de ese país y solo ve lo suyo.
+  // Sin él, es un administrador como el de siempre, que lo ve todo.
+  pais: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^[A-Z]{2}$/, 'El país va con su código de dos letras: EC, CO, MX…')
+    .optional(),
 });
 
 /** Suspender o reactivar una cuenta desde el panel. `DELETED` no se elige: es del dueño. */
@@ -80,6 +88,25 @@ const cambiarEstadoSchema = z.object({
   status: z.enum(['ACTIVE', 'SUSPENDED'], {
     errorMap: () => ({ message: 'El estado tiene que ser ACTIVE o SUSPENDED.' }),
   }),
+});
+
+/**
+ * Darle a una cuenta que ya existe acceso de administrador, o quitárselo.
+ *
+ * `ADMIN` con `pais` es un administrador de ese país; sin él, uno general. El
+ * rol de país no se elige por su nombre: sale de mandar el país, igual que en
+ * el alta.
+ */
+const cambiarRolSchema = z.object({
+  role: z.enum(['ADMIN', 'USER'], {
+    errorMap: () => ({ message: 'El rol tiene que ser ADMIN o USER.' }),
+  }),
+  pais: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^[A-Z]{2}$/, 'El país va con su código de dos letras: EC, CO, MX…')
+    .optional(),
 });
 
 const idDeUsuarioSchema = z.object({ id: z.string().uuid('Ese identificador no es válido.') });
@@ -116,5 +143,6 @@ module.exports = {
   createAdminSchema,
   deleteAccountSchema,
   cambiarEstadoSchema,
+  cambiarRolSchema,
   idDeUsuarioSchema,
 };

@@ -5,6 +5,7 @@ const prisma = require('../../lib/prisma');
 const logger = require('../../config/logger');
 const { ERROR_CODES } = require('../../config/constants');
 const { AppError, NotFoundError } = require('../../shared/errors/AppError');
+const { exigirPais } = require('../../middlewares/panelDePais');
 
 /**
  * Códigos promocionales.
@@ -43,6 +44,8 @@ const codigoSelect = {
   note: true,
   publico: true,
   createdAt: true,
+  // De qué país es el administrador que lo creó. Nulo = de la casa.
+  pais: true,
 };
 
 /**
@@ -144,6 +147,7 @@ const discountService = {
     note,
     publico = false,
     createdById,
+    pais = null,
   }) {
     if (amountCents < DESCUENTO_MINIMO_CENTS) {
       throw new AppError(
@@ -172,6 +176,7 @@ const discountService = {
         note: note ?? null,
         publico,
         createdById,
+        pais,
       },
       select: codigoSelect,
     });
@@ -180,8 +185,10 @@ const discountService = {
     return creado;
   },
 
-  list({ limit = 100 } = {}) {
+  list({ limit = 100, pais } = {}) {
     return prisma.discountCode.findMany({
+      // `undefined` = todos; `null` = solo los de la casa.
+      where: pais === undefined ? {} : { pais },
       select: codigoSelect,
       orderBy: { createdAt: 'desc' },
       take: limit,
@@ -219,6 +226,16 @@ const discountService = {
    * la misma fila, y porque cada uno se manda solo si viene: apagar un código no
    * puede despublicarlo de rebote ni al revés.
    */
+  /**
+   * Corta el paso si el código no es del país de quien pregunta. Al dueño no le
+   * afecta. Ver `middlewares/panelDePais`.
+   */
+  async exigirAlcance(id, alcance) {
+    if (!alcance?.dePais) return;
+    const codigo = await prisma.discountCode.findUnique({ where: { id }, select: { pais: true } });
+    exigirPais(alcance, codigo?.pais, 'No encontramos ese código de descuento.');
+  },
+
   async setActive(id, { active, publico }) {
     const existe = await prisma.discountCode.findUnique({ where: { id }, select: { id: true } });
     if (!existe) throw new NotFoundError('No encontramos ese código de descuento.');

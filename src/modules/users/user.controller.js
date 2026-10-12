@@ -81,6 +81,27 @@ const userController = {
     );
   }),
 
+  cambiarRol: asyncHandler(async (req, res) => {
+    const { user, cambiado } = await userService.cambiarRolPorAdmin({
+      userId: req.params.id,
+      role: req.body.role,
+      pais: req.body.pais,
+      adminId: req.user.id,
+    });
+    const esAdmin = user.role !== 'USER';
+    return ok(
+      res,
+      { user },
+      {
+        message: !cambiado
+          ? 'La cuenta ya tenía ese acceso.'
+          : esAdmin
+            ? 'Listo: ya es administrador. Tiene que volver a iniciar sesión para ver el panel.'
+            : 'Acceso de administrador quitado. Vuelve a ser una cuenta de usuario.',
+      },
+    );
+  }),
+
   list: asyncHandler(async (req, res) => {
     const { items, meta } = await userService.list(req.query);
     return ok(res, { users: items, meta });

@@ -350,9 +350,13 @@ function listarAlertas(licenseId, { limit = 50 } = {}) {
 }
 
 /** Alertas abiertas de todas las licencias, lo primero que mira el admin. */
-function alertasAbiertas({ limit = 100 } = {}) {
+function alertasAbiertas({ limit = 100, pais } = {}) {
   return prisma.licenseAlert.findMany({
-    where: { action: { in: ['NINGUNA', 'NOTIFICADO'] } },
+    where: {
+      action: { in: ['NINGUNA', 'NOTIFICADO'] },
+      // El país es el del cliente dueño de la licencia. `undefined` = todas.
+      ...(pais !== undefined && { license: { user: { pais } } }),
+    },
     include: {
       license: {
         select: {

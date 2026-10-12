@@ -63,7 +63,9 @@ router.get(
   authenticate,
   authorize(ROLES.ADMIN),
   validate({ query: resumenSchema }),
-  asyncHandler(async (req, res) => ok(res, await embudoService.resumen({ dias: req.query.dias }))),
+  asyncHandler(async (req, res) =>
+    ok(res, await embudoService.resumen({ dias: req.query.dias, pais: req.alcance.filtro })),
+  ),
 );
 
 module.exports = router;

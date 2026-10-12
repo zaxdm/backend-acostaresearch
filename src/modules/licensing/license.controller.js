@@ -17,6 +17,8 @@ const licenseController = {
     const resultado = await licenseService.generateCodes({
       ...resto,
       createdById: req.user.id,
+      // Los de un administrador de país nacen con su etiqueta; los del dueño, sin ella.
+      pais: req.alcance.dePais ? req.alcance.pais : null,
       expiresAt: expiraEnDias ? addDays(new Date(), expiraEnDias) : undefined,
       // El panel pide soles porque es lo que el administrador tiene delante; la
       // base de datos guarda céntimos, como todo el resto del dinero.
@@ -50,6 +52,7 @@ const licenseController = {
       );
     }
 
+    await licenseService.exigirAlcanceDelCodigo(req.params.id, req.alcance);
     const guardado = await licenseService.adjuntarComprobante(req.params.id, req.body);
     return ok(res, { proof: guardado }, { message: 'Comprobante guardado.' });
   }),
@@ -61,6 +64,7 @@ const licenseController = {
    * sesión: un comprobante lleva el nombre y el importe de una venta.
    */
   verComprobante: asyncHandler(async (req, res) => {
+    await licenseService.exigirAlcanceDelCodigo(req.params.id, req.alcance);
     const { buffer, mime } = await licenseService.comprobanteDe(req.params.id);
 
     res.set('Content-Type', mime ?? 'application/octet-stream');
@@ -69,11 +73,12 @@ const licenseController = {
   }),
 
   codes: asyncHandler(async (req, res) => {
-    const codes = await licenseService.listCodes(req.query);
+    const codes = await licenseService.listCodes(req.query, req.alcance);
     return ok(res, { codes });
   }),
 
   voidCode: asyncHandler(async (req, res) => {
+    await licenseService.exigirAlcanceDelCodigo(req.params.id, req.alcance);
     await licenseService.voidCode(req.params.id);
     return noContent(res);
   }),
@@ -144,18 +149,19 @@ const licenseController = {
   }),
 
   list: asyncHandler(async (req, res) => {
-    const licenses = await licenseService.listAll(req.query);
+    const licenses = await licenseService.listAll(req.query, req.alcance);
     return ok(res, { licenses });
   }),
 
   inspect: asyncHandler(async (req, res) => {
+    await licenseService.exigirAlcance(req.params.id, req.alcance);
     const ficha = await licenseService.inspect(req.params.id);
     return ok(res, ficha);
   }),
 
   /** Alertas abiertas de todas las licencias: la bandeja del administrador. */
-  alerts: asyncHandler(async (_req, res) => {
-    const alerts = await licenseService.openAlerts();
+  alerts: asyncHandler(async (req, res) => {
+    const alerts = await licenseService.openAlerts(req.alcance);
     return ok(res, { alerts });
   }),
 
@@ -166,11 +172,13 @@ const licenseController = {
   }),
 
   revoke: asyncHandler(async (req, res) => {
+    await licenseService.exigirAlcance(req.params.id, req.alcance);
     const license = await licenseService.revoke(req.params.id, req.body.reason, req.user.id);
     return ok(res, { license }, { message: 'Licencia revocada.' });
   }),
 
   reactivate: asyncHandler(async (req, res) => {
+    await licenseService.exigirAlcance(req.params.id, req.alcance);
     const license = await licenseService.reactivate(req.params.id, req.user.id);
     return ok(res, { license }, { message: 'Licencia reactivada.' });
   }),

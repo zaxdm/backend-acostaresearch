@@ -19,8 +19,8 @@ const reclamoController = {
     return created(res, { reclamo: hoja, correoEnviado }, `Hoja Nº ${reclamo.codigo} registrada.`);
   }),
 
-  listar: asyncHandler(async (_req, res) => {
-    return ok(res, { reclamos: await reclamoService.listar() });
+  listar: asyncHandler(async (req, res) => {
+    return ok(res, { reclamos: await reclamoService.listar({ pais: req.alcance.filtro }) });
   }),
 
   responder: asyncHandler(async (req, res) => {

@@ -13,6 +13,7 @@ const {
   createAdminSchema,
   deleteAccountSchema,
   cambiarEstadoSchema,
+  cambiarRolSchema,
   idDeUsuarioSchema,
 } = require('./user.schema');
 const userController = require('./user.controller');
@@ -68,6 +69,16 @@ router.patch(
   authorize(ROLES.ADMIN),
   validate({ params: idDeUsuarioSchema, body: cambiarEstadoSchema }),
   userController.cambiarEstado,
+);
+
+// Darle acceso de administrador a una cuenta que ya existe, o quitárselo. Solo
+// el dueño: no está en la lista de `panelDePais`, así que a un administrador de
+// país le responde 403.
+router.patch(
+  '/:id/role',
+  authorize(ROLES.ADMIN),
+  validate({ params: idDeUsuarioSchema, body: cambiarRolSchema }),
+  userController.cambiarRol,
 );
 
 module.exports = router;

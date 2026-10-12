@@ -5,16 +5,22 @@ const { ok, created } = require('../../shared/http/apiResponse');
 const trialService = require('./trial.service');
 
 const trialController = {
-  list: asyncHandler(async (_req, res) => {
-    return ok(res, { enlaces: await trialService.list() });
+  list: asyncHandler(async (req, res) => {
+    return ok(res, { enlaces: await trialService.list({ pais: req.alcance.filtro }) });
   }),
 
   create: asyncHandler(async (req, res) => {
-    const enlace = await trialService.create({ ...req.body, createdById: req.user.id });
+    const enlace = await trialService.create({
+      ...req.body,
+      createdById: req.user.id,
+      // Los de un administrador de país nacen con su etiqueta; los del dueño, sin ella.
+      pais: req.alcance.dePais ? req.alcance.pais : null,
+    });
     return created(res, { enlace }, `Enlace «${enlace.name}» creado con ${enlace.seats} cupos.`);
   }),
 
   update: asyncHandler(async (req, res) => {
+    await trialService.exigirAlcance(req.params.id, req.alcance);
     const enlace = await trialService.setActive(req.params.id, req.body.active);
     const mensaje = enlace.active
       ? `«${enlace.name}» encendido: sus conectores vuelven a funcionar.`
@@ -23,11 +29,13 @@ const trialController = {
   }),
 
   remove: asyncHandler(async (req, res) => {
+    await trialService.exigirAlcance(req.params.id, req.alcance);
     const { name } = await trialService.remove(req.params.id);
     return ok(res, { id: req.params.id }, { message: `«${name}» borrado con sus conectores.` });
   }),
 
   guests: asyncHandler(async (req, res) => {
+    await trialService.exigirAlcance(req.params.id, req.alcance);
     return ok(res, { invitados: await trialService.guests(req.params.id) });
   }),
 

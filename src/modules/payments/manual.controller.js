@@ -67,18 +67,19 @@ const manualController = {
     return ok(res, revision);
   }),
 
-  pendientes: asyncHandler(async (_req, res) => {
-    const payments = await manualService.pendientes();
+  pendientes: asyncHandler(async (req, res) => {
+    const payments = await manualService.pendientes({ pais: req.alcance.filtro });
     return ok(res, { payments });
   }),
 
-  historial: asyncHandler(async (_req, res) => {
-    const payments = await manualService.historial();
+  historial: asyncHandler(async (req, res) => {
+    const payments = await manualService.historial({ pais: req.alcance.filtro });
     return ok(res, { payments });
   }),
 
   /** La imagen, tal cual. No se cachea: es un documento de un cobro. */
   comprobante: asyncHandler(async (req, res) => {
+    await manualService.exigirAlcance(req.params.id, req.alcance);
     const { buffer, mime } = await manualService.comprobante(req.params.id);
 
     res.setHeader('Content-Type', mime || 'application/octet-stream');

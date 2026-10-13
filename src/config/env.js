@@ -70,11 +70,13 @@ const schema = z.object({
   // A dónde responde el tesista. Vacío = responde al remitente.
   // Sirve para poner un buzón que sí se lee sin sacrificar la entrega.
   MAIL_REPLY_TO: vacioComoAusente(z.string().email()),
-  // Antes de venderle un código a un correo se le pregunta a su servidor de
-  // correo si ese buzón existe (ver `shared/utils/correo.js`). Necesita el
-  // puerto 25 de salida; si el proveedor del VPS lo tiene cerrado no bloquea
-  // nada, solo deja de comprobar. `false` lo apaga.
-  CORREO_SONDEAR_BUZON: booleanish.default('true'),
+  // Preguntarle al servidor de correo del comprador si ese buzón existe, antes
+  // de venderle un código (ver `shared/utils/correo.js`). APAGADO desde el
+  // 13-oct-2026: el VPS tiene cerrado el puerto 25 de salida, así que la
+  // pregunta se quedaba esperando y nunca contestaba. La forma del correo, las
+  // erratas y que el dominio reciba correo se siguen comprobando. `true` lo
+  // vuelve a encender (con el puerto 25 abierto o una clave de ZeroBounce).
+  CORREO_SONDEAR_BUZON: booleanish.default('false'),
   // Clave de ZeroBounce (plan gratuito, 100 al mes). Con ella el buzón se
   // pregunta por HTTPS en vez de por el puerto 25, que Hetzner tiene cerrado.
   // Vacía = se intenta por el puerto 25, como antes.

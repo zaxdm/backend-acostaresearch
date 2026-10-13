@@ -669,6 +669,11 @@ model Payment {
   /// Rebaja en céntimos de la moneda del cobro, ya restada de `amountCents`.
   discountCents  Int           @default(0)
 
+  /// La billetera de país por la que se pagó (`provider` = BILLETERA). Nula en
+  /// todo lo demás: Yape, Western Union y las pasarelas. Ver `Billetera`.
+  billeteraId String?    @db.Char(36)
+  billetera   Billetera? @relation(fields: [billeteraId], references: [id])
+
   payerEmail  String? @db.VarChar(255)
   errorCode   String? @db.VarChar(60)
   /// Respuesta cruda de la pasarela, para poder reclamar con pruebas.
@@ -708,6 +713,7 @@ model Payment {
 
   @@unique([provider, providerOrderId])
   @@index([cartId])
+  @@index([billeteraId])
   @@index([licenseId])
   @@index([docPackId])
   @@index([userId, createdAt])
@@ -1173,6 +1179,42 @@ model DiscountCode {
 
   @@index([active, expiresAt])
   @@map("discount_codes")
+}
+
+/// Una billetera digital de un país: Deuna en Ecuador, Nequi en Colombia.
+///
+/// Es a un país lo que Yape a Perú: el comprador paga ahí, sube su comprobante
+/// y alguien lo aprueba a mano. La crea el dueño desde el panel y se la asigna a
+/// un país; los comprobantes los revisa el administrador de ese país, que es
+/// quien puede mirar si el dinero entró. Yape y Western Union no están aquí:
+/// siguen en el código y en el `.env`, como siempre.
+model Billetera {
+  id String @id @default(uuid()) @db.Char(36)
+
+  /// Como la conoce el comprador: «Deuna», «Nequi».
+  nombre String @db.VarChar(60)
+  /// El país al que atiende (ISO de dos letras). Ver `User.pais`.
+  pais   String @db.VarChar(2)
+  /// PEN o USD: las dos monedas en las que tienen precio los planes.
+  moneda String @db.VarChar(3)
+
+  /// A nombre de quién está y a qué número o cuenta se paga.
+  titular String @db.VarChar(120)
+  numero  String @db.VarChar(80)
+  /// Lo que haga falta decirle al comprador además de eso. Opcional.
+  instrucciones String? @db.VarChar(500)
+
+  /// Apagada deja de ofrecerse al pagar. Lo ya cobrado por ella no se toca.
+  active Boolean @default(true)
+
+  createdById String?  @db.Char(36)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  payments Payment[]
+
+  @@index([pais, active])
+  @@map("billeteras")
 }
 
 /// Una conversación abierta con una skill a través del conector.

@@ -13,8 +13,11 @@ const {
   revisarCapturaQuerySchema,
   paymentParamsSchema,
   rechazarSchema,
+  crearBilleteraSchema,
+  cambiarBilleteraSchema,
 } = require('./manual.schema');
 const manualController = require('./manual.controller');
+const { billeteraController } = manualController;
 
 const router = Router();
 
@@ -58,6 +61,16 @@ router.post(
 
 // ── Revisión: solo administradores ────────────────────────────────────────
 router.use(authenticate, authorize(ROLES.ADMIN));
+
+// El catálogo de billeteras de país. Va antes de las rutas con `/:id` para que
+// «billeteras» no se lea como un identificador de pago.
+router.get('/billeteras', billeteraController.listar);
+router.post('/billeteras', validate({ body: crearBilleteraSchema }), billeteraController.crear);
+router.patch(
+  '/billeteras/:id',
+  validate({ params: paymentParamsSchema, body: cambiarBilleteraSchema }),
+  billeteraController.cambiar,
+);
 
 router.get('/pending', manualController.pendientes);
 

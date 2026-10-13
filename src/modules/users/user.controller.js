@@ -102,6 +102,10 @@ const userController = {
     );
   }),
 
+  paises: asyncHandler(async (_req, res) => {
+    return ok(res, { paises: await userService.paisesConAdministrador() });
+  }),
+
   list: asyncHandler(async (req, res) => {
     const { items, meta } = await userService.list(req.query);
     return ok(res, { users: items, meta });

@@ -61,6 +61,9 @@ router.post(
   validate({ body: createAdminSchema }),
   userController.createAdmin,
 );
+// Los países que tienen algún administrador de país: lo que ofrece el selector
+// «ver por país» del panel. Solo el dueño.
+router.get('/paises', authorize(ROLES.ADMIN), userController.paises);
 router.get('/', authorize(ROLES.ADMIN), validate({ query: listQuerySchema }), userController.list);
 
 // Suspender o reactivar una cuenta. Corta sus sesiones y su conector al momento.

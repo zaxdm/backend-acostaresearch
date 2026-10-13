@@ -38,7 +38,7 @@ function avisarAlComprador(payment, entrega) {
   // Yape se aprueba a mano y horas después; una pasarela cobra al instante. El
   // correo lo dice de forma distinta en cada caso.
   // Western Union también se aprueba a mano, así que lleva la frase de Yape.
-  const via = ['YAPE', 'WESTERN_UNION'].includes(payment.provider) ? 'yape' : 'online';
+  const via = ['YAPE', 'WESTERN_UNION', 'BILLETERA'].includes(payment.provider) ? 'yape' : 'online';
   const datos = { firstName: usuario.firstName, planName: payment.plan.name, via };
 
   let mensaje;
@@ -158,6 +158,15 @@ async function entregarPago({ payment, captura, estadoEsperado = 'PENDING', nota
           select: { pais: true },
         });
         await etiquetarCliente(payment.userId, codigo?.pais, tx);
+      }
+
+      // Y quien paga por la billetera de un país, lo mismo.
+      if (payment.billeteraId) {
+        const billetera = await tx.billetera.findUnique({
+          where: { id: payment.billeteraId },
+          select: { pais: true },
+        });
+        await etiquetarCliente(payment.userId, billetera?.pais, tx);
       }
 
       if (esLicencia) {

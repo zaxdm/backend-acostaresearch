@@ -7,7 +7,7 @@ const logger = require('../../config/logger');
 const { ERROR_CODES } = require('../../config/constants');
 const { sendMail } = require('../../lib/mailer');
 const plantillas = require('../../lib/emailTemplates');
-const { avisarAlAdmin } = require('../../lib/notify');
+const { avisarAlAdmin, avisarAlProgramador } = require('../../lib/notify');
 const billingRepository = require('../billing/billing.repository');
 const { enPrueba } = require('../billing/plan.visibilidad');
 const discountService = require('../billing/discount.service');
@@ -18,6 +18,7 @@ const { entregarPago } = require('./payment.delivery');
 const carrito = require('./payment.carrito');
 const { comprobarRenovacion } = require('./payment.renovacion');
 const { AppError, NotFoundError } = require('../../shared/errors/AppError');
+const billeteraService = require('./billetera.service');
 
 /**
  * Pago manual por Yape o por Western Union.
@@ -77,7 +78,11 @@ const MEDIOS = Object.freeze({
   },
 });
 
-const PROVEEDORES = Object.values(MEDIOS).map((medio) => medio.proveedor);
+// Los de la casa y el de las billeteras de país, que pasan por la misma bandeja.
+const PROVEEDORES = [
+  ...Object.values(MEDIOS).map((medio) => medio.proveedor),
+  billeteraService.PROVEEDOR,
+];
 
 /** El medio pedido, o un 409 si no se ofrece (Western Union sin beneficiario). */
 function medioDe(metodo = 'YAPE') {
@@ -94,7 +99,35 @@ function medioDe(metodo = 'YAPE') {
 
 /** El medio de un pago ya guardado, para los textos de la revisión. */
 function medioDelPago(payment) {
+  if (payment.provider === billeteraService.PROVEEDOR) {
+    return { nombre: payment.billetera?.nombre ?? 'billetera digital' };
+  }
   return MEDIOS[payment.provider] ?? MEDIOS.YAPE;
+}
+
+/** El medio de este pago: una billetera de país si se eligió una; si no, el de la casa. */
+function resolverMedio(metodo, billeteraId) {
+  return billeteraId ? billeteraService.medioDe(billeteraId) : medioDe(metodo);
+}
+
+/**
+ * Avisa por correo de un comprobante de una billetera de país a quien lo va a
+ * revisar: los administradores de ese país. A la casa no le llega —no es su
+ * billetera—; el aviso al móvil va solo al programador, que lo recibe todo.
+ */
+async function avisarDeLaBilletera({ medio, comprador, planName, amountCents, operationCode, paymentId }) {
+  const mensaje = plantillas.manualPaymentReceived({
+    buyer: comprador,
+    planName,
+    amountCents,
+    currency: medio.moneda,
+    metodo: medio.nombre,
+    operationCode: operationCode || null,
+    paymentId,
+  });
+  for (const correo of await billeteraService.correosDelPais(medio.pais)) {
+    avisar(correo, mensaje, { paymentId, pais: medio.pais });
+  }
 }
 
 /** Importe para un aviso corto: «S/ 69.00» o «US$ 25.00». */
@@ -121,6 +154,9 @@ function generarReferencia(prefijo) {
  */
 async function exigirComprobante(buffer, { amountCents, metodo, operationCode }) {
   proofStorage.comprobarImagen(buffer);
+  // La lectura automática está hecha para las pantallas de Yape y de Western
+  // Union. La de una billetera de país no se lee: la mira quien la aprueba.
+  if (metodo === billeteraService.PROVEEDOR) return { veredicto: 'SIN_LEER' };
   const revision = await revisarCaptura(buffer, { amountCents, metodo, operationCode });
   if (revision.veredicto === 'NO_PARECE') {
     throw new AppError(
@@ -292,8 +328,8 @@ const manualService = {
    * El importe lo calcula el servidor a partir del plan, igual que en PayPal.
    * Lo que diga el comprador que pagó es un dato del comprobante, no el precio.
    */
-  async registrar({ userId, planCode, discountCode, operationCode, buffer, metodo }) {
-    const medio = medioDe(metodo);
+  async registrar({ userId, planCode, discountCode, operationCode, buffer, metodo, billeteraId }) {
+    const medio = await resolverMedio(metodo, billeteraId);
     const plan = await billingRepository.findPlanByCode(planCode);
     // Igual que en la pasarela: uno en prueba no se vende aunque esté activo.
     if (!plan || !plan.active || enPrueba(plan)) {
@@ -330,6 +366,7 @@ const manualService = {
       discountCodeId: descuento ? descuento.id : null,
       discountCents: rebaja,
       operationCode: operationCode || null,
+      billeteraId: medio.billeteraId ?? null,
     });
 
     let comprobante;
@@ -363,8 +400,13 @@ const manualService = {
       'Comprobante manual recibido, pendiente de revisión',
     );
 
+    // El de una billetera de país no le llega a la casa: va a los
+    // administradores de ese país. Ver `avisarDeLaBilletera`.
+    if (medio.billeteraId) {
+      await avisarDeLaBilletera({ medio, comprador, planName: plan.name, amountCents, operationCode, paymentId: payment.id });
+    }
     avisar(
-      await correoDelAdministrador(),
+      medio.billeteraId ? null : await correoDelAdministrador(),
       plantillas.manualPaymentReceived({
         buyer: comprador,
         planName: plan.name,
@@ -380,7 +422,7 @@ const manualService = {
     // Y un empujón al móvil, porque el correo se lee cuando uno abre el correo
     // y esto espera a que alguien lo mire. Va sin el correo del comprador a
     // propósito: ver quién es y su comprobante exige entrar al panel.
-    avisarAlAdmin({
+    (medio.billeteraId ? avisarAlProgramador : avisarAlAdmin)({
       titulo: `${medio.nombre} por revisar · ${importe(amountCents, medio.moneda)}`,
       mensaje: `${comprador.firstName} ${(comprador.lastName || '').charAt(0)}. · ${plan.name}`,
       etiquetas: ['moneybag'],
@@ -406,8 +448,8 @@ const manualService = {
    * la misma captura. El administrador ve UN comprobante por la suma, y al
    * aprobarlo se entregan todos.
    */
-  async registrarCarrito({ userId, items, discountCode, operationCode, buffer, metodo }) {
-    const medio = medioDe(metodo);
+  async registrarCarrito({ userId, items, discountCode, operationCode, buffer, metodo, billeteraId }) {
+    const medio = await resolverMedio(metodo, billeteraId);
     const { lineas, delTotal } = await carrito.resolverLineas(items, {
       userId,
       precio: medio.precio,
@@ -436,6 +478,7 @@ const manualService = {
         discountCodeId: carrito.codigoDeLaFila(linea, delTotal),
         discountCents: linea.rebaja,
         operationCode: operationCode || null,
+        billeteraId: medio.billeteraId ?? null,
         cartId,
       })),
     );
@@ -478,8 +521,11 @@ const manualService = {
     );
 
     // Un solo aviso por la suma: es un solo comprobante que mirar.
+    if (medio.billeteraId) {
+      await avisarDeLaBilletera({ medio, comprador, planName: nombre, amountCents, operationCode, paymentId: lider.id });
+    }
     avisar(
-      await correoDelAdministrador(),
+      medio.billeteraId ? null : await correoDelAdministrador(),
       plantillas.manualPaymentReceived({
         buyer: comprador,
         planName: nombre,
@@ -491,7 +537,7 @@ const manualService = {
       }),
       { paymentId: lider.id, cartId },
     );
-    avisarAlAdmin({
+    (medio.billeteraId ? avisarAlProgramador : avisarAlAdmin)({
       titulo: `${medio.nombre} por revisar · ${importe(amountCents, medio.moneda)}`,
       mensaje: `${comprador.firstName} ${(comprador.lastName || '').charAt(0)}. · ${nombre}`,
       etiquetas: ['moneybag'],
@@ -593,13 +639,14 @@ const manualService = {
 
   /** La imagen del comprobante, para verla en el panel. */
   /**
-   * Corta el paso si el pago no es de un cliente del país de quien pregunta. Al
+   * Corta el paso a un administrador de país ante un pago que no entró por la
+   * billetera de su país: ni ve la captura ni lo aprueba ni lo rechaza. Al
    * dueño no le afecta. Ver `middlewares/panelDePais`.
    */
   async exigirAlcance(paymentId, alcance) {
     if (!alcance?.dePais) return;
     const suyo = await prisma.payment.findFirst({
-      where: { id: paymentId, ...paymentRepository.delPais(alcance.pais) },
+      where: { id: paymentId, ...paymentRepository.deLaBandeja(alcance.pais) },
       select: { id: true },
     });
     if (!suyo) throw new NotFoundError('No encontramos ese pago.');
@@ -628,7 +675,7 @@ const manualService = {
   async aprobar({ paymentId, adminId }) {
     const payment = await prisma.payment.findUnique({
       where: { id: paymentId },
-      include: { plan: true, user: { select: COMPRADOR } },
+      include: { plan: true, user: { select: COMPRADOR }, billetera: { select: { nombre: true } } },
     });
 
     if (!payment) throw new NotFoundError('No encontramos ese pago.');

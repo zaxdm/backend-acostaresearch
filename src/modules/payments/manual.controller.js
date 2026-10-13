@@ -3,6 +3,7 @@
 const asyncHandler = require('../../shared/http/asyncHandler');
 const { ok, created } = require('../../shared/http/apiResponse');
 const manualService = require('./manual.service');
+const billeteraService = require('./billetera.service');
 
 const manualController = {
   /**
@@ -13,6 +14,8 @@ const manualController = {
     return ok(res, {
       yape: manualService.datosDePago(),
       westernUnion: manualService.datosWesternUnion(),
+      // Las billeteras de país activas: Deuna en Ecuador, Nequi en Colombia…
+      billeteras: await billeteraService.publicas(),
     });
   }),
 
@@ -37,6 +40,7 @@ const manualController = {
             operationCode: req.query.operationCode,
             buffer: req.body,
             metodo: req.query.metodo,
+            billeteraId: req.query.billetera,
           })
         : await manualService.registrar({
             userId: req.user.id,
@@ -45,6 +49,7 @@ const manualController = {
             operationCode: req.query.operationCode,
             buffer: req.body,
             metodo: req.query.metodo,
+            billeteraId: req.query.billetera,
           });
 
     return created(
@@ -88,6 +93,7 @@ const manualController = {
   }),
 
   aprobar: asyncHandler(async (req, res) => {
+    await manualService.exigirAlcance(req.params.id, req.alcance);
     const resultado = await manualService.aprobar({
       paymentId: req.params.id,
       adminId: req.user.id,
@@ -101,6 +107,7 @@ const manualController = {
   }),
 
   rechazar: asyncHandler(async (req, res) => {
+    await manualService.exigirAlcance(req.params.id, req.alcance);
     const resultado = await manualService.rechazar({
       paymentId: req.params.id,
       adminId: req.user.id,
@@ -111,4 +118,25 @@ const manualController = {
   }),
 };
 
+/**
+ * El catálogo de billeteras de país, en el panel del dueño. Solo él: ninguna
+ * de estas rutas está en la lista de `panelDePais`.
+ */
+const billeteraController = {
+  listar: asyncHandler(async (_req, res) => {
+    return ok(res, { billeteras: await billeteraService.listar() });
+  }),
+
+  crear: asyncHandler(async (req, res) => {
+    const billetera = await billeteraService.crear({ ...req.body, createdById: req.user.id });
+    return created(res, { billetera }, `Billetera «${billetera.nombre}» creada.`);
+  }),
+
+  cambiar: asyncHandler(async (req, res) => {
+    const billetera = await billeteraService.cambiar(req.params.id, req.body, req.user.id);
+    return ok(res, { billetera }, { message: `«${billetera.nombre}» actualizada.` });
+  }),
+};
+
 module.exports = manualController;
+module.exports.billeteraController = billeteraController;

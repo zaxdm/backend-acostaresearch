@@ -33,7 +33,15 @@ sustituir('../src/modules/auth/token.repository', {
     estado.revocadas.push(id);
   },
 });
-sustituir('../src/lib/prisma', {});
+const consultas = [];
+sustituir('../src/lib/prisma', {
+  user: {
+    findMany: async (argumentos) => {
+      consultas.push(argumentos);
+      return [{ pais: 'CO' }, { pais: 'EC' }];
+    },
+  },
+});
 sustituir('../src/lib/mailer', { sendMail: async () => {} });
 sustituir('../src/lib/notify', { avisarAlAdmin: () => {} });
 
@@ -157,4 +165,15 @@ test('el rol de país no se manda por su nombre, y el país va en dos letras', (
 test('un administrador de país no puede cambiarle el rol a nadie', () => {
   const id = '11111111-2222-3333-4444-555555555555';
   assert.equal(abiertaAlPais('PATCH', `/users/${id}/role`), false);
+});
+
+test('los países del selector son los que tienen algún administrador de país', async () => {
+  assert.deepEqual(await userService.paisesConAdministrador(), ['CO', 'EC']);
+  assert.deepEqual(consultas[0].where, {
+    role: 'ADMIN_PAIS',
+    pais: { not: null },
+    status: { not: 'DELETED' },
+  });
+  assert.deepEqual(consultas[0].distinct, ['pais']);
+  assert.equal(abiertaAlPais('GET', '/users/paises'), false);
 });

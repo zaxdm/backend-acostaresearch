@@ -37,6 +37,7 @@ const MEDIOS = {
   PLIN: 'Plin',
   TRANSFERENCIA: 'Transferencia bancaria',
   WESTERN_UNION: 'Western Union',
+  BILLETERA: 'Billetera digital',
 };
 
 const NOMBRES_DE_MES = [

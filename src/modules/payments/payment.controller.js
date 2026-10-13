@@ -84,7 +84,10 @@ const paymentController = {
   }),
 
   recent: asyncHandler(async (req, res) => {
-    const payments = await paymentService.listRecent({ pais: req.alcance.filtro });
+    const payments = await paymentService.listRecent({
+      pais: req.alcance.filtro,
+      sinYape: req.alcance.dePais,
+    });
     return ok(res, { payments });
   }),
 

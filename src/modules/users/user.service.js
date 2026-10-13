@@ -420,6 +420,23 @@ const userService = {
   },
 
   /**
+   * Los países que tienen al menos un administrador de país, en orden.
+   *
+   * Es lo que enseña el selector «ver por país» del panel: un país sin nadie
+   * que lo administre no tiene nada que filtrar. Una cuenta suspendida cuenta
+   * —lo suyo sigue ahí—; una eliminada por su dueño, no.
+   */
+  async paisesConAdministrador() {
+    const filas = await prisma.user.findMany({
+      where: { role: ROLES.ADMIN_PAIS, pais: { not: null }, status: { not: 'DELETED' } },
+      select: { pais: true },
+      distinct: ['pais'],
+      orderBy: { pais: 'asc' },
+    });
+    return filas.map((fila) => fila.pais);
+  },
+
+  /**
    * Le da a una cuenta que ya existe acceso de administrador, o se lo quita.
    *
    * Es lo que faltaba al lado de `createAdmin`, que solo sirve para un correo

@@ -34,17 +34,32 @@ function delPais(pais) {
   if (pais === null) {
     return {
       user: { pais: null },
+      billeteraId: null,
       OR: [{ discountCodeId: null }, { discountCode: { pais: null } }],
     };
   }
-  return { OR: [{ user: { pais } }, { discountCode: { pais } }] };
+  return { OR: [{ user: { pais } }, { discountCode: { pais } }, { billetera: { pais } }] };
+}
+
+/**
+ * La bandeja de comprobantes de un país.
+ *
+ * Aquí el país no es el del cliente sino el del medio por el que pagó: cada
+ * país revisa lo que entra en SU billetera. Sin país es la bandeja de la casa
+ * —Yape y Western Union—, que es la de siempre.
+ */
+function deLaBandeja(pais) {
+  return pais ? { billetera: { pais } } : { billeteraId: null };
 }
 
 const COMPRADOR = { id: true, email: true, firstName: true, lastName: true, pais: true };
+/** De la billetera, lo que el panel enseña junto al pago. */
+const BILLETERA = { id: true, nombre: true, pais: true };
 
 const paymentRepository = {
   paymentSelect,
   delPais,
+  deLaBandeja,
 
   create(data) {
     return prisma.payment.create({ data });
@@ -305,9 +320,10 @@ const paymentRepository = {
    */
   listInReview({ limit = 100, pais } = {}) {
     return prisma.payment.findMany({
-      where: { status: 'IN_REVIEW', ...delPais(pais) },
+      where: { status: 'IN_REVIEW', ...deLaBandeja(pais) },
       select: {
         ...paymentSelect,
+        billetera: { select: BILLETERA },
         operationCode: true,
         proofMime: true,
         proofCheck: true,
@@ -378,10 +394,11 @@ const paymentRepository = {
       where: {
         provider: Array.isArray(provider) ? { in: provider } : provider,
         status: { not: 'IN_REVIEW' },
-        ...delPais(pais),
+        ...deLaBandeja(pais),
       },
       select: {
         ...paymentSelect,
+        billetera: { select: BILLETERA },
         // La licencia que entregó este cobro y qué producto tiene HOY.
         //
         // No es lo mismo que `plan`: el plan es lo que se compró y se queda
@@ -422,9 +439,10 @@ const paymentRepository = {
    * Todos los pagos, del más reciente al más antiguo. Antes eran los últimos
    * 50 y los gráficos de ingresos del panel se quedaban cortos.
    */
-  listRecent({ limit, pais } = {}) {
+  listRecent({ limit, pais, sinYape = false } = {}) {
     return prisma.payment.findMany({
-      where: delPais(pais),
+      // Los Yape solo los ve la casa: al administrador de país no le salen.
+      where: { ...delPais(pais), ...(sinYape && { provider: { not: 'YAPE' } }) },
       select: {
         ...paymentSelect,
         licenseId: true,
@@ -432,6 +450,7 @@ const paymentRepository = {
         providerCaptureId: true,
         payerEmail: true,
         errorCode: true,
+        billetera: { select: BILLETERA },
         user: { select: COMPRADOR },
       },
       orderBy: { createdAt: 'desc' },

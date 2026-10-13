@@ -29,11 +29,16 @@ const ABIERTAS = [
   'GET /licenses/:id',
   'POST /licenses/:id/revoke',
   'POST /licenses/:id/reactivate',
-  // Cobros de sus clientes: solo mirar. Aprobar un pago sigue siendo de la casa.
+  // Cobros de sus clientes: solo mirar, y sin los de Yape.
   'GET /payments/recent',
+  // La bandeja de comprobantes, pero solo con los de la billetera de su país:
+  // los revisa y los aprueba él, que es quien ve si el dinero entró. Los de
+  // Yape y Western Union son de la casa y no le salen.
   'GET /payments/manual/pending',
   'GET /payments/manual/history',
   'GET /payments/manual/:id/proof',
+  'POST /payments/manual/:id/approve',
+  'POST /payments/manual/:id/reject',
   // Sus descuentos y sus enlaces de prueba.
   'GET /billing/discounts',
   'POST /billing/discounts',

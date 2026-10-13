@@ -34,6 +34,7 @@ const MEDIOS = {
   PLIN: 'Plin',
   TRANSFERENCIA: 'Transferencia bancaria',
   WESTERN_UNION: 'Western Union',
+  BILLETERA: 'Billetera digital',
 };
 
 /** Pasarelas cuyo identificador de cobro sirve al cliente para reclamar. */

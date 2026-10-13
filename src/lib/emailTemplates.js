@@ -379,7 +379,9 @@ function manualPaymentReceived({
   const etiquetaOperacion = esWU ? 'MTCN' : 'Nº de operación';
   const cotejo = esWU
     ? 'Cóbralo en una agencia o en la app de Western Union con el MTCN antes de aprobarlo'
-    : 'Compruébalo contra tu Yape antes de aprobarlo';
+    : metodo === 'Yape'
+      ? 'Compruébalo contra tu Yape antes de aprobarlo'
+      : `Compruébalo contra tu ${metodo} antes de aprobarlo`;
 
   return {
     subject: `${metodo} por revisar: ${buyer.firstName} · ${soles(amountCents, currency)} · ${planName}`,

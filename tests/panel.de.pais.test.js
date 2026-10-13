@@ -125,11 +125,16 @@ test('«:id» no abre de rebote las rutas con nombre que cuelgan al lado', () =>
   assert.equal(abiertaAlPais('POST', `/licenses/${ID}/duracion`), false);
 });
 
-test('mira los cobros de sus clientes pero no aprueba ni borra ninguno', () => {
+// Qué ve dentro de la bandeja —solo lo de la billetera de su país, nunca un
+// Yape— está en `billeteras.de.pais.test.js`.
+test('mira los cobros de sus clientes y revisa la bandeja de su billetera, pero no borra pagos', () => {
   assert.equal(abiertaAlPais('GET', '/payments/recent'), true);
   assert.equal(abiertaAlPais('GET', '/payments/manual/pending'), true);
-  assert.equal(abiertaAlPais('POST', `/payments/manual/${ID}/approve`), false);
-  assert.equal(abiertaAlPais('POST', `/payments/manual/${ID}/reject`), false);
+  assert.equal(abiertaAlPais('GET', '/payments/manual/history'), true);
+  assert.equal(abiertaAlPais('GET', `/payments/manual/${ID}/proof`), true);
+  assert.equal(abiertaAlPais('POST', `/payments/manual/${ID}/approve`), true);
+  assert.equal(abiertaAlPais('POST', `/payments/manual/${ID}/reject`), true);
+  assert.equal(abiertaAlPais('GET', '/payments/manual/billeteras'), false);
   assert.equal(abiertaAlPais('DELETE', `/payments/${ID}`), false);
   assert.equal(abiertaAlPais('POST', '/billing/packs'), false);
 });
@@ -145,7 +150,7 @@ test('no crea administradores, no suspende cuentas y no responde ni modera', () 
 test('la lista solo tiene lecturas fuera de lo que es suyo', () => {
   const escrituras = ABIERTAS.filter((entrada) => !entrada.startsWith('GET '));
   for (const entrada of escrituras) {
-    assert.match(entrada, / \/(licenses|billing\/discounts|pruebas)/, entrada);
+    assert.match(entrada, / \/(licenses|billing\/discounts|pruebas|payments\/manual\/:id\/(approve|reject)$)/, entrada);
   }
 });
 
@@ -304,7 +309,8 @@ test('lo cerrado responde 403 antes de tocar la base', async () => {
     ['DELETE', `/licenses/${ID}`],
     ['DELETE', `/licenses/codes/${ID}/permanent`],
     ['POST', `/licenses/${ID}/email`],
-    ['POST', `/payments/manual/${ID}/approve`],
+    ['GET', '/payments/manual/billeteras'],
+    ['POST', '/payments/manual/billeteras'],
     ['DELETE', `/payments/${ID}`],
     ['POST', '/billing/packs'],
     ['POST', '/billing/products'],
@@ -318,31 +324,21 @@ test('lo cerrado responde 403 antes de tocar la base', async () => {
   }
 });
 
-test('pagos: los de sus clientes o los pagados con uno de sus descuentos', async () => {
+test('pagos: los de sus clientes o los pagados con uno de sus descuentos, sin los Yape', async () => {
   assert.equal(await pedir(DE_ECUADOR, 'GET', '/payments/recent'), 200);
-  assert.deepEqual(dondeDe('payment').OR, [{ user: { pais: 'EC' } }, { discountCode: { pais: 'EC' } }]);
+  assert.deepEqual(dondeDe('payment').OR, [
+    { user: { pais: 'EC' } },
+    { discountCode: { pais: 'EC' } },
+    { billetera: { pais: 'EC' } },
+  ]);
+  assert.deepEqual(dondeDe('payment').provider, { not: 'YAPE' });
 
-  assert.equal(await pedir(DE_ECUADOR, 'GET', '/payments/manual/pending'), 200);
-  assert.equal(dondeDe('payment').status, 'IN_REVIEW');
-  assert.deepEqual(dondeDe('payment').OR, [{ user: { pais: 'EC' } }, { discountCode: { pais: 'EC' } }]);
-
-  assert.equal(await pedir(DE_ECUADOR, 'GET', '/payments/manual/history'), 200);
-  assert.deepEqual(dondeDe('payment').OR, [{ user: { pais: 'EC' } }, { discountCode: { pais: 'EC' } }]);
-
+  // El dueño ve todos los cobros, Yape incluidos, como siempre.
   await pedir(ADMIN, 'GET', '/payments/recent');
   assert.deepEqual(dondeDe('payment'), {});
 
   await pedir(ADMIN, 'GET', '/payments/recent?pais=ninguno');
   assert.deepEqual(dondeDe('payment').user, { pais: null });
-});
-
-test('el comprobante de un pago de otro país: no existe', async () => {
-  filas = {};
-  assert.equal(await pedir(DE_ECUADOR, 'GET', `/payments/manual/${ID}/proof`), 404);
-  assert.deepEqual(dondeDe('payment', 'findFirst').OR, [
-    { user: { pais: 'EC' } },
-    { discountCode: { pais: 'EC' } },
-  ]);
 });
 
 test('descuentos: solo los suyos, y no toca los de otro', async () => {

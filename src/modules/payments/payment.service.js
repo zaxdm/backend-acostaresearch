@@ -630,8 +630,8 @@ const paymentService = {
     return paymentRepository.listForUser(userId);
   },
 
-  listRecent({ pais } = {}) {
-    return paymentRepository.listRecent({ pais });
+  listRecent({ pais, sinYape } = {}) {
+    return paymentRepository.listRecent({ pais, sinYape });
   },
 
   /**

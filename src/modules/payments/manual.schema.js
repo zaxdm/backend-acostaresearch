@@ -44,6 +44,8 @@ const registrarQuerySchema = z
   operationCode: z.string().trim().max(40).optional(),
   // Por dónde pagó. Sin él es Yape, que es lo que mandaba la web de antes.
   metodo: z.enum(['YAPE', 'WESTERN_UNION']).default('YAPE'),
+  // La billetera de país por la que pagó. Si viene, manda sobre `metodo`.
+  billetera: z.string().uuid('Esa billetera no es válida.').optional(),
   })
   .refine((datos) => Boolean(datos.planCode) !== Boolean(datos.items), {
     message: 'Indica el plan que estás pagando.',
@@ -53,6 +55,7 @@ const registrarQuerySchema = z
   // cobra el giro en la agencia. Sin él no hay forma de recibir el dinero.
   .refine(
     (datos) =>
+      Boolean(datos.billetera) ||
       datos.metodo !== 'WESTERN_UNION' ||
       /^\d{10}$/.test((datos.operationCode || '').replace(/[\s-]/g, '')),
     {
@@ -64,11 +67,21 @@ const registrarQuerySchema = z
   // entre 6 y 12. Yape enseña 8; el margen es para Plin y los bancos.
   .refine(
     (datos) =>
+      Boolean(datos.billetera) ||
       datos.metodo !== 'YAPE' ||
       /^\d{6,12}$/.test((datos.operationCode || '').replace(/[\s-]/g, '')),
     {
       message:
         'Escribe el número de operación de tu Yape: está en la constancia, debajo del monto (solo números).',
+      path: ['operationCode'],
+    },
+  )
+  // Cada billetera numera sus operaciones a su manera: solo se exige que venga.
+  .refine(
+    (datos) =>
+      !datos.billetera || /^[A-Za-z0-9]{4,40}$/.test((datos.operationCode || '').replace(/[\s-]/g, '')),
+    {
+      message: 'Escribe el número de operación o de comprobante de tu pago (letras y números).',
       path: ['operationCode'],
     },
   )
@@ -103,7 +116,38 @@ const rechazarSchema = z.object({
     .max(255),
 });
 
+const texto = (campo, maximo) =>
+  z
+    .string({ required_error: `${campo} es obligatorio.` })
+    .trim()
+    .min(2, `${campo} es demasiado corto.`)
+    .max(maximo, `${campo} no puede pasar de ${maximo} caracteres.`);
+
+/** El alta de una billetera de país. País y moneda se eligen aquí y ya no se cambian. */
+const crearBilleteraSchema = z.object({
+  nombre: texto('El nombre', 60),
+  pais: z
+    .string({ required_error: 'Elige el país.' })
+    .trim()
+    .toUpperCase()
+    .regex(/^[A-Z]{2}$/, 'El país va con su código de dos letras: EC, CO, MX…'),
+  moneda: z.enum(['PEN', 'USD'], { errorMap: () => ({ message: 'La moneda es PEN o USD.' }) }),
+  titular: texto('El titular', 120),
+  numero: texto('El número o la cuenta', 80),
+  instrucciones: z.string().trim().max(500).optional(),
+});
+
+const cambiarBilleteraSchema = z.object({
+  nombre: texto('El nombre', 60).optional(),
+  titular: texto('El titular', 120).optional(),
+  numero: texto('El número o la cuenta', 80).optional(),
+  instrucciones: z.string().trim().max(500).optional(),
+  active: z.boolean().optional(),
+});
+
 module.exports = {
+  crearBilleteraSchema,
+  cambiarBilleteraSchema,
   registrarQuerySchema,
   revisarCapturaQuerySchema,
   paymentParamsSchema,

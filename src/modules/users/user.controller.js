@@ -107,8 +107,10 @@ const userController = {
   }),
 
   list: asyncHandler(async (req, res) => {
-    const { items, meta } = await userService.list(req.query);
-    return ok(res, { users: items, meta });
+    // Al administrador de país, «con licencia» son las de las cuentas de su país.
+    const paisDeLicencias = req.alcance?.dePais ? req.alcance.pais : undefined;
+    const { items, meta, conteo } = await userService.list(req.query, { paisDeLicencias });
+    return ok(res, { users: items, meta, conteo });
   }),
 };
 

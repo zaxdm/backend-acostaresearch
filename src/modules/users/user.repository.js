@@ -70,13 +70,21 @@ const userRepository = {
     return prisma.user.update({ where: { id }, data, select: publicSelect });
   },
 
-  async paginate({ page, perPage, search }) {
+  /**
+   * `licencia` criba por si la cuenta tiene alguna licencia emitida («con») o
+   * ninguna («sin»); revocada o suspendida también cuenta, que es donde se va a
+   * reactivarla. `paisDeLicencias` es el del administrador de país: él solo ve
+   * las licencias de las cuentas de su país, así que para él solo esas «tienen».
+   *
+   * `conteo` cuenta las tres pestañas con la misma búsqueda, sin la criba.
+   */
+  async paginate({ page, perPage, search, licencia, paisDeLicencias }) {
     // Sin mode: insensitive, que no existe en MySQL. No hace falta, porque la
     // colación por defecto de MySQL/MariaDB (utf8mb4_..._ci) ya ignora mayúsculas.
     //
     // Los invitados de los enlaces de prueba no salen: no son cuentas de nadie,
     // solo el titular de relleno de un conector. Se ven en su propia sección.
-    const where = {
+    const base = {
       trialLinkId: null,
       ...(search && {
         OR: [
@@ -86,8 +94,18 @@ const userRepository = {
         ],
       }),
     };
+    const conLicencia = {
+      licenses: { some: {} },
+      ...(paisDeLicencias && { pais: paisDeLicencias }),
+    };
+    const where =
+      licencia === 'con'
+        ? { ...base, AND: [conLicencia] }
+        : licencia === 'sin'
+          ? { ...base, NOT: conLicencia }
+          : base;
 
-    const [items, total] = await Promise.all([
+    const [items, total, todos, con] = await Promise.all([
       prisma.user.findMany({
         where,
         select: publicSelect,
@@ -96,9 +114,15 @@ const userRepository = {
         take: perPage,
       }),
       prisma.user.count({ where }),
+      prisma.user.count({ where: base }),
+      prisma.user.count({ where: { ...base, AND: [conLicencia] } }),
     ]);
 
-    return { items, meta: { page, perPage, total, totalPages: Math.ceil(total / perPage) } };
+    return {
+      items,
+      meta: { page, perPage, total, totalPages: Math.ceil(total / perPage) },
+      conteo: { todos, con, sin: todos - con },
+    };
   },
 };
 

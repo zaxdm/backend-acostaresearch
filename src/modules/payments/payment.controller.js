@@ -5,10 +5,14 @@ const { ok, created, noContent } = require('../../shared/http/apiResponse');
 const logger = require('../../config/logger');
 const paymentService = require('./payment.service');
 const hotmartWebhook = require('./hotmart.webhook');
+const medioService = require('./medio.service');
 
 const paymentController = {
   providers: asyncHandler(async (_req, res) => {
-    return ok(res, { providers: paymentService.listProviders() });
+    // Las que el dueño apagó desde el panel no se ofrecen, aunque tengan llaves.
+    const apagados = await medioService.apagados();
+    const providers = paymentService.listProviders().filter((p) => !apagados.has(p.code));
+    return ok(res, { providers });
   }),
 
   createOrder: asyncHandler(async (req, res) => {

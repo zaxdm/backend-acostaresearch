@@ -15,9 +15,11 @@ const {
   rechazarSchema,
   crearBilleteraSchema,
   cambiarBilleteraSchema,
+  medioParamsSchema,
+  cambiarMedioSchema,
 } = require('./manual.schema');
 const manualController = require('./manual.controller');
-const { billeteraController } = manualController;
+const { billeteraController, medioController } = manualController;
 
 const router = Router();
 
@@ -45,6 +47,13 @@ router.get(
   '/billeteras/:id/qr',
   validate({ params: paymentParamsSchema }),
   billeteraController.verQr,
+);
+
+// Y el QR de Yape, cuando el dueño subió uno desde el panel en vez del de la web.
+router.get(
+  '/medios/:codigo/qr',
+  validate({ params: medioParamsSchema }),
+  medioController.verQr,
 );
 
 router.post(
@@ -84,6 +93,22 @@ router.put(
   cuerpoDeImagen,
   validate({ params: paymentParamsSchema }),
   billeteraController.subirQr,
+);
+
+// Los medios de pago de la casa —Yape, Western Union, Hotmart, Culqi—: apagar
+// uno, cambiar a quién se paga o el QR de Yape. Solo el dueño: no están entre
+// las rutas abiertas al administrador de país (`panelDePais`).
+router.get('/medios', medioController.listar);
+router.patch(
+  '/medios/:codigo',
+  validate({ params: medioParamsSchema, body: cambiarMedioSchema }),
+  medioController.cambiar,
+);
+router.put(
+  '/medios/:codigo/qr',
+  cuerpoDeImagen,
+  validate({ params: medioParamsSchema }),
+  medioController.subirQr,
 );
 
 router.get('/pending', manualController.pendientes);

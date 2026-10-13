@@ -36,7 +36,14 @@ const createTrialSchema = z.object({
     .int('El tiempo de acceso va en minutos enteros.')
     .min(0, 'El tiempo de acceso no puede ser negativo.')
     .max(525600, 'Como mucho un año de acceso.'),
-  callsPerDay: z.coerce.number().int().min(0).max(1000).default(0),
+  // De 1 a 15 por persona y día. Ya no hay «sin tope»: cada consulta se paga y
+  // el enlace se reparte entre gente que no ha pagado nada.
+  callsPerDay: z.coerce
+    .number()
+    .int()
+    .min(1, 'Pon al menos una consulta al día.')
+    .max(15, 'Como mucho 15 consultas al día por persona.')
+    .default(15),
   // Sin tope total: un enlace de prueba solo lleva tope por día. Si un panel
   // antiguo manda «callsLimitTotal», zod lo descarta aquí sin dar error.
 });

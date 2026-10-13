@@ -64,7 +64,7 @@ test('un enlace nuevo trae 30 cupos si no se dice otra cosa', () => {
   });
   assert.equal(datos.seats, 30);
   assert.equal(datos.productCode, 'METODO_9_SKILLS');
-  assert.equal(datos.callsPerDay, 0);
+  assert.equal(datos.callsPerDay, 15);
   assert.equal(datos.accessMinutes, 120);
 });
 
@@ -72,6 +72,10 @@ test('los topes tienen techo: un cero de más no pasa', () => {
   const base = { name: 'Taller', productCode: 'METODO_9_SKILLS', accessMinutes: 60 };
   assert.throws(() => createTrialSchema.parse({ ...base, seats: 5000 }));
   assert.throws(() => createTrialSchema.parse({ ...base, callsPerDay: 5000 }));
+  // Como mucho 15 consultas al día, y nunca «sin tope».
+  assert.throws(() => createTrialSchema.parse({ ...base, callsPerDay: 16 }));
+  assert.throws(() => createTrialSchema.parse({ ...base, callsPerDay: 0 }));
+  assert.equal(createTrialSchema.parse({ ...base, callsPerDay: 15 }).callsPerDay, 15);
   assert.throws(() => createTrialSchema.parse({ ...base, accessMinutes: -1 }));
   assert.throws(() => createTrialSchema.parse({ ...base, accessMinutes: 525601 }), 'más de un año');
 });

@@ -4,6 +4,7 @@ const asyncHandler = require('../../shared/http/asyncHandler');
 const { ok, created } = require('../../shared/http/apiResponse');
 const manualService = require('./manual.service');
 const billeteraService = require('./billetera.service');
+const medioService = require('./medio.service');
 
 const manualController = {
   /**
@@ -11,9 +12,14 @@ const manualController = {
    * antes de que nadie inicie sesión. `westernUnion` es null si no se ofrece.
    */
   datosDePago: asyncHandler(async (_req, res) => {
-    return ok(res, {
+    // Lo del `.env`, con lo que el dueño haya cambiado o apagado en el panel.
+    const { yape, westernUnion } = await medioService.paraElCheckout({
       yape: manualService.datosDePago(),
       westernUnion: manualService.datosWesternUnion(),
+    });
+    return ok(res, {
+      yape,
+      westernUnion,
       // Las billeteras de país activas: Deuna en Ecuador, Nequi en Colombia…
       billeteras: await billeteraService.publicas(),
     });
@@ -153,5 +159,32 @@ const billeteraController = {
   }),
 };
 
+/** Los medios de pago de la casa, desde el panel del dueño. Ver `medio.service`. */
+const medioController = {
+  listar: asyncHandler(async (_req, res) => {
+    return ok(res, { medios: await medioService.listar() });
+  }),
+
+  cambiar: asyncHandler(async (req, res) => {
+    const medio = await medioService.cambiar(req.params.codigo, req.body, req.user.id);
+    return ok(res, { medio }, { message: `«${medio.nombre}» actualizado.` });
+  }),
+
+  subirQr: asyncHandler(async (req, res) => {
+    const medio = await medioService.guardarQr(req.params.codigo, req.body, req.user.id);
+    return ok(res, { medio }, { message: `QR de «${medio.nombre}» guardado.` });
+  }),
+
+  /** Público: lo pide la etiqueta de imagen del checkout, sin sesión. */
+  verQr: asyncHandler(async (req, res) => {
+    const { buffer, mime } = await medioService.qr(req.params.codigo);
+    res.setHeader('Content-Type', mime || 'application/octet-stream');
+    // La dirección lleva la versión del QR: si se sube otro, cambia.
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    return res.send(buffer);
+  }),
+};
+
 module.exports = manualController;
 module.exports.billeteraController = billeteraController;
+module.exports.medioController = medioController;

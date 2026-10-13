@@ -1222,6 +1222,35 @@ model Billetera {
   @@map("billeteras")
 }
 
+/// Lo que el dueño cambia desde el panel sobre un medio de pago de la casa:
+/// Yape, Western Union, Hotmart o Culqi.
+///
+/// Sus datos siguen en el `.env`; aquí solo queda lo que se cambie encima. Sin
+/// fila, o con un campo en nulo, manda el `.env`. Ver `medio.service`.
+model MedioDePago {
+  /// YAPE, WESTERN_UNION, HOTMART o CULQI.
+  codigo String @id @db.VarChar(20)
+
+  /// Apagado deja de ofrecerse al pagar. Lo ya cobrado por él no se toca.
+  active Boolean @default(true)
+
+  /// A quién se paga: el titular de Yape o el beneficiario de Western Union.
+  titular String? @db.VarChar(120)
+  /// El número de Yape o el DNI del beneficiario.
+  numero  String? @db.VarChar(80)
+  /// La ciudad del beneficiario de Western Union.
+  ciudad  String? @db.VarChar(120)
+
+  /// El QR de Yape subido desde el panel. Sin él, la web enseña el suyo.
+  qrPath String? @db.VarChar(255)
+  qrMime String? @db.VarChar(40)
+
+  updatedById String?  @db.Char(36)
+  updatedAt   DateTime @updatedAt
+
+  @@map("medios_de_pago")
+}
+
 /// Una conversación abierta con una skill a través del conector.
 ///
 /// Las skills del método CONVERSAN: preguntan, esperan respuesta y avanzan por

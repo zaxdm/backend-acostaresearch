@@ -6,6 +6,8 @@ const listQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   perPage: z.coerce.number().int().positive().max(100).default(20),
   search: z.string().trim().min(1).max(120).optional(),
+  // «con» = cuentas con alguna licencia emitida (activa o no); «sin» = las demás.
+  licencia: z.enum(['con', 'sin']).optional(),
 });
 
 /**

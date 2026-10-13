@@ -145,9 +145,29 @@ const cambiarBilleteraSchema = z.object({
   active: z.boolean().optional(),
 });
 
+/** Los medios de pago de la casa que se pueden tocar desde el panel. */
+const medioParamsSchema = z.object({
+  codigo: z.enum(['YAPE', 'WESTERN_UNION', 'HOTMART', 'CULQI'], {
+    errorMap: () => ({ message: 'Ese medio de pago no existe.' }),
+  }),
+});
+
+/**
+ * Encender o apagar un medio de la casa, o cambiar a quién se paga. Cada campo
+ * solo se toca si viene. Qué campos tiene cada medio lo decide `medio.service`.
+ */
+const cambiarMedioSchema = z.object({
+  active: z.boolean().optional(),
+  titular: texto('El titular', 120).optional(),
+  numero: texto('El número', 80).optional(),
+  ciudad: texto('La ciudad', 120).optional(),
+});
+
 module.exports = {
   crearBilleteraSchema,
   cambiarBilleteraSchema,
+  medioParamsSchema,
+  cambiarMedioSchema,
   registrarQuerySchema,
   revisarCapturaQuerySchema,
   paymentParamsSchema,

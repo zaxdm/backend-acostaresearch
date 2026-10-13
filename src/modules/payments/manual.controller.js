@@ -136,6 +136,21 @@ const billeteraController = {
     const billetera = await billeteraService.cambiar(req.params.id, req.body, req.user.id);
     return ok(res, { billetera }, { message: `«${billetera.nombre}» actualizada.` });
   }),
+
+  /** La imagen llega como cuerpo crudo, igual que la captura de un pago. */
+  subirQr: asyncHandler(async (req, res) => {
+    const billetera = await billeteraService.guardarQr(req.params.id, req.body, req.user.id);
+    return ok(res, { billetera }, { message: `QR de «${billetera.nombre}» guardado.` });
+  }),
+
+  /** Público: lo pide la etiqueta de imagen del checkout, sin sesión. */
+  verQr: asyncHandler(async (req, res) => {
+    const { buffer, mime } = await billeteraService.qr(req.params.id);
+    res.setHeader('Content-Type', mime || 'application/octet-stream');
+    // La dirección lleva la versión del QR: si se sube otro, cambia.
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    return res.send(buffer);
+  }),
 };
 
 module.exports = manualController;

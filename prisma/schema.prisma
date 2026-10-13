@@ -1204,6 +1204,11 @@ model Billetera {
   /// Lo que haga falta decirle al comprador además de eso. Opcional.
   instrucciones String? @db.VarChar(500)
 
+  /// La imagen de su QR, si se subió una. Va a disco, con los comprobantes, y
+  /// aquí solo queda su ruta: la enseña el checkout para pagar escaneando.
+  qrPath String? @db.VarChar(255)
+  qrMime String? @db.VarChar(40)
+
   /// Apagada deja de ofrecerse al pagar. Lo ya cobrado por ella no se toca.
   active Boolean @default(true)
 

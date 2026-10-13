@@ -39,6 +39,14 @@ const cuerpoDeImagen = express.raw({
 // Público: la web enseña los datos del Yape antes de que nadie inicie sesión.
 router.get('/info', manualController.datosDePago);
 
+// Público también: el QR de una billetera de país, que el checkout enseña junto
+// a sus datos. Es la misma clase de imagen que el QR de Yape de la web.
+router.get(
+  '/billeteras/:id/qr',
+  validate({ params: paymentParamsSchema }),
+  billeteraController.verQr,
+);
+
 router.post(
   '/',
   authenticate,
@@ -70,6 +78,12 @@ router.patch(
   '/billeteras/:id',
   validate({ params: paymentParamsSchema, body: cambiarBilleteraSchema }),
   billeteraController.cambiar,
+);
+router.put(
+  '/billeteras/:id/qr',
+  cuerpoDeImagen,
+  validate({ params: paymentParamsSchema }),
+  billeteraController.subirQr,
 );
 
 router.get('/pending', manualController.pendientes);

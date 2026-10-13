@@ -248,6 +248,60 @@ test('crear y apagar billeteras: el dueño sí, el de país no', async () => {
   filas = {};
 });
 
+test('la ruta del QR en el disco no sale nunca: solo si lo tiene y su versión', async () => {
+  const fecha = new Date('2026-10-12T20:00:00Z');
+  const tabla = require('../src/lib/prisma').billetera;
+  const original = tabla.findMany;
+  require.cache[rutaPrisma].exports = new Proxy(
+    {},
+    {
+      get: (_o, nombre) =>
+        nombre === 'billetera'
+          ? {
+              findMany: async () => [
+                { id: 'b1', nombre: 'Deuna', pais: 'EC', qrPath: '2026-10/qr-b1.png', updatedAt: fecha },
+                { id: 'b2', nombre: 'Nequi', pais: 'CO', qrPath: null, updatedAt: fecha },
+              ],
+            }
+          : { findMany: original },
+    },
+  );
+  // El servicio guardó la referencia al cliente de antes: se le pregunta a uno nuevo.
+  delete require.cache[require.resolve('../src/modules/payments/billetera.service')];
+  const servicio = require('../src/modules/payments/billetera.service');
+
+  const [deuna, nequi] = await servicio.publicas();
+  assert.equal('qrPath' in deuna, false);
+  assert.equal('updatedAt' in deuna, false);
+  assert.equal(deuna.tieneQr, true);
+  assert.equal(deuna.qrVersion, fecha.getTime());
+  assert.equal(nequi.tieneQr, false);
+  assert.equal(nequi.qrVersion, null);
+});
+
+test('el QR lo sube solo el dueño, y verlo no pide sesión', async () => {
+  assert.equal(abiertaAlPais('PUT', `/payments/manual/billeteras/${ID}/qr`), false);
+  assert.equal(await pedir(DE_ECUADOR, 'PUT', `/payments/manual/billeteras/${ID}/qr`), 403);
+
+  // Sin QR guardado: 404, y sin pedir sesión a nadie.
+  filas = {};
+  const respuesta = await fetch(`${base}/payments/manual/billeteras/${ID}/qr`);
+  assert.equal(respuesta.status, 404);
+
+  // Lo que no es una imagen no se guarda.
+  filas = { billetera: { id: ID, qrPath: null } };
+  cuenta = ADMIN;
+  consultas = [];
+  const mala = await fetch(`${base}/payments/manual/billeteras/${ID}/qr`, {
+    method: 'PUT',
+    headers: { authorization: 'Bearer firmado', 'content-type': 'image/png' },
+    body: Buffer.from('esto no es una imagen, es texto suelto'),
+  });
+  assert.equal(mala.status, 415);
+  assert.equal(consultas.some((c) => c.tabla === 'billetera' && c.metodo === 'update'), false);
+  filas = {};
+});
+
 test('quien va a pagar ve las billeteras activas junto a Yape, sin sesión', async () => {
   consultas = [];
   const respuesta = await fetch(`${base}/payments/manual/info`);

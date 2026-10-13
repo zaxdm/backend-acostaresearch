@@ -4,6 +4,7 @@ const prisma = require('../../lib/prisma');
 const logger = require('../../config/logger');
 const { ERROR_CODES } = require('../../config/constants');
 const { AppError, NotFoundError } = require('../../shared/errors/AppError');
+const proofStorage = require('./proof.storage');
 
 /**
  * Billeteras digitales de país.
@@ -33,7 +34,20 @@ const billeteraSelect = {
   instrucciones: true,
   active: true,
   createdAt: true,
+  qrPath: true,
+  updatedAt: true,
 };
+
+/**
+ * Hacia fuera no sale la ruta del QR en el disco, solo si lo tiene y desde
+ * cuándo: con esa fecha la web le cambia la dirección a la imagen cuando se
+ * sube otra, y el navegador no enseña la vieja.
+ */
+function presentar(billetera) {
+  if (!billetera) return billetera;
+  const { qrPath, updatedAt, ...resto } = billetera;
+  return { ...resto, tieneQr: Boolean(qrPath), qrVersion: qrPath ? new Date(updatedAt).getTime() : null };
+}
 
 /** Lo que ve quien va a pagar: lo justo para hacer el pago. */
 const publicaSelect = {
@@ -44,6 +58,8 @@ const publicaSelect = {
   titular: true,
   numero: true,
   instrucciones: true,
+  qrPath: true,
+  updatedAt: true,
 };
 
 /**
@@ -71,20 +87,59 @@ const billeteraService = {
   comoMedio,
 
   /** Las que se ofrecen al pagar: activas, agrupadas por país en la web. */
-  publicas() {
-    return prisma.billetera.findMany({
+  async publicas() {
+    const billeteras = await prisma.billetera.findMany({
       where: { active: true },
       select: publicaSelect,
       orderBy: [{ pais: 'asc' }, { nombre: 'asc' }],
     });
+    return billeteras.map(presentar);
   },
 
   /** Todas, para el panel del dueño. */
-  listar() {
-    return prisma.billetera.findMany({
+  async listar() {
+    const billeteras = await prisma.billetera.findMany({
       select: billeteraSelect,
       orderBy: [{ pais: 'asc' }, { createdAt: 'asc' }],
     });
+    return billeteras.map(presentar);
+  },
+
+  /**
+   * Guarda la imagen del QR de una billetera, o la cambia por otra.
+   *
+   * Va a la misma carpeta que los comprobantes, por lo mismo que ellos: pesa,
+   * hay que conservarla y no debe vivir en la base. La anterior se borra
+   * después de apuntar la nueva, para que un fallo a medias no deje a la
+   * billetera sin ninguna.
+   */
+  async guardarQr(id, buffer, adminId) {
+    const actual = await prisma.billetera.findUnique({
+      where: { id },
+      select: { id: true, qrPath: true },
+    });
+    if (!actual) throw new NotFoundError('Esa billetera no existe.');
+
+    const guardado = await proofStorage.guardar(buffer, { paymentId: `qr-${id}` });
+    const billetera = await prisma.billetera.update({
+      where: { id },
+      data: { qrPath: guardado.path, qrMime: guardado.mime },
+      select: billeteraSelect,
+    });
+    if (actual.qrPath) await proofStorage.borrar(actual.qrPath);
+
+    logger.warn({ billeteraId: id, adminId, bytes: guardado.bytes }, 'QR de una billetera de país guardado');
+    return presentar(billetera);
+  },
+
+  /** La imagen del QR, para enseñarla al pagar. Es pública, como el de Yape. */
+  async qr(id) {
+    const billetera = await prisma.billetera.findUnique({
+      where: { id },
+      select: { qrPath: true, qrMime: true },
+    });
+    if (!billetera?.qrPath) throw new NotFoundError('Esa billetera no tiene QR.');
+    return { buffer: await proofStorage.leer(billetera.qrPath), mime: billetera.qrMime };
   },
 
   async crear({ nombre, pais, moneda, titular, numero, instrucciones, createdById }) {
@@ -93,7 +148,7 @@ const billeteraService = {
       select: billeteraSelect,
     });
     logger.warn({ billeteraId: creada.id, nombre, pais, moneda, createdById }, 'Billetera de país creada');
-    return creada;
+    return presentar(creada);
   },
 
   /**
@@ -119,7 +174,7 @@ const billeteraService = {
       select: billeteraSelect,
     });
     logger.warn({ billeteraId: id, adminId, active: cambiada.active }, 'Billetera de país cambiada');
-    return cambiada;
+    return presentar(cambiada);
   },
 
   /** El medio con el que se registra un pago por esa billetera. Tiene que estar activa. */

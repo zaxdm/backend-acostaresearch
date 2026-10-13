@@ -88,7 +88,7 @@ function presentar(codigo, fila) {
         codigo,
         nombre: codigo === HOTMART ? 'Hotmart' : 'Culqi (tarjeta o Yape al instante)',
         pais: null,
-        moneda: codigo === HOTMART ? 'USD' : 'PEN',
+        moneda: 'PEN',
         active,
         editable: false,
         titular: null,

@@ -73,12 +73,15 @@ const userRepository = {
   /**
    * `licencia` criba por si la cuenta tiene alguna licencia emitida («con») o
    * ninguna («sin»); revocada o suspendida también cuenta, que es donde se va a
-   * reactivarla. `paisDeLicencias` es el del administrador de país: él solo ve
-   * las licencias de las cuentas de su país, así que para él solo esas «tienen».
+   * reactivarla.
+   *
+   * `pais` deja solo las cuentas de ese país: al administrador de país, las del
+   * suyo, que son sus clientes. Sin él salen todas; `null` son las que no
+   * tienen etiqueta, las de la casa.
    *
    * `conteo` cuenta las tres pestañas con la misma búsqueda, sin la criba.
    */
-  async paginate({ page, perPage, search, licencia, paisDeLicencias }) {
+  async paginate({ page, perPage, search, licencia, pais }) {
     // Sin mode: insensitive, que no existe en MySQL. No hace falta, porque la
     // colación por defecto de MySQL/MariaDB (utf8mb4_..._ci) ya ignora mayúsculas.
     //
@@ -86,6 +89,7 @@ const userRepository = {
     // solo el titular de relleno de un conector. Se ven en su propia sección.
     const base = {
       trialLinkId: null,
+      ...(pais !== undefined && { pais }),
       ...(search && {
         OR: [
           { email: { contains: search } },
@@ -94,10 +98,7 @@ const userRepository = {
         ],
       }),
     };
-    const conLicencia = {
-      licenses: { some: {} },
-      ...(paisDeLicencias && { pais: paisDeLicencias }),
-    };
+    const conLicencia = { licenses: { some: {} } };
     const where =
       licencia === 'con'
         ? { ...base, AND: [conLicencia] }

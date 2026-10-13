@@ -53,7 +53,7 @@ const ABIERTAS = [
   'GET /embudo',
   'GET /resenas/panel',
   'GET /reclamos',
-  // Todas las cuentas, solo mirar.
+  // Las cuentas de su país, solo mirar.
   'GET /users',
   // El catálogo, los videos y las guías: solo mirar.
   'GET /billing/products',

@@ -75,9 +75,40 @@ test('la búsqueda se mantiene con la criba, y el conteo sale sin ella', async (
   assert.equal(pedidos.cuentas[1].OR.length, 3);
 });
 
-test('al administrador de país solo le cuentan las licencias de su país', async () => {
+test('con un país solo salen las cuentas de ese país, también en el conteo', async () => {
   empezar();
-  await userRepository.paginate({ page: 1, perPage: 50, licencia: 'con', paisDeLicencias: 'EC' });
+  await userRepository.paginate({ page: 1, perPage: 50, pais: 'EC' });
+  assert.deepEqual(pedidos.lista.where, { trialLinkId: null, pais: 'EC' });
+  // Las tres cuentas —la página, «todos» y «con licencia»— van con el país.
+  assert.ok(pedidos.cuentas.every((where) => where.pais === 'EC'));
 
-  assert.deepEqual(pedidos.lista.where.AND, [{ licenses: { some: {} }, pais: 'EC' }]);
+  empezar();
+  await userRepository.paginate({ page: 1, perPage: 50, licencia: 'sin', pais: 'EC' });
+  assert.equal(pedidos.lista.where.pais, 'EC');
+  assert.deepEqual(pedidos.lista.where.NOT, { licenses: { some: {} } });
+});
+
+test('`null` son las cuentas sin etiqueta, y sin país salen todas', async () => {
+  empezar();
+  await userRepository.paginate({ page: 1, perPage: 50, pais: null });
+  assert.equal(pedidos.lista.where.pais, null);
+
+  empezar();
+  await userRepository.paginate({ page: 1, perPage: 50 });
+  assert.equal('pais' in pedidos.lista.where, false);
+});
+
+test('la ruta le pasa al administrador de país su país, y al dueño ninguno', async () => {
+  const userController = require('../src/modules/users/user.controller');
+  const pedir = async (alcance) => {
+    empezar();
+    await new Promise((resuelto, fallo) => {
+      const res = { status: () => res, json: () => resuelto() };
+      userController.list({ query: { page: 1, perPage: 50 }, alcance }, res, fallo);
+    });
+    return pedidos.lista.where;
+  };
+
+  assert.equal((await pedir({ dePais: true, pais: 'EC', filtro: 'EC' })).pais, 'EC');
+  assert.equal('pais' in (await pedir({ dePais: false, pais: null, filtro: undefined })), false);
 });

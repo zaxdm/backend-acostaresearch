@@ -78,8 +78,8 @@ const userService = {
     return user;
   },
 
-  list({ page, perPage, search, licencia }, { paisDeLicencias } = {}) {
-    return userRepository.paginate({ page, perPage, search, licencia, paisDeLicencias });
+  list({ page, perPage, search, licencia }, { pais } = {}) {
+    return userRepository.paginate({ page, perPage, search, licencia, pais });
   },
 
   /**

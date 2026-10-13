@@ -3,6 +3,7 @@
 const asyncHandler = require('../../shared/http/asyncHandler');
 const { ok, created, noContent } = require('../../shared/http/apiResponse');
 const { readRefreshCookie, clearRefreshCookie } = require('../../shared/utils/cookies');
+const { dondePais } = require('../../middlewares/panelDePais');
 const userService = require('./user.service');
 
 const userController = {
@@ -107,9 +108,8 @@ const userController = {
   }),
 
   list: asyncHandler(async (req, res) => {
-    // Al administrador de país, «con licencia» son las de las cuentas de su país.
-    const paisDeLicencias = req.alcance?.dePais ? req.alcance.pais : undefined;
-    const { items, meta, conteo } = await userService.list(req.query, { paisDeLicencias });
+    // El administrador de país solo ve las cuentas de su país: sus clientes.
+    const { items, meta, conteo } = await userService.list(req.query, dondePais(req.alcance));
     return ok(res, { users: items, meta, conteo });
   }),
 };

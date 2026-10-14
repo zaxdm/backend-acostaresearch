@@ -1743,6 +1743,15 @@ function agruparPorMetodo(guardados) {
 }
 
 /**
+ * Las tesis de un método, en su orden y con la activa marcada: lo mismo que
+ * enseña el panel en «Qué tesis usar», para que el conector pregunte por la misma lista.
+ */
+async function tesisDelMetodo(userId, productCode) {
+  const guardados = await projectRepository.listarTesis(userId, productCode);
+  return guardados.length > 0 ? agruparPorMetodo(guardados)[0].tesis : [];
+}
+
+/**
  * Guarda el análisis: el script, lo que devolvió, y las cifras.
  *
  * NO SE EJECUTA NADA AQUÍ. Lo que se guarda llega de «trabajar_en_r» —que corre
@@ -2446,6 +2455,7 @@ module.exports = {
   reiniciarProyecto,
   crearTesis,
   activarTesis,
+  tesisDelMetodo,
   eliminarTesis,
   cambiarAutor,
   cambiarAsesor,

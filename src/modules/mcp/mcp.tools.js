@@ -444,10 +444,18 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         .aviso(licencia.user.id, licencia.productCode)
         .catch(() => null);
 
-      if (!panorama && subido) return texto(subido);
+      // Con varias tesis, cuál es la activa va delante de todo: lo de debajo es
+      // solo de ella, y también cuando la activa está en blanco.
+      const varias = await bloqueDeVarias().catch((error) => {
+        logger.error({ err: error, licenseId: licencia.id }, 'No se pudo preparar la lista de tesis');
+        return null;
+      });
+      const conVarias = (cuerpo) => texto(varias ? `${varias}\n\n───────────\n\n${cuerpo}` : cuerpo);
+
+      if (!panorama && subido) return conVarias(subido);
 
       if (!panorama) {
-        return texto(
+        return conVarias(
           'Todavía no hay nada guardado de este proyecto.\n\n' +
             'Según vayáis fijando cosas —el tema, los objetivos, la metodología— guárdalas ' +
             'con "guardar_avance". No lo dejes para el final de la conversación: si se corta, ' +
@@ -465,9 +473,100 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         });
 
       const conDocumento = subido ? `${panorama}\n\n${subido}` : panorama;
-      return texto(consejo ? `${conDocumento}\n\n───────────\n\n${consejo}` : conDocumento);
+      return conVarias(consejo ? `${conDocumento}\n\n───────────\n\n${consejo}` : conDocumento);
     },
   );
+
+  /**
+   * Varias tesis (o artículos) del mismo método: cuál se usa, desde la conversación.
+   *
+   * La activa solo se cambiaba en el panel, y el conector trabaja siempre sobre
+   * ella: quien llevaba dos tesis y abría Claude sin pasar antes por la web
+   * escribía en la que no era. Ahora Claude pregunta y la cambia aquí.
+   *
+   * Solo con el permiso de «varias tesis» en la licencia: sin él no hay nada que
+   * elegir, y la herramienta sobraría en el conector de todos los demás.
+   */
+  const CON_VARIAS = Boolean(licencia.variasTesis);
+  const OTRA_OBRA = /^HUMANIZ/i.test(licencia.productCode ?? '')
+    ? 'otro documento'
+    : { articulo: 'otro artículo', informe: 'otro informe' }[perfil.tipo] ?? 'otra tesis';
+
+  const lineaDeTesis = (t, i) =>
+    `${i + 1}. «${t.nombre ?? 'Principal'}» — ${t.tema ?? 'sin tema todavía'}` +
+    (t.palabras > 0 ? ` · ${t.palabras} palabras` : '') +
+    (t.activa ? ' ← ACTIVA' : '');
+
+  /** Lo que se pone delante del panorama y del primer tramo. Null si no hay nada que elegir. */
+  async function bloqueDeVarias() {
+    if (!CON_VARIAS) return null;
+    const lista = await projectService.tesisDelMetodo(licencia.user.id, licencia.productCode);
+    if (lista.length < 2) return null;
+
+    return (
+      `TIENE ${lista.length} TRABAJOS EN ESTE MÉTODO (cada uno es ${OTRA_OBRA}). Todo lo que leas y ` +
+      `guardes es del ACTIVO:${N}${lista.map(lineaDeTesis).join(N)}${N}${N}` +
+      'ANTES DE TRABAJAR, si en esta conversación todavía no se lo preguntaste, PREGÚNTALE con cuál ' +
+      'quiere trabajar hoy, nombrándoselos. Si elige uno que no es el activo, cámbialo con ' +
+      '"elegir_proyecto" (su número) y vuelve a llamar a "mi_proyecto". NO lo mandes a su perfil de ' +
+      'acostaresearch.com a cambiarlo.'
+    );
+  }
+
+  if (CON_VARIAS) {
+    server.registerTool(
+      'elegir_proyecto',
+      {
+        title: 'Con cuál de sus trabajos se trabaja',
+        description:
+          'Este tesista lleva VARIOS trabajos en el mismo método (cada uno es ' +
+          `${OTRA_OBRA}), y todas las demás herramientas leen y guardan SOLO en el activo. Sin ` +
+          '"numero", dice cuáles hay y cuál es el activo. Con "numero", deja ese como activo. ' +
+          'ÚSALA cuando "mi_proyecto" avise de que tiene varios y elija uno que no es el activo, o ' +
+          'cuando diga «trabajemos en mi otra tesis», «cambia al otro artículo». PREGÚNTALE antes de ' +
+          'cambiar: nunca cambies por tu cuenta. Después de cambiar, llama a "mi_proyecto".',
+        inputSchema: fromJsonSchema({
+          type: 'object',
+          properties: {
+            numero: {
+              type: 'integer',
+              minimum: 1,
+              description: 'El número del trabajo en la lista, tal como sale aquí o en "mi_proyecto".',
+            },
+          },
+          additionalProperties: false,
+        }),
+      },
+      async ({ numero }) => {
+        await licenseService.recordUsage({ licenseId: licencia.id, tool: 'elegir_proyecto' });
+        const userId = licencia.user.id;
+        const { productCode } = licencia;
+
+        const lista = await projectService.tesisDelMetodo(userId, productCode);
+        const listado = lista.map(lineaDeTesis).join(N);
+        if (lista.length === 0) return texto('Todavía no hay nada guardado de este proyecto.');
+        if (!numero) return texto(`Sus trabajos en este método:${N}${listado}`);
+
+        const elegida = lista[numero - 1];
+        if (!elegida) {
+          return texto(`No hay ningún trabajo con el número ${numero}. Los que hay:${N}${listado}`);
+        }
+        if (elegida.activa) {
+          return texto(`«${elegida.nombre ?? 'Principal'}» ya era el activo. No se cambió nada.`);
+        }
+
+        const cambiada = await projectService.activarTesis({ userId, productCode, id: elegida.id });
+        if (!cambiada) {
+          return texto('No se pudo cambiar: ese trabajo ya no existe. Vuelve a llamar sin "numero".');
+        }
+        return texto(
+          `Ahora el activo es «${elegida.nombre ?? 'Principal'}». Todo lo que leas y guardes desde ` +
+            'ahora es de ese trabajo, también en su panel de la web. Llama a "mi_proyecto" para ver ' +
+            'por dónde va, y díselo al tesista en una frase.',
+        );
+      },
+    );
+  }
 
   server.registerTool(
     'ver_capitulo',
@@ -1650,7 +1749,20 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
             return null;
           });
 
-          const partes = [falta, memoria, redaccionPrevia, contenido.texto, consejo].filter(Boolean);
+          // Va delante de todo, como `falta`: es lo primero que tiene que preguntar.
+          const queDocumento = /humaniz/i.test(skill.displayName ?? '')
+            ? await bloqueDeDocumento().catch((error) => {
+                logger.error({ err: error, licenseId: licencia.id }, 'No se pudo preparar la pregunta del documento');
+                return null;
+              })
+            : null;
+
+          const varias = await bloqueDeVarias().catch((error) => {
+            logger.error({ err: error, licenseId: licencia.id }, 'No se pudo preparar la lista de tesis');
+            return null;
+          });
+
+          const partes = [varias, queDocumento, falta,memoria, redaccionPrevia, contenido.texto, consejo].filter(Boolean);
           if (partes.length > 1) return texto(partes.join('\n\n───────────\n\n'));
         }
 
@@ -2615,6 +2727,42 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
    */
   function respuestaMarcados(leido) {
     return respuestaLoMarcado({ ...leido, modo: 'documento', tipo: leido.tipoReporte });
+  }
+
+  /**
+   * Lo que "redactar" pone delante del humanizador: con qué documento se trabaja.
+   *
+   * La pregunta ya estaba en "ver_mi_documento", pero ahí llega tarde: el
+   * asistente abría la skill y mandaba al tesista a su perfil a buscar dónde
+   * subir. Aquí se dice qué hay en el servidor y se pregunta lo primero, para
+   * que todo se haga desde la conversación.
+   */
+  async function bloqueDeDocumento() {
+    const userId = licencia.user.id;
+    const { productCode } = licencia;
+    const ficha = await documentoService.fichaDe(userId, productCode);
+    const enElMetodo = await projectService.enlaceDelWord(userId, productCode);
+
+    const opciones = [
+      ficha
+        ? `el documento que ya subió: «${ficha.nombre}», del ${fechaCorta(ficha.subidoAt)}` +
+          (ficha.humanizados > 0 ? ` (${ficha.humanizados} párrafos ya humanizados)` : '')
+        : null,
+      enElMetodo ? 'lo que escribisteis juntos y está guardado en el método' : null,
+      'subir un documento nuevo',
+    ].filter(Boolean);
+
+    return (
+      'ANTES DE HUMANIZAR, PREGÚNTALE CON QUÉ DOCUMENTO TRABAJAS, si en esta conversación todavía no ' +
+      `se lo preguntaste. ${
+        opciones.length > 1
+          ? `Dale a elegir entre: ${opciones.join('; o ')}.`
+          : 'En el servidor todavía no hay ninguno: dile que lo sube ahora mismo, sin salir de aquí.'
+      } ` +
+      'Para subirlo, llama a "subir_mi_documento" y dale el enlace: se sube desde esta conversación, ' +
+      'NO lo mandes a su perfil de acostaresearch.com ni le pidas que lo adjunte en el chat. ' +
+      'No empieces a humanizar hasta que conteste.'
+    );
   }
 
   /**

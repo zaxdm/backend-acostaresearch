@@ -134,6 +134,17 @@ function buscarTesis(userId, productCode, id) {
   });
 }
 
+/** Todas sus tesis de ese método, con sus etapas: para decir cuáles hay y cuál es la activa. */
+function listarTesis(userId, productCode) {
+  return prisma.project.findMany({
+    where: { userId, productCode },
+    select: {
+      ...proyectoSelect,
+      stages: { select: etapaSelect, orderBy: { updatedAt: 'desc' } },
+    },
+  });
+}
+
 /** Cuántas tesis tiene de ese método. */
 function contarTesis(userId, productCode) {
   return prisma.project.count({ where: { userId, productCode } });
@@ -354,6 +365,7 @@ module.exports = {
   buscarTesis,
   contarTesis,
   activarTesis,
+  listarTesis,
   eliminarTesis,
   guardarEtapa,
   listarDeUsuario,

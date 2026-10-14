@@ -128,7 +128,9 @@ const REGLAS_DE_HUMANIZAR = [
     'AHORA y espera a que apruebe el bloque en un solo mensaje o te diga cuáles cambiar. Guarda solo lo ' +
     'que apruebe.',
   '1. Reescribe cada párrafo DESDE LA IDEA: di para ti qué afirma y redáctalo otra vez en otro orden, ' +
-    'el cuerpo también. Ninguna oración puede quedar igual; cambiar una palabra suelta no es reescribir.',
+    'el cuerpo también. Ninguna oración puede quedar igual; cambiar una palabra suelta no es reescribir. ' +
+    'Salvo las remisiones cortas a tablas y figuras («En la tabla 1 se observan los resultados»), que ' +
+    'pueden quedar como estaban.',
   '2. Imita la VOZ DEL AUTOR de abajo: su largo de oración, sus conectores, sus palabras corrientes. No ' +
     'subas el registro: lo neutro y llano es lo humano en una tesis.',
   '3. Quita: vocabulario de modelo (dogmático, estriba, imperioso, cimientos, catalizador, medular, ' +
@@ -144,7 +146,9 @@ const REGLAS_DE_HUMANIZAR = [
   '5. No se tocan: cifras, años, autores, números de leyes y casaciones, lo que va entre comillas y las ' +
     'marcas [AR…] y [FALTA FUENTE]. No añadas ni quites ideas. Un párrafo sale como un párrafo.',
   '6. Si una oración del original no se entiende, conserva su sentido lo más literal que puedas y ' +
-    'apúntala para el informe final. Corrige las faltas evidentes del original.',
+    'apúntala para el informe final. Corrige las faltas evidentes del original. Relee lo tuyo: cada ' +
+    'oración tiene que entenderse sola y concordar («se observaron los resultados», nunca «se vio los ' +
+    'resultados»), y la remisión a la tabla o figura se conserva.',
   'RITMO: cuando apruebe el bloque, guárdalo y enséñale el siguiente. Los párrafos de esta tanda que aún ' +
     'no le enseñaste vuelven a salir al llamar otra vez. Rehaz lo que vuelva rechazado o con aviso de ' +
     'oraciones idénticas o de vocabulario, y cambia las muletillas que te señale. Al terminar: ' +

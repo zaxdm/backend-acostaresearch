@@ -54,12 +54,29 @@ function oraciones(texto) {
 
 const esqueleto = (texto) => String(texto).toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
 
+/** «tabla 1», «figura 3», «anexo 2»: a qué se remite el texto. */
+const REMISION = /\b(?:tabla|figura|gráfico|cuadro|anexo|apéndice)\s+\d+/giu;
+
+/**
+ * «En la tabla 1 se observaron los resultados.»: una remisión corta está bien
+ * como está, y obligar a cambiarla daba «Se vio los resultados» (cliente,
+ * 14-oct-2026). No cuenta como oración que había que cambiar.
+ */
+const esRemisionCorta = (o) => o.search(REMISION) >= 0 && o.split(/\s+/).length <= 15;
+
+/**
+ * Pasiva refleja con el verbo en singular delante de un sujeto en plural: «se
+ * vio los resultados», «se observa las diferencias». Sale al cambiar el verbo
+ * de «se observaron los resultados» sin mirar la concordancia.
+ */
+const SE_SINGULAR_CON_PLURAL = /(?<![\p{L}])se\s+([a-záéíóúñ]+[aeioáéíóú])\s+(los|las)(?![\p{L}])/giu;
+
 /**
  * Las oraciones del original que tocan algún tramo [desde, hasta]: las que el
  * tesista resaltó para reescribir. Sin tramos, todas.
  */
 function oracionesACambiar(original, tramos) {
-  const todas = oraciones(original);
+  const todas = oraciones(original).filter((o) => !esRemisionCorta(o));
   if (!tramos) return todas;
   let desde = 0;
   return todas.filter((o) => {
@@ -100,7 +117,8 @@ const cuantas = (texto, patron) => {
 
 /**
  * Los avisos de un párrafo: oraciones que siguen iguales, vocabulario de la
- * lista que el original no traía, y rayas nuevas. Con `tramos` (lo que el
+ * lista que el original no traía, rayas nuevas, «se vio los…» y remisiones a
+ * tablas o figuras que se perdieron. Con `tramos` (lo que el
  * tesista resaltó en rojo), solo avisa de las oraciones de esos tramos.
  */
 function avisosDelParrafo(id, original, nuevo, tramos = null) {
@@ -119,6 +137,19 @@ function avisosDelParrafo(id, original, nuevo, tramos = null) {
   if (quedan.length > 0) avisos.push(`¶${id}: sigue ${lista(quedan)}, que delata; quítalo`);
   const rayas = (s) => (String(s).match(/—/g) ?? []).length;
   if (rayas(nuevo) > rayas(original)) avisos.push(`¶${id}: metiste rayas (—); usa coma, punto o paréntesis`);
+  const concordancia = [...String(nuevo).matchAll(SE_SINGULAR_CON_PLURAL)].map((m) => `«${m[0]}»`);
+  if (concordancia.length > 0) {
+    avisos.push(
+      `¶${id}: ${concordancia.join(', ')}: el verbo va en plural con un sujeto en plural ` +
+        '(«se observaron los resultados»); corrígelo',
+    );
+  }
+  const remisiones = (s) => new Set((String(s).match(REMISION) ?? []).map((r) => r.toLowerCase().replace(/\s+/g, ' ')));
+  const despues = remisiones(nuevo);
+  const perdidas = [...remisiones(original)].filter((r) => !despues.has(r));
+  if (perdidas.length > 0) {
+    avisos.push(`¶${id}: se perdió ${perdidas.map((r) => `«${r}»`).join(', ')}; el texto tiene que seguir remitiendo a ella`);
+  }
   return avisos;
 }
 

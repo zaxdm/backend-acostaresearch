@@ -93,6 +93,16 @@ test('los controles avisan de oraciones iguales, vocabulario de modelo y rayas, 
   assert.deepEqual(controles.oraciones('Ruiz et al. (2022) lo dice. Fin.'), ['Ruiz et al. (2022) lo dice.', 'Fin.']);
 });
 
+test('«se vio los resultados» y la tabla perdida dan aviso; la remisión corta puede quedar igual (14-oct)', () => {
+  const original = 'En la tabla 1 se observaron los resultados. El grupo B mejoró en todas las pruebas.';
+  const malo = controles.avisosDelParrafo(3, original, 'Se vio los resultados (1). Todas las pruebas del grupo B salieron mejor.');
+  assert.ok(malo.some((a) => /«se vio los»/i.test(a)), malo.join('\n'));
+  assert.ok(malo.some((a) => /«tabla 1»/.test(a)), malo.join('\n'));
+  const bueno = controles.avisosDelParrafo(3, original, 'En la tabla 1 se observaron los resultados. Todas las pruebas del grupo B salieron mejor.');
+  assert.deepEqual(bueno, []);
+  assert.deepEqual(controles.avisosDelParrafo(4, 'x', 'Se aplicó a los docentes y se presentan las tablas.'), []);
+});
+
 test('las muletillas se cuentan sobre todo lo humanizado, no por tanda', () => {
   const tanda = (n) => Array.from({ length: n }, (_, i) => `Párrafo ${i}: vale decir que el juez decide.`);
   assert.deepEqual(controles.muletillas(tanda(2)), []);

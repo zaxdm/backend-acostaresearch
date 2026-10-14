@@ -53,9 +53,9 @@ const ROMANOS = { i: 1, ii: 2, iii: 3, iv: 4, v: 5, vi: 6, vii: 7, viii: 8, ix: 
  * Los nombres de capítulo que se reconocen, y a qué fase van.
  *
  * `fases` son patrones sobre el CÓDIGO de la fase, en orden de preferencia: la
- * misma regla sirve para la tesis, el artículo y el informe, y se queda la
- * primera fase que exista en su catálogo. `null` = no es de ninguna fase, y lo
- * que venga debajo tampoco, hasta el título siguiente.
+ * misma regla sirve para la tesis, el artículo, la revisión, el informe y el TSP,
+ * y se queda la primera fase que exista en su catálogo. `null` = no es de ninguna
+ * fase, y lo que venga debajo tampoco, hasta el título siguiente.
  *
  * El orden importa: «Resultados y discusión» es de resultados, y «Referencias»
  * se mira antes que nada para que ningún capítulo se lleve la bibliografía.
@@ -92,13 +92,14 @@ const REGLAS = [
       /^analisis-datos-rstudio$/,
       /^analisis-cualitativo$/,
       /^articulo-fase5-resultados$/,
+      /^revision-fase5-resultados$/,
       /^informe-fase3/,
       /^tsp-fase4-resultados$/,
     ],
   },
   { titulo: /discusion/, fases: [/(^|-)discusion$/] },
   { titulo: /conclusion|recomendacion/, fases: [/conclusiones-abstract$/, /^informe-fase4/, /^tsp-fase5-conclusiones$/] },
-  { titulo: /metodolog|metodo|materiales y/, fases: [/^metodologia$/, /^articulo-fase4-metodos$/] },
+  { titulo: /metodolog|metodo|materiales y/, fases: [/^metodologia$/, /^articulo-fase4-metodos$/, /^revision-fase4-metodos$/] },
   {
     titulo: /marco teorico|marco conceptual|marco referencial|antecedentes|bases teoricas|revision de (la )?literatura|estado del arte|fundamentacion/,
     fases: [/^marco-teorico$/, /^articulo-fase3-revision-literatura$/, /^informe-fase2-desarrollo$/, /^tsp-fase2-marco-teorico$/],
@@ -108,6 +109,7 @@ const REGLAS = [
     fases: [
       /^problema-y-objetivos$/,
       /^articulo-fase2-introduccion$/,
+      /^revision-fase2-introduccion$/,
       /^informe-introduccion$/,
       /^informe-fase2-desarrollo$/,
       /^tsp-fase1-introduccion$/,

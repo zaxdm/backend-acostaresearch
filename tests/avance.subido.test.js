@@ -39,6 +39,14 @@ const ARTICULO = [
   'articulo-fase7-conclusiones-abstract',
 ].map((code) => ({ code, displayName: code }));
 
+const REVISION = [
+  'revision-fase2-introduccion',
+  'revision-fase4-metodos',
+  'revision-fase5-resultados',
+  'revision-fase6-discusion',
+  'revision-fase7-conclusiones-abstract',
+].map((code) => ({ code, displayName: code }));
+
 const p = (texto, extra = {}) => ({ texto, nivel: null, enTabla: false, referencias: false, ...extra });
 
 const { repartir } = require('../src/modules/projects/project.avance');
@@ -103,6 +111,32 @@ test('el artículo usa sus propias fases', () => {
     'articulo-fase4-metodos',
     'articulo-fase6-discusion',
   ]);
+});
+
+test('el artículo de revisión también: introducción, método y resultados van a sus fases', () => {
+  const { porFase, sinUbicar } = repartir(
+    [
+      p('Introducción', { nivel: 1 }),
+      p('Texto de la introducción.'),
+      p('Metodología', { nivel: 1 }),
+      p('Criterios de búsqueda.'),
+      p('Resultados', { nivel: 1 }),
+      p('Se incluyeron 40 estudios.'),
+      p('Discusión', { nivel: 1 }),
+      p('Se confirma.'),
+      p('Conclusiones', { nivel: 1 }),
+      p('Cierre.'),
+    ],
+    { catalogo: REVISION, tipo: 'articulo' },
+  );
+  assert.deepEqual([...porFase.keys()], [
+    'revision-fase2-introduccion',
+    'revision-fase4-metodos',
+    'revision-fase5-resultados',
+    'revision-fase6-discusion',
+    'revision-fase7-conclusiones-abstract',
+  ]);
+  assert.equal(sinUbicar, 0);
 });
 
 test('el esquema de su facultad manda sobre los nombres de siempre', () => {

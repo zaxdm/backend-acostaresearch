@@ -470,12 +470,16 @@ router.post(
     // Si su Word ya viene con el formato de su universidad, su tesis sale con él.
     const formato = await projectService.formatoDesdeSuWord({ userId, productCode, buffer: req.body, nombre: subido.nombre });
 
+    // Y sus capítulos pasan a sus fases, como el avance del panel (ver `avance.service`).
+    const avance = await avanceService.tambienComoAvance({ userId, productCode, buffer: req.body, nombre: subido.nombre });
+
     return ok(
       res,
-      { documento: subido, formato },
+      { documento: subido, formato, avance },
       {
         message:
           mensajeDeSubida(subido, 'Vuelve a tu conversación y di «ya lo subí».') +
+          avanceService.mensajeDeFasesDesdeElDocumento(avance) +
           projectService.mensajeDeFormatoDeSuWord(formato),
       },
     );

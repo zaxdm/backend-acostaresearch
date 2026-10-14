@@ -67,6 +67,34 @@ const N = '\n';
 const SIN_ARGUMENTOS = fromJsonSchema({ type: 'object', properties: {}, additionalProperties: false });
 
 /**
+ * ChatGPT buscaba las fuentes en la web y después no podía citarlas: una página
+ * no da clave, y al guardar las citas se quedaban fuera las que había prometido.
+ */
+const SIN_BUSCAR_EN_LA_WEB =
+  'NO BUSQUES FUENTES EN LA WEB ni en el buscador del chat: lo que sale de ahí no tiene clave y no ' +
+  'se puede citar en su documento. Busca solo con las herramientas de este conector. Un libro o ' +
+  'un material sin DOI (un manual, una guía como la de ITIL, el PPT de su clase) lo añade el ' +
+  'tesista en la web, en el recuadro «Subir tus fuentes» → «+ Añadir una fuente sin DOI a ' +
+  'mano»; después sale aquí con su clave. NUNCA le ofrezcas una fuente que no puedas citar. ';
+
+/**
+ * El Word subido sale siempre con su propio formato; la plantilla solo la lleva
+ * el Word del método. Quien subió su avance de informe «para que me lo dejes
+ * completo y con la plantilla» recibió su mismo Word con las citas, sin la
+ * plantilla, y el asistente le pidió adjuntarla en el chat. Al subirlo, sus
+ * capítulos pasan también a sus fases (`avance.service.tambienComoAvance`).
+ */
+const COMPLETAR_EN_LAS_FASES =
+  'SI QUIERE QUE LE COMPLETES EL TRABAJO —«dame el informe completo», «sigue con mi avance», ' +
+  '«termina mi tesis»— O QUE SALGA CON SU PLANTILLA O FORMATO, NO trabajes sobre el documento ' +
+  'subido: al subirlo, sus capítulos pasaron también a sus fases. Léelos con "ver_capitulo" ' +
+  '("texto": true), complétalos y cítalos, guárdalos con "guardar_capitulo" y dale el Word del ' +
+  'método con "enlace_del_word": es el ÚNICO que sale con la plantilla de "formato_de_la_universidad" ' +
+  'y con la portada llenada. El documento subido sale SIEMPRE con su propio formato, sin la ' +
+  'plantilla: sirve para citarlo o humanizarlo tal cual. NUNCA le pidas que adjunte la plantilla ' +
+  'ni el Word en el chat, ni le armes tú otro documento. ';
+
+/**
  * Cómo bajar la similitud con el reporte subido. Sale de la skill
  * bajar-similitud: lo que no se negocia (las citas textuales) y la doble
  * restricción (alejarse de la fuente sin caer en prosa de modelo).
@@ -1878,6 +1906,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
           'ÚSALA SIEMPRE que haga falta citar: antecedentes, marco teórico, metodología o ' +
           'discusión. NO cites de memoria: los datos bibliográficos que no salen de aquí ' +
           'suelen tener el año o el DOI equivocados, y eso lo comprueba un jurado en segundos. ' +
+          SIN_BUSCAR_EN_LA_WEB +
           'EN "tema", EN INGLÉS: la biblioteca de Acosta son artículos indexados en Scopus y ' +
           'Web of Science, con títulos y resúmenes en inglés. El tesista te escribe en español, ' +
           'así que traduce tú el tema antes de buscar («validez de constructo» → «construct ' +
@@ -2102,6 +2131,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         'esta base indexa Scielo, Redalyc y repositorios latinoamericanos. ' +
         'Devuelve autor, año, revista, DOI real, cuántas veces se ha citado y si hay PDF ' +
         'gratis. NO cites de memoria ni completes datos que no vengan de aquí. ' +
+        SIN_BUSCAR_EN_LA_WEB +
         'ESTAS FUENTES NO ESTÁN REVISADAS POR ACOSTA: el catálogo es abierto y entra de todo, ' +
         'incluidos repositorios y preprints. Dilo al presentarlas, y recuerda que las de ' +
         '"buscar_fuentes" sí llevan ese criterio.',
@@ -2919,7 +2949,8 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
           'Para BAJAR LA SIMILITUD, dile que suba el reporte de similitud (y su Word, si la tesis no está ' +
           'guardada en el proyecto); cuando avise que lo subió, llama a "ver_lo_marcado" con "similitud". ' +
           'Para HUMANIZAR no hace falta ningún reporte (el de IA ya no se acepta): cuando suba su Word, llama ' +
-          'a "ver_lo_marcado" con "todo" (o "rojo" si resaltó en rojo lo que quiere humanizar).',
+          'a "ver_lo_marcado" con "todo" (o "rojo" si resaltó en rojo lo que quiere humanizar).' +
+          `${N}${N}${COMPLETAR_EN_LAS_FASES}`,
       );
     },
   );
@@ -2945,6 +2976,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         'guardar con "guardar_capitulo", y el Word se lo das con "enlace_del_word". Para eso NO ' +
         'hace falta que descargue ni suba nada, y en su perfil de la web no hay ninguna descarga ' +
         'ni ningún recuadro para subirlo. ' +
+        COMPLETAR_EN_LAS_FASES +
         'Es SU Word en el servidor: NO le pidas que te lo adjunte en el chat ni lo edites tú con ' +
         'python-docx, que le mueve el formato. ' +
         'ANTES DE CITAR O HUMANIZAR, PREGÚNTALE si trabajas con el documento que ya está en el ' +
@@ -2960,6 +2992,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         '3) Para cada afirmación que necesite respaldo busca fuente: "mis_fuentes" y ' +
         '"buscar_fuentes" (su Zotero y la biblioteca de Acosta, de artículos indexados en Scopus) ' +
         'y "buscar_en_la_literatura" (OpenAlex). ' +
+        SIN_BUSCAR_EN_LA_WEB +
         '4) ANTES DE GUARDAR NADA, enséñale un resumen: cuántas citas pondrás y con qué fuentes, ' +
         'qué fuentes nuevas añadirías a su biblioteca —añade con "anadir_a_mis_fuentes" SOLO las ' +
         'que apruebe— y qué afirmaciones quedarían [FALTA FUENTE]. ' +
@@ -3026,7 +3059,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         : `ANTES DE TRABAJAR: si en esta conversación todavía no se lo preguntaste, PREGÚNTALE si ` +
           `trabajas con «${leido.nombre}», subido el ${fechaCorta(leido.subidoAt)}, o si quiere subir ` +
           'una versión nueva. Si es nueva, llama a "subir_mi_documento", dale el enlace y espera a que ' +
-          `diga que lo subió antes de seguir.${N}${N}`;
+          `diga que lo subió antes de seguir.${N}${N}${COMPLETAR_EN_LAS_FASES}${N}${N}`;
 
       const { norma } = leido;
       const lineaDeNorma =
@@ -4193,9 +4226,12 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
                     `pregúntasela y guárdala con "guardar_avance" (estiloCitas).${N}${N}`)) +
             'Es SU MISMO WORD, con su formato, sus tablas y sus figuras: solo cambian los párrafos ' +
             'humanizados, y se añadieron las citas, lo marcado [falta fuente] en amarillo y la ' +
-            'lista de referencias. NO le prepares tú otro documento.' +
+            'lista de referencias. NO le prepares tú otro documento. ' +
+            'NO LLEVA LA PLANTILLA de "formato_de_la_universidad" ni la portada llenada: NUNCA le digas ' +
+            'que sí. Si los quiere, son del Word del método (el enlace de abajo): ' +
+            COMPLETAR_EN_LAS_FASES +
             (resultado
-              ? `${N}${N}Aparte, la tesis armada con los capítulos del método:${N}` +
+              ? `${N}${N}Aparte, el Word del método (${SU_OBRA}, con sus capítulos y su plantilla):${N}` +
                 await darEnlace({ texto: 'Haz clic aquí para descargar la tesis del método', url: resultado.url })
               : ''),
         );

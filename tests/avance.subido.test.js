@@ -117,6 +117,62 @@ test('el esquema de su facultad manda sobre los nombres de siempre', () => {
   assert.deepEqual([...porFase.keys()], ['discusion']);
 });
 
+const INFORME = [
+  'informe-resumen',
+  'informe-introduccion',
+  'informe-fase0-encargo',
+  'informe-fase1-fuentes',
+  'informe-fase2-desarrollo',
+  'informe-fase3-analisis-y-resultados',
+  'informe-fase4-cierre',
+].map((code) => ({ code, displayName: code }));
+
+test('el informe: resumen e introducción a sus secciones, y los apartados del docente al Desarrollo con su título', () => {
+  const { porFase } = repartir(
+    [
+      p('INFORME DEL CASO PRÁCTICO'),
+      p('Contenido', { nivel: 1 }),
+      p('1. Introducción ........ 3'),
+      p('Resumen ejecutivo', { nivel: 1 }),
+      p('El informe propone…'),
+      p('1. Introducción', { nivel: 1 }),
+      p('NewTech SAC lanzará un módulo.'),
+      p('2. Análisis de la situación actual', { nivel: 1 }),
+      p('2.1 Incidentes previos', { nivel: 2 }),
+      p('Hubo tres caídas.'),
+      p('5. CAB y ECAB', { nivel: 1 }),
+      p('El comité evalúa.'),
+      p('10. Conclusiones', { nivel: 1 }),
+      p('El proceso reduce el riesgo.'),
+      p('Referencias', { nivel: 1 }),
+      p('Cabinet Office. (2011).', { referencias: true }),
+    ],
+    { catalogo: INFORME, tipo: 'informe' },
+  );
+
+  assert.deepEqual([...porFase.keys()], [
+    'informe-resumen',
+    'informe-introduccion',
+    'informe-fase2-desarrollo',
+    'informe-fase4-cierre',
+  ]);
+  assert.equal(porFase.get('informe-introduccion'), 'NewTech SAC lanzará un módulo.');
+  assert.equal(
+    porFase.get('informe-fase2-desarrollo'),
+    '## 2. Análisis de la situación actual\n\n### 2.1 Incidentes previos\n\nHubo tres caídas.\n\n' +
+      '## 5. CAB y ECAB\n\nEl comité evalúa.',
+  );
+  assert.equal(porFase.get('informe-fase4-cierre'), 'El proceso reduce el riesgo.');
+});
+
+test('fuera del informe, un «Título 1» que no se reconoce sigue cortando sin ir a ninguna fase', () => {
+  const { porFase } = repartir(
+    [p('Marco teórico', { nivel: 1 }), p('Bases.'), p('Situación actual', { nivel: 1 }), p('Suelto.')],
+    { catalogo: TESIS, tipo: 'tesis' },
+  );
+  assert.deepEqual([...porFase.entries()], [['marco-teorico', 'Bases.']]);
+});
+
 // ── El servicio ──────────────────────────────────────────────────────────
 
 const AdmZip = require('adm-zip');
@@ -135,12 +191,15 @@ const textos = new Map();
 let ficha = null;
 
 sustituir('../src/modules/projects/project.repository', {
-  productosConLicencia: async () => ['METODO'],
+  productosConLicencia: async () => ['METODO', 'INFORME_PRUEBA'],
   buscar: async () => proyecto,
   asegurar: async () => proyecto,
   guardarEtapa: async (id, code, datos) => etapas.push({ code, ...datos }),
 });
-sustituir('../src/modules/skills/skill.service', { listCatalog: async () => TESIS });
+// El catálogo del informe no trae el resumen ni la introducción: los añade el servicio.
+sustituir('../src/modules/skills/skill.service', {
+  listCatalog: async (code) => (code.startsWith('INFORME') ? INFORME.filter((s) => !/resumen|introduccion/.test(s.code)) : TESIS),
+});
 let voz = null;
 sustituir('../src/modules/projects/project.storage', {
   palabrasDe: (t) => t.replace(/^#+\s+/gm, '').trim().split(/\s+/).length,
@@ -214,4 +273,35 @@ test('sin ningún capítulo reconocible no guarda nada y explica cómo titularlo
     servicio.AvanceSinCapitulos,
   );
   assert.equal(etapas.length, 0);
+});
+
+test('en el informe guarda la introducción en su sección aparte, con su nombre', async () => {
+  proyecto = { id: 'p2', productCode: 'INFORME_PRUEBA', esquema: null, stages: [] };
+  etapas.length = 0;
+  textos.clear();
+
+  const hecho = await servicio.subir({
+    userId: 'u1',
+    productCode: 'INFORME_PRUEBA',
+    buffer: docx(['INTRODUCCIÓN', 'NewTech SAC lanzará un módulo de IA.', 'CONCLUSIONES', 'El proceso reduce el riesgo.']),
+  });
+
+  assert.deepEqual(
+    hecho.fases.map((f) => [f.code, f.displayName]),
+    [
+      ['informe-introduccion', 'Introducción'],
+      ['informe-fase4-cierre', 'informe-fase4-cierre'],
+    ],
+  );
+  assert.equal(textos.get('informe-introduccion'), 'NewTech SAC lanzará un módulo de IA.');
+  assert.match(servicio.mensajeDeFasesDesdeElDocumento(hecho), /Además pasó a tus fases: «Introducción», «informe-fase4-cierre»/);
+});
+
+test('desde el enlace del chat, un Word sin capítulos no estropea la subida: no pasa nada a las fases', async () => {
+  proyecto = { id: 'p1', productCode: 'METODO', esquema: null, stages: [] };
+  etapas.length = 0;
+  const hecho = await servicio.tambienComoAvance({ userId: 'u1', productCode: 'METODO', buffer: docx(['Solo un párrafo.']) });
+  assert.equal(hecho, null);
+  assert.equal(etapas.length, 0);
+  assert.equal(servicio.mensajeDeFasesDesdeElDocumento(hecho), '');
 });

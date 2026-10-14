@@ -62,6 +62,8 @@ const ROMANOS = { i: 1, ii: 2, iii: 3, iv: 4, v: 5, vi: 6, vii: 7, viii: 8, ix: 
  */
 const REGLAS = [
   { titulo: /^(referencias|bibliografia|fuentes consultadas|anexos?|apendices?)\b/, fases: null },
+  // El resumen de un informe es una sección aparte suya; en los demás, la regla de debajo lo deja fuera.
+  { titulo: /^resumen\b/, fases: [/^informe-resumen$/] },
   { titulo: /^(resumen|abstract|dedicatoria|agradecimiento|indice|presentacion|portada)/, fases: null },
   /*
    * Los aspectos administrativos del proyecto. Van antes que todo lo demás
@@ -103,7 +105,13 @@ const REGLAS = [
   },
   {
     titulo: /introduccion|planteamiento|el problema|problema de investigacion|realidad problematica|objetivos/,
-    fases: [/^problema-y-objetivos$/, /^articulo-fase2-introduccion$/, /^informe-fase2-desarrollo$/, /^tsp-fase1-introduccion$/],
+    fases: [
+      /^problema-y-objetivos$/,
+      /^articulo-fase2-introduccion$/,
+      /^informe-introduccion$/,
+      /^informe-fase2-desarrollo$/,
+      /^tsp-fase1-introduccion$/,
+    ],
   },
   // Cómo titulan algunas guías de TSP su primer capítulo. Solo para el TSP.
   { titulo: /aspectos generales|generalidades de la empresa|descripcion de la empresa/, fases: [/^tsp-fase1-introduccion$/] },
@@ -123,6 +131,16 @@ const POR_NUMERO_EN_TESIS = {
   5: [/(^|-)discusion$/, /^tsp-fase5-conclusiones$/],
   6: [/conclusiones-abstract$/],
 };
+
+/**
+ * El informe no tiene capítulos con nombre fijo: entre la introducción y las
+ * conclusiones van los apartados que pidió el docente («2. Situación actual»,
+ * «5. CAB y ECAB»). Un «Título 1» que no se reconoce es uno de esos, y va al
+ * Desarrollo con su título como subtítulo; sin esto se quedaban fuera y el
+ * panel decía que no había nada escrito. Salvo lo que no es contenido.
+ */
+const DESARROLLO_DEL_INFORME = /^informe-fase2-desarrollo$/;
+const NO_ES_CONTENIDO = /^(caratula|contenidos?|tabla de contenidos?|lista de (tablas|figuras))$/;
 
 /** La primera fase del catálogo que casa con alguno de los patrones, en su orden. */
 function primeraFase(patrones, codigos) {
@@ -191,9 +209,9 @@ function esTituloDeCapitulo(parrafo) {
 }
 
 /** Un párrafo dentro del capítulo, en el Markdown de los capítulos guardados. */
-function comoMarkdown(parrafo) {
+function comoMarkdown(parrafo, bajar = 0) {
   const texto = parrafo.texto.trim();
-  if (parrafo.nivel && parrafo.nivel >= 2) return `${'#'.repeat(Math.min(parrafo.nivel, 4))} ${texto}`;
+  if (parrafo.nivel && parrafo.nivel >= 2) return `${'#'.repeat(Math.min(parrafo.nivel + bajar, 4))} ${texto}`;
   return texto;
 }
 
@@ -211,11 +229,19 @@ function repartir(parrafos, { catalogo = [], esquema = null, tipo = 'tesis' } = 
   const porFase = new Map();
   let actual = null;
   let sinUbicar = 0;
+  // Bajo un apartado del informe que va con su título al Desarrollo, sus «Título 2» son «###».
+  let bajar = 0;
+
+  const anadir = (fase, linea) => {
+    const previo = porFase.get(fase);
+    porFase.set(fase, previo ? `${previo}\n\n${linea}` : linea);
+  };
 
   for (let i = 0; i < parrafos.length; i += 1) {
     const parrafo = parrafos[i];
 
     if (esTituloDeCapitulo(parrafo)) {
+      let titulo = parrafo.texto.trim();
       let fase = faseDelTitulo(parrafo.texto, contexto);
       // «CAPÍTULO II» en una línea y «MARCO TEÓRICO» en la siguiente.
       const siguiente = parrafos[i + 1];
@@ -223,13 +249,24 @@ function repartir(parrafos, { catalogo = [], esquema = null, tipo = 'tesis' } = 
         const junto = faseDelTitulo(`${parrafo.texto} ${siguiente.texto}`, contexto);
         if (junto !== undefined) {
           fase = junto;
+          titulo = `${titulo} ${siguiente.texto.trim()}`;
           i += 1;
         }
+      }
+      const nombre = normalizar(titulo).replace(CAPITULO, '').replace(NUMERACION, '').trim();
+      if (fase === undefined && parrafo.nivel === 1 && tipo === 'informe' && !NO_ES_CONTENIDO.test(nombre)) {
+        fase = primeraFase([DESARROLLO_DEL_INFORME], codigos) ?? undefined;
       }
       // Un «Título 1» que no es de nada (Dedicatoria, Índice) corta el capítulo
       // anterior; uno sin estilo que no se reconoce es solo texto en mayúsculas.
       if (fase !== undefined || parrafo.nivel === 1) {
         actual = fase ?? null;
+        bajar = 0;
+        // En el informe, cada apartado del Desarrollo conserva su título: el Word solo pone «Desarrollo».
+        if (actual && tipo === 'informe' && DESARROLLO_DEL_INFORME.test(actual) && nombre !== 'desarrollo') {
+          anadir(actual, `## ${titulo}`);
+          bajar = 1;
+        }
         continue;
       }
     }
@@ -244,9 +281,7 @@ function repartir(parrafos, { catalogo = [], esquema = null, tipo = 'tesis' } = 
       sinUbicar += palabras(parrafo.texto);
       continue;
     }
-    const previo = porFase.get(actual);
-    const linea = comoMarkdown(parrafo);
-    porFase.set(actual, previo ? `${previo}\n\n${linea}` : linea);
+    anadir(actual, comoMarkdown(parrafo, bajar));
   }
 
   return { porFase, sinUbicar };

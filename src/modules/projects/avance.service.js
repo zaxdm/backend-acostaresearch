@@ -27,6 +27,7 @@ const skillService = require('../skills/skill.service');
 const { perfilDe } = require('../productos/producto.perfil');
 const { enSerie } = require('../../shared/utils/enSerie');
 const redaccion = require('./redaccion.service');
+const logger = require('../../config/logger');
 
 /** El mismo turno que `guardar_capitulo`: los dos escriben el texto de las fases. */
 const claveDeProyecto = (userId, productCode) => `proyecto:${userId}:${productCode}`;
@@ -61,7 +62,10 @@ async function subirEnSuTurno({ userId, productCode, buffer, nombre }) {
   const proyecto = await proyectoConLicencia(userId, productCode);
   if (!proyecto) return null;
 
-  const catalogo = await skillService.listCatalog(productCode);
+  // El resumen y la introducción de un informe no son del catálogo, pero se
+  // guardan como un capítulo más con su clave, y el Word los pone delante.
+  const apartes = perfilDe(productCode).seccionesAparte.map((s) => ({ code: s.clave, displayName: s.titulo }));
+  const catalogo = [...apartes, ...(await skillService.listCatalog(productCode))];
   const { porFase, sinUbicar } = repartir(parrafos, {
     catalogo,
     esquema: proyecto.esquema?.capitulos ?? null,
@@ -117,6 +121,34 @@ async function subirEnSuTurno({ userId, productCode, buffer, nombre }) {
   return ficha;
 }
 
+/**
+ * El Word subido por el enlace de la conversación, también como avance.
+ *
+ * Quien sube su avance desde el chat para que se lo completen veía el panel con
+ * todas las fases «Sin empezar» y Claude, sin capítulos, no podía darle el Word
+ * del método, que es el que sale con la plantilla y la portada llenada. Ahora
+ * ese mismo Word pasa también a sus fases, como el del panel. Un Word sin
+ * capítulos reconocibles o un fallo aquí no estropean la subida del documento:
+ * devuelve null y se sigue.
+ */
+async function tambienComoAvance(argumentos) {
+  try {
+    return await subir(argumentos);
+  } catch (error) {
+    if (!(error instanceof AvanceSinCapitulos) && !(error instanceof documento.DocumentoNoValido)) {
+      logger.warn({ err: error, userId: argumentos.userId, productCode: argumentos.productCode }, 'El documento subido no pasó a las fases');
+    }
+    return null;
+  }
+}
+
+/** La frase para quien lo subió por el enlace de la conversación, o '' si no pasó nada a las fases. */
+function mensajeDeFasesDesdeElDocumento(ficha) {
+  const guardadas = (ficha?.fases ?? []).filter((f) => !f.conservada);
+  if (guardadas.length === 0) return '';
+  return ` Además pasó a tus fases: ${guardadas.map((f) => `«${f.displayName}»`).join(', ')}.`;
+}
+
 /** Lo que dice el panel al terminar de subirlo. */
 function mensajeDeSubida(ficha) {
   const guardadas = ficha.fases.filter((f) => !f.conservada);
@@ -155,4 +187,12 @@ async function quitar(userId, productCode) {
   return proyecto ? almacen.borrarFichaDeAvance(proyecto.id) : false;
 }
 
-module.exports = { subir, quitar, fichaDelPanel, mensajeDeSubida, AvanceSinCapitulos };
+module.exports = {
+  subir,
+  quitar,
+  fichaDelPanel,
+  mensajeDeSubida,
+  tambienComoAvance,
+  mensajeDeFasesDesdeElDocumento,
+  AvanceSinCapitulos,
+};

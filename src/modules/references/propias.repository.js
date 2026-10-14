@@ -326,6 +326,35 @@ async function pagina(userId, { saltar = 0, tomar = 40, origen = 'todas' } = {})
 }
 
 /**
+ * Toda su biblioteca, con lo que hace falta para llevársela en un archivo.
+ *
+ * Es para «Descargar» del panel: el tesista quiere tener en su Zotero, su Excel
+ * o su correo al asesor las fuentes que guardó aquí. Sin paginar porque el tope
+ * por usuario (`TOPE_POR_USUARIO`) ya acota el tamaño. Solo las suyas.
+ */
+function todas(userId) {
+  return prisma.reference.findMany({
+    where: { ownerUserId: userId },
+    select: {
+      ref: true,
+      itemType: true,
+      title: true,
+      authors: true,
+      year: true,
+      source: true,
+      volume: true,
+      issue: true,
+      pages: true,
+      doi: true,
+      url: true,
+      abstract: true,
+      origin: true,
+    },
+    orderBy: [{ authors: 'asc' }, { year: 'desc' }, { title: 'asc' }],
+  });
+}
+
+/**
  * Vacía su biblioteca.
  *
  * Es el deshacer de una importación. Existe porque un import no se puede
@@ -366,6 +395,7 @@ module.exports = {
   contarDeMendeley,
   pagina,
   resumen,
+  todas,
   vaciar,
   TOPE_POR_USUARIO,
 };

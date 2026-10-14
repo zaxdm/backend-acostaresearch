@@ -326,6 +326,26 @@ const propiasService = {
     return propiasRepository.resumen(userId);
   },
 
+  /** Todas sus fuentes, para descargarlas. Ver `propiasRepository.todas`. */
+  async paraDescargar(userId) {
+    const filas = await propiasRepository.todas(userId);
+    return filas.map((f) => ({
+      clave: f.ref,
+      tipo: f.itemType,
+      titulo: f.title,
+      autores: f.authors,
+      anio: f.year,
+      fuente: f.source,
+      volumen: f.volume,
+      numero: f.issue,
+      paginas: f.pages,
+      doi: f.doi,
+      enlace: f.url,
+      resumen: f.abstract,
+      origen: f.origin,
+    }));
+  },
+
   /**
    * Fuentes a partir de los DOIs que el navegador sacó de unos PDFs.
    *

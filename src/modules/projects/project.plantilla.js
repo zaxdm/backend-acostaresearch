@@ -29,8 +29,13 @@
 
 const { abrirZip } = require('./project.zip');
 
-/** Un .docx de plantilla no llega ni a un mega; cinco es de sobra. */
-const MAXIMO_BYTES = 5 * 1024 * 1024;
+/**
+ * Una plantilla limpia no llega ni a un mega, pero la que da la facultad suele
+ * traer logos, sellos y ejemplos con figuras, y con cinco megas se rechazaban
+ * formatos de verdad (14-oct). Cuarenta, como el Word de la tesis: de todo el
+ * archivo solo se guardan los estilos y la portada.
+ */
+const MAXIMO_BYTES = 40 * 1024 * 1024;
 
 /** Lo que hace que un archivo sea un .docx de verdad y no otra cosa renombrada. */
 const OBLIGATORIOS = ['[Content_Types].xml', 'word/document.xml'];

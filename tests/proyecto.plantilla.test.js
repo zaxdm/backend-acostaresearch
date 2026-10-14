@@ -18,6 +18,7 @@ const {
   extraerPagina,
   estilosQueTrae,
   PlantillaNoValida,
+  MAXIMO_BYTES,
 } = require('../src/modules/projects/project.plantilla');
 
 const ESTILOS_XML =
@@ -254,7 +255,7 @@ test('un archivo vacío no revienta', () => {
 });
 
 test('un archivo demasiado grande se rechaza antes de intentar abrirlo', () => {
-  const enorme = Buffer.alloc(6 * 1024 * 1024, 0x50);
+  const enorme = Buffer.alloc(MAXIMO_BYTES + 1, 0x50);
 
   assert.throws(
     () => extraerEstilos(enorme),

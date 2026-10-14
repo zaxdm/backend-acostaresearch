@@ -34,6 +34,15 @@ router.get(
 );
 
 /**
+ * Sus fuentes enteras, para «Descargar» del panel. El archivo (CSV, RIS o
+ * BibTeX) lo arma el navegador: aquí solo viajan los datos, y solo los suyos.
+ */
+router.get(
+  '/descargar',
+  asyncHandler(async (req, res) => ok(res, { fuentes: await propiasService.paraDescargar(req.user.id) })),
+);
+
+/**
  * La subida va con el cuerpo crudo y su propio techo.
  *
  * El resto de la API está capada a 100 KB en `app.js`, que es lo correcto para

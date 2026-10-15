@@ -44,6 +44,34 @@ const esquemaDeCapitulos = require('../projects/project.esquema');
 const bloquesDeAnalisis = require('../projects/project.bloques');
 const rService = require('../r/r.service');
 const { perfilDe } = require('../productos/producto.perfil');
+const scopusService = require('../scopus/scopus.service');
+
+/**
+ * Cuántas veces puede ir a Scopus cada persona desde el conector.
+ *
+ * Lo mismo que la web (`scopusBuscarLimiter`): treinta cada diez minutos, buscar
+ * y guardar en el mismo cubo, porque las dos cosas son una petición a Elsevier
+ * y la clave de la casa tiene CUOTA SEMANAL para todos los compradores juntos.
+ * Va en memoria y por proceso, como el limitador de la web.
+ */
+const SCOPUS_VENTANA_MS = 10 * 60 * 1000;
+const SCOPUS_MAXIMO = 30;
+const idasAScopus = new Map();
+
+function puedeIrAScopus(userId, ahora = Date.now()) {
+  const recientes = (idasAScopus.get(userId) ?? []).filter((t) => ahora - t < SCOPUS_VENTANA_MS);
+  if (recientes.length >= SCOPUS_MAXIMO) {
+    idasAScopus.set(userId, recientes);
+    return false;
+  }
+  recientes.push(ahora);
+  idasAScopus.set(userId, recientes);
+  return true;
+}
+
+const SCOPUS_SIN_CUPO =
+  'Ha buscado en Scopus muchas veces seguidas y hay que esperar unos minutos. Mientras tanto, ' +
+  'sigue con "buscar_fuentes" o "buscar_en_la_literatura".';
 
 /**
  * Los esquemas de las herramientas van en JSON Schema, no en Zod.
@@ -199,7 +227,7 @@ const fechaCorta = (iso) =>
     ? new Date(iso).toLocaleDateString('es-PE', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Lima' })
     : 'fecha desconocida';
 
-const { ESQUEMA_FUENTES, ESQUEMA_ANADIR, ESQUEMA_MIS_FUENTES, ESQUEMA_BOLA, ESQUEMA_LITERATURA, GUARDAR_AVANCE, ESQUEMA_GUARDAR_AVANCE, ESQUEMA_GUARDAR_AVANCE_TSP, ESQUEMA_GUARDAR_AVANCE_INFORME, GUARDAR_CAPITULO, ESQUEMA_GUARDAR_CAPITULO, ESQUEMA_GUARDAR_CAPITULO_INFORME, ESQUEMA_GUARDAR_ANALISIS, ESQUEMA_VER_ANALISIS, ESQUEMA_TRABAJAR_EN_R, ESQUEMA_VER_CAPITULO, ESQUEMA_REVISAR_EVIDENCIA, ESQUEMA_REDACTAR } = require('./mcp.esquemas');
+const { ESQUEMA_FUENTES, ESQUEMA_ANADIR, ESQUEMA_MIS_FUENTES, ESQUEMA_BOLA, ESQUEMA_LITERATURA, ESQUEMA_SCOPUS, ESQUEMA_GUARDAR_SCOPUS, GUARDAR_AVANCE, ESQUEMA_GUARDAR_AVANCE, ESQUEMA_GUARDAR_AVANCE_TSP, ESQUEMA_GUARDAR_AVANCE_INFORME, GUARDAR_CAPITULO, ESQUEMA_GUARDAR_CAPITULO, ESQUEMA_GUARDAR_CAPITULO_INFORME, ESQUEMA_GUARDAR_ANALISIS, ESQUEMA_VER_ANALISIS, ESQUEMA_TRABAJAR_EN_R, ESQUEMA_VER_CAPITULO, ESQUEMA_REVISAR_EVIDENCIA, ESQUEMA_REDACTAR } = require('./mcp.esquemas');
 
 const NOMBRE_SERVIDOR = 'acosta-research-tesis';
 const VERSION_SERVIDOR = '1.0.0';
@@ -2117,6 +2145,10 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
   // un tesista peruano que necesita antecedentes nacionales eso no es un
   // consuelo: es mejor que Scopus.
   //
+  // (14-oct-2026: la búsqueda en Scopus sí existe ya, con la clave de la casa
+  // y sin resumen si no hay token institucional. Es "buscar_en_scopus", más
+  // abajo; esta sigue siendo la del catálogo abierto.)
+  //
   // Va siempre disponible, con corpus configurado o sin él: no depende de la
   // biblioteca de la casa.
   server.registerTool(
@@ -2213,6 +2245,156 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
       );
     },
   );
+
+  // ── Scopus, el mismo buscador de la web ──────────────────────────────────
+  //
+  // Sin esto, el tesista que pedía «busca en Scopus» oía «no tengo acceso a
+  // Scopus», con el buscador de Scopus abierto en su perfil. Estas dos son la
+  // pestaña de la web llevada a la conversación: el mismo `scopus.service`, la
+  // misma clave de la casa y el mismo «Añadir a mis fuentes» por EID.
+  if (env.scopusApiEnabled) {
+    server.registerTool(
+      'buscar_en_scopus',
+      {
+        title: 'Buscar en Scopus',
+        description:
+          'Busca EN SCOPUS, en vivo, con el mismo buscador de la pestaña Scopus de su perfil. ' +
+          'SÍ TIENES ACCESO A SCOPUS: es por aquí. NUNCA le digas que no puedes entrar a Scopus. ' +
+          'ÚSALA cuando pida buscar en Scopus, artículos indexados en Scopus o de revistas de ' +
+          'impacto, o cuando te pase una ecuación de búsqueda. ' +
+          'La ecuación va EN INGLÉS y con la sintaxis de Scopus: TITLE-ABS-KEY("…" AND "…"). ' +
+          'Devuelve 25 por página, lo más citado primero, con autores, año, revista, DOI, citas ' +
+          'y el EID de cada una. ' +
+          'Para que pueda CITARLAS, primero hay que guardarlas: PREGÚNTALE CUÁLES QUIERE y ' +
+          'guárdalas con "guardar_de_scopus" pasando sus EID. Es lo mismo que el botón ' +
+          '«Añadir a mis fuentes» de la web, y después salen en "buscar_fuentes" con su clave. ' +
+          SIN_BUSCAR_EN_LA_WEB,
+        inputSchema: ESQUEMA_SCOPUS,
+      },
+      async ({ ecuacion, orden, pagina }) => {
+        const cupo = await cupoDePrueba('buscar_en_scopus', ecuacion);
+        if (cupo.bloqueo) return cupo.bloqueo;
+
+        if (!puedeIrAScopus(licencia.userId)) {
+          await licenseService.releaseLimits(cupo.reserva);
+          return texto(SCOPUS_SIN_CUPO);
+        }
+
+        await licenseService.recordUsage({
+          licenseId: licencia.id,
+          tool: 'buscar_en_scopus',
+          prompt: ecuacion,
+        });
+
+        let r;
+        try {
+          r = await scopusService.buscar(licencia.userId, { ecuacion, pagina, orden });
+        } catch (error) {
+          // Si no respondió, no se le cobra. El mensaje de `scopus.client` ya
+          // está escrito para el tesista y dice qué hacer.
+          await licenseService.releaseLimits(cupo.reserva);
+          logger.warn({ err: error, licenseId: licencia.id }, 'Conector: Scopus no respondió');
+          return texto(
+            (error?.isOperational ? error.message : 'Scopus no contestó bien.') +
+              `${N}${N}Mientras tanto puedes seguir con "buscar_fuentes" o ` +
+              '"buscar_en_la_literatura".',
+          );
+        }
+
+        if (r.resultados.length === 0) {
+          return texto(
+            `Scopus no tiene nada con ${ecuacion}.${N}${N}` +
+              'Antes de darlo por perdido: quita una de las ideas, usa sinónimos con OR o ' +
+              'quita las comillas de alguna frase. Si de verdad no hay nada, díselo al tesista ' +
+              'tal cual: que su tema esté poco estudiado va en la justificación.',
+          );
+        }
+
+        const fichas = r.resultados.map((f, i) => {
+          const numero = r.desde + i;
+          const lineas = [`${numero}. ${f.autores || '(Autor no consignado)'} (${f.anio ?? 's. f.'}). ${f.titulo}`];
+          const revista = [f.revista, f.volumen && `${f.volumen}${f.numero ? `(${f.numero})` : ''}`, f.paginas]
+            .filter(Boolean)
+            .join(', ');
+          if (revista) lineas.push(`   ${revista}`);
+          lineas.push(`   EID: ${f.eid}${f.doi ? ` · DOI: ${f.doi}` : ''}`);
+
+          const señas = [`citado ${f.citas} veces`];
+          if (f.accesoAbierto) señas.push('acceso abierto');
+          if (f.yaLaTienes) señas.push('YA LA TIENE GUARDADA');
+          lineas.push(`   [${señas.join(' · ')}]`);
+          return lineas.join(N);
+        });
+
+        const hasta = r.desde + r.resultados.length - 1;
+        const masPaginas =
+          r.pagina < r.paginas
+            ? ` Hay más: pide la página ${r.pagina + 1} si no encuentra lo que busca.`
+            : '';
+
+        return texto(
+          `Scopus: ${r.total} resultados para ${ecuacion}. Del ${r.desde} al ${hasta}:${N}${N}` +
+            `${fichas.join(`${N}${N}`)}${N}${N}` +
+            `Cita EXACTAMENTE como están escritas, sin cambiar años, autores ni DOIs.${masPaginas} ` +
+            'TODAVÍA NO SE PUEDEN CITAR: pregúntale cuáles quiere y guárdalas con ' +
+            '"guardar_de_scopus" pasando sus EID. Las marcadas «ya la tiene guardada» se citan ' +
+            'directamente con "buscar_fuentes".',
+        );
+      },
+    );
+
+    server.registerTool(
+      'guardar_de_scopus',
+      {
+        title: 'Guardar en su biblioteca lo que eligió de Scopus',
+        description:
+          'Guarda en la biblioteca del tesista los artículos de Scopus cuyos EID le pases, igual ' +
+          'que el botón «Añadir a mis fuentes» de la web. Aparecen en su perfil y se pueden citar. ' +
+          'ÚSALA justo después de "buscar_en_scopus", cuando diga cuáles quiere: «añade la 1 y la ' +
+          '3», «guárdalas todas». PREGÚNTASELO ANTES: no guardes lo que no te ha pedido. ' +
+          'Hasta 25 de una vez. PASA SOLO EID QUE VENGAN DE "buscar_en_scopus", nunca uno ' +
+          'recordado ni reconstruido.',
+        inputSchema: ESQUEMA_GUARDAR_SCOPUS,
+      },
+      async ({ eids }) => {
+        if (!puedeIrAScopus(licencia.userId)) return texto(SCOPUS_SIN_CUPO);
+
+        await licenseService.recordUsage({ licenseId: licencia.id, tool: 'guardar_de_scopus' });
+
+        let parte;
+        try {
+          parte = await scopusService.importar(licencia.userId, { eids });
+        } catch (error) {
+          logger.warn({ err: error, licenseId: licencia.id }, 'Conector: no se guardó lo de Scopus');
+          return texto(
+            'No se guardó nada: ' +
+              (error?.isOperational ? error.message : 'Scopus no contestó bien.') +
+              ' Díselo al tesista tal cual; no des estas fuentes por guardadas.',
+          );
+        }
+
+        const lineas = [];
+        if (parte.guardadas > 0) lineas.push(`${parte.guardadas} fuentes nuevas en su biblioteca.`);
+        if (parte.repetidas > 0) lineas.push(`${parte.repetidas} ya las tenía: se refrescó la ficha.`);
+        if (parte.noEncontradas > 0) {
+          lineas.push(`Scopus ya no devuelve ${parte.noEncontradas}: no se guardaron.`);
+        }
+        if (parte.sinResumen > 0) {
+          lineas.push(
+            `${parte.sinResumen} llegaron sin resumen: se pueden citar, pero "buscar_fuentes" ` +
+              'solo las encontrará por el título.',
+          );
+        }
+        lineas.push(`Ahora tiene ${parte.total} fuentes propias.`);
+
+        return texto(
+          `${lineas.join(N)}${N}${N}` +
+            'Ya se pueden citar: búscalas con "buscar_fuentes" cuando redactes, y usa la clave ' +
+            'AR que te devuelva. NO escribas la cita a mano.',
+        );
+      },
+    );
+  }
 
   // ── Qué más leer, a partir de lo que ya tiene ────────────────────────────
   //

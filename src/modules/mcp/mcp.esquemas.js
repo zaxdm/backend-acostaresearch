@@ -159,6 +159,60 @@ const ESQUEMA_LITERATURA = fromJsonSchema({
   additionalProperties: false,
 });
 
+/**
+ * Buscar en Scopus desde la conversación.
+ *
+ * Los mismos límites que la ruta de la web (`scopus.schema`): la ecuación no se
+ * valida —quien sabe si vale es Scopus— y solo se acota su tamaño.
+ */
+const ESQUEMA_SCOPUS = fromJsonSchema({
+  type: 'object',
+  properties: {
+    ecuacion: {
+      type: 'string',
+      minLength: 3,
+      maxLength: 1000,
+      description:
+        'La ecuación de búsqueda de Scopus, EN INGLÉS, que es el idioma en que está indexado. ' +
+        'Por ejemplo: TITLE-ABS-KEY("generative AI" AND "critical thinking" AND "university ' +
+        'students"). Si el tesista te da su tema en español, tradúcelo tú y arma la ecuación ' +
+        'con TITLE-ABS-KEY, comillas para las frases y AND entre las ideas. Si te pega una ' +
+        'ecuación ya hecha, pásala tal cual.',
+    },
+    orden: {
+      type: 'string',
+      enum: ['citas', 'recientes', 'relevancia'],
+      description: 'Cómo ordenar. Por omisión, lo más citado primero.',
+    },
+    pagina: {
+      type: 'integer',
+      minimum: 1,
+      maximum: 20,
+      description: 'Qué página de resultados, de 25 en 25. Por omisión, la primera.',
+    },
+  },
+  required: ['ecuacion'],
+  additionalProperties: false,
+});
+
+/** Guardar lo que eligió de Scopus. Viaja el EID y solo el EID, como en la web. */
+const ESQUEMA_GUARDAR_SCOPUS = fromJsonSchema({
+  type: 'object',
+  properties: {
+    eids: {
+      type: 'array',
+      minItems: 1,
+      maxItems: 25,
+      items: { type: 'string', minLength: 5, maxLength: 64 },
+      description:
+        'Los EID de Scopus de las fuentes que el tesista quiere guardar («2-s2.0-…»), tal como ' +
+        'salieron en "buscar_en_scopus". NO los inventes ni los completes de memoria.',
+    },
+  },
+  required: ['eids'],
+  additionalProperties: false,
+});
+
 const GUARDAR_AVANCE = {
   type: 'object',
   properties: {
@@ -706,4 +760,4 @@ const ESQUEMA_REDACTAR = fromJsonSchema({
 });
 
 
-module.exports = { ESQUEMA_FUENTES, ESQUEMA_ANADIR, ESQUEMA_MIS_FUENTES, ESQUEMA_BOLA, ESQUEMA_LITERATURA, GUARDAR_AVANCE, ESQUEMA_GUARDAR_AVANCE, ESQUEMA_GUARDAR_AVANCE_TSP, ESQUEMA_GUARDAR_AVANCE_INFORME, GUARDAR_CAPITULO, ESQUEMA_GUARDAR_CAPITULO, ESQUEMA_GUARDAR_CAPITULO_INFORME, ESQUEMA_GUARDAR_ANALISIS, ESQUEMA_VER_ANALISIS, ESQUEMA_TRABAJAR_EN_R, ESQUEMA_VER_CAPITULO, ESQUEMA_REVISAR_EVIDENCIA, ESQUEMA_REDACTAR };
+module.exports = { ESQUEMA_FUENTES, ESQUEMA_ANADIR, ESQUEMA_MIS_FUENTES, ESQUEMA_BOLA, ESQUEMA_LITERATURA, ESQUEMA_SCOPUS, ESQUEMA_GUARDAR_SCOPUS, GUARDAR_AVANCE, ESQUEMA_GUARDAR_AVANCE, ESQUEMA_GUARDAR_AVANCE_TSP, ESQUEMA_GUARDAR_AVANCE_INFORME, GUARDAR_CAPITULO, ESQUEMA_GUARDAR_CAPITULO, ESQUEMA_GUARDAR_CAPITULO_INFORME, ESQUEMA_GUARDAR_ANALISIS, ESQUEMA_VER_ANALISIS, ESQUEMA_TRABAJAR_EN_R, ESQUEMA_VER_CAPITULO, ESQUEMA_REVISAR_EVIDENCIA, ESQUEMA_REDACTAR };

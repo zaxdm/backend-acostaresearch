@@ -305,7 +305,10 @@ test('siguen registradas las mismas 28 herramientas', () => {
   // 26 desde «analisis_cualitativo»: entrevistas codificadas y comprobadas.
   // 28 desde «reescribir_parrafos» y «ver_lo_marcado»: cambiar párrafos sueltos de
   //    un capítulo y trabajar solo lo que marcó un reporte de Turnitin.
-  assert.equal(registradas.size, 28);
+  // 30 con la búsqueda de Scopus encendida: «buscar_en_scopus» y
+  //    «guardar_de_scopus» solo se registran si el servidor tiene la clave.
+  const conScopus = require('../src/config/env').scopusApiEnabled;
+  assert.equal(registradas.size, conScopus ? 30 : 28);
   for (const nombre of [
     'listar_capitulos',
     'mi_proyecto',

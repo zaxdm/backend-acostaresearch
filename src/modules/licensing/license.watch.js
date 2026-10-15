@@ -118,6 +118,27 @@ async function avisoPrevio(licenseId, reactivadaAt) {
   });
 }
 
+/**
+ * Aviso dado hace menos de GRACIA_HORAS: el comprador ya está avisado y corre
+ * su plazo, así que no se le vuelve a escribir.
+ *
+ * Sin esto, cada pasada de quince minutos dentro de la gracia no encontraba
+ * `avisoPrevio` —aún no tenía doce horas— y avisaba otra vez: el 15-oct-2026 a
+ * un comprador le llegó el mismo correo, y al administrador el mismo ntfy,
+ * cada cuarto de hora.
+ */
+async function avisoEnCurso(licenseId, reactivadaAt) {
+  return prisma.licenseAlert.findFirst({
+    where: {
+      licenseId,
+      level: 'SOSPECHA_ALTA',
+      action: 'NOTIFICADO',
+      createdAt: { gte: desde(GRACIA_HORAS, reactivadaAt) },
+    },
+    select: { id: true },
+  });
+}
+
 async function avisar(licencia, motivos, revocada) {
   if (!licencia.user?.email) return;
 
@@ -300,6 +321,8 @@ async function evaluar(licenseId, { forzar = false } = {}) {
     const previo = await avisoPrevio(licenseId, reactivadaAt);
 
     if (!previo) {
+      if (await avisoEnCurso(licenseId, reactivadaAt)) return diagnostico;
+
       await prisma.licenseAlert.updateMany({
         where: { licenseId, createdAt: { gte: hace(1) }, action: 'NINGUNA' },
         data: { action: 'NOTIFICADO' },

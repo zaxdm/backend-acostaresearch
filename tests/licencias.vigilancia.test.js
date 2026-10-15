@@ -216,6 +216,31 @@ test('el primer aviso al tesista también se le cuenta al administrador', async 
   assert.equal(alAdmin().at(-1).subject, 'admin:AVISADA');
 });
 
+// El 15-oct-2026: el mismo aviso cada quince minutos durante la gracia.
+test('dentro de las doce horas de gracia el aviso no se repite', async () => {
+  empezar();
+
+  await evaluar('L1', { forzar: true });
+  await evaluar('L1', { forzar: true });
+  await evaluar('L1', { forzar: true });
+
+  assert.equal(estado.correos.filter((c) => c.to === TESISTA).length, 1);
+  assert.equal(alAdmin().length, 1);
+  assert.equal(estado.ntfy.length, 1);
+  assert.equal(estado.licencia.status, 'ACTIVE');
+});
+
+test('con un aviso de hace unas horas se espera callado: ni avisa ni revoca', async () => {
+  empezar({ alertas: [avisoDeHace(3)] });
+
+  const resultado = await evaluar('L1');
+
+  assert.notEqual(resultado.revocada, true);
+  assert.equal(estado.licencia.status, 'ACTIVE');
+  assert.equal(estado.correos.length, 0);
+  assert.equal(estado.ntfy.length, 0);
+});
+
 test('sin aviso previo no se revoca: se avisa y queda anotado', async () => {
   empezar();
 

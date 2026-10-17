@@ -63,6 +63,7 @@ const AdmZip = require('adm-zip');
 
 const { HUECO_RE } = require('./project.citas');
 const zoteroCampos = require('./project.zotero-campos');
+const mendeleyCampos = require('./project.mendeley-campos');
 const fuentesDeWord = require('./project.fuentes-word');
 const partesDePlantilla = require('./project.plantilla-partes');
 const indice = require('./project.indice');
@@ -1490,7 +1491,7 @@ async function armar({
     title: tema ?? 'Tesis',
     ...(Object.keys(notas).length > 0 ? { footnotes: notas } : {}),
     ...(comentarios.length > 0 ? { comments: { children: comentarios } } : {}),
-    ...(zotero ? { customProperties: zotero.preferencias } : {}),
+    ...(zotero?.preferencias ? { customProperties: zotero.preferencias } : {}),
     ...(estilos ? { externalStyles: estilos } : {}),
     ...(estilos ? {} : { styles: ESTILOS_POR_DEFECTO }),
     sections: [
@@ -1539,7 +1540,10 @@ async function armar({
       sinNumero: [...(lista.parrafos.length > 0 ? [lista.titulo] : []), ...titulosDeAnexos],
     });
   }
-  if (zotero) buffer = zoteroCampos.coser(buffer, zotero.codigos);
+  // Con Mendeley conectado (y Zotero no), las mismas marcas pasan a ser citas
+  // de Mendeley Cite (ver `project.mendeley-campos`).
+  if (zotero?.mendeley) buffer = mendeleyCampos.coser(buffer, zotero.mendeley);
+  else if (zotero) buffer = zoteroCampos.coser(buffer, zotero.codigos);
   if (fuentes?.length) buffer = fuentesDeWord.incrustar(buffer, fuentes, { norma });
   // El índice, relleno: sin esto salía vacío en la vista protegida de Word y
   // en cualquier visor (ver `project.indice`).

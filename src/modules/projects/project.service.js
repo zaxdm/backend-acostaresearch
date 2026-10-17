@@ -24,6 +24,8 @@ const csl = require('./project.csl');
 const zoteroCampos = require('./project.zotero-campos');
 const descarga = require('./project.descarga');
 const zoteroRepository = require('../zotero/biblioteca.repository');
+const mendeleyCampos = require('./project.mendeley-campos');
+const mendeleyRepository = require('../mendeley/mendeley.repository');
 const citas = require('./project.citas');
 const bibtex = require('./project.bibtex');
 const etapas = require('./project.etapas');
@@ -927,8 +929,9 @@ async function armarWord(userId, productCode) {
 /**
  * Citas y referencias en la norma del proyecto.
  *
- * Los campos de Zotero solo si conectó el suyo. Si esa consulta falla, el Word
- * sale igual y sin campos: no son lo que se descarga, son un extra encima.
+ * Los campos de Zotero solo si conectó el suyo; si no, las citas de Mendeley
+ * Cite si conectó Mendeley. Si esa consulta falla, el Word sale igual y sin
+ * campos: no son lo que se descarga, son un extra encima.
  */
 async function armarEnLaNorma({ userId, proyecto, capitulos, porClave }) {
   const cuenta = await zoteroRepository.deUsuario(userId).catch(() => null);
@@ -950,6 +953,17 @@ async function armarEnLaNorma({ userId, proyecto, capitulos, porClave }) {
       preferencias: zoteroCampos.preferencias({ norma: r.norma.id, idioma: r.idioma }),
       codigos,
     };
+  } else {
+    // Sin Zotero pero con Mendeley: las citas salen como las de Mendeley Cite.
+    const mendeley = await mendeleyRepository.deUsuario(userId).catch(() => null);
+    if (mendeley) {
+      zotero = {
+        mendeley: {
+          citas: mendeleyCampos.datosDeCitas(r.citas, porClave, { comoCsl: csl.comoCsl, perfil: mendeley.profileId }),
+          estilo: mendeleyCampos.estiloDe(r.norma.id),
+        },
+      };
+    }
   }
 
   return {

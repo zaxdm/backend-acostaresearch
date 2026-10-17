@@ -95,11 +95,13 @@ test('tres pares incoherentes ya cuesta explicarlos con una sola persona', () =>
 test('las sesiones solapadas siguen delatando desde el primer día', () => {
   // Sin histórico ninguno: es la señal que tiene que funcionar el día uno,
   // porque dos personas a la vez no dependen de cuánto lleve la licencia.
+  // Seis personas, cada una con su chat, que se van turnando minuto a minuto.
   const usos = [];
-  for (let i = 0; i < 6; i += 1) {
-    const t = AHORA.getTime() - i * 300_000;
-    usos.push({ createdAt: new Date(t), sessionId: 'sesion-' + i, promptHash: 'x' });
-    usos.push({ createdAt: new Date(t + 30_000), sessionId: 'sesion-' + (i + 10), promptHash: 'x' });
+  for (let vuelta = 0; vuelta < 2; vuelta += 1) {
+    for (let p = 0; p < 6; p += 1) {
+      const t = AHORA.getTime() - 3600_000 + (vuelta * 6 + p) * 40_000;
+      usos.push({ createdAt: new Date(t), sessionId: 'persona-' + p, promptHash: 'x' });
+    }
   }
   const d = analizar(usos, { ahora: AHORA });
 
@@ -107,6 +109,51 @@ test('las sesiones solapadas siguen delatando desde el primer día', () => {
   assert.equal(d.nivel, NIVELES.SOSPECHA_ALTA);
   assert.ok(codigos(d).includes('MUCHAS_SESIONES'));
   assert.ok(codigos(d).includes('SESIONES_SOLAPADAS'));
+});
+
+test('dos chats vivos a la vez cuentan como solape aunque sean solo dos', () => {
+  // A, B, A, B…: las dos conversaciones siguen abiertas y se pisan.
+  const usos = Array.from({ length: 8 }, (_, i) => ({
+    createdAt: new Date(AHORA.getTime() - 3600_000 + i * 45_000),
+    sessionId: i % 2 === 0 ? 'chat-a' : 'chat-b',
+    promptHash: 'x',
+  }));
+  const d = analizar(usos, { ahora: AHORA });
+
+  assert.equal(d.metricas.solapes, 7);
+  assert.ok(codigos(d).includes('SESIONES_SOLAPADAS'));
+});
+
+test('humanizar párrafo a párrafo con una sesión nueva por párrafo no es reparto', () => {
+  // El caso de producción del 16-oct-2026: un solo chat, cien entregas del
+  // humanizador en fila, una por minuto, y el asistente inventando un
+  // identificador de sesión distinto para cada párrafo.
+  const usos = Array.from({ length: 100 }, (_, i) => ({
+    createdAt: new Date(AHORA.getTime() - 4 * 3600_000 + i * 55_000),
+    sessionId: 'hum-parrafo-' + i,
+    promptHash: 'parrafo-' + i,
+    tool: 'entregar:humanizador-academico',
+  }));
+  const d = analizar(usos, { ahora: AHORA });
+
+  assert.equal(d.metricas.solapes, 0);
+  assert.equal(d.metricas.incoherentes, 0);
+  assert.ok(!codigos(d).includes('SESIONES_SOLAPADAS'));
+  assert.ok(!codigos(d).includes('CONSULTAS_INCOHERENTES'));
+  assert.notEqual(d.nivel, NIVELES.SOSPECHA_ALTA);
+});
+
+test('las consultas libres en el mismo minuto sobre temas distintos siguen contando', () => {
+  // Lo de las entregas no abre la puerta a las demás herramientas.
+  const usos = [];
+  for (let i = 0; i < 3; i += 1) {
+    const t = AHORA.getTime() - (i + 1) * 3600_000;
+    usos.push({ createdAt: new Date(t), sessionId: 'a' + i, promptHash: 'tema' + i, tool: 'redactar' });
+    usos.push({ createdAt: new Date(t + 20_000), sessionId: 'b' + i, promptHash: 'otro' + i, tool: 'redactar' });
+  }
+  const d = analizar(usos, { ahora: AHORA });
+
+  assert.ok(codigos(d).includes('CONSULTAS_INCOHERENTES'));
 });
 
 test('un comprador con historial y un día de calma no genera ruido', () => {

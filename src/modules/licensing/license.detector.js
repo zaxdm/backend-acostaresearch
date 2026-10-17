@@ -104,14 +104,39 @@ function historicoDiario(usos, ahora) {
   return [...porDia.values()];
 }
 
+/** Entregas de un tramo del método (`entregar:<skill>`), no consultas libres. */
+function esEntrega(uso) {
+  return typeof uso.tool === 'string' && uso.tool.startsWith('entregar:');
+}
+
 /**
  * Pares de llamadas cercanas en el tiempo que vienen de sesiones distintas.
  * Se recorre en orden y se compara cada llamada con la anterior: basta con eso
  * para detectar dos conversaciones intercaladas.
+ *
+ * Solo cuenta como solape si las dos sesiones están vivas a la vez: la
+ * anterior vuelve a llamar después, o la actual ya había llamado antes. Una
+ * sesión que se usa una vez y no vuelve no se pisa con nadie. El 16-oct-2026
+ * el detector revocó a un comprador que humanizaba su artículo párrafo a
+ * párrafo desde un solo chat: el asistente inventaba un identificador de
+ * sesión para cada párrafo («hum-pioneer-turnitin-20261016»…) y cien llamadas
+ * en fila, una por minuto, contaron como 55 solapes.
+ *
+ * Las entregas tampoco cuentan como consultas incoherentes: en el humanizador
+ * cada llamada trae un párrafo distinto, así que dos seguidas siempre «hablan
+ * de otra cosa».
  */
 function contarSolapes(usos) {
   let solapes = 0;
   let incoherentes = 0;
+
+  const primera = new Map();
+  const ultima = new Map();
+  usos.forEach((uso, i) => {
+    if (!uso.sessionId) return;
+    if (!primera.has(uso.sessionId)) primera.set(uso.sessionId, i);
+    ultima.set(uso.sessionId, i);
+  });
 
   for (let i = 1; i < usos.length; i += 1) {
     const anterior = usos[i - 1];
@@ -120,13 +145,23 @@ function contarSolapes(usos) {
 
     if (separacion > SOLAPE_SEGUNDOS) continue;
 
-    if (anterior.sessionId && actual.sessionId && anterior.sessionId !== actual.sessionId) {
+    const intercaladas =
+      ultima.get(anterior.sessionId) > i || primera.get(actual.sessionId) < i - 1;
+
+    if (
+      anterior.sessionId &&
+      actual.sessionId &&
+      anterior.sessionId !== actual.sessionId &&
+      intercaladas
+    ) {
       solapes += 1;
     }
 
     // Mismo minuto, temas distintos: difícil de explicar con una sola persona.
     if (
       separacion <= 60 &&
+      !esEntrega(anterior) &&
+      !esEntrega(actual) &&
       anterior.promptHash &&
       actual.promptHash &&
       anterior.promptHash !== actual.promptHash &&

@@ -9,6 +9,7 @@ const asyncHandler = require('../../shared/http/asyncHandler');
 const { ok } = require('../../shared/http/apiResponse');
 const { ROLES } = require('../../config/constants');
 const ventasService = require('./ventas.service');
+const { anularVenta } = require('./ventas.anular');
 
 /** Ventas mensuales del panel. Solo ADMIN. */
 const router = Router();
@@ -38,6 +39,16 @@ router.get(
     res.setHeader('Cache-Control', 'no-store');
     return res.send(pdf);
   }),
+);
+
+// Anular una venta registrada por error (código canjeado o pago aprobado). El
+// cliente conserva su acceso; la boleta, si la hay, se anula con nota de crédito.
+router.post(
+  '/anular',
+  validate({ body: z.object({ canal: z.enum(['codigo', 'pago']), id: z.string().uuid() }) }),
+  asyncHandler(async (req, res) =>
+    ok(res, await anularVenta({ canal: req.body.canal, id: req.body.id, adminId: req.user.id })),
+  ),
 );
 
 module.exports = router;

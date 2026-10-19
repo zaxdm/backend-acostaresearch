@@ -83,14 +83,17 @@ function ventasParaBoleta({ pagos, codigos, idsDeCodigos = new Set(), nombresDeP
   }
 
   for (const codigo of codigos) {
+    // Lo que tiene hoy, no lo que se vendió: un código movido de producto se
+    // factura por el producto al que se movió.
+    const producto = codigo.license?.productCode ?? codigo.productCode;
     porClave.set(`CODIGO:${codigo.id}`, {
       origenClave: `CODIGO:${codigo.id}`,
       fecha: new Date(codigo.createdAt),
       cliente: clienteDe(null),
       items: [
         {
-          codigo: codigo.productCode,
-          descripcion: nombresDeProducto[codigo.productCode] ?? codigo.productCode,
+          codigo: producto,
+          descripcion: nombresDeProducto[producto] ?? producto,
           importeCents: codigo.amountCents,
           moneda: 'PEN',
         },

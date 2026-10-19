@@ -286,3 +286,21 @@ test('un 401 de SUNAT sin CDR queda pendiente y dice el código HTTP', async () 
   assert.equal(r.estado, ESTADO.SIN_RESPUESTA);
   assert.equal(r.descripcion, 'SUNAT respondió HTTP 401.');
 });
+
+test('un código movido de producto se factura por el producto que tiene hoy', () => {
+  const [venta] = ventasParaBoleta({
+    pagos: [],
+    codigos: [
+      {
+        id: 'cod-m',
+        productCode: 'METODO',
+        amountCents: 5990,
+        createdAt: new Date('2026-10-19T14:33:00Z'),
+        license: { productCode: 'HUMANIZADOR' },
+      },
+    ],
+    nombresDeProducto: { METODO: 'Método de Tesis', HUMANIZADOR: 'Humanizador Académico' },
+  });
+  assert.equal(venta.items[0].codigo, 'HUMANIZADOR');
+  assert.equal(venta.items[0].descripcion, 'Humanizador Académico');
+});

@@ -213,7 +213,9 @@ async function ventasEntre(desde, hasta) {
   ]);
   const [idsDeCodigos, nombresDeProducto] = await Promise.all([
     ventasRepository.codigosEntre(pagos.map((p) => p.providerOrderId).filter(Boolean)),
-    ventasRepository.nombresDeProducto([...new Set(codigos.map((c) => c.productCode))]),
+    ventasRepository.nombresDeProducto([
+      ...new Set(codigos.map((c) => c.license?.productCode ?? c.productCode)),
+    ]),
   ]);
   return ventasParaBoleta({ pagos, codigos, idsDeCodigos, nombresDeProducto });
 }

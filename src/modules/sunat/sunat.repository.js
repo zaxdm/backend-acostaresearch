@@ -32,7 +32,15 @@ const sunatRepository = {
   codigosVendidos(desde, hasta) {
     return prisma.activationCode.findMany({
       where: { ...CODIGO_VENDIDO, createdAt: { gte: desde, lt: hasta } },
-      select: { id: true, productCode: true, amountCents: true, createdAt: true },
+      // El producto de la licencia, si se canjeó: un código vendido como Método y
+      // movido después al Humanizador se factura como Humanizador.
+      select: {
+        id: true,
+        productCode: true,
+        amountCents: true,
+        createdAt: true,
+        license: { select: { productCode: true } },
+      },
       orderBy: { createdAt: 'asc' },
     });
   },

@@ -3081,6 +3081,11 @@ model Comprobante {
   /// La Constancia de Recepción (ZIP) tal como la devolvió SUNAT.
   cdrZip        Bytes?            @db.MediumBlob
   enviadoEn     DateTime?
+  /// El correo al cliente con el PDF: null = pendiente; ENVIADO; NO_APLICA
+  /// (anulada antes de enviarse, o nota de una boleta que no se envió);
+  /// SIN_DESTINATARIO (venta sin correo conocido).
+  correo          String?   @db.VarChar(20)
+  correoEnviadoEn DateTime?
 
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt

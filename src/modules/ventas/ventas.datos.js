@@ -103,6 +103,7 @@ function ventaDePago(pago) {
     fecha: new Date(pago.paidAt).toISOString(),
     origen: 'PAGO',
     origenId: pago.id,
+    carrito: pago.cartId ?? null,
     via: MEDIOS[pago.provider] ?? pago.provider,
     producto: pago.plan?.name ?? '—',
     cliente: nombreDe(pago.user),
@@ -144,6 +145,20 @@ function ventasDelMes({ pagos, codigos, idsDeCodigos = new Set(), nombresDeProdu
   ].sort((a, b) => (a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0));
 }
 
+/** Las claves con las que SUNAT factura una venta (ver `modules/sunat`). */
+function clavesDeBoleta(venta) {
+  if (venta.origen === 'CODIGO') return [`CODIGO:${venta.origenId}`];
+  return [`PAGO:${venta.origenId}`, venta.carrito ? `CARRITO:${venta.carrito}` : null].filter(Boolean);
+}
+
+/** Cada venta con el número de su boleta vigente, o null si no tiene. */
+function conBoletas(ventas, boletasPorClave) {
+  return ventas.map((venta) => ({
+    ...venta,
+    boleta: clavesDeBoleta(venta).map((c) => boletasPorClave.get(c)).find(Boolean) ?? null,
+  }));
+}
+
 /** Totales del mes: por moneda sin convertir, por vía y en soles. */
 function resumir(ventas) {
   const totalesPorMoneda = {};
@@ -169,5 +184,7 @@ module.exports = {
   ventaDePago,
   ventaDeCodigo,
   ventasDelMes,
+  clavesDeBoleta,
+  conBoletas,
   resumir,
 };

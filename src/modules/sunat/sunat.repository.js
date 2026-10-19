@@ -111,6 +111,119 @@ const sunatRepository = {
     });
   },
 
+  /** Aceptadas cuyo correo al cliente aún no se resolvió, en orden de emisión. */
+  correosPendientes(limite) {
+    return prisma.comprobante.findMany({
+      where: { estado: { in: ['ACEPTADO', 'OBSERVADO'] }, correo: null },
+      orderBy: { creadoEn: 'asc' },
+      take: limite,
+    });
+  },
+
+  /**
+   * A quién se le manda la boleta de esta venta: quien pagó; en un código, quien
+   * lo canjeó o, si aún no, el correo del comprador. Null si no hay correo.
+   */
+  async destinatario(origenClave) {
+    const [tipo, id] = origenClave.split('|')[0].split(':');
+    const usuario = { select: { email: true, firstName: true } };
+    if (tipo === 'PAGO' || tipo === 'CARRITO') {
+      const pago = await prisma.payment.findFirst({
+        where: tipo === 'PAGO' ? { id } : { cartId: id },
+        select: { payerEmail: true, user: usuario },
+      });
+      const email = pago?.user?.email ?? pago?.payerEmail;
+      return email ? { email, nombre: pago?.user?.firstName ?? null } : null;
+    }
+    if (tipo === 'CODIGO') {
+      const codigo = await prisma.activationCode.findUnique({
+        where: { id },
+        select: { buyerEmail: true, license: { select: { user: usuario } } },
+      });
+      const email = codigo?.license?.user?.email ?? codigo?.buyerEmail;
+      return email ? { email, nombre: codigo?.license?.user?.firstName ?? null } : null;
+    }
+    return null;
+  },
+
+  buscarPorId(id) {
+    return prisma.comprobante.findUnique({ where: { id } });
+  },
+
+  /** La lista del panel, sin el XML ni la CDR, que pesan. */
+  listar({ limite = 200 } = {}) {
+    return prisma.comprobante.findMany({
+      orderBy: { creadoEn: 'desc' },
+      take: limite,
+      select: {
+        id: true,
+        tipo: true,
+        serie: true,
+        numero: true,
+        origenClave: true,
+        fechaEmision: true,
+        clienteNombre: true,
+        clienteTipoDoc: true,
+        totalCents: true,
+        monedaOriginal: true,
+        importeOriginalCents: true,
+        items: true,
+        estado: true,
+        codigoSunat: true,
+        mensaje: true,
+        intentos: true,
+        correo: true,
+        correoEnviadoEn: true,
+      },
+    });
+  },
+
+  /** El usuario dueño de la venta de esta clave (quien pagó o canjeó), o null. */
+  async duenoDe(origenClave) {
+    const [tipo, id] = origenClave.split('|')[0].split(':');
+    if (tipo === 'PAGO' || tipo === 'CARRITO') {
+      const pago = await prisma.payment.findFirst({
+        where: tipo === 'PAGO' ? { id } : { cartId: id },
+        select: { userId: true },
+      });
+      return pago?.userId ?? null;
+    }
+    if (tipo === 'CODIGO') {
+      const codigo = await prisma.activationCode.findUnique({
+        where: { id },
+        select: { license: { select: { userId: true } } },
+      });
+      return codigo?.license?.userId ?? null;
+    }
+    return null;
+  },
+
+  /**
+   * Las boletas vigentes de los pagos de un usuario, por id de pago. Un pago se
+   * factura por su id, por su carrito o, si nació de canjear un código, por el
+   * código (su número de orden es el id del código). Una boleta anulada ya no
+   * coincide: su clave lleva `|ANULADA:…`.
+   */
+  async boletasDeUsuario(userId) {
+    const pagos = await prisma.payment.findMany({
+      where: { userId, status: 'PAID' },
+      select: { id: true, cartId: true, providerOrderId: true },
+    });
+    const clavesDe = (p) =>
+      [`PAGO:${p.id}`, p.cartId && `CARRITO:${p.cartId}`, `CODIGO:${p.providerOrderId}`].filter(Boolean);
+    const todas = [...new Set(pagos.flatMap(clavesDe))];
+    if (todas.length === 0) return [];
+    const boletas = await prisma.comprobante.findMany({
+      where: { tipo: '03', origenClave: { in: todas }, estado: { in: ['ACEPTADO', 'OBSERVADO'] } },
+      select: { id: true, serie: true, numero: true, origenClave: true },
+    });
+    const porClave = new Map(boletas.map((b) => [b.origenClave, b]));
+    return pagos.flatMap((p) => {
+      const boleta = clavesDe(p).map((c) => porClave.get(c)).find(Boolean);
+      return boleta ? [{ paymentId: p.id, id: boleta.id, numero: `${boleta.serie}-${boleta.numero}` }] : [];
+    });
+  },
+
   actualizar(id, data) {
     return prisma.comprobante.update({ where: { id }, data });
   },

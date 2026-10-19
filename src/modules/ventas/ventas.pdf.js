@@ -73,9 +73,10 @@ function nombreDeArchivo({ anio, mes }, borrador = false) {
 const COLUMNAS = [
   { clave: 'n', titulo: 'N.º', ancho: 28, alinear: 'right' },
   { clave: 'fecha', titulo: 'FECHA', ancho: 62 },
-  { clave: 'cliente', titulo: 'CLIENTE', ancho: 170 },
-  { clave: 'producto', titulo: 'PRODUCTO', ancho: 150 },
-  { clave: 'via', titulo: 'VÍA', ancho: 105 },
+  { clave: 'cliente', titulo: 'CLIENTE', ancho: 140 },
+  { clave: 'producto', titulo: 'PRODUCTO', ancho: 132 },
+  { clave: 'via', titulo: 'VÍA', ancho: 91 },
+  { clave: 'boleta', titulo: 'BOLETA', ancho: 62 },
   { clave: 'referencia', titulo: 'N.º OPERACIÓN', ancho: 95 },
   { clave: 'importe', titulo: 'IMPORTE', ancho: 76, alinear: 'right' },
   { clave: 'soles', titulo: 'EN SOLES', ancho: 56, alinear: 'right' },
@@ -253,6 +254,8 @@ function generarReporte({ periodo, ventas, resumen, solesPorDolar, generado, bor
           cliente: [venta.cliente, venta.correo].filter(Boolean).join('\n') || '—',
           producto: venta.producto,
           via: venta.via,
+          // Las ventas anteriores a la facturación (19-oct-2026) no tienen.
+          boleta: venta.boleta ?? '—',
           referencia: venta.referencia ?? '—',
           importe: importe(venta.importeCents, venta.moneda),
           soles: importe(venta.solesCents).replace('S/ ', ''),

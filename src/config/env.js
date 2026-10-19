@@ -613,9 +613,16 @@ const schema = z.object({
   // anteriores no llevan boleta (decisión del 19-oct-2026). Con zona, p. ej.
   // 2026-10-20T00:00:00-05:00.
   SUNAT_EMITIR_DESDE: vacioComoAusente(z.string().datetime({ offset: true })),
+  // Las boletas emitidas antes de esto no se mandan por correo (vacío = todas).
+  SUNAT_CORREOS_DESDE: vacioComoAusente(z.string().datetime({ offset: true })),
   SUNAT_RUC: vacioComoAusente(z.string().regex(/^\d{11}$/, 'SUNAT_RUC tiene 11 dígitos')),
   SUNAT_RAZON_SOCIAL: z.string().default('ACOSTA ENRIQUEZ BENICIO GONZALO'),
   SUNAT_NOMBRE_COMERCIAL: z.string().default('Acosta | IA & Research'),
+  // Domicilio fiscal tal como figura en la Ficha RUC (incluido «Nazarteh»):
+  // va en la boleta impresa. Si cambia en SUNAT, se cambia aquí.
+  SUNAT_DOMICILIO: z
+    .string()
+    .default('AV. JESÚS DE NAZARTEH NRO. 1253 INT. 1 URB. LAS CAPULLANAS, TRUJILLO - TRUJILLO - LA LIBERTAD'),
   SUNAT_SERIE: z.string().regex(/^B[A-Z0-9]{3}$/, 'SUNAT_SERIE es B + 3 caracteres').default('B001'),
   // Serie de las notas de crédito que anulan boletas: también empieza por B.
   SUNAT_SERIE_NOTAS: z.string().regex(/^B[A-Z0-9]{3}$/, 'SUNAT_SERIE_NOTAS es B + 3 caracteres').default('BC01'),

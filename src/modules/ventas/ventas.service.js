@@ -33,7 +33,10 @@ async function ventasDe(periodo) {
     ventasRepository.nombresDeProducto([...new Set(codigos.map((c) => c.productCode))]),
   ]);
 
-  return datos.ventasDelMes({ pagos, codigos, idsDeCodigos, nombresDeProducto });
+  const ventas = datos.ventasDelMes({ pagos, codigos, idsDeCodigos, nombresDeProducto });
+  // El número de boleta de cada una (SUNAT, desde el 19-oct-2026).
+  const boletas = await ventasRepository.boletasPorClave([...new Set(ventas.flatMap(datos.clavesDeBoleta))]);
+  return datos.conBoletas(ventas, boletas);
 }
 
 /** Cierra un mes terminado. Si otro proceso ya lo cerró, no hace nada. */

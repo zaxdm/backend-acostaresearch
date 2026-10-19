@@ -153,7 +153,7 @@ function repoEnMemoria() {
         throw Object.assign(new Error('duplicado'), { code: 'P2002' });
       }
       series.set(serie, numero);
-      const fila = { id: `c${numero}`, estado: 'PENDIENTE', intentos: 0, ...data };
+      const fila = { id: `${serie}-${numero}`, estado: 'PENDIENTE', intentos: 0, ...data };
       filas.push(fila);
       return { ...fila };
     },
@@ -168,6 +168,16 @@ function repoEnMemoria() {
     async sigueSiendoVenta(clave) {
       return this.ventasVivas.has(clave);
     },
+    async correosPendientes(limite) {
+      return filas
+        .filter((f) => ['ACEPTADO', 'OBSERVADO'].includes(f.estado) && !f.correo)
+        .slice(0, limite)
+        .map((f) => ({ ...f }));
+    },
+    destinatarios: {},
+    async destinatario(clave) {
+      return this.destinatarios[clave.split('|')[0]] ?? null;
+    },
     async liberarVenta(serie, numero, nota) {
       const fila = filas.find((f) => f.serie === serie && f.numero === numero);
       if (fila && !fila.origenClave.includes('|ANULADA')) fila.origenClave += `|ANULADA:${nota}`;
@@ -175,7 +185,7 @@ function repoEnMemoria() {
   };
 }
 
-function emisorDePrueba({ ventas, respuestas = [], activo = true }) {
+function emisorDePrueba({ ventas, respuestas = [], activo = true, correosEnviados, correosDesde }) {
   const repo = repoEnMemoria();
   const avisos = [];
   const enviados = [];
@@ -189,8 +199,9 @@ function emisorDePrueba({ ventas, respuestas = [], activo = true }) {
     },
     cargarCertificado: () => CERT,
     avisar: (aviso) => avisos.push(aviso),
-    log: { info() {}, error() {} },
+    log: { info() {}, error: (o, m) => process.env.DEPURAR && console.error(m, o.err) },
     pausa: 0,
+    enviarCorreo: correosEnviados ? async (m) => correosEnviados.push(m) : undefined,
     config: {
       activo,
       ambiente: 'beta',
@@ -200,6 +211,7 @@ function emisorDePrueba({ ventas, respuestas = [], activo = true }) {
       nombreComercial: 'Acosta | IA & Research',
       serie: 'B001',
       serieNotas: 'BC01',
+      correosDesde,
       usuario: 'FACTURA1',
       clave: 'x',
     },
@@ -217,7 +229,7 @@ test('emite, numera seguido, firma y no repite la boleta de una venta', async ()
   const ventas = ventasParaBoleta({ pagos: [pago({ id: 'a' }), pago({ id: 'b' })], codigos: [] });
   const { emisor, repo, enviados } = emisorDePrueba({ ventas });
 
-  assert.deepEqual(await emisor.pasada(), { reenviadas: 0, emitidas: 2, sinBoleta: 0 });
+  assert.deepEqual(await emisor.pasada(), { reenviadas: 0, emitidas: 2, sinBoleta: 0, correos: 0 });
   assert.deepEqual(repo.filas.map((f) => `${f.serie}-${f.numero}`), ['B001-1', 'B001-2']);
   assert.ok(repo.filas.every((f) => f.estado === 'ACEPTADO'));
   assert.equal(enviados[0].nombre, '10720995960-03-B001-1');
@@ -233,7 +245,7 @@ test('emite, numera seguido, firma y no repite la boleta de una venta', async ()
   assert.equal(verificar.checkSignature(primera.xmlFirmado), true);
 
   // Segunda pasada con las mismas ventas: nada nuevo.
-  assert.deepEqual(await emisor.pasada(), { reenviadas: 0, emitidas: 0, sinBoleta: 0 });
+  assert.deepEqual(await emisor.pasada(), { reenviadas: 0, emitidas: 0, sinBoleta: 0, correos: 0 });
   assert.equal(repo.filas.length, 2);
 });
 
@@ -281,7 +293,7 @@ test('una venta que no puede llevar boleta no gasta número y se avisa una sola 
   });
   const { emisor, repo, avisos } = emisorDePrueba({ ventas });
 
-  assert.deepEqual(await emisor.pasada(), { reenviadas: 0, emitidas: 1, sinBoleta: 1 });
+  assert.deepEqual(await emisor.pasada(), { reenviadas: 0, emitidas: 1, sinBoleta: 1, correos: 0 });
   await emisor.pasada();
   assert.equal(avisos.length, 1);
   assert.match(avisos[0].mensaje, /CARRITO:C/);
@@ -367,4 +379,56 @@ test('anular: no repite, pide --refacturar si sigue siendo venta, y al aceptarse
   await emisor.pasada();
   const nuevas = repo.filas.filter((f) => f.serie === 'B001' && !f.origenClave.includes('|ANULADA'));
   assert.deepEqual(nuevas.map((f) => [f.numero, f.origenClave]), [[3, 'PAGO:a'], [4, 'PAGO:b']]);
+});
+
+// ── Correo al cliente ───────────────────────────────────────────────────────
+
+test('correo: la boleta aceptada sale una vez con su PDF; sin correo conocido no se manda', async () => {
+  const correosEnviados = [];
+  const ventas = ventasParaBoleta({ pagos: [pago({ id: 'a' }), pago({ id: 'b' })], codigos: [] });
+  const { emisor, repo } = emisorDePrueba({ ventas, correosEnviados });
+  repo.destinatarios['PAGO:a'] = { email: 'ana@ejemplo.com', nombre: 'Ana' };
+
+  const resumen = await emisor.pasada();
+  assert.equal(resumen.correos, 1);
+  assert.equal(correosEnviados.length, 1);
+  assert.equal(correosEnviados[0].to, 'ana@ejemplo.com');
+  assert.match(correosEnviados[0].subject, /B001-1/);
+  assert.equal(correosEnviados[0].attachments[0].filename, 'boleta-B001-1.pdf');
+  assert.equal(correosEnviados[0].attachments[0].content.subarray(0, 5).toString(), '%PDF-');
+  assert.deepEqual(repo.filas.map((f) => f.correo), ['ENVIADO', 'SIN_DESTINATARIO']);
+
+  await emisor.pasada();
+  assert.equal(correosEnviados.length, 1);
+});
+
+test('correo: una boleta anulada antes de enviarse no se manda, ni su nota', async () => {
+  const correosEnviados = [];
+  const ventas = ventasParaBoleta({ pagos: [pago({ id: 'a' })], codigos: [] });
+  const { emisor, repo } = emisorDePrueba({ ventas, correosEnviados, correosDesde: new Date('2099-01-01') });
+  repo.destinatarios['PAGO:a'] = { email: 'ana@ejemplo.com', nombre: 'Ana' };
+  await emisor.pasada();
+  assert.equal(repo.filas[0].correo, 'NO_APLICA'); // anterior a correosDesde
+
+  // Sin filtro de fecha: se anula antes de mandar y nada sale.
+  const otro = emisorDePrueba({ ventas, correosEnviados: [] });
+  otro.repo.destinatarios['PAGO:a'] = { email: 'ana@ejemplo.com', nombre: 'Ana' };
+  otro.repo.filas.push({ id: 'x', tipo: '03', serie: 'B001', numero: 9, estado: 'ACEPTADO', origenClave: 'PAGO:a|ANULADA:BC01-1', intentos: 1 });
+  otro.repo.filas.push({ id: 'y', tipo: '07', serie: 'BC01', numero: 1, estado: 'ACEPTADO', origenClave: 'ANULA:B001-9', intentos: 1 });
+  assert.equal(await otro.emisor.enviarCorreos(), 0);
+  assert.deepEqual(otro.repo.filas.map((f) => f.correo), ['NO_APLICA', 'NO_APLICA']);
+});
+
+test('correo: si la boleta ya se envió, su nota de crédito también se manda', async () => {
+  const correosEnviados = [];
+  const ventas = ventasParaBoleta({ pagos: [pago({ id: 'a' })], codigos: [] });
+  const { emisor, repo } = emisorDePrueba({ ventas, correosEnviados });
+  repo.destinatarios['PAGO:a'] = { email: 'ana@ejemplo.com', nombre: 'Ana' };
+  await emisor.pasada();
+  await emisor.anular({ serie: 'B001', numero: 1, motivo: 'Registrado por error' });
+  await emisor.enviarCorreos();
+  assert.equal(correosEnviados.length, 2);
+  assert.match(correosEnviados[1].subject, /BC01-1.*B001-1/);
+  assert.match(correosEnviados[1].text, /Motivo: Registrado por error/);
+  assert.equal(correosEnviados[1].attachments[0].filename, 'nota-de-credito-BC01-1.pdf');
 });

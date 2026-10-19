@@ -32,6 +32,11 @@ const { leerCertificado, firmar, resumenDeLaFirma } = require('./sunat.firma');
 const { enviarComprobante, ESTADO } = require('./sunat.envio');
 const { TIPO_COMPROBANTE, TIPO_OPERACION } = require('./sunat.catalogos');
 const { ventasParaBoleta, datosDeBoleta, nombreDelPais } = require('./sunat.ventas');
+const { sendMail } = require('../../lib/mailer');
+const { AppError, NotFoundError } = require('../../shared/errors/AppError');
+const { ERROR_CODES } = require('../../config/constants');
+const pdf = require('./sunat.pdf');
+const correos = require('./sunat.correo');
 
 /** La clave de la nota que anula una boleta: `ANULA:B001-1`. */
 const claveDeAnulacion = (serie, numero) => `ANULA:${serie}-${numero}`;
@@ -247,6 +252,68 @@ function crearEmisor(dep) {
     return { nota: `${fila.serie}-${fila.numero}`, estado };
   }
 
+  /**
+   * El correo al cliente con el PDF de cada comprobante aceptado. Una boleta ya
+   * anulada no se envía, ni la nota de una boleta que nunca se envió: el
+   * cliente no tiene por qué enterarse de un error que no vio. Si el envío
+   * falla, queda pendiente para la pasada siguiente.
+   *
+   * `correoDe` resuelve uno y devuelve su estado. `forzar` (el «Reenviar» del
+   * panel) lo manda aunque ya se hubiera enviado o no aplicara.
+   */
+  async function correoDe(fila, { forzar = false } = {}) {
+    const { enviarCorreo } = dep;
+    const numero = `${fila.serie}-${fila.numero}`;
+    const esNota = fila.tipo === TIPO_COMPROBANTE.NOTA_CREDITO;
+    const anula = esNota ? fila.origenClave.replace(/^ANULA:/, '') : null;
+
+    let clave = fila.origenClave;
+    let noAplica = !esNota && clave.includes('|ANULADA');
+    if (config.correosDesde && fila.fechaEmision < config.correosDesde) noAplica = true;
+    if (esNota) {
+      const [serie, num] = anula.split('-');
+      const boleta = await repo.buscar(serie, Number(num));
+      noAplica = noAplica || boleta?.correo !== 'ENVIADO';
+      clave = boleta?.origenClave ?? clave;
+    }
+    if (noAplica && !forzar) {
+      await repo.actualizar(fila.id, { correo: 'NO_APLICA' });
+      return 'NO_APLICA';
+    }
+
+    const para = await repo.destinatario(clave);
+    if (!para) {
+      await repo.actualizar(fila.id, { correo: 'SIN_DESTINATARIO' });
+      return 'SIN_DESTINATARIO';
+    }
+    const mensaje = esNota
+      ? correos.notaEmitida({ nombre: para.nombre, numero, anula, motivo: pdf.datosDelPdf(fila).motivo })
+      : correos.boletaEmitida({
+          nombre: para.nombre,
+          numero,
+          productos: (fila.items ?? []).map((i) => i.descripcion).join(', '),
+          total: fila.totalCents,
+        });
+    const adjunto = { filename: pdf.nombreDelPdf(fila), content: await pdf.generarPdf(fila), contentType: 'application/pdf' };
+    await enviarCorreo({ to: para.email, ...mensaje, attachments: [adjunto] });
+    await repo.actualizar(fila.id, { correo: 'ENVIADO', correoEnviadoEn: new Date() });
+    return 'ENVIADO';
+  }
+
+  async function enviarCorreos() {
+    if (!dep.enviarCorreo) return 0;
+    let enviados = 0;
+    for (const fila of await repo.correosPendientes(POR_PASADA)) {
+      try {
+        if ((await correoDe(fila)) === 'ENVIADO') enviados += 1;
+      } catch (error) {
+        // Queda pendiente: la pasada siguiente lo vuelve a intentar.
+        log.error({ err: error, numero: `${fila.serie}-${fila.numero}` }, 'No se pudo enviar el comprobante al cliente');
+      }
+    }
+    return enviados;
+  }
+
   async function pasada(ahora = new Date()) {
     if (!config.activo || corriendo) return null;
     corriendo = true;
@@ -280,13 +347,14 @@ function crearEmisor(dep) {
           }
         }
       }
+      resumen.correos = await enviarCorreos();
       return resumen;
     } finally {
       corriendo = false;
     }
   }
 
-  return { pasada, emitir, enviarYGuardar, anular };
+  return { pasada, emitir, enviarYGuardar, anular, enviarCorreos, correoDe };
 }
 
 /** Las ventas entre dos fechas, ya agrupadas para facturar. */
@@ -312,6 +380,7 @@ const emisor = crearEmisor({
   cargarCertificado: () =>
     leerCertificado({ pfx: fs.readFileSync(env.SUNAT_PFX), clave: env.SUNAT_PFX_CLAVE }),
   avisar: avisarAlProgramador,
+  enviarCorreo: sendMail,
   log: logger,
   config: {
     activo: env.SUNAT_ACTIVO,
@@ -322,12 +391,75 @@ const emisor = crearEmisor({
     nombreComercial: env.SUNAT_NOMBRE_COMERCIAL,
     serie: env.SUNAT_SERIE,
     serieNotas: env.SUNAT_SERIE_NOTAS,
+    correosDesde: env.SUNAT_CORREOS_DESDE ? new Date(env.SUNAT_CORREOS_DESDE) : null,
     usuario: env.SUNAT_USUARIO,
     clave: env.SUNAT_CLAVE,
   },
 });
 
+/** `B001-1` → `['B001', 1]`. */
+function partir(numero) {
+  const [serie, num] = numero.split('-');
+  return [serie, Number(num)];
+}
+
+/** Lo que pide la web: el PDF del cliente y el panel del administrador. */
+const consultas = {
+  misBoletas: (userId) => sunatRepository.boletasDeUsuario(userId),
+
+  /** El PDF de un comprobante: del dueño de la venta, o de un ADMIN. Null si no le toca. */
+  async pdfDe({ id, userId, esAdmin }) {
+    const fila = await sunatRepository.buscarPorId(id);
+    if (!fila) return null;
+    if (!esAdmin) {
+      // La nota se mira por la boleta que anula. Un ajeno recibe lo mismo que «no existe».
+      const clave =
+        fila.tipo === TIPO_COMPROBANTE.NOTA_CREDITO
+          ? (await sunatRepository.buscar(...partir(fila.origenClave.replace(/^ANULA:/, ''))))?.origenClave
+          : fila.origenClave;
+      if (!clave || (await sunatRepository.duenoDe(clave)) !== userId) return null;
+    }
+    return { nombre: pdf.nombreDelPdf(fila), contenido: await pdf.generarPdf(fila) };
+  },
+
+  listar: () => sunatRepository.listar(),
+
+  /** El XML firmado o la CDR, para el panel. */
+  async archivo(id, cual) {
+    const fila = await sunatRepository.buscarPorId(id);
+    if (!fila) return null;
+    const base = nombreDelArchivo(env.SUNAT_RUC ?? '', fila.serie, fila.numero, fila.tipo);
+    if (cual === 'xml') {
+      return { nombre: `${base}.xml`, tipo: 'application/xml', contenido: Buffer.from(fila.xmlFirmado, 'utf8') };
+    }
+    if (!fila.cdrZip) return null;
+    return { nombre: `R-${base}.zip`, tipo: 'application/zip', contenido: Buffer.from(fila.cdrZip) };
+  },
+
+  /**
+   * El «Anular» del panel: lo mismo que `scripts/sunat-anular.js`. Lo que el
+   * emisor rechaza (ya anulada, sigue siendo venta…) vuelve como 409 con su
+   * mensaje, que el panel enseña tal cual.
+   */
+  async anularPorId({ id, motivo, refacturar }) {
+    const fila = await sunatRepository.buscarPorId(id);
+    if (!fila) throw new NotFoundError('No encontramos ese comprobante.');
+    try {
+      return await emisor.anular({ serie: fila.serie, numero: fila.numero, motivo, refacturar });
+    } catch (error) {
+      throw new AppError(error.message, { statusCode: 409, code: ERROR_CODES.VALIDATION_ERROR });
+    }
+  },
+
+  async reenviarCorreo(id) {
+    const fila = await sunatRepository.buscarPorId(id);
+    if (!fila) return null;
+    return emisor.correoDe(fila, { forzar: true });
+  },
+};
+
 module.exports = {
+  ...consultas,
   pasada: (ahora) => emisor.pasada(ahora),
   anular: (datos) => emisor.anular(datos),
   crearEmisor,

@@ -130,3 +130,22 @@ test('el PDF sale con ventas, sin ventas y con muchas (varias páginas)', async 
   assert.equal(nombreDeArchivo(periodo), 'ventas-2026-09.pdf');
   assert.equal(nombreDeArchivo(periodo, true), 'ventas-2026-09-borrador.pdf');
 });
+
+test('cada venta lleva el número de su boleta vigente; las anteriores a SUNAT, ninguno', () => {
+  const ventas = [
+    { origen: 'PAGO', origenId: 'p1', carrito: null },
+    { origen: 'PAGO', origenId: 'p2', carrito: 'K' },
+    { origen: 'CODIGO', origenId: 'c1' },
+    { origen: 'PAGO', origenId: 'viejo', carrito: null },
+  ];
+  assert.deepEqual(datos.clavesDeBoleta(ventas[1]), ['PAGO:p2', 'CARRITO:K']);
+  const boletas = new Map([
+    ['PAGO:p1', 'B001-4'],
+    ['CARRITO:K', 'B001-5'],
+    ['CODIGO:c1', 'B001-6'],
+  ]);
+  assert.deepEqual(
+    datos.conBoletas(ventas, boletas).map((v) => v.boleta),
+    ['B001-4', 'B001-5', 'B001-6', null],
+  );
+});

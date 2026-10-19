@@ -29,6 +29,7 @@ const ventasRepository = {
       where: { ...PAGO_COBRADO, paidAt: { gte: desde, lt: hasta } },
       select: {
         id: true,
+        cartId: true,
         provider: true,
         providerOrderId: true,
         providerCaptureId: true,
@@ -94,6 +95,16 @@ const ventasRepository = {
     ]);
     const fechas = [pago._min.paidAt, codigo._min.createdAt].filter(Boolean);
     return fechas.length ? new Date(Math.min(...fechas.map((f) => f.getTime()))) : null;
+  },
+
+  /** Número de la boleta vigente de cada clave de venta (`PAGO:…`, `CARRITO:…`, `CODIGO:…`). */
+  async boletasPorClave(claves) {
+    if (claves.length === 0) return new Map();
+    const filas = await prisma.comprobante.findMany({
+      where: { tipo: '03', origenClave: { in: claves }, estado: { in: ['ACEPTADO', 'OBSERVADO'] } },
+      select: { origenClave: true, serie: true, numero: true },
+    });
+    return new Map(filas.map((f) => [f.origenClave, `${f.serie}-${f.numero}`]));
   },
 
   listarCierres() {

@@ -63,6 +63,7 @@
     "pino": "^9.6.0",
     "pino-http": "^10.4.0",
     "pngjs": "^7.0.0",
+    "qrcode": "1.5.4",
     "tesseract.js": "^7.0.0",
     "unpdf": "^1.8.1",
     "xml-crypto": "6.3.2",

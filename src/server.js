@@ -11,6 +11,7 @@ const { INTERVALO_MS, crearVigia } = require('./lib/vigiaBase');
 const ventasService = require('./modules/ventas/ventas.service');
 const paymentService = require('./modules/payments/payment.service');
 const avisosService = require('./modules/avisos/avisos.service');
+const sunatService = require('./modules/sunat/sunat.service');
 
 /** Cada cuánto se mira si toca la pasada diaria de correos de avance. */
 const AVISOS_MS = 60 * 60 * 1000;
@@ -21,6 +22,9 @@ const CIERRE_DE_MES_MS = 3 * 60 * 60 * 1000;
 
 /** Cada cuánto se cierran las órdenes de pasarela abandonadas. */
 const ORDENES_ABANDONADAS_MS = 30 * 60 * 1000;
+
+/** Cada cuánto se emiten las boletas de las ventas nuevas (si SUNAT_ACTIVO). */
+const BOLETAS_MS = 5 * 60 * 1000;
 
 /** Cada cuánto se borran las conversaciones de WhatsApp fuera de plazo. */
 const PURGA_WHATSAPP_MS = 24 * 60 * 60 * 1000;
@@ -91,6 +95,14 @@ async function bootstrap() {
   purgaWhatsapp.unref();
   setTimeout(purgarWhatsapp, 120_000).unref();
 
+  // Las boletas de SUNAT: cada cinco minutos se emiten las de las ventas nuevas
+  // y se reenvían las que no llegaron. Con SUNAT_ACTIVO=false no hace nada.
+  const emitirBoletas = () =>
+    sunatService.pasada().catch((error) => logger.error({ err: error }, 'La pasada de boletas falló'));
+  const boletas = setInterval(emitirBoletas, BOLETAS_MS);
+  boletas.unref();
+  setTimeout(emitirBoletas, 90_000).unref();
+
   // Apagado ordenado: se dejan terminar las peticiones en curso.
   const shutdown = (signal) => async () => {
     logger.info(`${signal} recibido, cerrando servidor…`);
@@ -99,6 +111,7 @@ async function bootstrap() {
     clearInterval(cierreDeMes);
     clearInterval(ordenesAbandonadas);
     clearInterval(purgaWhatsapp);
+    clearInterval(boletas);
     server.close(async () => {
       await prisma.$disconnect();
       logger.info('Servidor cerrado correctamente');

@@ -599,6 +599,30 @@ const schema = z.object({
   RECLAMOS_RAZON_SOCIAL: z.string().default('Benicio Gonzalo Acosta Enríquez'),
   RECLAMOS_RUC: vacioComoAusente(z.string().regex(/^\d{11}$/, 'RECLAMOS_RUC tiene 11 dígitos')),
   RECLAMOS_DOMICILIO: z.string().default('Trujillo, La Libertad, Perú'),
+
+  // ── Boletas electrónicas (SUNAT, SEE – Del Contribuyente) ───────────────
+  // Apagado por defecto: una boleta aceptada por SUNAT no se deshace, solo se
+  // anula con nota de crédito. Se enciende a mano cuando todo está puesto.
+  // Ver `modules/sunat`.
+  SUNAT_ACTIVO: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((valor) => valor === 'true'),
+  SUNAT_AMBIENTE: z.enum(['beta', 'produccion']).default('beta'),
+  // Solo se emiten boletas de las ventas cobradas desde este instante. Las
+  // anteriores no llevan boleta (decisión del 19-oct-2026). Con zona, p. ej.
+  // 2026-10-20T00:00:00-05:00.
+  SUNAT_EMITIR_DESDE: vacioComoAusente(z.string().datetime({ offset: true })),
+  SUNAT_RUC: vacioComoAusente(z.string().regex(/^\d{11}$/, 'SUNAT_RUC tiene 11 dígitos')),
+  SUNAT_RAZON_SOCIAL: z.string().default('ACOSTA ENRIQUEZ BENICIO GONZALO'),
+  SUNAT_NOMBRE_COMERCIAL: z.string().default('Acosta | IA & Research'),
+  SUNAT_SERIE: z.string().regex(/^B[A-Z0-9]{3}$/, 'SUNAT_SERIE es B + 3 caracteres').default('B001'),
+  // El usuario SOL secundario, sin el RUC delante (FACTURA1), y su clave.
+  SUNAT_USUARIO: vacioComoAusente(z.string()),
+  SUNAT_CLAVE: vacioComoAusente(z.string()),
+  // Ruta al certificado (.pfx o .p12) y su contraseña.
+  SUNAT_PFX: vacioComoAusente(z.string()),
+  SUNAT_PFX_CLAVE: vacioComoAusente(z.string()),
 });
 
 const parsed = schema.safeParse(process.env);
@@ -613,6 +637,18 @@ if (!parsed.success) {
 }
 
 const raw = parsed.data;
+
+// Encender las boletas sin todo lo necesario solo dejaría ventas sin boleta y
+// un error en cada pasada: mejor no arrancar.
+if (raw.SUNAT_ACTIVO) {
+  const faltan = ['SUNAT_EMITIR_DESDE', 'SUNAT_RUC', 'SUNAT_USUARIO', 'SUNAT_CLAVE', 'SUNAT_PFX'].filter(
+    (clave) => !raw[clave],
+  );
+  if (faltan.length > 0) {
+    console.error(`SUNAT_ACTIVO=true pero faltan: ${faltan.join(', ')}`);
+    process.exit(1);
+  }
+}
 
 /**
  * Comprobaciones que solo tienen sentido en producción.

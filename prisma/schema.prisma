@@ -3021,3 +3021,81 @@ model SorteoParticipante {
   @@unique([sorteoId, email])
   @@map("sorteo_participantes")
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Boletas electrónicas (SUNAT)
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum EstadoComprobante {
+  PENDIENTE // firmada y guardada; falta que SUNAT la acepte (aún sin enviar o sin respuesta)
+  ACEPTADO // SUNAT la aceptó (CDR con código 0)
+  OBSERVADO // aceptada con observaciones (CDR 4000+): vale igual
+  RECHAZADO // SUNAT la rechazó: no vale, ese número queda gastado
+  REVISAR // algo que una persona tiene que mirar (p. ej. «ya presentado» al reenviar)
+}
+
+/// Una boleta de venta electrónica. La emite sola `modules/sunat` por cada
+/// venta cobrada desde `SUNAT_EMITIR_DESDE`: un pago, un carrito entero o un
+/// código vendido a mano.
+///
+/// `origenClave` es lo que impide emitir dos boletas por la misma venta:
+/// `PAGO:<id>`, `CARRITO:<cartId>` o `CODIGO:<id>`. Va sin relación con
+/// `payments` a propósito: la boleta solo LEE las ventas, nunca las cambia.
+model Comprobante {
+  id     String @id @default(uuid()) @db.Char(36)
+  /// `03` boleta (catálogo 01).
+  tipo   String @db.VarChar(2)
+  serie  String @db.VarChar(4)
+  numero Int
+
+  origenClave  String   @unique @db.VarChar(80)
+  fechaEmision DateTime
+
+  /// Catálogo 06: `-` varios, `0` no domiciliado…
+  clienteTipoDoc String  @db.VarChar(1)
+  clienteNumDoc  String  @db.VarChar(20)
+  clienteNombre  String  @db.VarChar(200)
+  clientePais    String? @db.VarChar(2)
+
+  /// La boleta va siempre en soles; en céntimos, con el IGV dentro del total.
+  moneda               String   @db.VarChar(3)
+  totalCents           Int
+  valorCents           Int
+  igvCents             Int
+  /// Lo cobrado de verdad, si fue en otra moneda, y el tipo de cambio usado.
+  monedaOriginal       String   @db.VarChar(3)
+  importeOriginalCents Int
+  tipoCambio           Decimal? @db.Decimal(6, 3)
+  /// Las líneas tal cual se enviaron: `[{ codigo, descripcion, cantidad, precioUnitario }]`.
+  items                Json
+
+  estado        EstadoComprobante @default(PENDIENTE)
+  intentos      Int               @default(0)
+  /// Lo último que dijo SUNAT (o por qué no se pudo llegar).
+  codigoSunat   Int?
+  mensaje       String?           @db.Text
+  observaciones Json?
+  /// DigestValue de la firma: va en el QR de la representación impresa.
+  hash          String?           @db.VarChar(64)
+  xmlFirmado    String            @db.MediumText
+  /// La Constancia de Recepción (ZIP) tal como la devolvió SUNAT.
+  cdrZip        Bytes?            @db.MediumBlob
+  enviadoEn     DateTime?
+
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  @@unique([serie, numero])
+  @@index([estado])
+  @@index([fechaEmision])
+  @@map("comprobantes")
+}
+
+/// El último número usado de cada serie. Se incrementa dentro de la misma
+/// transacción que crea la boleta: dos boletas a la vez no reciben el mismo.
+model SerieComprobante {
+  serie  String @id @db.VarChar(4)
+  ultimo Int    @default(0)
+
+  @@map("series_comprobantes")
+}

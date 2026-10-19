@@ -9,6 +9,12 @@
 /** Catálogo 01: tipo de comprobante. */
 const TIPO_COMPROBANTE = {
   BOLETA: '03',
+  NOTA_CREDITO: '07',
+};
+
+/** Catálogo 09: motivo de la nota de crédito. Solo la anulación, que es lo que se usa. */
+const MOTIVO_NOTA_CREDITO = {
+  ANULACION: '01', // anulación de la operación
 };
 
 /**
@@ -57,4 +63,4 @@ const SERVICIO = {
   produccion: 'https://e-factura.sunat.gob.pe/ol-ti-itcpfegem/billService',
 };
 
-module.exports = { TIPO_COMPROBANTE, AFECTACION, TIPO_OPERACION, TIPO_DOCUMENTO, MONEDA, SERVICIO };
+module.exports = { TIPO_COMPROBANTE, MOTIVO_NOTA_CREDITO, AFECTACION, TIPO_OPERACION, TIPO_DOCUMENTO, MONEDA, SERVICIO };

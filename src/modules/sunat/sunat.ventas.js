@@ -150,4 +150,4 @@ function datosDeBoleta(venta, tipoCambio) {
   };
 }
 
-module.exports = { ventasParaBoleta, datosDeBoleta, AFECTACION_VENTAS, TOPE_SIN_DOCUMENTO_CENTS };
+module.exports = { ventasParaBoleta, datosDeBoleta, nombreDelPais, AFECTACION_VENTAS, TOPE_SIN_DOCUMENTO_CENTS };

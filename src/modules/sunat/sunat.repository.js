@@ -55,9 +55,13 @@ const sunatRepository = {
     return new Set(filas.map((f) => f.origenClave));
   },
 
+  /**
+   * Las que siguen sin respuesta de SUNAT. Las de menos de un minuto no: puede
+   * estar enviándolas ahora mismo otro proceso (el script de anular).
+   */
   pendientes(limite) {
     return prisma.comprobante.findMany({
-      where: { estado: 'PENDIENTE' },
+      where: { estado: 'PENDIENTE', creadoEn: { lt: new Date(Date.now() - 60 * 1000) } },
       orderBy: { creadoEn: 'asc' },
       take: limite,
     });
@@ -78,6 +82,32 @@ const sunatRepository = {
         data: { ultimo: { increment: 1 } },
       });
       return tx.comprobante.create({ data: armar(ultimo) });
+    });
+  },
+
+  buscar(serie, numero) {
+    return prisma.comprobante.findUnique({ where: { serie_numero: { serie, numero } } });
+  },
+
+  /** Si la venta de esta clave sigue contando como venta (y se volvería a facturar). */
+  async sigueSiendoVenta(origenClave) {
+    const [tipo, id] = origenClave.split(':');
+    if (tipo === 'PAGO') return (await prisma.payment.count({ where: { id, ...PAGO_COBRADO } })) > 0;
+    if (tipo === 'CARRITO') return (await prisma.payment.count({ where: { cartId: id, ...PAGO_COBRADO } })) > 0;
+    if (tipo === 'CODIGO') return (await prisma.activationCode.count({ where: { id, ...CODIGO_VENDIDO } })) > 0;
+    return false;
+  },
+
+  /**
+   * Marca la boleta como anulada soltando su clave de venta: `CODIGO:x` pasa a
+   * `CODIGO:x|ANULADA:BC01-1`. Así la venta vuelve a quedar sin boleta.
+   */
+  async liberarVenta(serie, numero, nota) {
+    const boleta = await prisma.comprobante.findUnique({ where: { serie_numero: { serie, numero } } });
+    if (!boleta || boleta.origenClave.includes('|ANULADA')) return;
+    await prisma.comprobante.update({
+      where: { id: boleta.id },
+      data: { origenClave: `${boleta.origenClave}|ANULADA:${nota}` },
     });
   },
 

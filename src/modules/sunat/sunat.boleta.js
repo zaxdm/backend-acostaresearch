@@ -44,9 +44,9 @@ function fechaLima(fecha) {
   return { dia: iso.slice(0, 10), hora: iso.slice(11, 19) };
 }
 
-/** Nombre del archivo: `RUC-03-B001-123`, sin extensión. */
-function nombreDelArchivo(ruc, serie, numero) {
-  return `${ruc}-${TIPO_COMPROBANTE.BOLETA}-${serie}-${numero}`;
+/** Nombre del archivo: `RUC-03-B001-123`, sin extensión. `tipo` 07 para la nota de crédito. */
+function nombreDelArchivo(ruc, serie, numero, tipo = TIPO_COMPROBANTE.BOLETA) {
+  return `${ruc}-${tipo}-${serie}-${numero}`;
 }
 
 /**
@@ -118,13 +118,15 @@ function xmlCliente(cliente) {
   );
 }
 
-function xmlLinea(linea, indice, moneda) {
+/** `etiqueta`: `Invoice` en la boleta, `CreditNote` en la nota de crédito. */
+function xmlLinea(linea, indice, moneda, etiqueta = 'Invoice') {
   const m = `currencyID="${moneda}"`;
   const valorUnitario = Math.round(linea.valor / linea.cantidad);
+  const cantidad = etiqueta === 'CreditNote' ? 'CreditedQuantity' : 'InvoicedQuantity';
   return (
-    '<cac:InvoiceLine>' +
+    `<cac:${etiqueta}Line>` +
     `<cbc:ID>${indice + 1}</cbc:ID>` +
-    `<cbc:InvoicedQuantity unitCode="ZZ">${linea.cantidad}</cbc:InvoicedQuantity>` +
+    `<cbc:${cantidad} unitCode="ZZ">${linea.cantidad}</cbc:${cantidad}>` +
     `<cbc:LineExtensionAmount ${m}>${decimal(linea.valor)}</cbc:LineExtensionAmount>` +
     '<cac:PricingReference><cac:AlternativeConditionPrice>' +
     `<cbc:PriceAmount ${m}>${decimal(linea.precioUnitario)}</cbc:PriceAmount>` +
@@ -145,7 +147,7 @@ function xmlLinea(linea, indice, moneda) {
     (linea.codigo ? `<cac:SellersItemIdentification><cbc:ID>${escapar(linea.codigo)}</cbc:ID></cac:SellersItemIdentification>` : '') +
     '</cac:Item>' +
     `<cac:Price><cbc:PriceAmount ${m}>${decimal(valorUnitario)}</cbc:PriceAmount></cac:Price>` +
-    '</cac:InvoiceLine>'
+    `</cac:${etiqueta}Line>`
   );
 }
 
@@ -245,4 +247,17 @@ function construirBoleta(datos) {
   };
 }
 
-module.exports = { construirBoleta, nombreDelArchivo, ID_FIRMA, decimal, fechaLima };
+module.exports = {
+  construirBoleta,
+  nombreDelArchivo,
+  ID_FIRMA,
+  decimal,
+  fechaLima,
+  // Piezas que comparte la nota de crédito (`sunat.notaCredito`).
+  escapar,
+  partirLinea,
+  porTributo,
+  esquemaTributo,
+  xmlCliente,
+  xmlLinea,
+};

@@ -27,10 +27,14 @@ const ventasRepository = require('../ventas/ventas.repository');
 const sunatRepository = require('./sunat.repository');
 const tipoCambio = require('./sunat.tipoCambio');
 const { construirBoleta, nombreDelArchivo, fechaLima } = require('./sunat.boleta');
+const { construirNotaCredito } = require('./sunat.notaCredito');
 const { leerCertificado, firmar, resumenDeLaFirma } = require('./sunat.firma');
 const { enviarComprobante, ESTADO } = require('./sunat.envio');
 const { TIPO_COMPROBANTE, TIPO_OPERACION } = require('./sunat.catalogos');
-const { ventasParaBoleta, datosDeBoleta } = require('./sunat.ventas');
+const { ventasParaBoleta, datosDeBoleta, nombreDelPais } = require('./sunat.ventas');
+
+/** La clave de la nota que anula una boleta: `ANULA:B001-1`. */
+const claveDeAnulacion = (serie, numero) => `ANULA:${serie}-${numero}`;
 
 /** Una venta se factura pasados unos minutos, para que un carrito termine de cobrarse entero. */
 const MARGEN_MS = 3 * 60 * 1000;
@@ -59,7 +63,7 @@ function crearEmisor(dep) {
   const credenciales = () => ({ ruc: config.ruc, usuario: config.usuario, clave: config.clave });
 
   async function enviarYGuardar(fila) {
-    const nombre = nombreDelArchivo(config.ruc, fila.serie, fila.numero);
+    const nombre = nombreDelArchivo(config.ruc, fila.serie, fila.numero, fila.tipo);
     const espera = ultimoEnvio + pausa - Date.now();
     if (espera > 0) await new Promise((listo) => setTimeout(listo, espera));
     ultimoEnvio = Date.now();
@@ -76,14 +80,22 @@ function crearEmisor(dep) {
         cdrZip: r.cdrZip ?? undefined,
         enviadoEn: new Date(),
       });
-      log.info({ numero, estado: r.estado, codigo: r.codigo }, 'Boleta aceptada por SUNAT');
+      if (fila.tipo === TIPO_COMPROBANTE.NOTA_CREDITO) {
+        // La boleta queda anulada y su venta, libre: si sigue siendo una venta,
+        // la pasada siguiente le hace una boleta nueva con los datos de hoy.
+        const [serie, num] = fila.origenClave.replace(/^ANULA:/, '').split('-');
+        await repo.liberarVenta(serie, Number(num), numero);
+        log.info({ numero, anula: `${serie}-${num}` }, 'Nota de crédito aceptada por SUNAT');
+      } else {
+        log.info({ numero, estado: r.estado, codigo: r.codigo }, 'Boleta aceptada por SUNAT');
+      }
       return r.estado;
     }
 
     if (r.estado === ESTADO.RECHAZADO) {
       await repo.actualizar(fila.id, { ...base, estado: 'RECHAZADO', cdrZip: r.cdrZip ?? undefined, enviadoEn: new Date() });
       avisar({
-        titulo: `SUNAT rechazó la boleta ${numero}`,
+        titulo: `SUNAT rechazó ${fila.tipo === TIPO_COMPROBANTE.NOTA_CREDITO ? 'la nota' : 'la boleta'} ${numero}`,
         mensaje: `${r.codigo ?? ''} ${r.descripcion ?? ''}`.trim(),
         etiquetas: ['warning'],
       });
@@ -163,6 +175,78 @@ function crearEmisor(dep) {
     return enviarYGuardar(fila);
   }
 
+  /**
+   * Anula una boleta aceptada con una nota de crédito (motivo 01) y la envía.
+   * Si la venta sigue siendo una venta (pago cobrado, código no anulado), al
+   * liberarse se volverá a facturar: eso solo se hace con `refacturar`, para
+   * que nadie vuelva a emitir sin querer lo que quería anular.
+   */
+  async function anular({ serie, numero, motivo, refacturar = false }) {
+    const boleta = await repo.buscar(serie, numero);
+    if (!boleta || boleta.tipo !== TIPO_COMPROBANTE.BOLETA) throw new Error(`No hay boleta ${serie}-${numero}.`);
+    if (boleta.estado !== 'ACEPTADO' && boleta.estado !== 'OBSERVADO') {
+      throw new Error(`La boleta ${serie}-${numero} está ${boleta.estado}: solo se anula una aceptada.`);
+    }
+    if (boleta.origenClave.includes('|ANULADA')) throw new Error(`La boleta ${serie}-${numero} ya está anulada.`);
+    const clave = claveDeAnulacion(serie, numero);
+    if ((await repo.clavesConBoleta([clave])).has(clave)) {
+      throw new Error(`La boleta ${serie}-${numero} ya tiene una nota de crédito (puede estar pendiente de envío).`);
+    }
+    if (!refacturar && (await repo.sigueSiendoVenta(boleta.origenClave))) {
+      throw new Error(
+        `${boleta.origenClave} sigue siendo una venta: al anular se le hará una boleta nueva. ` +
+          'Si eso es lo que quieres, repite con --refacturar; si no era una venta, anúlala o recházala primero.',
+      );
+    }
+
+    certificado ??= cargarCertificado();
+    const ahora = new Date();
+    const cliente = {
+      tipoDocumento: boleta.clienteTipoDoc,
+      numeroDocumento: boleta.clienteNumDoc,
+      nombre: boleta.clienteNombre,
+      pais: boleta.clientePais ? nombreDelPais(boleta.clientePais) : null,
+    };
+    const fila = await repo.crearConNumero(config.serieNotas, (num) => {
+      const nota = construirNotaCredito({
+        emisor: { ruc: config.ruc, razonSocial: config.razonSocial, nombreComercial: config.nombreComercial },
+        serie: config.serieNotas,
+        numero: num,
+        fecha: ahora,
+        moneda: boleta.moneda,
+        referencia: { serie, numero },
+        motivo,
+        cliente,
+        items: boleta.items,
+      });
+      const xmlFirmado = firmar(nota.xml, certificado);
+      return {
+        tipo: TIPO_COMPROBANTE.NOTA_CREDITO,
+        serie: config.serieNotas,
+        numero: num,
+        origenClave: clave,
+        fechaEmision: ahora,
+        clienteTipoDoc: boleta.clienteTipoDoc,
+        clienteNumDoc: boleta.clienteNumDoc,
+        clienteNombre: boleta.clienteNombre,
+        clientePais: boleta.clientePais,
+        moneda: boleta.moneda,
+        totalCents: nota.totales.total,
+        valorCents: nota.totales.valor,
+        igvCents: nota.totales.igv,
+        monedaOriginal: boleta.monedaOriginal,
+        importeOriginalCents: boleta.importeOriginalCents,
+        tipoCambio: boleta.tipoCambio,
+        items: boleta.items,
+        mensaje: motivo,
+        hash: resumenDeLaFirma(xmlFirmado),
+        xmlFirmado,
+      };
+    });
+    const estado = await enviarYGuardar(fila);
+    return { nota: `${fila.serie}-${fila.numero}`, estado };
+  }
+
   async function pasada(ahora = new Date()) {
     if (!config.activo || corriendo) return null;
     corriendo = true;
@@ -202,7 +286,7 @@ function crearEmisor(dep) {
     }
   }
 
-  return { pasada, emitir, enviarYGuardar };
+  return { pasada, emitir, enviarYGuardar, anular };
 }
 
 /** Las ventas entre dos fechas, ya agrupadas para facturar. */
@@ -237,9 +321,16 @@ const emisor = crearEmisor({
     razonSocial: env.SUNAT_RAZON_SOCIAL,
     nombreComercial: env.SUNAT_NOMBRE_COMERCIAL,
     serie: env.SUNAT_SERIE,
+    serieNotas: env.SUNAT_SERIE_NOTAS,
     usuario: env.SUNAT_USUARIO,
     clave: env.SUNAT_CLAVE,
   },
 });
 
-module.exports = { pasada: (ahora) => emisor.pasada(ahora), crearEmisor, MARGEN_MS, AVISAR_TRAS_INTENTOS };
+module.exports = {
+  pasada: (ahora) => emisor.pasada(ahora),
+  anular: (datos) => emisor.anular(datos),
+  crearEmisor,
+  MARGEN_MS,
+  AVISAR_TRAS_INTENTOS,
+};

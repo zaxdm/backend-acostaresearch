@@ -617,6 +617,8 @@ const schema = z.object({
   SUNAT_RAZON_SOCIAL: z.string().default('ACOSTA ENRIQUEZ BENICIO GONZALO'),
   SUNAT_NOMBRE_COMERCIAL: z.string().default('Acosta | IA & Research'),
   SUNAT_SERIE: z.string().regex(/^B[A-Z0-9]{3}$/, 'SUNAT_SERIE es B + 3 caracteres').default('B001'),
+  // Serie de las notas de crédito que anulan boletas: también empieza por B.
+  SUNAT_SERIE_NOTAS: z.string().regex(/^B[A-Z0-9]{3}$/, 'SUNAT_SERIE_NOTAS es B + 3 caracteres').default('BC01'),
   // El usuario SOL secundario, sin el RUC delante (FACTURA1), y su clave.
   SUNAT_USUARIO: vacioComoAusente(z.string()),
   SUNAT_CLAVE: vacioComoAusente(z.string()),

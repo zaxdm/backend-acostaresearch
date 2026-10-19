@@ -160,6 +160,18 @@ function repoEnMemoria() {
     async actualizar(id, data) {
       Object.assign(filas.find((f) => f.id === id), data);
     },
+    async buscar(serie, numero) {
+      const fila = filas.find((f) => f.serie === serie && f.numero === numero);
+      return fila ? { ...fila } : null;
+    },
+    ventasVivas: new Set(),
+    async sigueSiendoVenta(clave) {
+      return this.ventasVivas.has(clave);
+    },
+    async liberarVenta(serie, numero, nota) {
+      const fila = filas.find((f) => f.serie === serie && f.numero === numero);
+      if (fila && !fila.origenClave.includes('|ANULADA')) fila.origenClave += `|ANULADA:${nota}`;
+    },
   };
 }
 
@@ -187,6 +199,7 @@ function emisorDePrueba({ ventas, respuestas = [], activo = true }) {
       razonSocial: 'ACOSTA ENRIQUEZ BENICIO GONZALO',
       nombreComercial: 'Acosta | IA & Research',
       serie: 'B001',
+      serieNotas: 'BC01',
       usuario: 'FACTURA1',
       clave: 'x',
     },
@@ -303,4 +316,55 @@ test('un código movido de producto se factura por el producto que tiene hoy', (
   });
   assert.equal(venta.items[0].codigo, 'HUMANIZADOR');
   assert.equal(venta.items[0].descripcion, 'Humanizador Académico');
+});
+
+// ── Anular con nota de crédito ──────────────────────────────────────────────
+
+test('la nota de crédito cita la boleta, lleva motivo 01 y las mismas líneas', () => {
+  const { construirNotaCredito } = require('../src/modules/sunat/sunat.notaCredito');
+  const nota = construirNotaCredito({
+    emisor: { ruc: '10720995960', razonSocial: 'ACOSTA ENRIQUEZ BENICIO GONZALO' },
+    serie: 'BC01',
+    numero: 1,
+    fecha: new Date('2026-10-19T20:00:00Z'),
+    referencia: { serie: 'B001', numero: 3 },
+    motivo: 'Código anulado: no fue una venta',
+    cliente: { tipoDocumento: '-', numeroDocumento: '-', nombre: 'CLIENTES VARIOS' },
+    items: [{ codigo: 'HUM', descripcion: 'Humanizador Académico', cantidad: 1, precioUnitario: 100, afectacion: '10' }],
+  });
+  assert.equal(nota.nombre, '10720995960-07-BC01-1');
+  assert.match(nota.xml, /<CreditNote xmlns="urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2"/);
+  assert.match(nota.xml, /<cbc:ReferenceID>B001-3<\/cbc:ReferenceID><cbc:ResponseCode>01<\/cbc:ResponseCode>/);
+  assert.match(nota.xml, /<cbc:DocumentTypeCode>03<\/cbc:DocumentTypeCode>/);
+  assert.match(nota.xml, /<cac:CreditNoteLine><cbc:ID>1<\/cbc:ID><cbc:CreditedQuantity unitCode="ZZ">1</);
+  assert.match(nota.xml, /<cbc:PayableAmount currencyID="PEN">1.00<\/cbc:PayableAmount>/);
+  assert.throws(() => construirNotaCredito({ ...{ emisor: { ruc: '10720995960', razonSocial: 'X' } }, serie: 'F001', numero: 1 }), /empieza por B/);
+});
+
+test('anular: no repite, pide --refacturar si sigue siendo venta, y al aceptarse libera la venta', async () => {
+  const ventas = ventasParaBoleta({ pagos: [pago({ id: 'a' }), pago({ id: 'b' })], codigos: [] });
+  const { emisor, repo, enviados } = emisorDePrueba({ ventas });
+  await emisor.pasada();
+
+  // B001-1 sigue siendo venta: sin --refacturar no se toca.
+  repo.ventasVivas.add('PAGO:a');
+  await assert.rejects(emisor.anular({ serie: 'B001', numero: 1, motivo: 'x' }), /--refacturar/);
+  assert.equal(repo.filas.length, 2);
+
+  // B001-2 ya no es venta: se anula y queda libre.
+  const r = await emisor.anular({ serie: 'B001', numero: 2, motivo: 'Registrado por error' });
+  assert.deepEqual(r, { nota: 'BC01-1', estado: ESTADO.ACEPTADO });
+  assert.equal(enviados.at(-1).nombre, '10720995960-07-BC01-1');
+  const nota = repo.filas.find((f) => f.serie === 'BC01');
+  assert.equal(nota.tipo, '07');
+  assert.equal(nota.origenClave, 'ANULA:B001-2');
+  assert.equal(nota.totalCents, 15900);
+  assert.equal(repo.filas.find((f) => f.numero === 2 && f.serie === 'B001').origenClave, 'PAGO:b|ANULADA:BC01-1');
+  await assert.rejects(emisor.anular({ serie: 'B001', numero: 2, motivo: 'x' }), /ya está anulada/);
+
+  // Con --refacturar, la venta vuelve a salir en la pasada siguiente con número nuevo.
+  await emisor.anular({ serie: 'B001', numero: 1, motivo: 'Producto equivocado', refacturar: true });
+  await emisor.pasada();
+  const nuevas = repo.filas.filter((f) => f.serie === 'B001' && !f.origenClave.includes('|ANULADA'));
+  assert.deepEqual(nuevas.map((f) => [f.numero, f.origenClave]), [[3, 'PAGO:a'], [4, 'PAGO:b']]);
 });

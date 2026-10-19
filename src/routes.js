@@ -8,6 +8,7 @@ const billingRoutes = require('./modules/billing/billing.routes');
 const paymentRoutes = require('./modules/payments/payment.routes');
 const ventasRoutes = require('./modules/ventas/ventas.routes');
 const sunatRoutes = require('./modules/sunat/sunat.routes');
+const tributosRoutes = require('./modules/tributos/tributos.routes');
 const licenseRoutes = require('./modules/licensing/license.routes');
 const skillRoutes = require('./modules/skills/skill.routes');
 const referenceRoutes = require('./modules/references/reference.routes');
@@ -67,6 +68,8 @@ router.use('/payments', paymentRoutes);
 router.use('/ventas', ventasRoutes);
 // Boletas y notas de crédito: las del cliente y el panel (ver `modules/sunat`).
 router.use('/sunat', sunatRoutes);
+// La declaración mensual del 621 (solo ADMIN, ver `modules/tributos`).
+router.use('/tributos', tributosRoutes);
 router.use('/licenses', licenseRoutes);
 router.use('/skills', skillRoutes);
 // Antes que el módulo del administrador: aquel monta authorize(ADMIN) para

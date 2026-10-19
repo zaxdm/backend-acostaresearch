@@ -3104,3 +3104,68 @@ model SerieComprobante {
 
   @@map("series_comprobantes")
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Declaración mensual (Formulario 621, RER: IGV + renta 1.5 %)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Una factura de compra del negocio, para el crédito fiscal del IGV. Hoy se
+/// carga a mano desde el panel; más adelante vendrá del SIRE (`origen`).
+model CompraRegistrada {
+  id            String   @id @default(uuid()) @db.Char(36)
+  /// Día de emisión de la factura: decide el mes en que se usa el crédito.
+  fecha         DateTime @db.Date
+  rucProveedor  String   @db.VarChar(11)
+  razonSocial   String?  @db.VarChar(200)
+  serie         String   @db.VarChar(4)
+  numero        Int
+  /// Base imponible e IGV, en céntimos de sol.
+  baseCents     Int
+  igvCents      Int
+  descripcion   String?  @db.VarChar(200)
+  /// MANUAL (desde el panel) o SIRE.
+  origen        String   @default("MANUAL") @db.VarChar(10)
+  creadoPorId   String?  @db.Char(36)
+  creadoEn      DateTime @default(now())
+
+  @@unique([rucProveedor, serie, numero])
+  @@index([fecha])
+  @@map("compras_registradas")
+}
+
+/// Lo que se declara de un mes en el 621. El cálculo se hace al vuelo desde las
+/// boletas y las compras; al marcarlo como declarado se congela en `calculo`.
+model DeclaracionMensual {
+  id    String @id @default(uuid()) @db.Char(36)
+  anio  Int
+  mes   Int
+
+  /// Último día para declarar ese mes (lo pone el administrador según el
+  /// cronograma de SUNAT para el RUC terminado en 0).
+  vencimiento            DateTime? @db.Date
+  /// Ventas gravadas que no pasaron por boletas (base sin IGV), con su porqué.
+  ajusteBaseCents        Int       @default(0)
+  ajusteNota             String?   @db.VarChar(255)
+  /// Saldo a favor de IGV con el que se empieza, si se fija a mano (el primer
+  /// mes, o para corregir). Null = el que deja el mes anterior.
+  saldoFavorInicialCents Int?
+
+  /// PENDIENTE, DECLARADA o PAGADA.
+  estado            String    @default("PENDIENTE") @db.VarChar(10)
+  numeroOrden       String?   @db.VarChar(30)
+  igvPagadoCents    Int?
+  rentaPagadaCents  Int?
+  declaradaEn       DateTime?
+  /// La foto del cálculo al declararlo: lo que cambie después no lo reescribe.
+  calculo           Json?
+
+  avisoSinFechaEn   DateTime?
+  avisoPrevioEn     DateTime?
+  avisoUltimoEn     DateTime?
+
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  @@unique([anio, mes])
+  @@map("declaraciones_mensuales")
+}

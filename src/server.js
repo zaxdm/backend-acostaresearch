@@ -12,6 +12,7 @@ const ventasService = require('./modules/ventas/ventas.service');
 const paymentService = require('./modules/payments/payment.service');
 const avisosService = require('./modules/avisos/avisos.service');
 const sunatService = require('./modules/sunat/sunat.service');
+const tributosService = require('./modules/tributos/tributos.service');
 
 /** Cada cuánto se mira si toca la pasada diaria de correos de avance. */
 const AVISOS_MS = 60 * 60 * 1000;
@@ -25,6 +26,9 @@ const ORDENES_ABANDONADAS_MS = 30 * 60 * 1000;
 
 /** Cada cuánto se emiten las boletas de las ventas nuevas (si SUNAT_ACTIVO). */
 const BOLETAS_MS = 5 * 60 * 1000;
+
+/** Cada cuánto se mira si toca avisar de la declaración del 621. */
+const DECLARACION_MS = 60 * 60 * 1000;
 
 /** Cada cuánto se borran las conversaciones de WhatsApp fuera de plazo. */
 const PURGA_WHATSAPP_MS = 24 * 60 * 60 * 1000;
@@ -103,6 +107,16 @@ async function bootstrap() {
   boletas.unref();
   setTimeout(emitirBoletas, 90_000).unref();
 
+  // Los avisos de la declaración mensual del 621: sin fecha de vencimiento, a 5
+  // días y a 1 día. Cada uno sale una vez. Ver `modules/tributos`.
+  const avisarDeclaracion = () =>
+    tributosService
+      .pasadaDeAvisos()
+      .catch((error) => logger.error({ err: error }, 'La pasada de avisos de la declaración falló'));
+  const declaracion = setInterval(avisarDeclaracion, DECLARACION_MS);
+  declaracion.unref();
+  setTimeout(avisarDeclaracion, 3 * 60_000).unref();
+
   // Apagado ordenado: se dejan terminar las peticiones en curso.
   const shutdown = (signal) => async () => {
     logger.info(`${signal} recibido, cerrando servidor…`);
@@ -112,6 +126,7 @@ async function bootstrap() {
     clearInterval(ordenesAbandonadas);
     clearInterval(purgaWhatsapp);
     clearInterval(boletas);
+    clearInterval(declaracion);
     server.close(async () => {
       await prisma.$disconnect();
       logger.info('Servidor cerrado correctamente');

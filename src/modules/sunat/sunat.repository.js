@@ -146,6 +146,68 @@ const sunatRepository = {
     return null;
   },
 
+  /**
+   * Las claves de facturación de una venta del panel de Accesos. El pago que
+   * nació de canjear un código se factura por su código.
+   */
+  async clavesDeVenta(canal, id) {
+    if (canal === 'codigo') return [`CODIGO:${id}`];
+    const pago = await prisma.payment.findUnique({ where: { id }, select: { cartId: true, providerOrderId: true } });
+    if (!pago) return [];
+    const delCanje = await prisma.activationCode.findUnique({ where: { id: pago.providerOrderId }, select: { id: true } });
+    if (delCanje) return [`CODIGO:${delCanje.id}`];
+    return [`PAGO:${id}`, pago.cartId ? `CARRITO:${pago.cartId}` : null].filter(Boolean);
+  },
+
+  /**
+   * Las boletas de esas claves (vigentes y anuladas) y las notas que las
+   * anulan, de la más antigua a la más reciente. Sin el XML ni la CDR.
+   */
+  async deClaves(claves) {
+    if (claves.length === 0) return [];
+    const select = {
+      id: true,
+      tipo: true,
+      serie: true,
+      numero: true,
+      origenClave: true,
+      fechaEmision: true,
+      clienteNombre: true,
+      clienteTipoDoc: true,
+      clienteNumDoc: true,
+      moneda: true,
+      totalCents: true,
+      valorCents: true,
+      igvCents: true,
+      monedaOriginal: true,
+      importeOriginalCents: true,
+      items: true,
+      estado: true,
+      codigoSunat: true,
+      mensaje: true,
+      intentos: true,
+      enviadoEn: true,
+      correo: true,
+      correoEnviadoEn: true,
+      cdrZip: false,
+    };
+    const boletas = await prisma.comprobante.findMany({
+      where: { tipo: '03', OR: claves.map((c) => ({ origenClave: { startsWith: c } })) },
+      select,
+      orderBy: { creadoEn: 'asc' },
+    });
+    // `startsWith` también casaría `PAGO:abc` con `PAGO:abcd`: se filtra exacto.
+    const suyas = boletas.filter((b) => claves.includes(b.origenClave.split('|')[0]));
+    const notas = suyas.length
+      ? await prisma.comprobante.findMany({
+          where: { tipo: '07', origenClave: { in: suyas.map((b) => `ANULA:${b.serie}-${b.numero}`) } },
+          select,
+          orderBy: { creadoEn: 'asc' },
+        })
+      : [];
+    return [...suyas, ...notas].sort((a, b) => a.fechaEmision - b.fechaEmision);
+  },
+
   buscarPorId(id) {
     return prisma.comprobante.findUnique({ where: { id } });
   },

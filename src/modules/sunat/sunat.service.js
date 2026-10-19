@@ -424,6 +424,17 @@ const consultas = {
 
   listar: () => sunatRepository.listar(),
 
+  /**
+   * Las boletas y notas de una venta, para su ficha en Accesos, con el correo
+   * al que se mandan. `canal`: `codigo` o `pago` (Yape, pasarela…).
+   */
+  async deVenta(canal, id) {
+    const claves = await sunatRepository.clavesDeVenta(canal, id);
+    const comprobantes = await sunatRepository.deClaves(claves);
+    const para = claves.length ? await sunatRepository.destinatario(claves[0]) : null;
+    return { comprobantes, correoDestinatario: para?.email ?? null };
+  },
+
   /** El XML firmado o la CDR, para el panel. */
   async archivo(id, cual) {
     const fila = await sunatRepository.buscarPorId(id);

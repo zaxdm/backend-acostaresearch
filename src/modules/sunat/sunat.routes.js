@@ -56,6 +56,13 @@ router.get(
 const soloAdmin = authorize(ROLES.ADMIN);
 
 router.get(
+  '/de-venta',
+  soloAdmin,
+  validate({ query: z.object({ canal: z.enum(['codigo', 'pago']), id: z.string().uuid() }) }),
+  asyncHandler(async (req, res) => ok(res, await sunatService.deVenta(req.query.canal, req.query.id))),
+);
+
+router.get(
   '/comprobantes',
   soloAdmin,
   asyncHandler(async (_req, res) => ok(res, { comprobantes: await sunatService.listar() })),

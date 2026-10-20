@@ -1534,6 +1534,11 @@ model Tutorial {
   /// Vacío = en todos. La lista de códigos, en `shared/utils/productosDeAyuda.js`.
   productos String @default("") @db.VarChar(120)
 
+  /// La pestaña del video curso en la que sale (21-oct): «producto» (la de
+  /// cada producto), «instalacion» o «herramientas». Los mismos códigos que el
+  /// `grupo` de `Guia`; lista cerrada en `tutorial.schema.js`.
+  apartado String @default("producto") @db.VarChar(20)
+
   /// Apagado se queda fuera de la página pública pero no se pierde. Sirve para
   /// retirar un video que quedó viejo —la interfaz de Claude cambia— mientras
   /// se regraba, en vez de borrarlo y volver a escribirlo todo.
@@ -1563,8 +1568,10 @@ model Guia {
   /// A qué productos les sirve, con comas. Vacío = en todos. Como en `Tutorial`.
   productos String @default("") @db.VarChar(120)
 
-  /// El bloque en el que sale: «instalacion» o «herramientas» (20-oct). Lista
-  /// cerrada en `guia.schema.js`; texto y no enum para añadir uno sin migrar.
+  /// El bloque en el que sale: «instalacion» o «herramientas» (20-oct), o
+  /// «producto» (21-oct), que en el video curso va en la pestaña de cada
+  /// producto. Lista cerrada en `guia.schema.js`; texto y no enum para añadir
+  /// uno sin migrar.
   grupo String @default("instalacion") @db.VarChar(20)
 
   /// Apagada se queda fuera de la página pública pero no se pierde.

@@ -67,3 +67,13 @@ test('lo comprado se junta sin repetir, y sin compras queda vacío', () => {
   assert.deepEqual(deLoComprado({ palabras: true, documentos: true }), ['humanizador', 'edicion']);
   assert.deepEqual(deLoComprado({}), []);
 });
+
+test('un video va en la pestaña de su producto, de instalación o de herramientas (21-oct)', () => {
+  const base = { orden: 1, titulo: 'Crear tu cuenta de Claude' };
+  assert.equal(tutorialBodySchema.parse(base).apartado, 'producto');
+  assert.equal(tutorialBodySchema.parse({ ...base, apartado: 'instalacion' }).apartado, 'instalacion');
+  assert.equal(tutorialBodySchema.parse({ ...base, apartado: 'herramientas' }).apartado, 'herramientas');
+  assert.equal(tutorialBodySchema.safeParse({ ...base, apartado: 'otra' }).success, false);
+  // Al editar sin tocarlo, no se cambia: el parcial no pone el de por defecto.
+  assert.equal(tutorialPatchSchema.parse({ titulo: 'Otro' }).apartado, undefined);
+});

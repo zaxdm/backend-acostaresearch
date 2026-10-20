@@ -34,3 +34,7 @@ test('el grupo de una guía es de instalación o de herramientas, y por defecto 
   // Al editar sin tocar el grupo, no se cambia: el parcial no pone el de por defecto.
   assert.equal(guiaPatchSchema.parse({ titulo: 'Otra' }).grupo, undefined);
 });
+
+test('una guía puede ser del producto: sale en la pestaña de su producto (21-oct)', () => {
+  assert.equal(guiaBodySchema.parse({ titulo: 'Skills para Tesis', grupo: 'producto' }).grupo, 'producto');
+});

@@ -3,6 +3,7 @@
 const { z } = require('zod');
 
 const { productosSchema } = require('../../shared/utils/productosDeAyuda');
+const { GRUPOS_DE_GUIA } = require('../guias/guia.schema');
 
 /**
  * El identificador de un video de YouTube, venga como venga el enlace.
@@ -56,6 +57,14 @@ const tutorialBodySchema = z.object({
     }),
   /** A qué productos les sirve. Lista vacía = a todos. */
   productos: productosSchema.optional().default(''),
+  /**
+   * La pestaña del video curso: la de su producto, «Instalación» o
+   * «Herramientas». Los mismos códigos que el grupo de las guías (21-oct).
+   */
+  apartado: z
+    .enum(GRUPOS_DE_GUIA, { message: 'Elige si es del producto, de instalación o de herramientas.' })
+    .optional()
+    .default('producto'),
   active: z.boolean().optional().default(true),
 });
 

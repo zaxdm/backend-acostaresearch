@@ -17,7 +17,7 @@ const RUTAS = Object.freeze([
   { ruta: '/planes', para: 'precios, compra y canje del código de activación' },
   { ruta: '/preguntas', para: 'las preguntas frecuentes' },
   { ruta: '/quien-soy', para: 'quién es Benicio Acosta' },
-  { ruta: '/tutoriales', para: 'los videos para conectar y usar el conector' },
+  { ruta: '/perfil/ayuda', para: 'el video curso: los videos para conectar y usar el conector (con sesión)' },
   { ruta: '/perfil', para: 'el perfil del comprador: su URL del conector y su licencia' },
   { ruta: '/auth/registro', para: 'crear una cuenta' },
   { ruta: '/auth/login', para: 'iniciar sesión' },

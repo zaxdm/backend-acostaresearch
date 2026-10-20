@@ -104,7 +104,7 @@ La licencia es individual: compartir la URL del conector puede hacer que se desa
 - «Mi asesor no me lo va a aceptar»: lo que se rechaza es un texto vago, sin sustento o con citas inventadas. Aquí se lleva un capítulo con la estructura que pide la universidad (matriz de consistencia, operacionalización, validación por jueces), en la norma que exigen, repasado antes de entregar, y con cada decisión metodológica tomada por el propio tesista.
 
 ## Para quien ya compró
-- Conectar el conector y el primer capítulo: videos en /tutoriales.
+- Conectar el conector y el primer capítulo: el video curso en /perfil/ayuda (con sesión iniciada).
 - Su URL del conector y su licencia: en /perfil (con sesión iniciada).
 - Analizar sus datos con R: se lo pide a Claude en la conversación con su conector. Claude le pregunta lo que necesita, corre el análisis y se lo explica; el tesista solo sube su Excel o CSV desde el enlace que le da Claude, sin instalar nada ni escribir código.
 - Pagos que no se activan, código que no llega, licencia desactivada o cualquier problema con la cuenta: por WhatsApp, donde lo atiende una persona.

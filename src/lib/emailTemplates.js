@@ -516,7 +516,8 @@ const VIDEO_DE_INICIO = 'https://youtu.be/7L3FihV7seI';
 function licenseReady({ firstName, planName, connectorUrl, expiresAt, via }) {
   const panel = `${appUrl()}/perfil`;
   const guia = guiaUrl();
-  const videos = `${appUrl()}/tutoriales`;
+  // /tutoriales se retiró el 20-oct; los correos ya enviados redirigen aquí.
+  const videos = `${appUrl()}/perfil/ayuda`;
   const vence = fecha(expiresAt);
   const vigencia = vence ? `Lo tienes hasta el ${vence}.` : 'No caduca.';
   const confirmacion = confirmacionDePago(via, planName);

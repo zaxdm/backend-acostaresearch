@@ -237,6 +237,56 @@ test('HUMANIZAR_MODELO cambia el modelo solo de este servicio', () => {
   }
 });
 
+test('lo que falla dos veces solo por algo leve se entrega reescrito, no el original', async () => {
+  const original = PARRAFO;
+  const conBisagra =
+    'El rendimiento cambió con la estrategia: el grupo experimental rindió más que antes. ' +
+    'Entre el pretest y el postest hubo diferencias en las tres dimensiones, como ya habían ' +
+    'anticipado Pérez y Gómez (2020) al estudiar el aprendizaje activo en el aula.';
+  const sistemas = [];
+  const generar = async ({ sistema, mensajes }) => {
+    sistemas.push(sistema);
+    const entrada = JSON.parse(mensajes[0].texto);
+    return { texto: JSON.stringify(Object.fromEntries(Object.keys(entrada).map((k) => [k, conBisagra]))) };
+  };
+
+  const { cambios, malos } = await motor.prepararParrafos({
+    parrafos: [{ clave: '1', id: 1, texto: original, palabras: 50 }],
+    servicio: 'HUMANIZAR',
+    generar,
+    aLaVez: 1,
+  });
+
+  assert.equal(malos.length, 0);
+  assert.equal(cambios['1'].texto, conBisagra);
+  assert.match(sistemas[1], /ATENCIÓN: este párrafo ya se pidió/, 'el reintento avisa de qué quitar');
+});
+
+test('lo grave (una cifra cambiada) sigue dejando el original', async () => {
+  const conOtroAno = PARRAFO.replace('2020', '2021').replace('mejoró', 'subió').replace('mostraron', 'dieron');
+  // El segundo párrafo sale bien: con todos fallidos el trabajo entero se cae.
+  const generar = async ({ mensajes }) => {
+    const entrada = JSON.parse(mensajes[0].texto);
+    const salida = Object.fromEntries(
+      Object.keys(entrada).map((k) => [k, k === '1' ? conOtroAno : 'Las encuestas se aplicaron en mayo.']),
+    );
+    return { texto: JSON.stringify(salida) };
+  };
+
+  const { cambios, malos } = await motor.prepararParrafos({
+    parrafos: [
+      { clave: '1', id: 1, texto: PARRAFO, palabras: 50 },
+      { clave: '2', id: 2, texto: 'En mayo se aplicaron las encuestas.', palabras: 6 },
+    ],
+    servicio: 'HUMANIZAR',
+    generar,
+    aLaVez: 1,
+  });
+
+  assert.equal(malos.length, 1);
+  assert.equal(cambios['1'], undefined);
+});
+
 // ── Lo que cuesta ──────────────────────────────────────────────────────────
 
 test('los tokens de todas las llamadas se suman para medir el gasto', async () => {

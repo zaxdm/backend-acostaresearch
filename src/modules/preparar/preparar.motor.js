@@ -244,6 +244,13 @@ function citaPerdida(original, nuevo) {
 }
 
 /**
+ * Los rechazos de humanizar que no estropean nada: un molde, una palabra de la
+ * lista, una raya o un párrafo casi igual. Se reintentan, pero si el reintento
+ * tampoco sale limpio se entrega la reescritura. Ver `prepararParrafos`.
+ */
+const esLeve = (motivo) => /^el texto nuevo metió|^el modelo lo devolvió casi igual/.test(String(motivo));
+
+/**
  * Lo propio de humanizar: null si el texto nuevo sirve, o por qué no.
  *
  * Son las mismas cuentas que el conector le enseña a Claude como avisos (ver
@@ -540,7 +547,10 @@ async function pedirTanda(parrafos, opciones, generar) {
   for (const parrafo of parrafos) {
     const nuevo = devuelto?.[String(claveDe(parrafo))];
     const motivo = comprobar(parrafo.texto, nuevo, opciones, parrafo.citas);
-    if (motivo) malos.push({ id: claveDe(parrafo), motivo });
+    // Humanizando, un rechazo leve guarda lo que volvió: si el reintento
+    // tampoco sale limpio, esto es mejor que el original. Ver `esLeve`.
+    const candidato = motivo && opciones?.servicio === 'HUMANIZAR' && esLeve(motivo) ? String(nuevo).trim() : undefined;
+    if (motivo) malos.push({ id: claveDe(parrafo), motivo, ...(candidato ? { candidato } : {}) });
     else buenos[claveDe(parrafo)] = String(nuevo).trim();
   }
 
@@ -789,7 +799,8 @@ async function prepararParrafos({
     porReintentar.map(({ id }) => async () => {
       const parrafo = porClave.get(String(id));
       try {
-        return await pedirTanda([parrafo], opciones, pedir);
+        // Humanizando, el reintento lleva el aviso de qué no volver a meter.
+        return await pedirTanda([parrafo], { ...opciones, insistir: servicio === 'HUMANIZAR' }, pedir);
       } catch (error) {
         return { buenos: {}, malos: [{ id, motivo: error.message }] };
       }
@@ -799,6 +810,19 @@ async function prepararParrafos({
 
   for (const vuelta of segundaVuelta) Object.assign(buenos, vuelta.buenos);
   const malos = [...cortados, ...segundaVuelta.flatMap((vuelta) => vuelta.malos)];
+
+  // Humanizando, lo que falló dos veces solo por algo leve se entrega
+  // reescrito: el 20-oct-2026 el párrafo más cargado de IA del documento de
+  // prueba salió IGUAL que el original porque su reescritura traía unos dos
+  // puntos. Las cifras, las citas o el largo no son leves y siguen dejando el
+  // original. Se queda la última versión, la del reintento.
+  if (servicio === 'HUMANIZAR') {
+    for (let i = malos.length - 1; i >= 0; i -= 1) {
+      if (!malos[i].candidato) continue;
+      buenos[malos[i].id] = malos[i].candidato;
+      malos.splice(i, 1);
+    }
+  }
 
   // Un corte a mitad no se entrega. Con la mitad del manuscrito corregida y la
   // otra mitad no, el cliente no sabe qué revisar y encima habría gastado un
@@ -861,6 +885,7 @@ module.exports = {
   enParalelo,
   comprobar,
   comprobarHumanizado,
+  esLeve,
   frasePerdida,
   sigueSinTraducir,
   cifrasDe,

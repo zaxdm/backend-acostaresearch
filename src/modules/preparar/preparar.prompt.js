@@ -319,6 +319,18 @@ ${FORMATO}
 `.trim();
 
 /**
+ * El aviso del reintento de humanizar: el párrafo ya volvió una vez con algo
+ * que delata (un molde, una palabra de la lista, una raya) o casi igual.
+ */
+const INSISTIR_HUMANIZAR = `
+ATENCIÓN: este párrafo ya se pidió y volvió con algo que delata a una IA o casi
+igual al original. Reescríbelo de nuevo desde la idea, con otra estructura, y
+revisa antes de devolverlo que NO lleve: dos puntos en medio de la oración,
+«no solo… sino», «más allá de», rayas (—) ni ninguna palabra de la lista de
+vocabulario de modelo.
+`.trim();
+
+/**
  * Lo que se añade cuando un párrafo volvió sin traducir o traducido a medias.
  *
  * Va aparte porque en esa vuelta el modelo solo ve esos párrafos, y la causa
@@ -335,7 +347,7 @@ de idioma, también los títulos y lo que va entre corchetes.
 /** La instrucción que toca, según el servicio. */
 function sistemaDe({ servicio, idioma, insistir = false }) {
   if (servicio === 'EDICION') return EDICION;
-  if (servicio === 'HUMANIZAR') return HUMANIZAR;
+  if (servicio === 'HUMANIZAR') return insistir ? `${HUMANIZAR}\n\n${INSISTIR_HUMANIZAR}` : HUMANIZAR;
   if (servicio === 'TRADUCCION') {
     return insistir ? `${traduccion(idioma)}\n\n${insistencia(idioma)}` : traduccion(idioma);
   }

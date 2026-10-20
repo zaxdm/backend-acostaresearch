@@ -22,3 +22,15 @@ test('la descarga se llama por el título, sin tildes ni espacios', () => {
   assert.equal(nombreDeDescarga('  ¿Zotero?  '), 'zotero.pdf');
   assert.equal(nombreDeDescarga('¡¡!!'), 'guia.pdf');
 });
+
+const { guiaBodySchema, guiaPatchSchema } = require('../src/modules/guias/guia.schema');
+
+test('el grupo de una guía es de instalación o de herramientas, y por defecto de instalación', () => {
+  const base = { titulo: 'Guía de Zotero' };
+  assert.equal(guiaBodySchema.parse(base).grupo, 'instalacion');
+  assert.equal(guiaBodySchema.parse({ ...base, grupo: 'herramientas' }).grupo, 'herramientas');
+  assert.equal(guiaBodySchema.safeParse({ ...base, grupo: 'Herramientas ' }).success, false);
+  assert.equal(guiaBodySchema.safeParse({ ...base, grupo: 'otra' }).success, false);
+  // Al editar sin tocar el grupo, no se cambia: el parcial no pone el de por defecto.
+  assert.equal(guiaPatchSchema.parse({ titulo: 'Otra' }).grupo, undefined);
+});

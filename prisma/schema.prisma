@@ -1563,6 +1563,10 @@ model Guia {
   /// A qué productos les sirve, con comas. Vacío = en todos. Como en `Tutorial`.
   productos String @default("") @db.VarChar(120)
 
+  /// El bloque en el que sale: «instalacion» o «herramientas» (20-oct). Lista
+  /// cerrada en `guia.schema.js`; texto y no enum para añadir uno sin migrar.
+  grupo String @default("instalacion") @db.VarChar(20)
+
   /// Apagada se queda fuera de la página pública pero no se pierde.
   active Boolean @default(true)
 

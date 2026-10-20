@@ -131,3 +131,37 @@ test('el orden de la carrera: Gemini, los de fuera con clave, el respaldo y OVH 
     'ovh:gpt-oss-120b',
   ]);
 });
+
+// ── Claude en Bedrock (20-oct-2026) ────────────────────────────────────────
+
+const RESPUESTA_ANTHROPIC = {
+  content: [{ type: 'text', text: '```json\n{"1":"listo"}\n```' }],
+  stop_reason: 'end_turn',
+  usage: { input_tokens: 120, output_tokens: 30 },
+};
+
+test('bedrock:anthropic.… va por la API de mensajes, con x-api-key y anthropic-version', async () => {
+  const { pedidos, fetchImpl } = espia(RESPUESTA_ANTHROPIC);
+
+  const { texto, uso } = await generarConRespaldo({
+    modelos: ['bedrock:anthropic.claude-sonnet-5'],
+    ...unaPregunta,
+    json: true,
+    fetchImpl,
+  });
+
+  assert.equal(pedidos[0].url, 'https://bedrock-mantle.us-west-2.api.aws/anthropic/v1/messages');
+  assert.equal(pedidos[0].headers['x-api-key'], 'clave-bedrock');
+  assert.equal(pedidos[0].headers['anthropic-version'], '2023-06-01');
+  assert.equal(pedidos[0].cuerpo.model, 'anthropic.claude-sonnet-5');
+  assert.equal(pedidos[0].cuerpo.system, 's');
+  assert.equal(texto, '{"1":"listo"}', 'sin el envoltorio ```json');
+  assert.equal(uso.promptTokenCount, 120);
+  assert.equal(uso.candidatesTokenCount, 30);
+});
+
+test('los demás modelos de Bedrock siguen por el camino compatible con OpenAI', async () => {
+  const { pedidos, fetchImpl } = espia(RESPUESTA_COMPATIBLE);
+  await generarConRespaldo({ modelos: ['bedrock:deepseek.v3.2'], ...unaPregunta, fetchImpl });
+  assert.ok(pedidos[0].url.endsWith('/v1/chat/completions'));
+});

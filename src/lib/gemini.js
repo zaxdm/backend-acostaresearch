@@ -295,16 +295,93 @@ async function generarEnCompatible({
   };
 }
 
+/** Los motivos de parada de Anthropic, con el nombre de Gemini. */
+const PARADA_ANTHROPIC = { end_turn: 'STOP', stop_sequence: 'STOP', max_tokens: 'MAX_TOKENS', refusal: 'SAFETY' };
+
+/**
+ * Claude en Bedrock (20-oct-2026). Bedrock lo lista con nuestra clave, pero por
+ * `/v1/chat/completions` contesta «does not support the '/v1/chat/completions'
+ * API»: Claude va por la API de mensajes de Anthropic, en el mismo servidor de
+ * Bedrock (`/anthropic/v1/messages`), con la clave en `x-api-key` y la cabecera
+ * `anthropic-version: 2023-06-01`. Así lo documenta AWS.
+ *
+ * Mismas entradas, misma salida y el mismo GeminiError que los demás. Esta API
+ * no tiene modo JSON: con `json` se le pide en las instrucciones (ya lo hace el
+ * prompt de quien llama) y se le quita el envoltorio ```json si lo pone.
+ */
+async function generarEnClaudeDeBedrock({
+  sistema,
+  mensajes,
+  modelo,
+  maxTokens = 900,
+  timeoutMs = 20_000,
+  json = false,
+  fetchImpl = fetch,
+}) {
+  const respuesta = await fetchImpl(`https://bedrock-mantle.${env.BEDROCK_REGION}.api.aws/anthropic/v1/messages`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'anthropic-version': '2023-06-01',
+      ...(env.BEDROCK_API_KEY ? { 'x-api-key': env.BEDROCK_API_KEY } : {}),
+    },
+    body: JSON.stringify({
+      model: modelo,
+      max_tokens: maxTokens,
+      system: sistema,
+      messages: mensajes.map((m) => ({ role: m.rol === 'asistente' ? 'assistant' : 'user', content: m.texto })),
+    }),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+
+  const cuerpo = await respuesta.json().catch(() => null);
+  if (!respuesta.ok) {
+    const mensaje = cuerpo?.error?.message ?? cuerpo?.message ?? `Claude en Bedrock respondió ${respuesta.status}`;
+    throw new GeminiError(mensaje, { status: respuesta.status, esperarMs: esperaPedida(cuerpo, mensaje) });
+  }
+
+  const finishReason = PARADA_ANTHROPIC[cuerpo?.stop_reason] ?? cuerpo?.stop_reason ?? 'desconocido';
+  let texto = (cuerpo?.content ?? [])
+    .filter((bloque) => bloque.type === 'text')
+    .map((bloque) => bloque.text)
+    .join('')
+    .trim();
+  if (json) texto = texto.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+  if (!texto) {
+    throw new GeminiError(`Claude en Bedrock no devolvió texto (${finishReason})`, {
+      bloqueado: finishReason === 'SAFETY',
+    });
+  }
+
+  const uso = cuerpo.usage;
+  return {
+    texto,
+    finishReason,
+    uso: uso
+      ? {
+          promptTokenCount: uso.input_tokens,
+          candidatesTokenCount: uso.output_tokens,
+          totalTokenCount: (uso.input_tokens ?? 0) + (uso.output_tokens ?? 0),
+        }
+      : null,
+  };
+}
+
 /**
  * Pide a quien toque: `<proveedor>:<modelo>` va a ese proveedor, lo demás a
  * Gemini. Un prefijo que no conocemos NO se parte: se le pasa entero a Gemini,
  * que dirá que ese modelo no existe, en vez de irse a un sitio equivocado.
+ * `bedrock:anthropic.…` va por la API de mensajes. Ver `generarEnClaudeDeBedrock`.
  */
 const generarCon = (modelo, opciones) => {
   const corte = modelo.indexOf(':');
   const prefijo = corte > 0 ? modelo.slice(0, corte) : null;
+  const resto = modelo.slice(corte + 1);
+  if (prefijo === 'bedrock' && resto.startsWith('anthropic.')) {
+    return generarEnClaudeDeBedrock({ ...opciones, modelo: resto });
+  }
   return prefijo && COMPATIBLES[prefijo]
-    ? generarEnCompatible({ ...opciones, proveedor: prefijo, modelo: modelo.slice(corte + 1) })
+    ? generarEnCompatible({ ...opciones, proveedor: prefijo, modelo: resto })
     : generar({ ...opciones, modelo });
 };
 
@@ -679,4 +756,4 @@ async function embeber(
 /** Vaciar lo recordado. Para las pruebas: cada una empieza sin memoria. */
 const olvidarVectores = () => memoria.clear();
 
-module.exports = { generar, generarEnCompatible, generarConRespaldo, modelosDeTexto, olvidarReposos, embeber, olvidarVectores, esperaPedida, esPicoPasajero, esCupoAgotado, GeminiError };
+module.exports = { generar, generarEnCompatible, generarEnClaudeDeBedrock, generarConRespaldo, modelosDeTexto, olvidarReposos, embeber, olvidarVectores, esperaPedida, esPicoPasajero, esCupoAgotado, GeminiError };

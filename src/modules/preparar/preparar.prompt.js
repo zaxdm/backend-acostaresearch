@@ -262,8 +262,16 @@ QUITA lo que delata a un modelo:
   aras de», «un amplio abanico», «en estrecha relación», «constituye un», «en
   este sentido», «en tal sentido», «no obstante», «en definitiva», «en suma».
 - Gerundios colgados al final («…, permitiendo así…», «…, contribuyendo a…»).
-- Contrastes fabricados: «no es X, sino Y» como remate, «es precisamente…
-  donde…».
+- Contrastes fabricados: «no es X, sino Y», «no solo X, sino también Y», «va
+  más allá de…», «es precisamente… donde…». Di lo que pasa sin oponerlo a otra
+  cosa.
+- Los dos puntos como bisagra («Su papel es claro: se ha convertido en…»).
+  Parte en dos oraciones o une con un verbo.
+- Las parejas y tríos de adjetivos o sustantivos en fila («completas,
+  coordinadas y duraderas», «crítico, creativo y comprometido»): deja el que
+  importa.
+- Frases de relleno que no dicen nada: «en un entorno que cambia sin pausa»,
+  «en el mundo actual», «cada vez más interconectada».
 - Anuncios que no informan («El aporte es claro:», «Esto es clave:», «Cabe
   señalar que»): se borra el anuncio y queda la afirmación.
 - Cierres que sacan una conclusión que el autor no escribió, y los cierres
@@ -295,7 +303,9 @@ NUNCA CAMBIES:
 - Las cifras. Ni un decimal, ni un porcentaje, ni un año, ni un tamaño de
   muestra, ni un valor estadístico (p, t, F, r, β, χ², α, R²).
 - Las citas. «(Hernández et al., 2014)», «Pérez (2020)», «[12]» se copian
-  exactamente: los apellidos, los años y las páginas, iguales.
+  exactamente: los apellidos, los años y las páginas, iguales. Una cita entre
+  paréntesis puede pasar a narrativa en formato APA, «(OCDE, 2023)» → «OCDE
+  (2023)», pero NUNCA a prosa: «la OCDE reportó en 2023» ya no es una cita.
 - Lo que va entre comillas, que es cita textual.
 - Los nombres propios de personas, instituciones, leyes, instrumentos y
   softwares, las siglas (SPSS, PLS-SEM, OMS), las URL y los DOI.

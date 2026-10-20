@@ -189,6 +189,54 @@ test('un año de cita cambiado se rechaza igual que en los otros servicios', () 
   assert.match(motor.comprobar(PARRAFO, nuevo, { servicio: 'HUMANIZAR' }), /cifras/);
 });
 
+// ── Lo que salió en la primera prueba con Turnitin (20-oct-2026) ───────────
+
+const CEPAL =
+  'Según la Comisión Económica para América Latina y el Caribe (CEPAL, 2022), solo el 38 % de los ' +
+  'estudiantes universitarios de la región cuenta con competencias digitales avanzadas. Esta brecha ' +
+  'limita el acceso a oportunidades laborales y profundiza las desigualdades sociales de la región.';
+
+test('una cita que pasa a prosa («la CEPAL indicó en 2022») se rechaza', () => {
+  const nuevo =
+    'En América Latina el escenario es diferente. La CEPAL indicó en 2022 que solo el 38 % de los ' +
+    'universitarios posee competencias digitales avanzadas, y eso reduce sus posibilidades de empleo ' +
+    'y aumenta las desigualdades sociales de la región.';
+  assert.match(motor.comprobarHumanizado(CEPAL, nuevo), /«\(CEPAL, 2022\)» dejó de ser una cita/);
+});
+
+test('pasar la cita de parentética a narrativa APA sí vale', () => {
+  const nuevo =
+    'En América Latina el escenario es diferente. Para la CEPAL (2022), solo el 38 % de los ' +
+    'universitarios posee competencias digitales avanzadas, y eso reduce sus posibilidades de empleo ' +
+    'y aumenta las desigualdades sociales de la región.';
+  assert.equal(motor.comprobarHumanizado(CEPAL, nuevo), null);
+});
+
+test('«no solo…, sino…» y los dos puntos como bisagra nuevos se rechazan', () => {
+  const conNoSolo =
+    'En América Latina el escenario es diferente (CEPAL, 2022). Solo el 38 % de los universitarios ' +
+    'posee competencias digitales avanzadas. Esta diferencia no solo reduce sus posibilidades de ' +
+    'empleo, sino que aumenta las desigualdades sociales de la región.';
+  assert.match(motor.comprobarHumanizado(CEPAL, conNoSolo), /no solo/);
+
+  const conBisagra =
+    'En América Latina el escenario cambia: solo el 38 % de los universitarios posee competencias ' +
+    'digitales avanzadas (CEPAL, 2022), lo que reduce sus posibilidades de empleo y aumenta las ' +
+    'desigualdades sociales de toda la región.';
+  assert.match(motor.comprobarHumanizado(CEPAL, conBisagra), /dos puntos/);
+});
+
+test('HUMANIZAR_MODELO cambia el modelo solo de este servicio', () => {
+  const antes = env.HUMANIZAR_MODELO;
+  env.HUMANIZAR_MODELO = 'bedrock:otro-modelo';
+  try {
+    assert.equal(motor.modelos('HUMANIZAR')[0], 'bedrock:otro-modelo');
+    assert.equal(motor.modelos('TRADUCCION')[0], env.PREPARAR_MODELO);
+  } finally {
+    env.HUMANIZAR_MODELO = antes;
+  }
+});
+
 // ── Lo que cuesta ──────────────────────────────────────────────────────────
 
 test('los tokens de todas las llamadas se suman para medir el gasto', async () => {

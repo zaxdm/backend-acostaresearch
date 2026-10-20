@@ -222,6 +222,10 @@ const schema = z.object({
   // que se guardan lo que se les manda, y lo que sale de aquí es la tesis
   // inédita de quien pagó. Solo se llega a ellos cuando Google no contesta.
   PREPARAR_MODELO_RESPALDO: vacioComoAusente(z.string()).default('gemini-3.5-flash'),
+  // El modelo de «Humanizar», si tiene que ser otro que el de la edición y la
+  // traducción (20-oct-2026). Vacío = `PREPARAR_MODELO`. Mismo formato con
+  // prefijo: `bedrock:<modelo>`. Los respaldos son los de arriba.
+  HUMANIZAR_MODELO: vacioComoAusente(z.string()),
   // Cuánto se le deja pensar aquí. `auto` = no se le dice nada y decide él.
   //
   // Y `auto` por defecto porque `minimal` —lo que mandaba el código para todo

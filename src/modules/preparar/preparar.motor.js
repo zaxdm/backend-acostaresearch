@@ -32,6 +32,7 @@ const { palabrasDe } = require('./preparar.cuerpo');
 const tipografia = require('./preparar.tipografia');
 const campos = require('./preparar.campos');
 const controles = require('../projects/project.humanizado-controles');
+const { citasEnTexto, huellaDe } = require('./preparar.comparar');
 
 /**
  * Cómo se llama un párrafo ante el modelo.
@@ -59,11 +60,18 @@ const claveDe = (parrafo) => parrafo.clave ?? parrafo.id;
  * Gemini, y a ellos solo se llega cuando Google ya no contesta a nada.
  *
  * El prefijo lo entiende `gemini.generarCon`.
+ *
+ * «Humanizar» puede ir con otro modelo, `HUMANIZAR_MODELO` (20-oct-2026): con
+ * Nemotron la primera prueba dio 84 % de IA en Turnitin, y el que lo haga bien
+ * no tiene por qué ser el que traduce bien.
  */
-const modelos = () =>
+const modelos = (servicio = null) =>
   [
     ...new Set(
-      [env.PREPARAR_MODELO, ...String(env.PREPARAR_MODELO_RESPALDO ?? '').split(',')]
+      [
+        (servicio === 'HUMANIZAR' && env.HUMANIZAR_MODELO) || env.PREPARAR_MODELO,
+        ...String(env.PREPARAR_MODELO_RESPALDO ?? '').split(','),
+      ]
         .map((modelo) => String(modelo).trim())
         .filter(Boolean),
     ),
@@ -198,6 +206,44 @@ function frasePerdida(original, nuevo) {
 const PROSA_MINIMA = 40;
 
 /**
+ * Moldes de modelo que la reescritura no puede meter si el original no los
+ * traía. Salieron de la primera prueba con Nemotron (20-oct-2026, 84 % de IA en
+ * Turnitin): «Esta diferencia no solo reduce…, sino que aumenta…», «Su papel va
+ * más allá de una simple herramienta: se ha convertido en…». Los dos puntos
+ * cuentan solo como bisagra en medio de la oración (seguidos de minúscula).
+ */
+const MOLDES = [
+  { nombre: '«no solo…, sino…»', patron: /\bno solo\b[^.;]*\bsino\b/giu },
+  { nombre: '«más allá de»', patron: /\bmás allá de\b/giu },
+  { nombre: 'dos puntos como bisagra', patron: /:\s+\p{Ll}/gu },
+];
+
+const vecesQue = (texto, patron) => (String(texto).match(patron) ?? []).length;
+
+/**
+ * La primera cita del original que dejó de ser una cita, o null.
+ *
+ * El 20-oct-2026 «(OCDE, 2023)» volvió como «La OCDE reportó en 2023»: el año y
+ * la sigla seguían, así que las cifras cuadraban, pero ya no es una cita APA.
+ * Pasar de parentética a narrativa («OCDE (2023)») sí vale. Cuenta como
+ * conservada si en el texto nuevo hay una cita con su apellido y, en alguna
+ * cita, cada uno de sus años: así partir «(Pérez, 2020; Gómez, 2021)» en dos
+ * narrativas tampoco se rechaza.
+ */
+function citaPerdida(original, nuevo) {
+  const despues = citasEnTexto(nuevo).map(huellaDe);
+  for (const cita of citasEnTexto(original)) {
+    const { anos, apellido } = huellaDe(cita);
+    if (anos.length === 0 || !apellido) continue;
+    const sigue =
+      despues.some((huella) => huella.apellido === apellido) &&
+      anos.every((ano) => despues.some((huella) => huella.anos.includes(ano)));
+    if (!sigue) return cita;
+  }
+  return null;
+}
+
+/**
  * Lo propio de humanizar: null si el texto nuevo sirve, o por qué no.
  *
  * Son las mismas cuentas que el conector le enseña a Claude como avisos (ver
@@ -225,6 +271,12 @@ function comprobarHumanizado(original, nuevo) {
 
   const rayas = (texto) => (String(texto).match(/—/g) ?? []).length;
   if (rayas(nuevo) > rayas(original)) return 'el texto nuevo metió rayas (—)';
+
+  const molde = MOLDES.find(({ patron }) => vecesQue(nuevo, patron) > vecesQue(original, patron));
+  if (molde) return `el texto nuevo metió ${molde.nombre}, que delata a una IA`;
+
+  const cita = citaPerdida(original, nuevo);
+  if (cita) return `la cita «${cita}» dejó de ser una cita`;
 
   return null;
 }
@@ -463,7 +515,7 @@ async function pedirTanda(parrafos, opciones, generar) {
   const { texto } = await generar({
     sistema: prompt.sistemaDe(opciones),
     mensajes: [{ rol: 'usuario', texto: JSON.stringify(entrada) }],
-    modelos: modelos(),
+    modelos: modelos(opciones?.servicio),
     maxTokens: tokensPara(palabras),
     timeoutMs: TIMEOUT_MS,
     // Su propia clave y su propio nivel de pensamiento, no los del chat. Ver

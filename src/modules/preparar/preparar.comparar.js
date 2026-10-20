@@ -170,4 +170,4 @@ function comparar({ entrada, salida, servicio, idioma = null }) {
   };
 }
 
-module.exports = { comparar, citasEnTexto, seConserva, siglasDe };
+module.exports = { comparar, citasEnTexto, huellaDe, seConserva, siglasDe };

@@ -77,6 +77,11 @@ const prepararRepository = {
     return user?.email ?? null;
   },
 
+  async rolDe(userId, tx = prisma) {
+    const user = await tx.user.findUnique({ where: { id: userId }, select: { role: true } });
+    return user?.role ?? null;
+  },
+
   usadosEn(docPackId, desde, hasta, tx = prisma) {
     return tx.preparacion.count({
       where: {

@@ -11,8 +11,11 @@ const { IDIOMAS } = require('./preparar.prompt');
  * admitirse, así que nadie puede encargarlo ni por la API. Sigue en el enum de
  * la base porque hay trabajos entregados con ese servicio y su historial tiene
  * que poder leerse.
+ *
+ * `HUMANIZAR` entró el 20-oct-2026 en prueba: el esquema lo admite, y quién
+ * puede encargarlo lo decide `preparar.service.puedeHumanizar`.
  */
-const SERVICIOS = ['EDICION', 'TRADUCCION'];
+const SERVICIOS = ['EDICION', 'TRADUCCION', 'HUMANIZAR'];
 
 /**
  * Qué servicio y, si toca, a qué idioma.
@@ -26,7 +29,7 @@ const SERVICIOS = ['EDICION', 'TRADUCCION'];
 const encargoSchema = z.object({
   servicio: z.enum(SERVICIOS, {
     errorMap: () => ({
-      message: 'Elige uno de los dos servicios: edición de inglés o traducción.',
+      message: 'Elige uno de los servicios: edición de inglés, traducción o humanizar.',
     }),
   }),
   idioma: z

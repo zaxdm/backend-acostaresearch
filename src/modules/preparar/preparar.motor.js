@@ -31,6 +31,7 @@ const prompt = require('./preparar.prompt');
 const { palabrasDe } = require('./preparar.cuerpo');
 const tipografia = require('./preparar.tipografia');
 const campos = require('./preparar.campos');
+const controles = require('../projects/project.humanizado-controles');
 
 /**
  * Cómo se llama un párrafo ante el modelo.
@@ -150,6 +151,7 @@ const cifrasDe = (texto) => String(texto).match(/\d+/g) ?? [];
  */
 function margenes({ servicio, idioma }) {
   if (servicio === 'EDICION') return { minimo: 0.6, maximo: 1.8 };
+  if (servicio === 'HUMANIZAR') return { minimo: 0.6, maximo: 1.6 };
   if (idioma === 'zh') return { minimo: 0.15, maximo: 1.2 };
   return { minimo: 0.45, maximo: 2.2 };
 }
@@ -189,6 +191,41 @@ function frasePerdida(original, nuevo) {
     const siguen = suyas.filter((palabra) => quedan.has(palabra)).length;
     if (siguen * 2 < suyas.length) return frase.trim();
   }
+  return null;
+}
+
+/** Desde cuántas palabras un párrafo tiene que volver reescrito, no igual. */
+const PROSA_MINIMA = 40;
+
+/**
+ * Lo propio de humanizar: null si el texto nuevo sirve, o por qué no.
+ *
+ * Son las mismas cuentas que el conector le enseña a Claude como avisos (ver
+ * `project.humanizado-controles`), pero aquí rechazan, porque no hay nadie que
+ * las lea: un párrafo rechazado se vuelve a pedir solo y, si vuelve a fallar,
+ * se queda como estaba y se le dice al cliente por qué. Solo entran las que no
+ * dan falsos positivos: las oraciones que siguen idénticas, el vocabulario de
+ * modelo que el original NO traía y las rayas nuevas. La concordancia se queda
+ * en el prompt: su expresión también caza frases correctas.
+ */
+function comprobarHumanizado(original, nuevo) {
+  if (palabrasDe(original) >= PROSA_MINIMA) {
+    const { iguales, total } = controles.identicas(original, nuevo);
+    if (total > 0 && iguales * 2 > total) {
+      return `el modelo lo devolvió casi igual (${iguales} de ${total} oraciones idénticas)`;
+    }
+  }
+
+  const metidas = controles.VOCABULARIO.filter(
+    (palabra) => controles.cuantas(nuevo, palabra) > controles.cuantas(original, palabra),
+  );
+  if (metidas.length > 0) {
+    return `el texto nuevo metió ${metidas.map((p) => `«${p.replace('*', '…')}»`).join(', ')}, que delata a una IA`;
+  }
+
+  const rayas = (texto) => (String(texto).match(/—/g) ?? []).length;
+  if (rayas(nuevo) > rayas(original)) return 'el texto nuevo metió rayas (—)';
+
   return null;
 }
 
@@ -233,6 +270,14 @@ function comprobar(original, nuevo, opciones, citas = null) {
   if (opciones?.servicio === 'EDICION') {
     const perdida = frasePerdida(original, limpio);
     if (perdida) return `el modelo quitó una frase entera: «${perdida.slice(0, 60)}»`;
+  }
+
+  // `frasePerdida` no vale aquí: reescribir desde la idea cambia justo las
+  // palabras con las que cuenta. Lo que se pierde de verdad —cifras, citas,
+  // remisiones con su número— ya se mira arriba, y el largo, abajo.
+  if (opciones?.servicio === 'HUMANIZAR') {
+    const motivo = comprobarHumanizado(original, limpio);
+    if (motivo) return motivo;
   }
 
   const { minimo, maximo } = margenes(opciones);
@@ -628,7 +673,19 @@ async function prepararParrafos({
   // tres a la vez las otras dos están esperando para reintentar justo cuando
   // la primera descubre el muro.
   let cortado = null;
-  const pedir = conReintento(generar, reintento, () => cortado !== null);
+
+  // Los tokens de todas las llamadas, reintentos incluidos: es lo que se paga.
+  // Sirve para medir cuánto cuesta cada documento; un proveedor que no los
+  // devuelve suma cero.
+  const uso = { llamadas: 0, entrada: 0, salida: 0 };
+  const contado = async (peticion) => {
+    const respuesta = await generar(peticion);
+    uso.llamadas += 1;
+    uso.entrada += Number(respuesta?.uso?.promptTokenCount ?? 0);
+    uso.salida += Number(respuesta?.uso?.candidatesTokenCount ?? 0);
+    return respuesta;
+  };
+  const pedir = conReintento(contado, reintento, () => cortado !== null);
 
   const resultados = await enParalelo(
     tandas.map((tanda) => async () => {
@@ -744,13 +801,14 @@ async function prepararParrafos({
     }
   }
 
-  return { cambios, malos, tandas: tandas.length };
+  return { cambios, malos, tandas: tandas.length, uso };
 }
 
 module.exports = {
   tandasDe,
   enParalelo,
   comprobar,
+  comprobarHumanizado,
   frasePerdida,
   sigueSinTraducir,
   cifrasDe,

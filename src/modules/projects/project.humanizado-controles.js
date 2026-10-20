@@ -249,4 +249,4 @@ function avisosDeCapitulo(parrafos) {
   return avisos;
 }
 
-module.exports = { oraciones, identicas, avisosDelParrafo, avisosDeCapitulo, muletillas, VOCABULARIO, MULETILLAS };
+module.exports = { oraciones, identicas, cuantas, avisosDelParrafo, avisosDeCapitulo, muletillas, VOCABULARIO, MULETILLAS };

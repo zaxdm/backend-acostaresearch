@@ -2627,7 +2627,7 @@ model DocPack {
   @@map("doc_packs")
 }
 
-/// Los tres servicios de «Preparar documento».
+/// Los servicios de «Preparar documento».
 enum PreparacionServicio {
   EDICION // inglés académico, con control de cambios
   TRADUCCION // a español, inglés, portugués o chino
@@ -2636,6 +2636,9 @@ enum PreparacionServicio {
   /// entregados con él y su historial tiene que poder leerse. Quitarlo del
   /// enum dejaría esas filas sin poder cargarse.
   RESUMEN
+  /// Humanizador académico sobre el Word, en prueba desde el 20-oct-2026: solo
+  /// lo encargan los administradores y los de `PREPARAR_ILIMITADO_EMAILS`.
+  HUMANIZAR
 }
 
 enum PreparacionEstado {

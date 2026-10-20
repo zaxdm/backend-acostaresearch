@@ -9,6 +9,10 @@
  *   · EDICION    — corrige el inglés académico y lo devuelve CON CONTROL DE
  *                  CAMBIOS, para que él acepte o rechace cada corrección.
  *   · TRADUCCION — lo traduce a español, inglés, portugués o chino.
+ *   · HUMANIZAR  — le quita la redacción de modelo a un texto en español y lo
+ *                  devuelve limpio, sin marcas. EN PRUEBA desde el 20-oct-2026:
+ *                  solo para administradores y usuarios beta, sin cupo. Ver
+ *                  `puedeHumanizar`.
  *
  * Hubo un tercero, RESUMEN, que escribía el resumen, el abstract y las palabras
  * clave en un documento aparte. Se retiró el 22-sep-2026. Lo entregado con él
@@ -68,6 +72,7 @@ const { correosDe } = require('../pedidos/beta');
 const NOMBRES = Object.freeze({
   EDICION: 'Edición de inglés académico',
   TRADUCCION: 'Traducción',
+  HUMANIZAR: 'Humanizador académico',
 });
 
 /**
@@ -86,6 +91,10 @@ const SIN_TOCAR = Object.freeze({
     'No hemos podido traducir ni un párrafo, así que no te hemos descontado ningún documento de ' +
     'tu membresía. Suele pasar cuando el documento ya está en ese idioma, o cuando lleva control ' +
     'de cambios sin aceptar: acéptalo o recházalo en tu Word y vuelve a subirlo.',
+  HUMANIZAR:
+    'No hemos podido humanizar ni un párrafo, así que no se ha descontado nada. Suele pasar ' +
+    'cuando el texto no está en español, cuando son párrafos muy cortos o cuando el trabajo está ' +
+    'dentro de tablas o cuadros de texto, que este servicio no toca.',
 });
 
 /**
@@ -163,6 +172,25 @@ async function cupoDe(userId, ahora = new Date()) {
     motivo: membresia.porQueNo(pack, usados, ahora),
   };
 }
+
+/**
+ * ¿Puede encargar «Humanizar»? Mientras esté en prueba, los administradores y
+ * los de `PREPARAR_ILIMITADO_EMAILS`, y nadie más.
+ *
+ * Sin cupo: es una prueba nuestra, no algo vendido, así que no gasta de
+ * ninguna membresía aunque la tenga. El día que se venda, esto se quita y
+ * pasa por `cupoDe` como los otros dos.
+ */
+async function puedeHumanizar(userId) {
+  if (await esIlimitado(userId)) return true;
+  return (await repository.rolDe(userId)) === 'ADMIN';
+}
+
+const humanizarEnPrueba = () =>
+  new AppError('El humanizador está en prueba y todavía no se puede encargar.', {
+    statusCode: 403,
+    code: ERROR_CODES.FORBIDDEN,
+  });
 
 // ── Recoger el documento ───────────────────────────────────────────────────
 
@@ -274,8 +302,14 @@ function motivosDe({ parrafos, malos = [], intactos = new Map() }) {
 
 /** El .docx terminado, según el servicio. */
 async function producir({ preparacion, buffer, parrafos }) {
-  const { cambios: propuestos, malos } = await motor.prepararParrafos({
-    parrafos,
+  // Humanizando, los títulos no se mandan: no hay nada que humanizar en
+  // «2.1. Bases teóricas», y reescribirlos descolocaría el índice. Siguen en
+  // el documento igual que estaban.
+  const aMandar =
+    preparacion.servicio === 'HUMANIZAR' ? parrafos.filter((parrafo) => !parrafo.nivel) : parrafos;
+
+  const { cambios: propuestos, malos, uso } = await motor.prepararParrafos({
+    parrafos: aMandar,
     servicio: preparacion.servicio,
     idioma: preparacion.idioma,
     alAvanzar: (hechas, total) => marcarPaso(preparacion.id, 'EDITANDO', { hechas, total }),
@@ -288,6 +322,10 @@ async function producir({ preparacion, buffer, parrafos }) {
   // TRADUCCION: el texto nuevo entra en el párrafo conservando su formato, sin
   // marcas. Marcar una traducción entera como revisión no tiene sentido: no hay
   // nada que aceptar o rechazar palabra a palabra, el documento ES la traducción.
+  //
+  // HUMANIZAR: igual que la traducción, sin idioma de destino (las citas de
+  // Zotero no se tocan). Limpio a propósito: es lo que se sube a Turnitin, y un
+  // Word con cada párrafo como revisión habría que aceptarlo entero antes.
   const hecho =
     preparacion.servicio === 'EDICION'
       ? cambios.aplicar(buffer, propuestos)
@@ -313,6 +351,7 @@ async function producir({ preparacion, buffer, parrafos }) {
     tocados: hecho.tocados,
     intactos: hecho.intactos.size + malos.length,
     avisos,
+    uso,
   };
 }
 
@@ -395,6 +434,10 @@ function trabajar(preparacionId) {
           palabras: preparacion.palabras,
           tocados: hecho.tocados,
           intactos: hecho.intactos,
+          // Lo que costó: con esto se mide el gasto por documento.
+          llamadas: hecho.uso?.llamadas,
+          tokensEntrada: hecho.uso?.entrada,
+          tokensSalida: hecho.uso?.salida,
         },
         'Preparar documento: entregado',
       );
@@ -463,7 +506,14 @@ async function rescatar(userId, ahora = new Date()) {
 async function recibirEncargo({ userId, servicio, idioma, buffer, nombre }, ahora = new Date()) {
   if (!env.prepararEnabled) throw servicioNoDisponible();
 
-  const { pack, cupo, motivo } = await cupoDe(userId, ahora);
+  // Humanizar, en prueba: solo quien puede, y sin tocar el cupo. Ver
+  // `puedeHumanizar`.
+  const enPrueba = servicio === 'HUMANIZAR';
+  if (enPrueba && !(await puedeHumanizar(userId))) throw humanizarEnPrueba();
+
+  const { pack, cupo, motivo } = enPrueba
+    ? { pack: null, cupo: null, motivo: null }
+    : await cupoDe(userId, ahora);
   if (motivo) {
     throw new AppError(motivo, {
       statusCode: 402,
@@ -543,6 +593,8 @@ const prepararService = {
     return {
       disponible: env.prepararEnabled,
       ilimitado,
+      // La pestaña «Humanizar» solo sale a quien puede encargarlo.
+      humanizar: await puedeHumanizar(userId),
       membresia: pack
         ? {
             plan: pack.plan,
@@ -626,6 +678,7 @@ const prepararService = {
     const base = String(preparacion.nombre).replace(/\.docx$/i, '').slice(0, 120);
 
     if (preparacion.servicio === 'EDICION') return `${base} (inglés corregido).docx`;
+    if (preparacion.servicio === 'HUMANIZAR') return `${base} (humanizado).docx`;
     return `${base} (traducido al ${IDIOMAS[preparacion.idioma]?.nombre ?? 'idioma elegido'}).docx`;
   },
 
@@ -670,6 +723,7 @@ const prepararService = {
   },
 
   cupoDe,
+  puedeHumanizar,
   trabajar,
   rescatar,
 

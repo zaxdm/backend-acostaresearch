@@ -16,13 +16,14 @@
 const env = require('../../config/env');
 const logger = require('../../config/logger');
 const { sendMail } = require('../../lib/mailer');
-const { avisarAlAdmin } = require('../../lib/notify');
+const { avisarAlAdmin, avisarAlProgramador } = require('../../lib/notify');
 const { mesDeLima } = require('../ventas/ventas.datos');
 const { AppError, NotFoundError } = require('../../shared/errors/AppError');
 const { ERROR_CODES } = require('../../config/constants');
 const repo = require('./tributos.repository');
 const calc = require('./tributos.calculo');
 const correos = require('./tributos.correo');
+const cronograma = require('./tributos.cronograma');
 const crypto = require('node:crypto');
 
 /** Días antes del vencimiento en que llega el primer aviso. */
@@ -46,6 +47,16 @@ function nombreDelMes({ anio, mes }) {
 function numeroDeExtranjera(proveedor, documento) {
   const clave = `${String(proveedor).trim()}|${String(documento).trim()}`.toUpperCase();
   return crypto.createHash('sha256').update(clave).digest().readUInt32BE(0) % 99_999_999 || 1;
+}
+
+/**
+ * El vencimiento que vale para un mes: el escrito a mano en el panel y, si no
+ * hay, el del cronograma de SUNAT para el RUC.
+ */
+function vencimientoDe(periodo, fila) {
+  if (fila?.vencimiento) return { fecha: fila.vencimiento, origen: 'manual' };
+  const delCronograma = cronograma.vencimientoDelCronograma(periodo, env.SUNAT_RUC);
+  return delCronograma ? { fecha: delCronograma, origen: 'cronograma' } : { fecha: null, origen: null };
 }
 
 /** Un mes declarado no admite cambios que lo muevan. */
@@ -98,14 +109,18 @@ async function calcularHasta(hasta) {
 /** Lo que ve el panel de un mes. */
 function vista({ periodo, fila, calculo }, ahora = new Date()) {
   const actual = mesDeLima(ahora);
+  const vence = vencimientoDe(periodo, fila);
   return {
     anio: periodo.anio,
     mes: periodo.mes,
     nombre: nombreDelMes(periodo),
     enCurso: periodo.anio === actual.anio && periodo.mes === actual.mes,
     estado: fila?.estado ?? 'PENDIENTE',
-    vencimiento: diaIso(fila?.vencimiento),
-    diasParaVencer: fila?.vencimiento ? calc.diasHasta(fila.vencimiento, ahora) : null,
+    vencimiento: diaIso(vence.fecha),
+    /** `manual` (escrito en el panel), `cronograma` (el de SUNAT) o null. */
+    vencimientoOrigen: vence.origen,
+    vencimientoCronograma: diaIso(cronograma.vencimientoDelCronograma(periodo, env.SUNAT_RUC)),
+    diasParaVencer: vence.fecha ? calc.diasHasta(vence.fecha, ahora) : null,
     ajusteBaseCents: fila?.ajusteBaseCents ?? 0,
     ajusteNota: fila?.ajusteNota ?? null,
     saldoFavorInicialCents: fila?.saldoFavorInicialCents ?? null,
@@ -272,15 +287,36 @@ const tributosService = {
    *  - sin fecha de vencimiento: un aviso para que la pongan;
    *  - a 5 días o menos: el primer aviso con las cifras;
    *  - a 1 día o menos (o vencido): el último.
-   * Cada uno sale una vez; cambiar la fecha los vuelve a armar.
+   * Cada uno sale una vez; cambiar la fecha los vuelve a armar. La fecha es la
+   * escrita en el panel o, si no hay, la del cronograma de SUNAT.
+   *
+   * Además, en diciembre: si el cronograma no tiene el año siguiente, un aviso
+   * al programador para cargarlo (una vez; se marca en enero del año siguiente).
    */
   async pasadaDeAvisos(ahora = new Date()) {
     const actual = mesDeLima(ahora);
+    let enviados = 0;
+    if (actual.mes === 12 && cronograma.tieneElAnio(actual.anio, env.SUNAT_RUC) && !cronograma.tieneElAnio(actual.anio + 1, env.SUNAT_RUC)) {
+      const enero = { anio: actual.anio + 1, mes: 1 };
+      const fila = await repo.declaracion(enero);
+      if (!fila?.avisoSinFechaEn) {
+        avisarAlProgramador({
+          titulo: `Falta el cronograma SUNAT ${enero.anio}`,
+          mensaje:
+            `Carga en backend/src/modules/tributos/tributos.cronograma.js los vencimientos de ${enero.anio} ` +
+            'del dígito 0 (página «Cronograma de obligaciones mensuales» de SUNAT). Sin eso, los meses de ' +
+            `${enero.anio} salen sin fecha y sin avisos.`,
+          etiquetas: ['calendar'],
+        });
+        await repo.guardar(enero, { avisoSinFechaEn: new Date() });
+        enviados += 1;
+      }
+    }
+
     const hasta = calc.anterior(actual);
-    if (calc.antes(hasta, calc.MES_INICIAL)) return 0;
+    if (calc.antes(hasta, calc.MES_INICIAL)) return enviados;
 
     const todos = await calcularHasta(hasta);
-    let enviados = 0;
     for (const m of todos) {
       const estado = m.fila?.estado ?? 'PENDIENTE';
       if (estado !== 'PENDIENTE') continue;
@@ -288,16 +324,17 @@ const tributosService = {
       const fila = m.fila;
       let tipo = null;
       let marca = null;
-      if (!fila?.vencimiento) {
+      const vence = vencimientoDe(m.periodo, fila).fecha;
+      if (!vence) {
         if (!fila?.avisoSinFechaEn) [tipo, marca] = ['sinFecha', 'avisoSinFechaEn'];
       } else {
-        const dias = calc.diasHasta(fila.vencimiento, ahora);
-        if (dias <= 1 && !fila.avisoUltimoEn) [tipo, marca] = ['ultimo', 'avisoUltimoEn'];
-        else if (dias <= DIAS_AVISO_PREVIO && !fila.avisoPrevioEn) [tipo, marca] = ['previo', 'avisoPrevioEn'];
+        const dias = calc.diasHasta(vence, ahora);
+        if (dias <= 1 && !fila?.avisoUltimoEn) [tipo, marca] = ['ultimo', 'avisoUltimoEn'];
+        else if (dias <= DIAS_AVISO_PREVIO && !fila?.avisoPrevioEn) [tipo, marca] = ['previo', 'avisoPrevioEn'];
       }
       if (!tipo) continue;
 
-      const datos = { nombre, vencimiento: diaIso(fila?.vencimiento), calculo: m.calculo, tipo };
+      const datos = { nombre, vencimiento: diaIso(vence), calculo: m.calculo, tipo };
       avisarAlAdmin(correos.avisoMovil(datos));
       try {
         const para = env.ADMIN_NOTIFY_EMAIL ?? (await repo.correoDelAdministrador());

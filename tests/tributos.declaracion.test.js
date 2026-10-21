@@ -94,8 +94,11 @@ function conRepo({ comprobantes = {}, compras = {}, filas = [] }) {
     return fila;
   };
   const avisarOriginal = notify.avisarAlAdmin;
+  const programadorOriginal = notify.avisarAlProgramador;
   const enviarOriginal = mailer.sendMail;
   notify.avisarAlAdmin = (a) => avisos.push(a);
+  // Ninguna prueba manda un aviso de verdad (ya pasó: caso 11b de /programar).
+  notify.avisarAlProgramador = (a) => avisos.push({ ...a, programador: true });
   mailer.sendMail = async (m) => correos.push(m);
   // El servicio toma las funciones al cargarse: se carga de nuevo con las de prueba.
   delete require.cache[require.resolve('../src/modules/tributos/tributos.service')];
@@ -108,6 +111,7 @@ function conRepo({ comprobantes = {}, compras = {}, filas = [] }) {
     restaurar() {
       Object.assign(repo, originales);
       notify.avisarAlAdmin = avisarOriginal;
+      notify.avisarAlProgramador = programadorOriginal;
       mailer.sendMail = enviarOriginal;
       delete require.cache[require.resolve('../src/modules/tributos/tributos.service')];
     },
@@ -239,3 +243,86 @@ test('el IGV del 1662 se anota en un mes pendiente y no en uno declarado', async
     ctx.restaurar();
   }
 });
+
+// ── Cronograma de SUNAT (21-oct-2026) ──────────────────────────────────────
+
+const cronograma = require('../src/modules/tributos/tributos.cronograma');
+
+/** La configuración está congelada: se fija el RUC que recibe el cronograma. */
+function conRuc(ruc, fn) {
+  const { vencimientoDelCronograma, tieneElAnio } = cronograma;
+  cronograma.vencimientoDelCronograma = (periodo, _ruc, tabla) => vencimientoDelCronograma(periodo, ruc, tabla);
+  cronograma.tieneElAnio = (anio, _ruc, tabla) => tieneElAnio(anio, ruc, tabla);
+  return Promise.resolve()
+    .then(fn)
+    .finally(() => Object.assign(cronograma, { vencimientoDelCronograma, tieneElAnio }));
+}
+
+test('el cronograma da el vencimiento por dígito del RUC; sin dígito cargado, nada', () => {
+  assert.equal(cronograma.vencimientoDelCronograma({ anio: 2026, mes: 10 }, '10720995960').toISOString().slice(0, 10), '2026-11-16');
+  assert.equal(cronograma.vencimientoDelCronograma({ anio: 2026, mes: 12 }, '10720995960').toISOString().slice(0, 10), '2027-01-18');
+  assert.equal(cronograma.vencimientoDelCronograma({ anio: 2026, mes: 10 }, '10720995961'), null);
+  assert.equal(cronograma.vencimientoDelCronograma({ anio: 2027, mes: 1 }, '10720995960'), null);
+  // Las 12 del año, cada una en el mes siguiente a su periodo.
+  for (let mes = 1; mes <= 12; mes += 1) {
+    const vence = cronograma.vencimientoDelCronograma({ anio: 2026, mes }, '10720995960');
+    assert.equal(vence.getUTCMonth(), mes % 12, `periodo ${mes}`);
+  }
+});
+
+test('sin fecha escrita vale la del cronograma; la escrita a mano manda', () =>
+  conRuc('10720995960', async () => {
+    const ctx = conRepo({});
+    try {
+      const ahora = new Date('2026-11-05T15:00:00Z');
+      let oct = await ctx.servicio.detalle({ anio: 2026, mes: 10 }, ahora);
+      assert.equal(oct.vencimiento, '2026-11-16');
+      assert.equal(oct.vencimientoOrigen, 'cronograma');
+      assert.equal(oct.diasParaVencer, 11);
+
+      await ctx.servicio.actualizar({ anio: 2026, mes: 10 }, { vencimiento: '2026-11-20' }, ahora);
+      oct = await ctx.servicio.detalle({ anio: 2026, mes: 10 }, ahora);
+      assert.equal(oct.vencimiento, '2026-11-20');
+      assert.equal(oct.vencimientoOrigen, 'manual');
+      assert.equal(oct.vencimientoCronograma, '2026-11-16');
+    } finally {
+      ctx.restaurar();
+    }
+  }));
+
+test('los avisos usan la fecha del cronograma y no piden poner la fecha', () =>
+  conRuc('10720995960', async () => {
+    const ctx = conRepo({ comprobantes: { '2026-10': [BOLETA] } });
+    try {
+      // 11-nov: faltan 5 días para el 16.
+      assert.equal(await ctx.servicio.pasadaDeAvisos(new Date('2026-11-11T15:00:00Z')), 1);
+      assert.equal(ctx.avisos.length, 1);
+      assert.ok(ctx.filas.find((f) => f.mes === 10).avisoPrevioEn);
+      assert.equal(ctx.filas.find((f) => f.mes === 10).avisoSinFechaEn, undefined);
+    } finally {
+      ctx.restaurar();
+    }
+  }));
+
+test('en diciembre, si falta el cronograma del año siguiente, avisa al programador una vez', () =>
+  conRuc('10720995960', async () => {
+    const ctx = conRepo({});
+    try {
+      const diciembre = new Date('2026-12-05T15:00:00Z');
+      await ctx.servicio.pasadaDeAvisos(diciembre);
+      await ctx.servicio.pasadaDeAvisos(new Date('2026-12-06T15:00:00Z'));
+      const delCronograma = ctx.avisos.filter((a) => a.programador);
+      assert.equal(delCronograma.length, 1);
+      assert.match(delCronograma[0].titulo, /2027/);
+      // En noviembre no se avisa nada de esto.
+      const otro = conRepo({});
+      try {
+        await otro.servicio.pasadaDeAvisos(new Date('2026-11-05T15:00:00Z'));
+        assert.equal(otro.avisos.filter((a) => a.programador).length, 0);
+      } finally {
+        otro.restaurar();
+      }
+    } finally {
+      ctx.restaurar();
+    }
+  }));

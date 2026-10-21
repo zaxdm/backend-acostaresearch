@@ -17,6 +17,9 @@
  *  - Cliente: un extranjero va como «no domiciliado» con su nombre y país; los
  *    demás, como «varios» con su nombre si se sabe. Sin documento hay un tope
  *    de S/700 por boleta: por encima, la venta se queda sin boleta y se avisa.
+ *  - Un servicio cobrado fuera de la web y registrado en el panel
+ *    (`SERVICIO:<id>`) es una boleta con su concepto y el cliente tal como se
+ *    escribió (puede llevar DNI, carné o pasaporte). Uno anulado no cuenta.
  */
 
 const { TIPO_DOCUMENTO } = require('./sunat.catalogos');
@@ -59,8 +62,9 @@ function clienteDe(user) {
  * @param {object[]} p.codigos vendidos a mano
  * @param {Set<string>} [p.idsDeCodigos]  códigos cuyo canje creó alguno de esos pagos
  * @param {Record<string,string>} [p.nombresDeProducto]
+ * @param {object[]} [p.servicios] registrados en el panel
  */
-function ventasParaBoleta({ pagos, codigos, idsDeCodigos = new Set(), nombresDeProducto = {} }) {
+function ventasParaBoleta({ pagos, codigos, idsDeCodigos = new Set(), nombresDeProducto = {}, servicios = [] }) {
   const porClave = new Map();
 
   for (const pago of pagos) {
@@ -101,7 +105,46 @@ function ventasParaBoleta({ pagos, codigos, idsDeCodigos = new Set(), nombresDeP
     });
   }
 
+  for (const servicio of servicios) {
+    if (servicio.estado === 'ANULADO') continue;
+    porClave.set(`SERVICIO:${servicio.id}`, {
+      origenClave: `SERVICIO:${servicio.id}`,
+      fecha: new Date(servicio.pagadoEn),
+      cliente: clienteDeServicio(servicio),
+      items: [
+        {
+          codigo: 'SERVICIO',
+          descripcion: servicio.concepto,
+          importeCents: servicio.importeCents,
+          moneda: servicio.moneda,
+        },
+      ],
+    });
+  }
+
   return [...porClave.values()].sort((a, b) => a.fecha - b.fecha);
+}
+
+/** El cliente de un servicio registrado, con su documento si lo dio. */
+function clienteDeServicio(servicio) {
+  const nombre = servicio.clienteNombre?.trim() || null;
+  if (servicio.clienteTipoDoc === TIPO_DOCUMENTO.VARIOS) {
+    return { tipoDocumento: TIPO_DOCUMENTO.VARIOS, numeroDocumento: '-', nombre: nombre ?? 'CLIENTES VARIOS', pais: null };
+  }
+  if (servicio.clienteTipoDoc === TIPO_DOCUMENTO.NO_DOMICILIADO) {
+    return {
+      tipoDocumento: TIPO_DOCUMENTO.NO_DOMICILIADO,
+      numeroDocumento: '-',
+      nombre: nombre ?? 'CLIENTE DEL EXTRANJERO',
+      pais: servicio.clientePais ? String(servicio.clientePais).toUpperCase() : null,
+    };
+  }
+  return {
+    tipoDocumento: servicio.clienteTipoDoc,
+    numeroDocumento: servicio.clienteNumDoc,
+    nombre: nombre ?? 'CLIENTES VARIOS',
+    pais: null,
+  };
 }
 
 /**
@@ -150,4 +193,4 @@ function datosDeBoleta(venta, tipoCambio) {
   };
 }
 
-module.exports = { ventasParaBoleta, datosDeBoleta, nombreDelPais, AFECTACION_VENTAS, TOPE_SIN_DOCUMENTO_CENTS };
+module.exports = { ventasParaBoleta, datosDeBoleta, clienteDeServicio, nombreDelPais, AFECTACION_VENTAS, TOPE_SIN_DOCUMENTO_CENTS };

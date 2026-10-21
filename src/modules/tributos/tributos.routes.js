@@ -33,7 +33,8 @@ const declararSchema = z.object({
   rentaPagadaCents: centimos.nullable().optional(),
 });
 
-const compraSchema = z.object({
+const facturaSchema = z.object({
+  tipo: z.literal('FACTURA').default('FACTURA'),
   fecha,
   rucProveedor: z.string().regex(/^\d{11}$/, 'El RUC tiene 11 dígitos'),
   razonSocial: z.string().trim().max(200).optional(),
@@ -42,6 +43,38 @@ const compraSchema = z.object({
   baseCents: centimos,
   igvCents: centimos,
   descripcion: z.string().trim().max(200).optional(),
+});
+
+/**
+ * Un servicio de un proveedor del extranjero (Claude, Google, Canva…). En
+ * dólares, con el tipo de cambio venta de SUNAT del día del pago. El IGV se
+ * propone al 18 % si no viene. Si ya se pagó con el 1662, su orden y su día.
+ */
+const extranjeraSchema = z
+  .object({
+    tipo: z.literal('EXTRANJERO'),
+    fecha,
+    razonSocial: z.string().trim().min(2).max(200),
+    documento: z.string().trim().min(1).max(60),
+    monedaOriginal: z.enum(['USD', 'PEN']),
+    importeOriginalCents: centimos.refine((c) => c > 0, 'Escribe el monto'),
+    tipoCambio: z.number().positive().max(99).optional(),
+    igvCents: centimos.optional(),
+    ordenPago: z.string().trim().max(30).optional(),
+    igvPagadoEn: fecha.optional(),
+    descripcion: z.string().trim().max(200).optional(),
+  })
+  .refine((d) => d.monedaOriginal !== 'USD' || d.tipoCambio, {
+    path: ['tipoCambio'],
+    message: 'Falta el tipo de cambio del día del pago',
+  });
+
+const compraSchema = z.union([extranjeraSchema, facturaSchema]);
+
+const pago1662Schema = z.object({
+  ordenPago: z.string().trim().max(30).optional(),
+  fecha,
+  igvCents: centimos.optional(),
 });
 
 const periodo = (req) => ({ anio: Number(req.params.anio), mes: Number(req.params.mes) });
@@ -78,6 +111,14 @@ router.post(
   '/compras',
   validate({ body: compraSchema }),
   asyncHandler(async (req, res) => ok(res, { compra: await tributosService.agregarCompra(req.body, req.user.id) })),
+);
+
+router.post(
+  '/compras/:id/pago-1662',
+  validate({ params: z.object({ id: z.string().uuid() }), body: pago1662Schema }),
+  asyncHandler(async (req, res) =>
+    ok(res, { compra: await tributosService.pagarIgvDeExtranjera(req.params.id, req.body) }),
+  ),
 );
 
 router.delete(

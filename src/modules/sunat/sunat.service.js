@@ -30,8 +30,9 @@ const { construirBoleta, nombreDelArchivo, fechaLima } = require('./sunat.boleta
 const { construirNotaCredito } = require('./sunat.notaCredito');
 const { leerCertificado, firmar, resumenDeLaFirma } = require('./sunat.firma');
 const { enviarComprobante, ESTADO } = require('./sunat.envio');
-const { TIPO_COMPROBANTE, TIPO_OPERACION } = require('./sunat.catalogos');
-const { ventasParaBoleta, datosDeBoleta, nombreDelPais } = require('./sunat.ventas');
+const { TIPO_COMPROBANTE, TIPO_OPERACION, TIPO_DOCUMENTO } = require('./sunat.catalogos');
+const { ventasParaBoleta, datosDeBoleta, nombreDelPais, TOPE_SIN_DOCUMENTO_CENTS } = require('./sunat.ventas');
+const { inicioDelMes, siguiente } = require('../ventas/ventas.datos');
 const { sendMail } = require('../../lib/mailer');
 const { AppError, NotFoundError } = require('../../shared/errors/AppError');
 const { ERROR_CODES } = require('../../config/constants');
@@ -359,9 +360,10 @@ function crearEmisor(dep) {
 
 /** Las ventas entre dos fechas, ya agrupadas para facturar. */
 async function ventasEntre(desde, hasta) {
-  const [pagos, codigos] = await Promise.all([
+  const [pagos, codigos, servicios] = await Promise.all([
     sunatRepository.pagosCobrados(desde, hasta),
     sunatRepository.codigosVendidos(desde, hasta),
+    sunatRepository.serviciosCobrados(desde, hasta),
   ]);
   const [idsDeCodigos, nombresDeProducto] = await Promise.all([
     ventasRepository.codigosEntre(pagos.map((p) => p.providerOrderId).filter(Boolean)),
@@ -369,7 +371,7 @@ async function ventasEntre(desde, hasta) {
       ...new Set(codigos.map((c) => c.license?.productCode ?? c.productCode)),
     ]),
   ]);
-  return ventasParaBoleta({ pagos, codigos, idsDeCodigos, nombresDeProducto });
+  return ventasParaBoleta({ pagos, codigos, idsDeCodigos, nombresDeProducto, servicios });
 }
 
 const emisor = crearEmisor({
@@ -396,6 +398,48 @@ const emisor = crearEmisor({
     clave: env.SUNAT_CLAVE,
   },
 });
+
+/**
+ * Registra un servicio cobrado fuera de la web. La boleta no se emite aquí:
+ * la saca la pasada siguiente del emisor (unos minutos), como cualquier venta.
+ * Se rechaza ahora lo que el emisor no podría facturar, para que el error se
+ * vea en el panel y no como un aviso horas después.
+ */
+async function registrarServicio(datos, creadoPorId) {
+  const invalido = (mensaje) => new AppError(mensaje, { statusCode: 400, code: ERROR_CODES.VALIDATION_ERROR });
+  const pagadoEn = new Date(datos.pagadoEn);
+  if (pagadoEn.getTime() > Date.now() + 5 * 60 * 1000) throw invalido('La fecha del pago no puede ser futura.');
+  const desde = env.SUNAT_EMITIR_DESDE ? new Date(env.SUNAT_EMITIR_DESDE) : null;
+  if (desde && pagadoEn < desde) {
+    throw invalido(
+      `Las boletas empezaron el ${fechaLima(desde).dia}: un cobro anterior no lleva boleta. ` +
+        'Si hay que declararlo, va en «Ventas sin boleta» del mes.',
+    );
+  }
+
+  const sinDocumento = datos.clienteTipoDoc === TIPO_DOCUMENTO.VARIOS || datos.clienteTipoDoc === TIPO_DOCUMENTO.NO_DOMICILIADO;
+  if (datos.clienteTipoDoc === TIPO_DOCUMENTO.VARIOS) {
+    const cambio = datos.moneda === 'USD' ? tipoCambio.para(fechaLima(pagadoEn).dia) : 1;
+    if (cambio && datos.importeCents * cambio > TOPE_SIN_DOCUMENTO_CENTS) {
+      throw invalido('Pasa de S/ 700: la boleta exige el DNI (o carné o pasaporte) del cliente.');
+    }
+  }
+
+  return sunatRepository.crearServicio({
+    concepto: datos.concepto,
+    importeCents: datos.importeCents,
+    moneda: datos.moneda,
+    pagadoEn,
+    medio: datos.medio || null,
+    clienteTipoDoc: datos.clienteTipoDoc,
+    clienteNumDoc: sinDocumento ? '-' : datos.clienteNumDoc,
+    clienteNombre: datos.clienteNombre,
+    clientePais: datos.clienteTipoDoc === TIPO_DOCUMENTO.NO_DOMICILIADO ? datos.clientePais : null,
+    clienteEmail: datos.clienteEmail || null,
+    nota: datos.nota || null,
+    creadoPorId: creadoPorId ?? null,
+  });
+}
 
 /** `B001-1` → `['B001', 1]`. */
 function partir(numero) {
@@ -455,11 +499,46 @@ const consultas = {
   async anularPorId({ id, motivo, refacturar }) {
     const fila = await sunatRepository.buscarPorId(id);
     if (!fila) throw new NotFoundError('No encontramos ese comprobante.');
+    // Un servicio registrado solo existe para su boleta: si se anula sin volver
+    // a facturar, el servicio se anula con ella (si no, se facturaría otra vez).
+    const servicioId = !refacturar && /^SERVICIO:([^|]+)$/.exec(fila.origenClave)?.[1];
+    if (servicioId) await sunatRepository.marcarServicio(servicioId, 'ANULADO');
     try {
       return await emisor.anular({ serie: fila.serie, numero: fila.numero, motivo, refacturar });
     } catch (error) {
+      if (servicioId) await sunatRepository.marcarServicio(servicioId, 'VIGENTE');
       throw new AppError(error.message, { statusCode: 409, code: ERROR_CODES.VALIDATION_ERROR });
     }
+  },
+
+  registrarServicio: (datos, creadoPorId) => registrarServicio(datos, creadoPorId),
+
+  /** Los servicios registrados en un mes (hora de Lima), cada uno con sus boletas y notas. */
+  async serviciosDelMes(anio, mes) {
+    const sig = siguiente({ anio, mes });
+    const servicios = await sunatRepository.serviciosRegistrados(inicioDelMes(anio, mes), inicioDelMes(sig.anio, sig.mes));
+    const comprobantes = await sunatRepository.deClaves(servicios.map((s) => `SERVICIO:${s.id}`));
+    return servicios.map((servicio) => {
+      const clave = `SERVICIO:${servicio.id}`;
+      const boletas = comprobantes.filter((c) => c.tipo === '03' && c.origenClave.split('|')[0] === clave);
+      const numeros = new Set(boletas.map((b) => `ANULA:${b.serie}-${b.numero}`));
+      const notas = comprobantes.filter((c) => c.tipo === '07' && numeros.has(c.origenClave));
+      return { ...servicio, comprobantes: [...boletas, ...notas] };
+    });
+  },
+
+  /** Quita un servicio mal registrado, solo si aún no tiene boleta. */
+  async quitarServicio(id) {
+    const servicio = await sunatRepository.buscarServicio(id);
+    if (!servicio) throw new NotFoundError('No encontramos ese servicio.');
+    const conBoleta = await sunatRepository.deClaves([`SERVICIO:${id}`]);
+    if (conBoleta.length) {
+      throw new AppError('Ya tiene boleta: anúlala con «Anular» y el servicio se anula con ella.', {
+        statusCode: 409,
+        code: ERROR_CODES.VALIDATION_ERROR,
+      });
+    }
+    await sunatRepository.borrarServicio(id);
   },
 
   async reenviarCorreo(id) {

@@ -15,6 +15,8 @@ const sunatService = require('./sunat.service');
  * Boletas y notas de crédito.
  *  - El cliente: sus boletas (para «Mis compras») y el PDF de cada una.
  *  - ADMIN: la lista, el XML, la CDR, reenviar el correo y anular.
+ *  - ADMIN: los servicios cobrados fuera de la web (asesorías…), que el
+ *    emisor factura como una venta más.
  */
 const router = Router();
 
@@ -22,6 +24,42 @@ const idSchema = z.object({ id: z.string().uuid() });
 const anularSchema = z.object({
   motivo: z.string().trim().min(3).max(200),
   refacturar: z.boolean().default(false),
+});
+
+/**
+ * Un servicio cobrado fuera de la web. El documento depende del tipo: DNI de
+ * 8 dígitos; carné o pasaporte, letras y números; sin documento o extranjero
+ * sin documento, nada (el extranjero, con su país).
+ */
+const servicioSchema = z
+  .object({
+    concepto: z.string().trim().min(3).max(200),
+    importeCents: z.number().int().positive().max(10_000_000),
+    moneda: z.enum(['PEN', 'USD']),
+    pagadoEn: z.string().datetime({ offset: true }),
+    medio: z.string().trim().max(40).optional(),
+    clienteTipoDoc: z.enum(['-', '0', '1', '4', '7']),
+    clienteNumDoc: z.string().trim().max(20).optional(),
+    clienteNombre: z.string().trim().min(3).max(200),
+    clientePais: z.string().trim().regex(/^[A-Za-z]{2}$/).transform((p) => p.toUpperCase()).optional(),
+    clienteEmail: z.string().trim().email().max(191).optional(),
+    nota: z.string().trim().max(255).optional(),
+  })
+  .superRefine((d, ctx) => {
+    const doc = d.clienteNumDoc ?? '';
+    if (d.clienteTipoDoc === '1' && !/^\d{8}$/.test(doc)) {
+      ctx.addIssue({ code: 'custom', path: ['clienteNumDoc'], message: 'El DNI tiene 8 dígitos.' });
+    }
+    if ((d.clienteTipoDoc === '4' || d.clienteTipoDoc === '7') && !/^[A-Za-z0-9]{6,12}$/.test(doc)) {
+      ctx.addIssue({ code: 'custom', path: ['clienteNumDoc'], message: 'El documento tiene de 6 a 12 letras o números.' });
+    }
+    if (d.clienteTipoDoc === '0' && !d.clientePais) {
+      ctx.addIssue({ code: 'custom', path: ['clientePais'], message: 'Falta el país del cliente extranjero.' });
+    }
+  });
+const mesSchema = z.object({
+  anio: z.coerce.number().int().min(2026).max(2100),
+  mes: z.coerce.number().int().min(1).max(12),
 });
 
 function mandarArchivo(res, { nombre, tipo, contenido }) {
@@ -99,6 +137,32 @@ router.post(
   asyncHandler(async (req, res) => {
     const resultado = await sunatService.anularPorId({ id: req.params.id, ...req.body });
     return ok(res, resultado);
+  }),
+);
+
+router.get(
+  '/servicios',
+  soloAdmin,
+  validate({ query: mesSchema }),
+  asyncHandler(async (req, res) =>
+    ok(res, { servicios: await sunatService.serviciosDelMes(req.query.anio, req.query.mes) }),
+  ),
+);
+
+router.post(
+  '/servicios',
+  soloAdmin,
+  validate({ body: servicioSchema }),
+  asyncHandler(async (req, res) => ok(res, { servicio: await sunatService.registrarServicio(req.body, req.user.id) })),
+);
+
+router.delete(
+  '/servicios/:id',
+  soloAdmin,
+  validate({ params: idSchema }),
+  asyncHandler(async (req, res) => {
+    await sunatService.quitarServicio(req.params.id);
+    return ok(res, { quitado: true });
   }),
 );
 

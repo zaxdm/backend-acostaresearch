@@ -80,6 +80,7 @@ function conRepo({ comprobantes = {}, compras = {}, filas = [] }) {
   const correos = [];
   repo.comprobantesDelMes = async (p) => comprobantes[`${p.anio}-${p.mes}`] ?? [];
   repo.comprasDelMes = async (p) => compras[`${p.anio}-${p.mes}`] ?? [];
+  repo.extranjerasPorPagar = async () => [];
   repo.declaraciones = async () => filas;
   repo.correoDelAdministrador = async () => 'admin@ejemplo.com';
   repo.declaracion = async (p) => filas.find((f) => f.anio === p.anio && f.mes === p.mes) ?? null;
@@ -181,6 +182,59 @@ test('no se cambia un mes ya declarado ni uno fuera de rango', async () => {
     await assert.rejects(ctx.servicio.actualizar({ anio: 2026, mes: 10 }, { vencimiento: '2026-11-18' }, ahora), /Reábrelo/);
     await assert.rejects(ctx.servicio.detalle({ anio: 2026, mes: 9 }, ahora), /no tiene declaración/);
     await assert.rejects(ctx.servicio.detalle({ anio: 2026, mes: 12 }, ahora), /no tiene declaración/);
+  } finally {
+    ctx.restaurar();
+  }
+});
+
+// ── Compras del extranjero (21-oct-2026) ───────────────────────────────────
+
+test('una compra del extranjero pasa a soles, lleva el 18 % y no entra dos veces', async () => {
+  const ctx = conRepo({});
+  const creadas = [];
+  repo.crearCompra = async (data) => {
+    if (creadas.some((c) => c.rucProveedor === data.rucProveedor && c.serie === data.serie && c.numero === data.numero)) {
+      throw Object.assign(new Error('duplicada'), { code: 'P2002' });
+    }
+    creadas.push(data);
+    return data;
+  };
+  try {
+    const datos = {
+      tipo: 'EXTRANJERO',
+      fecha: '2026-10-21',
+      razonSocial: 'Anthropic',
+      documento: 'INV-2026-001',
+      monedaOriginal: 'USD',
+      importeOriginalCents: 2000,
+      tipoCambio: 3.43,
+    };
+    const compra = await ctx.servicio.agregarCompra(datos, 'admin');
+    assert.equal(compra.baseCents, 6860);
+    assert.equal(compra.igvCents, 1235);
+    assert.equal(compra.rucProveedor, '-');
+    assert.equal(compra.serie, 'EXT');
+    assert.equal(compra.igvPagadoEn, null);
+    await assert.rejects(ctx.servicio.agregarCompra({ ...datos, documento: ' inv-2026-001' }, 'admin'), /ya está registrada/);
+    await ctx.servicio.agregarCompra({ ...datos, documento: 'INV-2026-002' }, 'admin');
+    assert.equal(creadas.length, 2);
+  } finally {
+    ctx.restaurar();
+  }
+});
+
+test('el IGV del 1662 se anota en un mes pendiente y no en uno declarado', async () => {
+  const ctx = conRepo({ filas: [{ anio: 2026, mes: 10, estado: 'DECLARADA', ajusteBaseCents: 0 }] });
+  const compra = { id: 'c1', tipo: 'EXTRANJERO', igvCents: 1235 };
+  let cambio = null;
+  repo.buscarCompra = async (id) => (id === 'c1' ? compra : null);
+  repo.actualizarCompra = async (_id, data) => (cambio = data);
+  try {
+    await assert.rejects(ctx.servicio.pagarIgvDeExtranjera('c1', { fecha: '2026-10-30', ordenPago: '1' }), /ya está declarado/);
+    await ctx.servicio.pagarIgvDeExtranjera('c1', { fecha: '2026-11-12', ordenPago: '87654321' });
+    assert.equal(cambio.ordenPago, '87654321');
+    assert.equal(cambio.igvPagadoEn.toISOString().slice(0, 10), '2026-11-12');
+    await assert.rejects(ctx.servicio.pagarIgvDeExtranjera('otra', { fecha: '2026-11-12' }), /no existe/);
   } finally {
     ctx.restaurar();
   }

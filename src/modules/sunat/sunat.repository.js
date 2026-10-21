@@ -45,6 +45,38 @@ const sunatRepository = {
     });
   },
 
+  /** Servicios registrados en el panel y cobrados entre esas fechas (los anulados no). */
+  serviciosCobrados(desde, hasta) {
+    return prisma.servicioRegistrado.findMany({
+      where: { estado: 'VIGENTE', pagadoEn: { gte: desde, lt: hasta } },
+      orderBy: { pagadoEn: 'asc' },
+    });
+  },
+
+  crearServicio(data) {
+    return prisma.servicioRegistrado.create({ data });
+  },
+
+  buscarServicio(id) {
+    return prisma.servicioRegistrado.findUnique({ where: { id } });
+  },
+
+  /** Los registrados entre dos fechas, del más reciente al más antiguo. */
+  serviciosRegistrados(desde, hasta) {
+    return prisma.servicioRegistrado.findMany({
+      where: { creadoEn: { gte: desde, lt: hasta } },
+      orderBy: { creadoEn: 'desc' },
+    });
+  },
+
+  marcarServicio(id, estado) {
+    return prisma.servicioRegistrado.update({ where: { id }, data: { estado } });
+  },
+
+  borrarServicio(id) {
+    return prisma.servicioRegistrado.delete({ where: { id } });
+  },
+
   /** De estas claves de venta, las que ya tienen boleta. */
   async clavesConBoleta(claves) {
     if (claves.length === 0) return new Set();
@@ -95,6 +127,7 @@ const sunatRepository = {
     if (tipo === 'PAGO') return (await prisma.payment.count({ where: { id, ...PAGO_COBRADO } })) > 0;
     if (tipo === 'CARRITO') return (await prisma.payment.count({ where: { cartId: id, ...PAGO_COBRADO } })) > 0;
     if (tipo === 'CODIGO') return (await prisma.activationCode.count({ where: { id, ...CODIGO_VENDIDO } })) > 0;
+    if (tipo === 'SERVICIO') return (await prisma.servicioRegistrado.count({ where: { id, estado: 'VIGENTE' } })) > 0;
     return false;
   },
 
@@ -142,6 +175,14 @@ const sunatRepository = {
       });
       const email = codigo?.license?.user?.email ?? codigo?.buyerEmail;
       return email ? { email, nombre: codigo?.license?.user?.firstName ?? null } : null;
+    }
+    if (tipo === 'SERVICIO') {
+      const servicio = await prisma.servicioRegistrado.findUnique({
+        where: { id },
+        select: { clienteEmail: true, clienteNombre: true },
+      });
+      if (!servicio?.clienteEmail) return null;
+      return { email: servicio.clienteEmail, nombre: servicio.clienteNombre.split(' ')[0] || null };
     }
     return null;
   },

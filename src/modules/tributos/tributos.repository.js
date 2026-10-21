@@ -22,11 +22,37 @@ const tributosRepository = {
     });
   },
 
+  /**
+   * Las compras que dan crédito en el mes: las facturas por su fecha y las del
+   * extranjero por el día en que se pagó su IGV con el 1662.
+   */
   comprasDelMes(periodo) {
+    const enElMes = { gte: diaUno(periodo), lt: diaUno(siguiente(periodo)) };
     return prisma.compraRegistrada.findMany({
-      where: { fecha: { gte: diaUno(periodo), lt: diaUno(siguiente(periodo)) } },
+      where: {
+        OR: [
+          { tipo: 'FACTURA', fecha: enElMes },
+          { tipo: 'EXTRANJERO', igvPagadoEn: enElMes },
+        ],
+      },
       orderBy: [{ fecha: 'asc' }, { creadoEn: 'asc' }],
     });
+  },
+
+  /** Las del extranjero cuyo IGV aún no se pagó con el 1662, de cualquier mes. */
+  extranjerasPorPagar() {
+    return prisma.compraRegistrada.findMany({
+      where: { tipo: 'EXTRANJERO', igvPagadoEn: null },
+      orderBy: [{ fecha: 'asc' }, { creadoEn: 'asc' }],
+    });
+  },
+
+  buscarCompra(id) {
+    return prisma.compraRegistrada.findUnique({ where: { id } });
+  },
+
+  actualizarCompra(id, data) {
+    return prisma.compraRegistrada.update({ where: { id }, data });
   },
 
   declaraciones() {

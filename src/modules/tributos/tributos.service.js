@@ -23,6 +23,7 @@ const { ERROR_CODES } = require('../../config/constants');
 const repo = require('./tributos.repository');
 const calc = require('./tributos.calculo');
 const correos = require('./tributos.correo');
+const crypto = require('node:crypto');
 
 /** Días antes del vencimiento en que llega el primer aviso. */
 const DIAS_AVISO_PREVIO = 5;
@@ -37,6 +38,27 @@ function nombreDelMes({ anio, mes }) {
 }
 
 /** `Date` de una columna DATE → `aaaa-mm-dd`. */
+/**
+ * El `numero` con que se guarda una compra del extranjero: sale de su
+ * proveedor y su número de factura, así la misma no entra dos veces (la tabla
+ * no deja repetir RUC + serie + número).
+ */
+function numeroDeExtranjera(proveedor, documento) {
+  const clave = `${String(proveedor).trim()}|${String(documento).trim()}`.toUpperCase();
+  return crypto.createHash('sha256').update(clave).digest().readUInt32BE(0) % 99_999_999 || 1;
+}
+
+/** Un mes declarado no admite cambios que lo muevan. */
+async function exigirPendiente(periodo) {
+  const fila = await repo.declaracion(periodo);
+  if (fila && fila.estado !== 'PENDIENTE') {
+    throw new AppError(`${nombreDelMes(periodo)} ya está declarado. Reábrelo para cambiarlo.`, {
+      statusCode: 409,
+      code: ERROR_CODES.VALIDATION_ERROR,
+    });
+  }
+}
+
 function diaIso(fecha) {
   return fecha ? new Date(fecha).toISOString().slice(0, 10) : null;
 }
@@ -103,6 +125,47 @@ function validarPeriodo({ anio, mes }, ahora = new Date()) {
   return periodo;
 }
 
+function datosDeFactura(datos) {
+  return {
+    tipo: 'FACTURA',
+    fecha: new Date(`${datos.fecha}T00:00:00Z`),
+    rucProveedor: datos.rucProveedor,
+    razonSocial: datos.razonSocial || null,
+    serie: datos.serie.toUpperCase(),
+    numero: datos.numero,
+    baseCents: datos.baseCents,
+    igvCents: datos.igvCents,
+  };
+}
+
+/**
+ * Una compra del extranjero: lo cobrado pasa a soles con el tipo de cambio que
+ * se escribe (el de venta de SUNAT del día del pago) y el IGV es el 18 % de esa
+ * base. Si ya se pagó con el 1662, se registra a la vez.
+ */
+async function datosDeExtranjera(datos) {
+  const base =
+    datos.monedaOriginal === 'USD' ? Math.round(datos.importeOriginalCents * datos.tipoCambio) : datos.importeOriginalCents;
+  const pagado = datos.igvPagadoEn ? new Date(`${datos.igvPagadoEn}T00:00:00Z`) : null;
+  if (pagado) await exigirPendiente({ anio: pagado.getUTCFullYear(), mes: pagado.getUTCMonth() + 1 });
+  return {
+    tipo: 'EXTRANJERO',
+    fecha: new Date(`${datos.fecha}T00:00:00Z`),
+    rucProveedor: '-',
+    razonSocial: datos.razonSocial,
+    serie: 'EXT',
+    numero: numeroDeExtranjera(datos.razonSocial, datos.documento),
+    documento: datos.documento,
+    monedaOriginal: datos.monedaOriginal,
+    importeOriginalCents: datos.importeOriginalCents,
+    tipoCambio: datos.monedaOriginal === 'USD' ? datos.tipoCambio : null,
+    baseCents: base,
+    igvCents: datos.igvCents ?? Math.round(base * 0.18),
+    ordenPago: datos.ordenPago || null,
+    igvPagadoEn: pagado,
+  };
+}
+
 const tributosService = {
   /** Todos los meses, del más reciente al más antiguo. */
   async meses(ahora = new Date()) {
@@ -114,8 +177,8 @@ const tributosService = {
   async detalle({ anio, mes }, ahora = new Date()) {
     const periodo = validarPeriodo({ anio, mes }, ahora);
     const todos = await calcularHasta(periodo);
-    const compras = await repo.comprasDelMes(periodo);
-    return { ...vista(todos.at(-1), ahora), compras };
+    const [compras, porPagar1662] = await Promise.all([repo.comprasDelMes(periodo), repo.extranjerasPorPagar()]);
+    return { ...vista(todos.at(-1), ahora), compras, porPagar1662 };
   },
 
   /** Fecha de vencimiento, ajuste de ventas y saldo inicial. Solo en un mes pendiente. */
@@ -171,24 +234,31 @@ const tributosService = {
   },
 
   async agregarCompra(datos, creadoPorId) {
+    const data = datos.tipo === 'EXTRANJERO' ? await datosDeExtranjera(datos) : datosDeFactura(datos);
     try {
-      return await repo.crearCompra({
-        fecha: new Date(`${datos.fecha}T00:00:00Z`),
-        rucProveedor: datos.rucProveedor,
-        razonSocial: datos.razonSocial || null,
-        serie: datos.serie.toUpperCase(),
-        numero: datos.numero,
-        baseCents: datos.baseCents,
-        igvCents: datos.igvCents,
-        descripcion: datos.descripcion || null,
-        creadoPorId,
-      });
+      return await repo.crearCompra({ ...data, descripcion: datos.descripcion || null, creadoPorId });
     } catch (error) {
       if (error?.code === 'P2002') {
         throw new AppError('Esa factura ya está registrada.', { statusCode: 409, code: ERROR_CODES.VALIDATION_ERROR });
       }
       throw error;
     }
+  },
+
+  /**
+   * «Ya pagué el IGV con el 1662» de una compra del extranjero: desde ese día
+   * cuenta como crédito en el mes del pago, que no puede estar declarado.
+   */
+  async pagarIgvDeExtranjera(id, { ordenPago, fecha, igvCents }) {
+    const compra = await repo.buscarCompra(id);
+    if (!compra || compra.tipo !== 'EXTRANJERO') throw new NotFoundError('Esa compra del extranjero no existe.');
+    const dia = new Date(`${fecha}T00:00:00Z`);
+    await exigirPendiente({ anio: dia.getUTCFullYear(), mes: dia.getUTCMonth() + 1 });
+    return repo.actualizarCompra(id, {
+      ordenPago: ordenPago || null,
+      igvPagadoEn: dia,
+      ...(igvCents != null ? { igvCents } : {}),
+    });
   },
 
   async borrarCompra(id) {
@@ -242,4 +312,4 @@ const tributosService = {
   },
 };
 
-module.exports = tributosService;
+module.exports = Object.assign(tributosService, { numeroDeExtranjera });

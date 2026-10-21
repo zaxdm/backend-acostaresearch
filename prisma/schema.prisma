@@ -3110,6 +3110,37 @@ model Comprobante {
   @@map("comprobantes")
 }
 
+/// Un servicio cobrado fuera de la web (asesoría, corrección, revisión de
+/// originalidad, análisis estadístico…) que se registra en el panel para que
+/// lleve boleta. El emisor lo trata como una venta más: `SERVICIO:<id>`.
+model ServicioRegistrado {
+  id             String   @id @default(uuid()) @db.Char(36)
+  /// Lo que dice la línea de la boleta.
+  concepto       String   @db.VarChar(200)
+  importeCents   Int
+  /// PEN o USD; la boleta va siempre en soles.
+  moneda         String   @db.VarChar(3)
+  /// Cuándo entró el dinero (Yape, transferencia…).
+  pagadoEn       DateTime
+  medio          String?  @db.VarChar(40)
+  /// Catálogo 06: `-` sin documento, `1` DNI, `4` carné, `7` pasaporte, `0` no domiciliado.
+  clienteTipoDoc String   @db.VarChar(1)
+  clienteNumDoc  String   @db.VarChar(20)
+  clienteNombre  String   @db.VarChar(200)
+  clientePais    String?  @db.VarChar(2)
+  /// A quién se le manda la boleta en PDF.
+  clienteEmail   String?  @db.VarChar(191)
+  nota           String?  @db.VarChar(255)
+  /// VIGENTE o ANULADO (al anular su boleta desde el panel).
+  estado         String   @default("VIGENTE") @db.VarChar(10)
+  creadoPorId    String?  @db.Char(36)
+  creadoEn       DateTime @default(now())
+
+  @@index([pagadoEn])
+  @@index([creadoEn])
+  @@map("servicios_registrados")
+}
+
 /// El último número usado de cada serie. Se incrementa dentro de la misma
 /// transacción que crea la boleta: dos boletas a la vez no reciben el mismo.
 model SerieComprobante {
@@ -3139,11 +3170,26 @@ model CompraRegistrada {
   descripcion   String?  @db.VarChar(200)
   /// MANUAL (desde el panel) o SIRE.
   origen        String   @default("MANUAL") @db.VarChar(10)
+  /// FACTURA (proveedor peruano) o EXTRANJERO (servicio de un no domiciliado:
+  /// Claude, Google, Canva…). El EXTRANJERO va con `rucProveedor` «-», serie
+  /// «EXT» y un `numero` sacado de su número de factura, para que la misma no
+  /// entre dos veces; su IGV se paga aparte con el Formulario 1662 y solo da
+  /// crédito en el mes de ese pago (`igvPagadoEn`).
+  tipo                 String    @default("FACTURA") @db.VarChar(12)
+  /// El número de la factura o recibo del proveedor extranjero, tal cual.
+  documento            String?   @db.VarChar(60)
+  monedaOriginal       String?   @db.VarChar(3)
+  importeOriginalCents Int?
+  tipoCambio           Decimal?  @db.Decimal(6, 3)
+  /// N.º de orden del Formulario 1662 con el que se pagó el IGV.
+  ordenPago            String?   @db.VarChar(30)
+  igvPagadoEn          DateTime? @db.Date
   creadoPorId   String?  @db.Char(36)
   creadoEn      DateTime @default(now())
 
   @@unique([rucProveedor, serie, numero])
   @@index([fecha])
+  @@index([igvPagadoEn])
   @@map("compras_registradas")
 }
 

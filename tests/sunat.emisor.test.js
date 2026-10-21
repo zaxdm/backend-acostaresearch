@@ -432,3 +432,79 @@ test('correo: si la boleta ya se envió, su nota de crédito también se manda',
   assert.match(correosEnviados[1].text, /Motivo: Registrado por error/);
   assert.equal(correosEnviados[1].attachments[0].filename, 'nota-de-credito-BC01-1.pdf');
 });
+
+// ── Servicios cobrados fuera de la web (21-oct-2026) ────────────────────────
+
+function servicio(extra = {}) {
+  return {
+    id: 's1',
+    concepto: 'Asesoría académica',
+    importeCents: 30000,
+    moneda: 'PEN',
+    pagadoEn: new Date('2026-10-21T15:00:00Z'),
+    clienteTipoDoc: '-',
+    clienteNumDoc: '-',
+    clienteNombre: 'Josué Silva',
+    clientePais: null,
+    estado: 'VIGENTE',
+    ...extra,
+  };
+}
+
+test('un servicio registrado es una venta con su concepto; el anulado no cuenta', () => {
+  const ventas = ventasParaBoleta({
+    pagos: [],
+    codigos: [],
+    servicios: [
+      servicio(),
+      servicio({ id: 's2', clienteTipoDoc: '1', clienteNumDoc: '45678912', clienteNombre: 'Renzo Cruz' }),
+      servicio({ id: 's3', estado: 'ANULADO' }),
+    ],
+  });
+  assert.deepEqual(ventas.map((v) => v.origenClave).sort(), ['SERVICIO:s1', 'SERVICIO:s2']);
+  const conDni = ventas.find((v) => v.origenClave === 'SERVICIO:s2');
+  assert.deepEqual(conDni.cliente, { tipoDocumento: '1', numeroDocumento: '45678912', nombre: 'Renzo Cruz', pais: null });
+  assert.equal(conDni.items[0].descripcion, 'Asesoría académica');
+});
+
+test('un servicio de más de S/700 pasa con DNI y no sin documento', () => {
+  const [conDni] = ventasParaBoleta({
+    pagos: [],
+    codigos: [],
+    servicios: [servicio({ importeCents: 120000, clienteTipoDoc: '1', clienteNumDoc: '45678912' })],
+  });
+  const datos = datosDeBoleta(conDni, null);
+  assert.equal(datos.items[0].precioUnitario, 120000);
+  assert.equal(datos.items[0].afectacion, '10');
+
+  const [sinDoc] = ventasParaBoleta({ pagos: [], codigos: [], servicios: [servicio({ importeCents: 120000 })] });
+  assert.throws(() => datosDeBoleta(sinDoc, null), /S\/700/);
+});
+
+test('el extranjero de un servicio va como no domiciliado con su país', () => {
+  const [venta] = ventasParaBoleta({
+    pagos: [],
+    codigos: [],
+    servicios: [servicio({ clienteTipoDoc: '0', clientePais: 'ec', moneda: 'USD', importeCents: 10000 })],
+  });
+  const datos = datosDeBoleta(venta, 3.5);
+  assert.equal(datos.cliente.tipoDocumento, '0');
+  assert.equal(datos.clientePais, 'EC');
+  assert.equal(datos.items[0].precioUnitario, 35000);
+});
+
+test('el emisor factura el servicio con el DNI del cliente en la boleta', async () => {
+  const ventas = ventasParaBoleta({
+    pagos: [],
+    codigos: [],
+    servicios: [servicio({ clienteTipoDoc: '1', clienteNumDoc: '45678912' })],
+  });
+  const { emisor, repo } = emisorDePrueba({ ventas });
+  const resumen = await emisor.pasada();
+  assert.equal(resumen.emitidas, 1);
+  const [fila] = repo.filas;
+  assert.equal(fila.origenClave, 'SERVICIO:s1');
+  assert.equal(fila.clienteTipoDoc, '1');
+  assert.match(fila.xmlFirmado, /schemeID="1">45678912</);
+  assert.match(fila.xmlFirmado, /Asesoría académica/);
+});

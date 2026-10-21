@@ -168,6 +168,11 @@ function esAnexo(titulo) {
     // en nuestro panel, que el Word ya quita al imprimir el título.
     .replace(/^\s*\d+[a-z]?\s*·\s*/i, '')
     .replace(/^\s*fase\s+\d+[a-z]?\s*[—–-]\s*/i, '')
+    // «VII. ANEXOS», «7. Anexos», «Capítulo VII: Anexos»: la numeración con que
+    // muchas facultades encabezan el capítulo. Sin quitarla no se reconocía y
+    // los anexos salían delante de las referencias.
+    .replace(/^\s*(capitulo\s+)?([ivxl]+|\d+(\.\d+)*)\s*[.):—–-]?\s+/i, '')
+    .replace(/^\s*capitulo\s*[.):—–-]?\s+/i, '')
     .trim()
     .toLowerCase();
   return TITULO_DE_ANEXO.test(limpio);

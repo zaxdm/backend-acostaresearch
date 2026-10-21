@@ -260,6 +260,14 @@ test('«Anexo» dentro del título no convierte el capítulo en anexo', () => {
   assert.ok(!esquema.esAnexo('CAPÍTULO IV: METODOLOGÍA'));
   // Ni una palabra que solo empieza igual.
   assert.ok(!esquema.esAnexo('Anexionismo y territorio'));
+  // Con la numeración del capítulo delante, como la ponen muchas facultades:
+  // sin reconocerlos, salían delante de las referencias.
+  assert.ok(esquema.esAnexo('VII. ANEXOS'));
+  assert.ok(esquema.esAnexo('7. Anexos'));
+  assert.ok(esquema.esAnexo('Capítulo VII: Anexos'));
+  assert.ok(esquema.esAnexo('XII APÉNDICES'));
+  assert.ok(!esquema.esAnexo('VII. Referencias'));
+  assert.ok(!esquema.esAnexo('Mi anexo'));
 });
 
 test('las fases de trabajo tampoco salen al final como sobrantes', () => {

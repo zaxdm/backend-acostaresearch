@@ -115,3 +115,55 @@ test('los anexos por defecto van juntos bajo un solo «Anexos», como en APA 7',
   // Lo de dentro del anexo baja un nivel: el Título 2 es el del anexo.
   assert.deepEqual(titulos(3), ['Ficha técnica']);
 });
+
+
+test('los anexos escritos dentro del Capítulo I también salen detrás de las referencias', async () => {
+  // Es como guarda la skill del Capítulo I sus dos matrices: al final de su texto.
+  const datos = {
+    ...TESIS,
+    capitulos: [
+      {
+        titulo: 'CAPÍTULO I: PROBLEMA',
+        texto: [
+          '## 1.1 Planteamiento del problema',
+          'El problema es la deserción.',
+          '## Anexo 1. Matriz de consistencia',
+          'Problema, objetivo e hipótesis.',
+          '### Nota de la matriz',
+          'Detalle del anexo.',
+          '## **Anexo 2. Matriz de operacionalización de variables**',
+          'Variable, dimensiones e indicadores.',
+        ].join('\n\n'),
+      },
+      { titulo: 'CAPÍTULO II: MARCO TEÓRICO', texto: 'García (2024) encontró que…' },
+      {
+        titulo: 'Anexo 1: Instrumento de recolección de datos',
+        anexo: true,
+        porDefecto: true,
+        texto: 'Cuestionario de 20 ítems.',
+      },
+    ],
+  };
+
+  assert.deepEqual(await titulosDelWord(datos), [
+    'CAPÍTULO I: PROBLEMA',
+    'CAPÍTULO II: MARCO TEÓRICO',
+    'Referencias',
+    'Anexos',
+  ]);
+  const xml = new AdmZip(await armar(datos)).readAsText('word/document.xml');
+  const orden = [
+    'El problema es la deserción.',
+    'García (2024) encontró',
+    'Anexo 1. Matriz de consistencia',
+    'Detalle del anexo.',
+    'Anexo 2. Matriz de operacionalización de variables',
+    // El nuestro sigue la numeración: no hay dos «Anexo 1».
+    'Anexo 3. Instrumento de recolección de datos',
+    'Cuestionario de 20 ítems.',
+  // lastIndexOf: el índice de delante también lista los títulos.
+  ].map((t) => xml.lastIndexOf(t));
+  assert.ok(orden.every((i) => i > 0), `falta algún texto: ${orden}`);
+  assert.deepEqual([...orden].sort((a, b) => a - b), orden);
+  assert.ok(xml.lastIndexOf('Deserción y permanencia') < orden[2], 'las referencias van antes del Anexo 1');
+});

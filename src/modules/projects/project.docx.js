@@ -1422,8 +1422,37 @@ async function armar({
    * aquí con la misma regla, para que no dependa de por dónde haya entrado.
    */
   const esAnexo = (capitulo) => capitulo.anexo ?? esquema.esAnexo(capitulo.titulo);
-  const delCuerpo = capitulos.filter((c) => !esAnexo(c));
-  const anexos = capitulos.filter((c) => esAnexo(c));
+  /**
+   * Y los anexos escritos DENTRO de un capítulo, también al final.
+   *
+   * La skill del Capítulo I guarda las matrices de consistencia y de
+   * operacionalización como «## Anexo 1…» y «## Anexo 2…» al final de su
+   * texto, y el Word las imprimía pegadas a ese capítulo: en medio de la tesis
+   * y delante de las referencias. Se sacan de ahí y van con los demás anexos.
+   */
+  const delTexto = [];
+  const delCuerpo = capitulos
+    .filter((c) => !esAnexo(c))
+    .map((c) => {
+      const { texto, anexos: suyos } = sacarAnexosDelTexto(c.texto);
+      delTexto.push(...suyos);
+      return suyos.length > 0 ? { ...c, texto } : c;
+    });
+  /**
+   * Los nuestros (`porDefecto`) siguen la numeración de los que venían en el
+   * texto: si el Capítulo I trae el Anexo 1 y el 2, el instrumento es el 3, y
+   * no un segundo «Anexo 1».
+   */
+  const anexos = [
+    ...delTexto,
+    ...capitulos
+      .filter((c) => esAnexo(c))
+      .map((c) =>
+        c.porDefecto && delTexto.length > 0
+          ? { ...c, titulo: c.titulo.replace(/^(anexo\s+)(\d+)/i, (_, a, n) => `${a}${Number(n) + delTexto.length}`) }
+          : c,
+      ),
+  ];
 
   for (const capitulo of delCuerpo) {
     cuerpo.push(
@@ -1448,7 +1477,7 @@ async function armar({
    * títulos, que convertiría «Anexo 1» en un «7.1 Anexo 1».
    */
   const agruparAnexos =
-    anexos.length > 0 && !partes?.numeracion && anexos.every((c) => c.porDefecto);
+    anexos.length > 0 && !partes?.numeracion && anexos.every((c) => c.porDefecto || c.delTexto);
 
   /** Los títulos de los anexos, tal como salen impresos: no se numeran. */
   const titulosDeAnexos = [];
@@ -1723,6 +1752,47 @@ function loQueDiceElEstilo(estilos, id) {
  * Problema y objetivos», «Fase 3 — Introducción»— y ese número es del método,
  * no del documento: en la tesis salía «2 · CAPÍTULO I».
  */
+/**
+ * Separa del texto de un capítulo los anexos que trae escritos dentro.
+ *
+ * Un anexo empieza en un subtítulo Markdown cuyo texto es de anexo («## Anexo 1.
+ * Matriz de consistencia», ver `esquema.esAnexo`) y llega hasta el siguiente
+ * subtítulo del mismo nivel o más alto que no lo sea. Lo de debajo de un nivel
+ * más hondo es del anexo. Devuelve el texto sin ellos y los anexos, en orden.
+ */
+function sacarAnexosDelTexto(texto) {
+  const lineas = String(texto ?? '').split('\n');
+  const cuerpo = [];
+  const anexos = [];
+  let actual = null;
+  let enCodigo = false;
+  for (const linea of lineas) {
+    if (/^\s*```/.test(linea)) enCodigo = !enCodigo;
+    const encabezado = enCodigo ? null : linea.match(/^(#{1,4})\s+(.*)$/);
+    if (encabezado) {
+      const nivel = encabezado[1].length;
+      const titulo = encabezado[2].replace(/\*\*|__/g, '').trim();
+      if (esquema.esAnexo(titulo)) {
+        actual = { titulo, nivel, lineas: [], anexo: true, delTexto: true };
+        anexos.push(actual);
+        continue;
+      }
+      if (actual && nivel <= actual.nivel) actual = null;
+    }
+    (actual ? actual.lineas : cuerpo).push(linea);
+  }
+  if (anexos.length === 0) return { texto, anexos };
+  return {
+    texto: cuerpo.join('\n').trim(),
+    anexos: anexos.map(({ titulo, lineas: suyas, anexo, delTexto }) => ({
+      titulo,
+      texto: suyas.join('\n').trim(),
+      anexo,
+      delTexto,
+    })),
+  };
+}
+
 function tituloDelCapitulo(titulo, { sinCapitulo = false } = {}) {
   const original = String(titulo ?? '');
   let limpio = original

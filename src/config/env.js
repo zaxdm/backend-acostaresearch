@@ -223,9 +223,13 @@ const schema = z.object({
   // inédita de quien pagó. Solo se llega a ellos cuando Google no contesta.
   PREPARAR_MODELO_RESPALDO: vacioComoAusente(z.string()).default('gemini-3.5-flash'),
   // El modelo de «Humanizar», si tiene que ser otro que el de la edición y la
-  // traducción (20-oct-2026). Vacío = `PREPARAR_MODELO`. Mismo formato con
-  // prefijo: `bedrock:<modelo>`. Los respaldos son los de arriba.
-  HUMANIZAR_MODELO: vacioComoAusente(z.string()),
+  // traducción (20-oct-2026). Mismo formato con prefijo: `bedrock:<modelo>`.
+  // Los respaldos son los de arriba. Por defecto DeepSeek v3.2 (21-oct-2026):
+  // con la skill del servidor fue el único que dio 0 % en Turnitin (GLM-5,
+  // 26 %; Nemotron con el prompt anterior, 84 %).
+  // Vacío en el .env también es DeepSeek: el valor por defecto va en el
+  // `transform` para que «HUMANIZAR_MODELO=» no vuelva a Nemotron.
+  HUMANIZAR_MODELO: vacioComoAusente(z.string()).transform((valor) => valor ?? 'bedrock:deepseek.v3.2'),
   // Cuánto se le deja pensar aquí. `auto` = no se le dice nada y decide él.
   //
   // Y `auto` por defecto porque `minimal` —lo que mandaba el código para todo

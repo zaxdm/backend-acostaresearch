@@ -61,6 +61,7 @@ const almacen = require('./preparar.storage');
 const cuerpo = require('./preparar.cuerpo');
 const partes = require('./preparar.partes');
 const motor = require('./preparar.motor');
+const humanizador = require('./preparar.humanizar');
 const cambios = require('./preparar.cambios');
 const traduccion = require('./preparar.traduccion');
 const aviso = require('./preparar.aviso');
@@ -308,12 +309,19 @@ async function producir({ preparacion, buffer, parrafos }) {
   const aMandar =
     preparacion.servicio === 'HUMANIZAR' ? parrafos.filter((parrafo) => !parrafo.nivel) : parrafos;
 
-  const { cambios: propuestos, malos, uso } = await motor.prepararParrafos({
-    parrafos: aMandar,
-    servicio: preparacion.servicio,
-    idioma: preparacion.idioma,
-    alAvanzar: (hechas, total) => marcarPaso(preparacion.id, 'EDITANDO', { hechas, total }),
-  });
+  const alAvanzar = (hechas, total) => marcarPaso(preparacion.id, 'EDITANDO', { hechas, total });
+  // Humanizando va con la skill del servidor: un capítulo por vez y dos
+  // pasadas sobre el documento entero. Necesita los títulos para saber en qué
+  // capítulo está; no los manda. Ver `preparar.humanizar` (21-oct-2026).
+  const { cambios: propuestos, malos, uso } =
+    preparacion.servicio === 'HUMANIZAR'
+      ? await humanizador.humanizar({ parrafos, alAvanzar })
+      : await motor.prepararParrafos({
+          parrafos: aMandar,
+          servicio: preparacion.servicio,
+          idioma: preparacion.idioma,
+          alAvanzar,
+        });
   marcarPaso(preparacion.id, 'ARMANDO');
 
   // EDICION, con control de cambios: es lo que distingue una corrección de

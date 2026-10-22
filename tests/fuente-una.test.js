@@ -53,13 +53,15 @@ test('corregir cambia la ficha de la misma fila y recalcula su identidad por tí
   assert.match(datos.busqueda, /trujillo/);
 });
 
-test('corregir no toca la identidad de una fuente con DOI', async (t) => {
+test('una fuente con DOI no se corrige a mano', async (t) => {
   t.mock.method(propiasRepository, 'unaPorClave', async () => fila({ sourceRef: 'doi:10.1/x', doi: '10.1/x' }));
   const corregir = t.mock.method(propiasRepository, 'corregir', async () => ({}));
 
-  await propiasService.corregir({ userId: 'u1', clave: 'AR1A2B3C4D', ficha: { titulo: 'Otro título largo' } });
-
-  assert.equal('sourceRef' in corregir.mock.calls[0].arguments[1], false);
+  await assert.rejects(
+    propiasService.corregir({ userId: 'u1', clave: 'AR1A2B3C4D', ficha: { titulo: 'Otro título largo' } }),
+    /tiene DOI/,
+  );
+  assert.equal(corregir.mock.callCount(), 0);
 });
 
 test('corregir rechaza un título que ya tiene otra fuente suya', async (t) => {

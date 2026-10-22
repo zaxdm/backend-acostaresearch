@@ -644,6 +644,14 @@ const propiasService = {
     const fila = await propiasRepository.unaPorClave(userId, clave);
     if (!fila) throw new NotFoundError('Esa fuente ya no está en tu biblioteca.');
     noEsDeSuGestor(fila, 'corregir');
+    // Solo las que no tienen DOI (22-oct, Benicio): las otras traen la ficha
+    // del catálogo, que es mejor que cualquier corrección a mano.
+    if (fila.doi) {
+      throw new ConflictError(
+        'Esa fuente tiene DOI y su ficha viene del catálogo: no se corrige a mano. Si está mal, bórrala.',
+        ERROR_CODES.VALIDATION_ERROR,
+      );
+    }
 
     const datos = {
       title: recortar(ficha.titulo, 500) ?? fila.title,

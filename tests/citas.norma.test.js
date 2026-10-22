@@ -93,6 +93,13 @@ test('narrativa en APA: los autores en la frase, con «y», y el año entre par�
   assert.equal(cita(r, 1), '(2006)');
 });
 
+test('narrativa: si el nombre ya está antes de la marca, no se repite', () => {
+  const r = aplicar('apa', 'Según Braun y Clarke [AR22222222:n] proponen seis fases.');
+
+  assert.equal(texto(r.citas.get(1).antes), '');
+  assert.equal(cita(r, 1), '(2006)');
+});
+
 test('la página se pone donde la pide la norma', () => {
   const r = aplicar('apa', 'Lo dicen así [AR22222222:p. 79].');
   assert.match(cita(r, 1), /2006, p\. 79\)$/);

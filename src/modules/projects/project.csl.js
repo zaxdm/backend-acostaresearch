@@ -288,6 +288,21 @@ function autoresNarrativos(motor, clave, fuente, idioma, familia) {
   return autoresDeLaFicha(fuente.authors, idioma);
 }
 
+/** Sin tildes, mayúsculas ni espacios de sobra, para comparar nombres escritos a mano. */
+const sinAdornos = (texto) =>
+  String(texto ?? '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+
+/** ¿El texto acaba con esos autores? Es lo que hay justo antes de una marca narrativa. */
+function terminaCon(texto, autores) {
+  const quienes = sinAdornos(autores);
+  return quienes !== '' && sinAdornos(texto).endsWith(quienes);
+}
+
 // ── El documento ───────────────────────────────────────────────────────────
 
 /** La URI que no se confunde con ningún ítem de nadie, para lo que no está en su Zotero. */
@@ -373,9 +388,19 @@ function renderizar({ norma: idNorma, idioma: idIdioma, capitulos, porClave, uri
       for (const [, salida, id] of cambios) html.set(id, salida);
       previas.push([cita.citationID, cita.properties.noteIndex]);
 
-      const antes = narrativa
-        ? [{ texto: `${autoresNarrativos(motor, conocidas[0].clave, porClave.get(conocidas[0].clave), idioma, norma.familia)} `, cursiva: false, negrita: false, superindice: false, subindice: false, versalitas: false }]
-        : [];
+      // Si el texto ya trae los autores justo antes de la marca («Sah y Füredi-Fülöp
+      // [AR…:n]»), no se vuelven a escribir: saldría «Sah y Füredi-Fülöp Sah y
+      // Füredi-Fülöp (2022)». Pasa en el documento subido, donde el nombre es del
+      // tesista, y cuando el modelo escribe el nombre pese a la instrucción.
+      const autoresNarrados = narrativa
+        ? autoresNarrativos(motor, conocidas[0].clave, porClave.get(conocidas[0].clave), idioma, norma.familia)
+        : null;
+      const yaEstanAntes = narrativa && terminaCon(resultado, autoresNarrados);
+
+      const antes =
+        narrativa && !yaEstanAntes
+          ? [{ texto: `${autoresNarrados} `, cursiva: false, negrita: false, superindice: false, subindice: false, versalitas: false }]
+          : [];
 
       citas.set(numero, {
         id: cita.citationID,

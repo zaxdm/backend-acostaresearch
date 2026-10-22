@@ -1,7 +1,7 @@
 'use strict';
 
 const logger = require('../../config/logger');
-const { AppError, ValidationError } = require('../../shared/errors/AppError');
+const { AppError, ValidationError, NotFoundError, ConflictError } = require('../../shared/errors/AppError');
 const { ERROR_CODES } = require('../../config/constants');
 const parser = require('./scopus.parser');
 const openalex = require('./openalex.client');
@@ -120,6 +120,16 @@ const TIPOS_A_MANO = {
   informe: 'report',
   otro: 'document',
 };
+
+/** Lo de su Zotero o su Mendeley se corrige allí: la sincronización lo pisaría. */
+function noEsDeSuGestor(fila, accion) {
+  const gestor = { ZOTERO: 'Zotero', MENDELEY: 'Mendeley' }[fila.origin];
+  if (!gestor) return;
+  throw new ConflictError(
+    `Esa fuente viene de tu ${gestor}: para ${accion}la hazlo allí y se actualizará aquí sola.`,
+    ERROR_CODES.VALIDATION_ERROR,
+  );
+}
 
 /** Cuántos de SciELO de una vez: los mismos que una página de Scopus. */
 const MAXIMO_SCIELO = 25;
@@ -618,6 +628,73 @@ const propiasService = {
   /** Todas menos las que cita en sus capítulos. Ver `citadas`. */
   async vaciar(userId) {
     return propiasRepository.vaciar(userId, await clavesCitadas(userId));
+  },
+
+  /**
+   * Corrige la ficha de UNA fuente: título, autores, año, de dónde sale y tipo.
+   *
+   * Pedido de un cliente (22-oct-2026): subió fuentes sin DOI, escribió mal el
+   * nombre de dos y lo único que había era «Borrar todas». Se corrige la misma
+   * fila, sin borrarla, para que la clave de cita no cambie (ver `citadas`).
+   *
+   * Lo que viene de su Zotero o su Mendeley no se corrige aquí: la próxima
+   * sincronización lo dejaría como está en su gestor, y es allí donde lo cuida.
+   */
+  async corregir({ userId, clave, ficha }) {
+    const fila = await propiasRepository.unaPorClave(userId, clave);
+    if (!fila) throw new NotFoundError('Esa fuente ya no está en tu biblioteca.');
+    noEsDeSuGestor(fila, 'corregir');
+
+    const datos = {
+      title: recortar(ficha.titulo, 500) ?? fila.title,
+      authors: recortar(String(ficha.autores ?? '').replace(/\s*;\s*/g, '; '), 500) ?? '',
+      year: ficha.anio ?? null,
+      source: recortar(ficha.fuente, 300),
+      itemType: TIPOS_A_MANO[ficha.tipo] ?? fila.itemType,
+    };
+    datos.busqueda = normalizar(
+      [datos.title, datos.authors, datos.source, datos.year, fila.abstract, fila.tags]
+        .filter(Boolean)
+        .join(' '),
+    );
+
+    // Sin DOI, la identidad es el título (ver `parser.aFila`): si no se
+    // recalcula, volver a subir la ficha corregida la duplicaría.
+    if (String(fila.sourceRef ?? '').startsWith('titulo:')) {
+      const nueva = parser.aFila({ title: datos.title }).sourceRef;
+      if (nueva !== fila.sourceRef) {
+        if (await propiasRepository.otraConEsaIdentidad(userId, nueva, fila.id)) {
+          throw new ConflictError(
+            'Ya tienes otra fuente con ese título. Si es la misma, borra esta.',
+            ERROR_CODES.VALIDATION_ERROR,
+          );
+        }
+        datos.sourceRef = nueva;
+      }
+    }
+
+    await propiasRepository.corregir(fila.id, datos);
+    logger.info({ userId, clave }, 'Fuente propia corregida a mano');
+    return { clave };
+  },
+
+  /** Borra UNA fuente, salvo que la cite en sus capítulos. Ver `vaciar`. */
+  async borrarUna({ userId, clave }) {
+    const fila = await propiasRepository.unaPorClave(userId, clave);
+    if (!fila) throw new NotFoundError('Esa fuente ya no está en tu biblioteca.');
+    noEsDeSuGestor(fila, 'borrar');
+
+    if ((await clavesCitadas(userId)).includes(clave)) {
+      throw new ConflictError(
+        'Esa fuente la citas en tus capítulos: si la borras, la cita queda rota en tu Word. ' +
+          'Quítala primero del texto, o corrígela en vez de borrarla.',
+        ERROR_CODES.VALIDATION_ERROR,
+      );
+    }
+
+    await propiasRepository.borrarUna(userId, fila.id);
+    logger.info({ userId, clave }, 'Fuente propia borrada');
+    return { clave };
   },
 
   /**

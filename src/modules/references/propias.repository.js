@@ -384,8 +384,44 @@ async function vaciar(userId, conservar = []) {
   return { borradas: count, conservadas };
 }
 
+/**
+ * Una de sus fuentes, por la clave con la que la cita («AR…»). Con el dueño en
+ * el `where`: una clave ajena devuelve nulo, igual que una que no existe.
+ */
+function unaPorClave(userId, ref) {
+  return prisma.reference.findFirst({ where: { ownerUserId: userId, ref } });
+}
+
+/** Si ya tiene otra fuente con esa identidad, que no sea esta misma fila. */
+async function otraConEsaIdentidad(userId, sourceRef, id) {
+  const fila = await prisma.reference.findFirst({
+    where: { ownerUserId: userId, sourceRef, id: { not: id } },
+    select: { id: true },
+  });
+  return Boolean(fila);
+}
+
+/**
+ * Corrige la ficha de una fuente. Por `id`, que es lo que no cambia: de él
+ * sale la clave de cita, así que lo citado en sus capítulos sigue resolviendo
+ * y la bibliografía del Word sale ya corregida.
+ */
+function corregir(id, datos) {
+  return prisma.reference.update({ where: { id }, data: datos });
+}
+
+/** Borra una sola. El dueño va en el `where` aunque el `id` ya sea suyo. */
+async function borrarUna(userId, id) {
+  const { count } = await prisma.reference.deleteMany({ where: { ownerUserId: userId, id } });
+  return count;
+}
+
 module.exports = {
   guardarLote,
+  unaPorClave,
+  otraConEsaIdentidad,
+  corregir,
+  borrarUna,
   doisDe,
   cualesTiene,
   hashesDeRepositorioQueTiene,

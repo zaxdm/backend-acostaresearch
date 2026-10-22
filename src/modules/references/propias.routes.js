@@ -250,6 +250,53 @@ router.post(
   }),
 );
 
+/**
+ * Una sola fuente, por su clave de cita («AR…»). Corregir la ficha o borrarla.
+ * La clave nunca basta para tocar la de otro: el servicio busca con el dueño.
+ */
+const claveSchema = z.object({
+  clave: z
+    .string()
+    .trim()
+    .regex(/^AR[0-9A-F]{8}$/i, 'Esa clave no es válida.')
+    .transform((clave) => clave.toUpperCase()),
+});
+
+router.patch(
+  '/:clave',
+  validate({
+    params: claveSchema,
+    body: z.object({
+      titulo: z
+        .string()
+        .trim()
+        .min(5, 'Escribe el título completo de la fuente.')
+        .max(500, 'Ese título es demasiado largo.'),
+      autores: texto(500),
+      anio: z.coerce.number().int().min(1500).max(2100).nullish(),
+      fuente: texto(300),
+      tipo: z.enum(Object.keys(propiasService.TIPOS_A_MANO)).optional(),
+    }),
+  }),
+  asyncHandler(async (req, res) => {
+    const resultado = await propiasService.corregir({
+      userId: req.user.id,
+      clave: req.params.clave,
+      ficha: req.body,
+    });
+    return ok(res, resultado, { message: 'Fuente corregida. Su clave de cita no cambia.' });
+  }),
+);
+
+router.delete(
+  '/:clave',
+  validate({ params: claveSchema }),
+  asyncHandler(async (req, res) => {
+    const resultado = await propiasService.borrarUna({ userId: req.user.id, clave: req.params.clave });
+    return ok(res, resultado, { message: 'Fuente borrada.' });
+  }),
+);
+
 router.delete(
   '/',
   asyncHandler(async (req, res) => {

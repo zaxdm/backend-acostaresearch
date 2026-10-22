@@ -34,6 +34,7 @@
 const CSL = require('citeproc');
 
 const normas = require('./project.normas');
+const { pareceAfiliacion } = require('../references/afiliacion');
 const { MARCA, modificadoresDe, hueco } = require('./project.citas');
 
 const SIN_FORMA = '[NO_PRINTED_FORM]';
@@ -90,7 +91,7 @@ function personasCsl(autores) {
   return String(autores ?? '')
     .split(/\s*;\s*/)
     .map((persona) => persona.trim())
-    .filter(Boolean)
+    .filter((persona) => persona && !pareceAfiliacion(persona))
     .map((persona) => {
       const coma = persona.indexOf(',');
       if (coma === -1) return { literal: persona };

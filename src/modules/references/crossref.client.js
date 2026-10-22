@@ -2,6 +2,7 @@
 
 const env = require('../../config/env');
 const logger = require('../../config/logger');
+const { pareceAfiliacion } = require('./afiliacion');
 
 const BASE = 'https://api.crossref.org/works';
 
@@ -70,7 +71,10 @@ function autores(lista = []) {
     .map((persona) => {
       const apellido = String(persona.family ?? '').trim();
       const nombre = String(persona.given ?? '').trim();
-      if (!apellido) return String(persona.name ?? '').trim();
+      if (!apellido) {
+        const institucion = String(persona.name ?? '').trim();
+        return pareceAfiliacion(institucion) ? '' : institucion;
+      }
       return nombre ? `${apellido}, ${nombre.charAt(0)}.` : apellido;
     })
     .filter(Boolean)

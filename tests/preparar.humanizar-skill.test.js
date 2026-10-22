@@ -183,3 +183,67 @@ test('«Esa brecha… / Eso repercute… / Ese uso…» cuentan como un solo mol
   // Las dos primeras apariciones se quedan.
   assert.ok(!notas.has('0') && !notas.has('1'));
 });
+
+// ── Párrafos que se parecen entre sí (v3, 22-oct-2026) ────────────────────
+
+const PLANTILLA_A =
+  'La adaptación de materiales al ritmo del estudiante supone un cambio significativo para la educación superior, ' +
+  'porque también plantea nuevas preguntas sobre qué se aprende, cómo se aprende y quién responde por los resultados.';
+const PLANTILLA_B =
+  'La asistencia automatizada para organizar borradores supone un cambio significativo para la educación superior, ' +
+  'porque también plantea nuevas preguntas sobre qué se aprende, cómo se aprende y quién responde por los resultados.';
+const B_DISTINTO =
+  'Organizar borradores con asistencia automatizada obliga a decidir quién responde por lo que entrega el estudiante, ' +
+  'y esa decisión cambia lo que la universidad entiende por aprender y por evaluar un trabajo escrito.';
+
+test('un párrafo que repite frases de uno anterior se marca; el primero no', () => {
+  const repetidos = humanizador.parecidos([
+    { clave: 'a', texto: PLANTILLA_A },
+    { clave: 'b', texto: PLANTILLA_B },
+  ]);
+  assert.ok(!repetidos.has('a'));
+  assert.equal(repetidos.get('b').parecidoA, 'a');
+  assert.ok(repetidos.get('b').repetidas.some((frase) => /nuevas preguntas sobre qué se aprende/.test(frase)));
+});
+
+test('párrafos distintos no se marcan', () => {
+  const repetidos = humanizador.parecidos([
+    { clave: '1', texto: METODO_NUEVO },
+    { clave: '2', texto: RESULTADO_NUEVO },
+    { clave: '3', texto: DISCUSION_NUEVO },
+  ]);
+  assert.equal(repetidos.size, 0);
+});
+
+test('el que sigue pareciéndose a otro se reescribe viendo las frases repetidas y su gemelo', async () => {
+  const documento = [parrafo('Introducción', 1), parrafo(PLANTILLA_A), parrafo(PLANTILLA_B)];
+  const vistos = [];
+  // El paso 1 devuelve los dos casi iguales (como DeepSeek con una plantilla);
+  // la ronda contra la plantilla trae el segundo distinto.
+  const { generar } = modeloFalso(({ texto, pasada, mensaje, clave }) => {
+    if (!pasada) return texto.replace('supone', 'representa');
+    const pedido = mensaje.parrafos[clave];
+    if (pedido.repetidas) {
+      vistos.push(pedido);
+      return B_DISTINTO;
+    }
+    return texto;
+  });
+
+  const { cambios } = await humanizador.humanizar({ parrafos: documento, generar, modelos: ['falso'] });
+
+  assert.equal(vistos.length, 1);
+  assert.match(vistos[0].parecido_a, /adaptación de materiales/);
+  assert.ok(vistos[0].repetidas.length > 0);
+  const textos = Object.values(cambios).map((c) => c.texto);
+  assert.ok(textos.includes(B_DISTINTO));
+});
+
+test('en el paso 1 se avisa qué párrafos comparten plantilla', async () => {
+  const documento = [parrafo('Introducción', 1), parrafo(PLANTILLA_A), parrafo(PLANTILLA_B)];
+  const { generar, llamadas } = modeloFalso(({ texto }) => texto.replace('supone', 'representa'));
+
+  await humanizador.humanizar({ parrafos: documento, generar, modelos: ['falso'], conPasada: false });
+
+  assert.equal(llamadas[0].mensaje.comparten_plantilla.length, 2);
+});

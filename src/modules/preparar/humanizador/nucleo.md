@@ -11,6 +11,9 @@ LO QUE DIO 0 % EN TESIS REALES (y lo que no)
 - Lo que siguió marcado en la prueba del 21-oct: los párrafos que conservaron el relleno del
   original y los que quedaron en dos oraciones «Dato. Eso/Esa brecha/Ese uso + consecuencia».
   El modelo que más fundió (oraciones de 37 palabras de media) fue el único bajo el 20 %.
+- Lo que más pesa en un documento entero (22-oct): que sus párrafos no se parezcan entre sí.
+  Un texto de 5 000 palabras con la misma plantilla en cada sección siguió en 96 % porque cada
+  párrafo se reescribió parecido a sus hermanos. Copiar alguna frase del original pesa poco.
 
 CÓMO SE REESCRIBE CADA PÁRRAFO
 1. Lee el párrafo y quédate con lo que afirma: hechos, cifras, citas y relaciones.
@@ -35,6 +38,11 @@ CÓMO SE REESCRIBE CADA PÁRRAFO
 10. No partas el párrafo en «Dato. Esa/Eso/Este + consecuencia». Si la segunda oración retoma la
     primera con un demostrativo, fúndelas en una sola oración, por ejemplo con la causa delante:
     «Como solo el 38 % de los estudiantes tiene competencias digitales avanzadas, …».
+11. Párrafos que siguen la misma plantilla (los que vienen en "comparten_plantilla"): cada uno
+    con otra entrada, otra arquitectura y otro vocabulario. Lo que dicen igual se desarrolla en
+    el primero; en los demás va breve y al frente va lo que cada uno tiene de propio.
+12. Las rayas (—) y los dos puntos en medio de la oración que traiga el original también se
+    quitan: coma, punto, paréntesis o un verbo.
 
 EL RELLENO SE BORRA, AUNQUE ESTÉ EN EL ORIGINAL
 Quitarlo no es perder una idea: no la tiene. Fuera, sin sustituto:

@@ -66,7 +66,9 @@ const FORMATO = `
 ENTRADA: un objeto JSON con
 - "seccion": el capítulo al que pertenecen los párrafos;
 - "ya_usadas": cómo abren otros párrafos del documento, ya humanizados. No abras ninguno igual;
-- "parrafos": cada clave es el número de un párrafo y cada valor su texto.
+- "parrafos": cada clave es el número de un párrafo y cada valor su texto;
+- "comparten_plantilla" (si viene): los párrafos de esta tanda que en el original siguen la misma
+  plantilla que otros del documento. Escribe cada uno con su propia arquitectura.
 
 SALIDA: solo un objeto JSON con EXACTAMENTE las claves de "parrafos" y, como valor, el texto
 nuevo de ese párrafo. Nada fuera del JSON. Un párrafo por clave: no juntes dos párrafos en uno
@@ -79,6 +81,14 @@ ENTRADA: un objeto JSON con "ya_usadas" (las aperturas de párrafo que ya hay en
 
 SALIDA: solo un objeto JSON con EXACTAMENTE las claves de "parrafos" y, como valor, el texto
 corregido (una cadena). Nada fuera del JSON.
+`.trim();
+
+const FORMATO_ROMPER = `
+ENTRADA: un objeto JSON con "parrafos": cada clave es el número de un párrafo y cada valor,
+{"texto", "repetidas", "parecido_a"}.
+
+SALIDA: solo un objeto JSON con EXACTAMENTE las claves de "parrafos" y, como valor, el texto
+nuevo (una cadena). Nada fuera del JSON.
 `.trim();
 
 const INSISTIR = `
@@ -94,7 +104,12 @@ let enMemoria = null;
 function leerSkill(carpeta = CARPETA) {
   if (carpeta === CARPETA && enMemoria) return enMemoria;
   const leer = (archivo) => fs.readFileSync(path.join(carpeta, archivo), 'utf8').trim();
-  const skill = { nucleo: leer('nucleo.md'), pasada: leer('pasada-documento.md'), rutas: {} };
+  const skill = {
+    nucleo: leer('nucleo.md'),
+    pasada: leer('pasada-documento.md'),
+    romper: leer('romper-plantilla.md'),
+    rutas: {},
+  };
   for (const ruta of Object.keys(NOMBRES)) {
     skill.rutas[ruta] = `${leer(`rutas/${ruta}.md`)}\n\n${leer(`ejemplos/${ruta}.md`)}`;
   }
@@ -156,6 +171,8 @@ const RELLENO = [
   /(futuro|panorama) [^.]{0,30}prometedor/i,
   /formación (completa|integral|holística)/i,
 ];
+
+const BISAGRA = /[^\s\d]: [a-záéíóúñ]/;
 
 const MOLDES = [
   ['«Lo que … es/será»', /\blo que [^.]{0,60}?\b(es|será|son|fue|hará|pide|interesa)\b/gi],
@@ -231,6 +248,11 @@ function moldesDe(textos, minimo = 3) {
   for (const { clave, texto } of textos) {
     const relleno = RELLENO.map((patron) => texto.match(patron)?.[0]).filter(Boolean);
     if (relleno.length > 0) anotar(clave, `conserva relleno que se borra sin sustituto: «${relleno.join('», «')}»`);
+    // Las del original también (22-oct: 68 rayas y 68 dos puntos en un
+    // documento que siguió en 96 %). Los dos puntos de un rótulo inicial
+    // («Interpretación del resultado:») no cuentan.
+    if (texto.includes('—')) anotar(clave, 'lleva rayas (—): cámbialas por coma, punto o paréntesis');
+    if (BISAGRA.test(texto.slice(40))) anotar(clave, 'usa dos puntos en medio de una oración: parte en dos o une con un verbo');
   }
 
   for (const [nombre, patron] of MOLDES) {
@@ -242,6 +264,80 @@ function moldesDe(textos, minimo = 3) {
   }
 
   return notas;
+}
+
+// ── Párrafos que se parecen entre sí ───────────────────────────────────────
+
+/**
+ * Lo que separa un documento en 0 % de uno en 96 %, medido el 22-oct-2026 en
+ * tramos de cinco palabras: en los que dieron 0 % (la tesis 07 a mano, el Word
+ * de prueba con DeepSeek) cada párrafo comparte con los demás el 4–8 % de sus
+ * tramos; en uno de 5 000 palabras con la misma plantilla en cada sección,
+ * reescrito párrafo a párrafo, el 41 % (96 % de IA) y el 29 % (79 %). Copiar
+ * tramos del original no separa: los 0 % copian el 23–25 %.
+ */
+const PARECIDO_MAXIMO = 0.15;
+/** Desde aquí, en el original, el párrafo «comparte plantilla» con otro. */
+const PLANTILLA_COMPARTIDA = 0.3;
+const TRAMO = 5;
+
+const tokens = (texto) => String(texto).match(/\p{L}+/gu) ?? [];
+
+function tramosDe(lista) {
+  const minusculas = lista.map((palabra) => palabra.toLowerCase());
+  const tramos = [];
+  for (let i = 0; i + TRAMO <= minusculas.length; i += 1) tramos.push(minusculas.slice(i, i + TRAMO).join(' '));
+  return tramos;
+}
+
+/**
+ * Cuánto de cada párrafo está ya en párrafos ANTERIORES del documento:
+ * `Map<clave, { parecido, repetidas, parecidoA }>`, solo los que pasan de
+ * `umbral`. El primero de cada grupo no sale nunca: es el que se queda.
+ */
+function parecidos(textos, umbral = PARECIDO_MAXIMO) {
+  const vistos = new Map();
+  const resultado = new Map();
+  for (const { clave, texto } of textos) {
+    const lista = tokens(texto);
+    const tramos = tramosDe(lista);
+    const de = tramos.map((tramo) => vistos.get(tramo));
+    const compartidos = de.filter(Boolean).length;
+    if (tramos.length > 0 && compartidos / tramos.length > umbral && cuerpo.palabrasDe(texto) >= 25) {
+      const marcadas = new Array(lista.length).fill(false);
+      de.forEach((otro, i) => {
+        if (otro) for (let k = i; k < i + TRAMO; k += 1) marcadas[k] = true;
+      });
+      const repetidas = [];
+      let tramo = [];
+      lista.forEach((palabra, i) => {
+        if (marcadas[i]) tramo.push(palabra);
+        else if (tramo.length > 0) {
+          repetidas.push(tramo.join(' '));
+          tramo = [];
+        }
+      });
+      if (tramo.length > 0) repetidas.push(tramo.join(' '));
+
+      const cuenta = new Map();
+      for (const otro of de) if (otro) cuenta.set(otro, (cuenta.get(otro) ?? 0) + 1);
+      const [parecidoA] = [...cuenta.entries()].sort((a, b) => b[1] - a[1])[0];
+      resultado.set(clave, { parecido: compartidos / tramos.length, repetidas: repetidas.slice(0, 10), parecidoA });
+    }
+    for (const tramo of tramos) if (!vistos.has(tramo)) vistos.set(tramo, clave);
+  }
+  return resultado;
+}
+
+/** Los párrafos que en el original siguen la plantilla de otro, los dos lados. */
+function plantillasCompartidas(prosa) {
+  const iguales = parecidos(prosa.map(({ clave, texto }) => ({ clave, texto })), PLANTILLA_COMPARTIDA);
+  const claves = new Set();
+  for (const [clave, { parecidoA }] of iguales) {
+    claves.add(clave);
+    claves.add(parecidoA);
+  }
+  return claves;
 }
 
 // ── Pasos ──────────────────────────────────────────────────────────────────
@@ -260,7 +356,7 @@ const sumar = (uso, otro) => {
 };
 
 /** Paso 1: capítulo por capítulo, con las comprobaciones del servicio y un tercer intento. */
-async function porRutas({ prosa, skill, generar, modelos, actual, malos, uso, porTanda, avance }) {
+async function porRutas({ prosa, skill, generar, modelos, actual, malos, uso, porTanda, avance, plantilla }) {
   const usadas = [];
   for (const ruta of Object.keys(NOMBRES)) {
     const suyos = prosa.filter((parrafo) => parrafo.ruta === ruta);
@@ -271,7 +367,13 @@ async function porRutas({ prosa, skill, generar, modelos, actual, malos, uso, po
       // siempre, es el reintento con insistencia.
       const insistir = peticion.sistema !== prompt.HUMANIZAR;
       const entrada = JSON.parse(peticion.mensajes[0].texto);
-      const texto = JSON.stringify({ seccion: NOMBRES[ruta], ya_usadas: usadas.slice(-30), parrafos: entrada });
+      const comparten = Object.keys(entrada).filter((clave) => plantilla.has(clave));
+      const texto = JSON.stringify({
+        seccion: NOMBRES[ruta],
+        ya_usadas: usadas.slice(-30),
+        parrafos: entrada,
+        ...(comparten.length > 1 ? { comparten_plantilla: comparten } : {}),
+      });
       return generar({
         ...peticion,
         sistema: sistemaDe(skill, ruta, insistir),
@@ -322,25 +424,22 @@ async function porRutas({ prosa, skill, generar, modelos, actual, malos, uso, po
   }
 }
 
-/** Paso 2: una pasada sobre el documento entero. Devuelve cuántos párrafos cambió. */
-async function pasada({ prosa, skill, generar, modelos, actual, uso, porTanda }) {
-  const textos = prosa.map((parrafo) => ({ clave: parrafo.clave, texto: actual.get(parrafo.clave) ?? parrafo.texto }));
-  const notas = moldesDe(textos);
-  if (notas.size === 0) return 0;
-
+/**
+ * Una ronda de correcciones sobre párrafos ya humanizados: se manda cada tanda
+ * y se acepta lo que pase las comprobaciones contra el ORIGINAL del autor (así
+ * valen todas: cifras, citas, vocabulario; y no la de «casi igual»). Lo que no
+ * pasa, o una tanda que falla, deja lo que había. Devuelve cuántos cambió.
+ */
+async function corregir({ pedidos, entradaDe, sistema, prosa, generar, modelos, actual, uso, porTanda }) {
   const porClave = new Map(prosa.map((parrafo) => [parrafo.clave, parrafo]));
-  const usadas = [...new Set(textos.map(({ texto }) => palabras(texto).slice(0, 3).join(' ')))];
-  const pedidos = [...notas.keys()].map((clave) => ({ ...porClave.get(clave), texto: actual.get(clave) ?? porClave.get(clave).texto }));
-
   let tocados = 0;
   await motor.enParalelo(
     motor.tandasDe(pedidos, porTanda).map((tanda) => async () => {
-      const entrada = Object.fromEntries(tanda.map((p) => [p.clave, { texto: p.texto, nota: notas.get(p.clave).join('; ') }]));
       let respuesta;
       try {
         respuesta = await generar({
-          sistema: `${skill.pasada}\n\n${FORMATO_PASADA}`,
-          mensajes: [{ rol: 'usuario', texto: JSON.stringify({ ya_usadas: usadas, parrafos: entrada }) }],
+          sistema,
+          mensajes: [{ rol: 'usuario', texto: JSON.stringify(entradaDe(tanda)) }],
           modelos: modelos ?? motor.modelos('HUMANIZAR'),
           clave: env.PREPARAR_GEMINI_API_KEY || env.GEMINI_API_KEY,
           thinking: env.PREPARAR_THINKING,
@@ -348,7 +447,6 @@ async function pasada({ prosa, skill, generar, modelos, actual, uso, porTanda })
           ...holgura(motor.tokensPara(tanda.reduce((total, p) => total + p.palabras, 0))),
         });
       } catch {
-        // La pasada mejora; si falla, se queda lo del paso 1, que ya pasó las comprobaciones.
         return;
       }
       uso.llamadas += 1;
@@ -363,8 +461,6 @@ async function pasada({ prosa, skill, generar, modelos, actual, uso, porTanda })
       }
       for (const p of tanda) {
         const nuevo = devuelto?.[p.clave];
-        // Contra el ORIGINAL del autor: así valen todas las comprobaciones
-        // (cifras, citas, vocabulario) y no la de «casi igual».
         const original = porClave.get(p.clave);
         if (motor.comprobar(original.texto, nuevo, { servicio: 'HUMANIZAR' }, original.citas)) continue;
         actual.set(p.clave, tipografia.arreglar(String(nuevo).trim()));
@@ -374,6 +470,70 @@ async function pasada({ prosa, skill, generar, modelos, actual, uso, porTanda })
     env.PREPARAR_TANDAS_A_LA_VEZ,
   );
   return tocados;
+}
+
+const textosDe = (prosa, actual) =>
+  prosa.map((parrafo) => ({ clave: parrafo.clave, texto: actual.get(parrafo.clave) ?? parrafo.texto }));
+
+/**
+ * Paso 2: los párrafos que se parecen demasiado a uno anterior se reescriben
+ * enteros, viendo las frases repetidas y el párrafo al que se parecen.
+ */
+async function romperPlantillas({ prosa, skill, generar, modelos, actual, uso, porTanda }) {
+  const textos = textosDe(prosa, actual);
+  const repetidos = parecidos(textos);
+  if (repetidos.size === 0) return 0;
+
+  const porClave = new Map(textos.map(({ clave, texto }) => [clave, texto]));
+  const pedidos = prosa
+    .filter((parrafo) => repetidos.has(parrafo.clave))
+    .map((parrafo) => ({ ...parrafo, texto: porClave.get(parrafo.clave) }));
+  return corregir({
+    pedidos,
+    entradaDe: (tanda) => ({
+      parrafos: Object.fromEntries(
+        tanda.map((p) => {
+          const { repetidas, parecidoA } = repetidos.get(p.clave);
+          return [p.clave, { texto: p.texto, repetidas, parecido_a: porClave.get(parecidoA) }];
+        }),
+      ),
+    }),
+    sistema: `${skill.nucleo}\n\n${skill.romper}\n\n${FORMATO_ROMPER}`,
+    prosa,
+    generar,
+    modelos,
+    actual,
+    uso,
+    // Cada párrafo viaja con el que se le parece: la tanda, a la mitad.
+    porTanda: Math.ceil(porTanda / 2),
+  });
+}
+
+/** Paso 3: una pasada sobre el documento entero. Devuelve cuántos párrafos cambió. */
+async function pasada({ prosa, skill, generar, modelos, actual, uso, porTanda }) {
+  const textos = textosDe(prosa, actual);
+  const notas = moldesDe(textos);
+  if (notas.size === 0) return 0;
+
+  const usadas = [...new Set(textos.map(({ texto }) => palabras(texto).slice(0, 3).join(' ')))];
+  const porClave = new Map(textos.map(({ clave, texto }) => [clave, texto]));
+  const pedidos = prosa
+    .filter((parrafo) => notas.has(parrafo.clave))
+    .map((parrafo) => ({ ...parrafo, texto: porClave.get(parrafo.clave) }));
+  return corregir({
+    pedidos,
+    entradaDe: (tanda) => ({
+      ya_usadas: usadas,
+      parrafos: Object.fromEntries(tanda.map((p) => [p.clave, { texto: p.texto, nota: notas.get(p.clave).join('; ') }])),
+    }),
+    sistema: `${skill.pasada}\n\n${FORMATO_PASADA}`,
+    prosa,
+    generar,
+    modelos,
+    actual,
+    uso,
+    porTanda,
+  });
 }
 
 /**
@@ -397,13 +557,15 @@ async function humanizar({
   const actual = new Map();
   const malos = [];
   const uso = { llamadas: 0, entrada: 0, salida: 0 };
+  const plantilla = plantillasCompartidas(prosa);
 
-  // El avance que ve el cliente: las tandas de cada capítulo y las dos pasadas.
+  // El avance que ve el cliente: las tandas de cada capítulo, las dos rondas
+  // contra la plantilla y las dos pasadas.
   const tandas = Object.keys(NOMBRES).reduce(
     (total, ruta) => total + motor.tandasDe(prosa.filter((p) => p.ruta === ruta), porTanda).length,
     0,
   );
-  const total = tandas + (conPasada ? 2 : 0);
+  const total = tandas + (conPasada ? 4 : 0);
   const avance = {
     hechas: 0,
     marcar(hechas) {
@@ -416,7 +578,7 @@ async function humanizar({
     },
   };
 
-  await porRutas({ prosa, skill, generar, modelos, actual, malos, uso, porTanda, avance });
+  await porRutas({ prosa, skill, generar, modelos, actual, malos, uso, porTanda, avance, plantilla });
 
   if (actual.size === 0 && prosa.length > 0) {
     throw new Error(malos[0]?.motivo ?? 'El modelo no devolvió ningún párrafo utilizable.');
@@ -424,10 +586,16 @@ async function humanizar({
 
   const trasElPaso1 = new Map(actual);
   if (conPasada) {
+    // Dos rondas: lo que se reescribe a la vez en tandas distintas puede
+    // volver a parecerse entre sí; la segunda lo mide otra vez.
+    for (let ronda = 1; ronda <= 2; ronda += 1) {
+      await romperPlantillas({ prosa, skill, generar, modelos, actual, uso, porTanda });
+      avance.marcar(tandas + ronda);
+    }
     await pasada({ prosa, skill, generar, modelos, actual, uso, porTanda });
-    avance.marcar(tandas + 1);
+    avance.marcar(tandas + 3);
     await pasada({ prosa, skill, generar, modelos, actual, uso, porTanda });
-    avance.marcar(tandas + 2);
+    avance.marcar(tandas + 4);
   }
 
   const cambios = {};
@@ -436,9 +604,20 @@ async function humanizar({
     if (texto && texto !== parrafo.texto) cambios[parrafo.clave] = { original: parrafo.texto, texto };
   }
 
-  // Un párrafo que la pasada reescribió ya no está «sin humanizar».
+  // Un párrafo que una ronda posterior reescribió ya no está «sin humanizar».
   const quedan = malos.filter((malo) => actual.get(String(malo.id)) === trasElPaso1.get(String(malo.id)));
   return { cambios, malos: quedan, tandas, uso };
 }
 
-module.exports = { humanizar, porCapitulos, rutaDelTitulo, moldesDe, leerSkill, sistemaDe, oraciones, NOMBRES };
+module.exports = {
+  humanizar,
+  porCapitulos,
+  rutaDelTitulo,
+  moldesDe,
+  parecidos,
+  plantillasCompartidas,
+  leerSkill,
+  sistemaDe,
+  oraciones,
+  NOMBRES,
+};

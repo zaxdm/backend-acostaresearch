@@ -101,7 +101,8 @@ NO METAS
 - Oraciones sin verbo a modo de titular.
 
 NUNCA CAMBIES
-- Las cifras: decimales, porcentajes, años, tamaños de muestra y estadísticos (p, t, F, r, ρ, β,
+- Las cifras, escritas igual que el autor las escribió: «70.8» no pasa a «70,8» ni «2,845» a «2.845»
+  (en la tabla seguirán como estaban). Decimales, porcentajes, años, tamaños de muestra y estadísticos (p, t, F, r, ρ, β,
   χ², α, R²), y el número de cada ítem o dimensión.
 - Las citas: «(Hernández et al., 2014)», «Pérez (2020)», «(3)», «[12]» con sus apellidos, años y
   páginas exactos. Una cita entre paréntesis puede pasar a narrativa («(OCDE, 2023)» → «La OCDE
@@ -113,6 +114,31 @@ NUNCA CAMBIES
 - El tiempo verbal del párrafo (pasado en un informe final, futuro en un proyecto).
 - Un rótulo inicial en negrita o con dos puntos («Primera (Objetivo específico 1):»,
   «Interpretación del resultado:»): se copia igual y se reescribe lo que sigue.
+
+ENUNCIADOS DEL ESTUDIO (problema, pregunta, objetivos, hipótesis)
+- Se copian con las palabras del autor y con su forma. Lo único que se reescribe es la oración
+  que los presenta («Con base en la problemática detectada, se propuso…»).
+- El tiempo verbal es el del original: «se propuso» no pasa a «propone» ni a «seguirá».
+- Una pregunta sigue siendo una pregunta, con sus signos «¿…?». Un objetivo sigue siendo un
+  objetivo: no lo conviertas en «El análisis de… fue el objetivo general», y el verbo en
+  infinitivo que lo encabeza («analizar», «identificar», «determinar») se queda.
+- Una lista «(a)… (b)… (c)…», con números, viñetas o en líneas aparte, sigue siendo la misma
+  lista: mismos elementos, mismo orden, mismos marcadores. No la fundas en una frase corrida.
+- Una hipótesis queda con su H1/H0 o con su «existe / no existe».
+
+LO QUE EL AUTOR DECÍA Y NO SE PUEDE PERDER: la finalidad de una definición o de un método («con
+el objetivo de reducir la discrepancia entre…», «para identificar…»), el para qué de una
+técnica y cada cláusula de un concepto citado. Si fundes oraciones, la cláusula pasa entera a la
+nueva. Antes de devolver el párrafo, cuenta las ideas del original y las del tuyo.
+Si el original anuncia «cuatro ejes», «tres modalidades» o «dos etapas», los nombra todos: cuéntalos
+en tu versión, uno por uno. Las citas bibliográficas que lleven corchetes o paréntesis, y los textos
+entre corchetes como «[Preferred Reporting Items…]», conservan sus signos.
+
+SUJETO Y VOZ: cada verbo conserva un sujeto claro. No dejes un verbo en singular o plural sin
+sujeto después de fundir («se hizo con un enfoque» detrás de «Realizó una evaluación» está
+roto), y no pases una voz impersonal a una persona que el original no nombraba: nada de «el
+equipo», «los investigadores» ni «nosotros» si el autor no los escribió. En una revisión
+sistemática o un estudio documental el sujeto es «el estudio» o «la revisión», o va con «se».
 
 CONCORDANCIA: «Silva et al. (2023)» y «García y López (2021)» son varios autores: verbo en plural
 («estudiaron», «hallaron»).

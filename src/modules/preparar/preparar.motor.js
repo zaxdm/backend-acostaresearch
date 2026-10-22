@@ -244,6 +244,24 @@ function citaPerdida(original, nuevo) {
 }
 
 /**
+ * Lo que un enunciado del estudio tiene de estructura: los números de una
+ * lista «(a)… (b)…» y el signo de apertura de una pregunta. El 22-oct-2026 el
+ * objetivo general salió como «El análisis… fue el objetivo general» y los
+ * cuatro específicos se fundieron en una frase corrida («Cuatro objetivos
+ * específicos lo buscaron, como…»): las cifras y las citas cuadraban, pero la
+ * lista y la forma del objetivo ya no eran las del autor.
+ */
+const MARCADOR_DE_LISTA = /\(([a-z]|[ivx]{1,4}|\d{1,2})\)/giu;
+const marcadoresDe = (texto) => (String(texto).match(MARCADOR_DE_LISTA) ?? []).map((m) => m.toLowerCase());
+
+/**
+ * Quién hace lo que cuenta el párrafo: si el original no decía «el equipo» o
+ * «los investigadores», el texto nuevo tampoco (22-oct: «el equipo codificó las
+ * evidencias» en una revisión que no nombraba a nadie).
+ */
+const SUJETO_INVENTADO = /\b(el equipo|nuestro equipo|los investigadores|las investigadoras|nosotros|nosotras)\b/giu;
+
+/**
  * Los rechazos de humanizar que no estropean nada: un molde, una palabra de la
  * lista, una raya o un párrafo casi igual. Se reintentan, pero si el reintento
  * tampoco sale limpio se entrega la reescritura. Ver `prepararParrafos`.
@@ -284,6 +302,31 @@ function comprobarHumanizado(original, nuevo) {
 
   const cita = citaPerdida(original, nuevo);
   if (cita) return `la cita «${cita}» dejó de ser una cita`;
+
+  const antesLista = marcadoresDe(original);
+  if (antesLista.length >= 2) {
+    const despuesLista = marcadoresDe(nuevo);
+    const faltan = antesLista.filter((marca) => !despuesLista.includes(marca));
+    if (faltan.length > 0) return `la lista del original perdió ${faltan.join(' ')}: se copia igual, con sus números`;
+  }
+
+  if (String(original).includes('¿') && !String(nuevo).includes('¿')) {
+    return 'la pregunta del original dejó de ser una pregunta: se copia como la escribió el autor';
+  }
+
+  // Cada número se escribe como lo escribió el autor: «70.8» no pasa a «70,8»
+  // ni «2,845» a «2.845». `cifrasDe` parte por los dígitos y no lo ve, y el
+  // texto quedaba distinto de su propia tabla (22-oct-2026).
+  const escritas = String(nuevo).match(/\d+[.,]\d+/g) ?? [];
+  const cambiada = (String(original).match(/\d+[.,]\d+/g) ?? []).find((numero) => !escritas.includes(numero));
+  if (cambiada) return `la cifra «${cambiada}» cambió de escritura: se copia igual que la escribió el autor`;
+
+  // «empìrica»: una tilde grave que el español no tiene es una errata del modelo.
+  const graves = /[àèìòùÀÈÌÒÙ]/;
+  if (graves.test(nuevo) && !graves.test(original)) return 'el texto nuevo trae una letra con tilde grave (à, è, ì, ò, ù), que es una errata';
+
+  const inventado = vecesQue(nuevo, SUJETO_INVENTADO) > vecesQue(original, SUJETO_INVENTADO);
+  if (inventado) return 'se inventó un sujeto que el original no traía («el equipo», «los investigadores»)';
 
   return null;
 }

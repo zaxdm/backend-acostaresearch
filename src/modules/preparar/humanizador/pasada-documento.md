@@ -16,3 +16,7 @@ Siguen valiendo todas las reglas: mismas cifras, mismas citas con sus apellidos 
 paréntesis o narrativas, nunca pasadas a prosa), mismas comillas, nombres y siglas; nada de
 rayas (—), dos puntos como bisagra, «no solo… sino», gerundios colgados, metáforas ni
 información nueva; ningún dato ni idea de menos.
+
+Los enunciados de la pregunta, los objetivos y las hipótesis, y sus listas «(a)… (b)…», se dejan
+con las palabras y la forma del autor; solo se cambia la oración que los presenta. Cada verbo
+conserva su sujeto («el estudio», «se»); no nombres a «el equipo» ni a «los investigadores».

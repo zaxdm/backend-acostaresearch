@@ -226,6 +226,64 @@ test('«no solo…, sino…» y los dos puntos como bisagra nuevos se rechazan',
   assert.match(motor.comprobarHumanizado(CEPAL, conBisagra), /dos puntos/);
 });
 
+// ── Lo que salió el 22-oct-2026 con el Word de la revisión sistemática ─────
+
+const OBJETIVOS =
+  'Con relación directa al problema planteado, se propuso como objetivo general analizar la evidencia ' +
+  'científica publicada entre los años 2022 y 2026 respecto a las estrategias de retroalimentación formativa. ' +
+  'A fin de alcanzar este objetivo, se establecieron cuatro objetivos específicos: (a) identificar las ' +
+  'características metodológicas de las publicaciones; (b) caracterizar las tipologías de retroalimentación; ' +
+  '(c) determinar los efectos en las competencias escolares; y (d) identificar las barreras institucionales.';
+
+test('una lista (a)… (d) fundida en una frase corrida se rechaza', () => {
+  const nuevo =
+    'El análisis de la evidencia científica publicada entre 2022 y 2026 sobre las estrategias de retroalimentación ' +
+    'formativa fue el objetivo general. Cuatro objetivos específicos lo buscaron, como identificar las características ' +
+    'metodológicas, caracterizar las tipologías, determinar los efectos en las competencias escolares e identificar ' +
+    'las barreras institucionales.';
+  assert.match(motor.comprobarHumanizado(OBJETIVOS, nuevo), /la lista del original perdió \(a\) \(b\) \(c\) \(d\)/);
+});
+
+test('la lista con sus marcadores y otra presentación sí pasa', () => {
+  const nuevo =
+    'El objetivo general fue analizar la evidencia científica de 2022 a 2026 sobre la retroalimentación formativa, y ' +
+    'para lograrlo se fijaron cuatro específicos: (a) identificar las características metodológicas de las publicaciones; ' +
+    '(b) caracterizar las tipologías de retroalimentación; (c) determinar los efectos en las competencias escolares; ' +
+    'y (d) identificar las barreras institucionales.';
+  assert.equal(motor.comprobarHumanizado(OBJETIVOS, nuevo), null);
+});
+
+test('una pregunta que pierde sus signos se rechaza', () => {
+  const pregunta =
+    'Con base en la problemática detectada, el estudio se estructuró en torno a la siguiente interrogante general: ' +
+    '¿qué evidencia científica reportaron las publicaciones indexadas entre 2022 y 2026 sobre la retroalimentación formativa?';
+  const nuevo =
+    'La investigación quiso saber qué evidencia científica reportaron entre 2022 y 2026 las publicaciones indexadas ' +
+    'sobre la retroalimentación formativa, a partir de la problemática detectada.';
+  assert.match(motor.comprobarHumanizado(pregunta, nuevo), /pregunta/);
+});
+
+test('un sujeto que el original no traía («el equipo») se rechaza, y si lo traía no cuenta', () => {
+  const original =
+    'Las evidencias se codificaron en cuatro ejes: las características metodológicas, las modalidades de ' +
+    'retroalimentación, los efectos en las competencias y las barreras institucionales de cada estudio.';
+  const nuevo =
+    'Luego el equipo codificó las evidencias según las características metodológicas, las modalidades de ' +
+    'retroalimentación, los efectos en las competencias y las barreras institucionales de cada estudio.';
+  assert.match(motor.comprobarHumanizado(original, nuevo), /sujeto/);
+  assert.equal(motor.comprobarHumanizado(`${original} El equipo lo revisó.`, nuevo), null);
+});
+
+test('«70.8» escrito «70,8» y una tilde grave se rechazan, aunque las cifras cuadren por dígitos', () => {
+  const original =
+    'La retroalimentación anticipa hasta el 70.8 % del avance en competencias científicas y explica el 44.4 % de la ' +
+    'comprensión lectora en estudiantes de primaria, según los estudios revisados en la región durante el periodo.';
+  const coma = original.replace('70.8', '70,8');
+  assert.match(motor.comprobarHumanizado(original, coma), /«70\.8» cambió de escritura/);
+  const grave = original.replace('lectora', 'lectòra');
+  assert.match(motor.comprobarHumanizado(original, grave), /tilde grave/);
+});
+
 test('HUMANIZAR_MODELO cambia el modelo solo de este servicio', () => {
   const antes = env.HUMANIZAR_MODELO;
   env.HUMANIZAR_MODELO = 'bedrock:otro-modelo';

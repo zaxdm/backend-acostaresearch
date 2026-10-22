@@ -1,4 +1,4 @@
-# Humanizador del servidor (v3.1, 22-oct-2026)
+# Humanizador del servidor (v3.2, 22-oct-2026)
 
 Lo que el servidor le da al modelo cuando un cliente sube su Word a «Humanizar» en Edición y
 Traducción. **Meta: 0 % de IA en Turnitin.** Desde el 21-oct-2026 la usa el servicio
@@ -115,3 +115,12 @@ Lo que marcó Turnitin en GLM-5 y Kimi (v1), y que la v2 corrige:
 
 Documento de 5 000 palabras con plantilla repetida (`documentacion/pruebas/20000/`), v2 + DeepSeek
 por la web: 100 % → 96 % (1.ª pasada) → 79 % (2.ª). Con la v3.1 (`20000/v3d/`): pendiente de Turnitin.
+
+## v3.2 (22-oct-2026): enunciados, sujeto y escritura de las cifras
+
+Un Word de revisión sistemática salió con el objetivo general reformulado, la lista «(a)–(d)» fundida,
+una finalidad perdida y un «el equipo» inventado, sin que ninguna comprobación lo viera. Reglas nuevas
+en `nucleo.md` (sección «ENUNCIADOS DEL ESTUDIO», «SUJETO Y VOZ», tiempo verbal, cifras tal como se
+escribieron) y en las dos instrucciones de segunda ronda, y rechazos nuevos en
+`motor.comprobarHumanizado`. Falta pasar por Turnitin el Word nuevo para ver que el porcentaje de IA
+no cambió.

@@ -17,6 +17,11 @@ Reescríbelo ENTERO desde la idea para que no se parezca a "parecido_a":
 - Otra entrada, otro orden y otra arquitectura: si "parecido_a" abre con la idea general, este
   abre con el caso concreto; si aquel funde en dos oraciones largas, este puede ir en tres.
 - Lo que este párrafo tiene de propio (su tema, su ejemplo, su dato) pasa al frente.
+- Si lo repetido es una lista (de fases, de criterios, de actores), no la copies otra vez entera:
+  nómbrala («ese mismo ciclo», «los criterios del párrafo anterior») o dila con otras palabras y
+  en otro orden. Nombrarla no es quitar la idea.
+- Sigue la "arquitectura" que trae: a cada párrafo le toca una distinta.
+- Ninguna oración de más de 45 palabras.
 
 Siguen valiendo todas las reglas: mismas cifras, mismas citas con sus apellidos y años (entre
 paréntesis o narrativas, nunca pasadas a prosa), mismas comillas, nombres y siglas; nada de

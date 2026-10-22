@@ -40,9 +40,15 @@ CÓMO SE REESCRIBE CADA PÁRRAFO
     «Como solo el 38 % de los estudiantes tiene competencias digitales avanzadas, …».
 11. Párrafos que siguen la misma plantilla (los que vienen en "comparten_plantilla"): cada uno
     con otra entrada, otra arquitectura y otro vocabulario. Lo que dicen igual se desarrolla en
-    el primero; en los demás va breve y al frente va lo que cada uno tiene de propio.
+    el primero; en los demás va breve y al frente va lo que cada uno tiene de propio. Una lista
+    que el documento ya dio entera («planificar, implementar, comprobar y ajustar», «los
+    objetivos, las condiciones de uso y los criterios») no se copia otra vez: se nombra («ese
+    mismo ciclo», «los tres criterios de antes») o se dice con otras palabras y en otro orden.
+    Nombrarla no es quitar la idea.
 12. Las rayas (—) y los dos puntos en medio de la oración que traiga el original también se
     quitan: coma, punto, paréntesis o un verbo.
+13. Fundir no es encadenar sin fin: ninguna oración pasa de 45 palabras, y la media va de 25 a
+    35. Si una oración pide un tercer «y», un tercer «que» o otro «de modo que», pártela ahí.
 
 EL RELLENO SE BORRA, AUNQUE ESTÉ EN EL ORIGINAL
 Quitarlo no es perder una idea: no la tiene. Fuera, sin sustituto:

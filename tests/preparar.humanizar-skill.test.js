@@ -245,5 +245,9 @@ test('en el paso 1 se avisa qué párrafos comparten plantilla', async () => {
 
   await humanizador.humanizar({ parrafos: documento, generar, modelos: ['falso'], conPasada: false });
 
-  assert.equal(llamadas[0].mensaje.comparten_plantilla.length, 2);
+  const comparten = llamadas[0].mensaje.comparten_plantilla;
+  assert.equal(Object.keys(comparten).length, 2);
+  // A cada hermano le toca una forma de entrar distinta.
+  const [primera, segunda] = Object.values(comparten);
+  assert.notEqual(primera, segunda);
 });

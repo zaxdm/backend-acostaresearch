@@ -1,4 +1,4 @@
-# Humanizador del servidor (v3, 22-oct-2026)
+# Humanizador del servidor (v3.1, 22-oct-2026)
 
 Lo que el servidor le da al modelo cuando un cliente sube su Word a «Humanizar» en Edición y
 Traducción. **Meta: 0 % de IA en Turnitin.** Desde el 21-oct-2026 la usa el servicio
@@ -75,6 +75,13 @@ trabajo nuevo en 0 % de ese capítulo.
   rehace entero viendo las frases repetidas y su gemelo (`romper-plantilla.md`, dos rondas). En
   la primera reescritura ya se avisa qué párrafos comparten plantilla en el original, y las
   pasadas quitan también las rayas y los dos puntos que traía el original.
+- **v3.1** (22-oct, probada con la clave de Bedrock en local): los párrafos rehechos a la vez
+  volvían a parecerse entre sí (22 de 38). Ahora a cada hermano de una plantilla le toca una
+  forma de entrar distinta (`ARQUITECTURAS`, la regla de la Ruta 0 %), una lista ya dicha entera
+  se nombra en vez de copiarse, hay tres rondas contra la plantilla y un tope de 45 palabras por
+  oración. Con el documento de 5 000: parecido entre párrafos 41 % (v2) → 16 % → **13 %**
+  (v3.1), 43 llamadas, ~0,18 USD. El Word de prueba en 0 % tenía 4 %; el largo de las oraciones
+  no separa (ese tenía 50 palabras de media). El script imprime qué hizo y rechazó cada ronda.
 
 ## Resultados
 
@@ -107,4 +114,4 @@ Lo que marcó Turnitin en GLM-5 y Kimi (v1), y que la v2 corrige:
 - DeepSeek, el único bajo el 20 %, fue el que más fundió (oración media de 37,6 palabras).
 
 Documento de 5 000 palabras con plantilla repetida (`documentacion/pruebas/20000/`), v2 + DeepSeek
-por la web: 100 % → 96 % (1.ª pasada) → 79 % (2.ª). Con la v3: pendiente.
+por la web: 100 % → 96 % (1.ª pasada) → 79 % (2.ª). Con la v3.1 (`20000/v3d/`): pendiente de Turnitin.

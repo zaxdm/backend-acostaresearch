@@ -80,7 +80,7 @@ async function probar({ ruta, modelo, skill, conPasada, salida, porTanda }) {
     .filter(([, n]) => n > 0);
   console.log(`  ${porRuta.map(([nombre, n]) => `${nombre}: ${n}`).join(' · ')}`);
 
-  const { cambios, malos, uso } = await humanizador.humanizar({
+  const { cambios, malos, uso, rondas } = await humanizador.humanizar({
     parrafos,
     modelos: [modelo],
     skill,
@@ -96,6 +96,10 @@ async function probar({ ruta, modelo, skill, conPasada, salida, porTanda }) {
   const antes = medir(prosa.map((p) => p.texto));
   const despues = medir(prosa.map((p) => cambios[p.clave]?.texto ?? p.texto));
   const coste = costeDe(modelo, uso);
+  for (const r of rondas) {
+    const rechazos = Object.entries(r.rechazos).map(([m, n]) => `${n}× ${m}`).join('; ');
+    console.log(`  ${r.paso}: ${r.pedidos} pedidos, ${r.tocados} cambiados${r.fallidas ? `, ${r.fallidas} tandas fallidas` : ''}${rechazos ? ` · rechazos: ${rechazos}` : ''}`);
+  }
   console.log(`  ${hecho.tocados} de ${prosa.length} párrafos cambiados; ${malos.length} se quedaron como estaban`);
   for (const malo of malos.slice(0, 6)) console.log(`    · ${String(malo.motivo).slice(0, 110)}`);
   console.log(`  oración media ${antes.media} → ${despues.media} palabras · vocabulario de IA ${antes.vocabulario} → ${despues.vocabulario} · conectores de manual ${antes.manual} → ${despues.manual} · párrafos con moldes repetidos ${antes.moldes} → ${despues.moldes}`);

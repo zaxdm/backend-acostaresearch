@@ -14,7 +14,8 @@ const pendingRepository = require('./pendingRegistration.repository');
 const googleVerifier = require('./google.verifier');
 const billingService = require('../billing/billing.service');
 const { sendMail } = require('../../lib/mailer');
-const { emailVerificationCode } = require('../../lib/emailTemplates');
+const { emailVerificationCode, passwordResetCode } = require('../../lib/emailTemplates');
+const prisma = require('../../lib/prisma');
 const { hashPassword, verifyPassword, fakeVerify } = require('../../shared/utils/password');
 const {
   signAccessToken,
@@ -79,6 +80,9 @@ function codigoInvalido(intentosRestantes) {
     details: intentosRestantes > 0 ? { remainingAttempts: intentosRestantes } : undefined,
   });
 }
+
+/** Distinto de `PASSWORD` (el cambio desde el perfil): uno no pisa al otro. */
+const RECUPERAR_CLAVE = 'RESET';
 
 const authService = {
   /**
@@ -444,6 +448,96 @@ const authService = {
     if (!pending) return;
 
     await sendCode(pending, { firstName: pending.firstName });
+  },
+
+  /**
+   * «Olvidé mi contraseña»: manda un código al correo de la cuenta.
+   *
+   * Responde igual exista o no el correo, para no permitir enumerar cuentas. Una
+   * cuenta suspendida o a medias no recibe nada.
+   */
+  async requestPasswordReset(email) {
+    const user = await userRepository.findByEmail(email);
+    if (!user || user.status === 'SUSPENDED' || !user.emailVerifiedAt) return;
+
+    const code = generateNumericCode(VERIFICATION_CODE_LENGTH);
+    const expiresAt = addMinutes(new Date(), env.EMAIL_VERIFICATION_TTL_MINUTES);
+    const datos = { codeHash: hashToken(code), expiresAt, attempts: 0 };
+
+    await prisma.accountCode.upsert({
+      where: { userId_purpose: { userId: user.id, purpose: RECUPERAR_CLAVE } },
+      update: datos,
+      create: { userId: user.id, purpose: RECUPERAR_CLAVE, ...datos },
+    });
+
+    const mail = passwordResetCode({
+      firstName: user.firstName,
+      code,
+      expiresInMinutes: env.EMAIL_VERIFICATION_TTL_MINUTES,
+    });
+    await sendMail({ to: user.email, ...mail });
+    logger.info({ userId: user.id }, 'Código para recuperar la contraseña enviado');
+  },
+
+  /**
+   * Pone la contraseña nueva si el código es el que se envió.
+   *
+   * Cierra TODAS las sesiones: quien olvidó la contraseña puede tenerla abierta
+   * en un sitio que ya no controla. Una cuenta de Google queda con contraseña
+   * propia además de Google, igual que con el cambio desde el perfil.
+   */
+  async resetPassword({ email, code, newPassword }) {
+    const user = await userRepository.findByEmail(email);
+    const guardado = user
+      ? await prisma.accountCode.findUnique({
+          where: { userId_purpose: { userId: user.id, purpose: RECUPERAR_CLAVE } },
+        })
+      : null;
+
+    if (!user || !guardado || user.status === 'SUSPENDED') throw codigoInvalido(0);
+
+    if (guardado.attempts >= MAX_VERIFICATION_ATTEMPTS) {
+      throw new AppError('Demasiados intentos fallidos. Pide un código nuevo.', {
+        statusCode: 429,
+        code: ERROR_CODES.TOO_MANY_ATTEMPTS,
+      });
+    }
+
+    if (guardado.expiresAt <= new Date()) {
+      throw new AppError('El código caducó. Pide uno nuevo.', {
+        statusCode: 400,
+        code: ERROR_CODES.TOKEN_EXPIRED,
+      });
+    }
+
+    if (!safeCompareHex(guardado.codeHash, hashToken(code))) {
+      const actualizado = await prisma.accountCode.update({
+        where: { id: guardado.id },
+        data: { attempts: { increment: 1 } },
+      });
+      const restantes = MAX_VERIFICATION_ATTEMPTS - actualizado.attempts;
+
+      if (restantes <= 0) {
+        logger.warn({ userId: user.id }, 'Código de recuperación agotado por intentos fallidos');
+        throw new AppError('Demasiados intentos fallidos. Pide un código nuevo.', {
+          statusCode: 429,
+          code: ERROR_CODES.TOO_MANY_ATTEMPTS,
+        });
+      }
+
+      throw codigoInvalido(restantes);
+    }
+
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: user.id },
+        data: { passwordHash: await hashPassword(newPassword) },
+      }),
+      prisma.accountCode.delete({ where: { id: guardado.id } }),
+    ]);
+
+    const { count } = await tokenRepository.revokeAllForUser(user.id);
+    logger.warn({ userId: user.id, sesionesCerradas: count }, 'Contraseña recuperada con código');
   },
 };
 

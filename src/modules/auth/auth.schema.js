@@ -64,6 +64,17 @@ const verifyEmailSchema = z.object({
 
 const resendVerificationSchema = z.object({ email });
 
+const forgotPasswordSchema = z.object({ email });
+
+const resetPasswordSchema = z.object({
+  email,
+  code: z
+    .string({ required_error: 'Escribe el código que te enviamos.' })
+    .trim()
+    .regex(/^[0-9]{6}$/, 'El código son 6 dígitos.'),
+  newPassword: password,
+});
+
 /**
  * El token de Google. Se comprueba solo que parezca un JWT: la validación real
  * —firma, emisor, destinatario, caducidad— la hace `google.verifier`, que es
@@ -83,4 +94,6 @@ module.exports = {
   loginSchema,
   verifyEmailSchema,
   resendVerificationSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
 };

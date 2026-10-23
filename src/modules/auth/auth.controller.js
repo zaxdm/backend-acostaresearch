@@ -76,6 +76,18 @@ const authController = {
       message: 'Si el correo está registrado y pendiente de confirmar, recibirás un mensaje.',
     });
   }),
+
+  forgotPassword: asyncHandler(async (req, res) => {
+    await authService.requestPasswordReset(req.body.email);
+    return ok(res, null, {
+      message: 'Si el correo tiene una cuenta, recibirás un código de 6 dígitos.',
+    });
+  }),
+
+  resetPassword: asyncHandler(async (req, res) => {
+    await authService.resetPassword(req.body);
+    return ok(res, null, { message: 'Contraseña cambiada. Ya puedes iniciar sesión.' });
+  }),
 };
 
 module.exports = authController;

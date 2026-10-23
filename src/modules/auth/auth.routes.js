@@ -10,6 +10,8 @@ const {
   loginSchema,
   verifyEmailSchema,
   resendVerificationSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
 } = require('./auth.schema');
 const authController = require('./auth.controller');
 
@@ -33,6 +35,19 @@ router.post(
   emailLimiter,
   validate({ body: resendVerificationSchema }),
   authController.resendVerification,
+);
+
+router.post(
+  '/forgot-password',
+  emailLimiter,
+  validate({ body: forgotPasswordSchema }),
+  authController.forgotPassword,
+);
+router.post(
+  '/reset-password',
+  authLimiter,
+  validate({ body: resetPasswordSchema }),
+  authController.resetPassword,
 );
 
 module.exports = router;

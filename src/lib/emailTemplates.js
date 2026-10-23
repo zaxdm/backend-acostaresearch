@@ -176,6 +176,51 @@ function passwordChangeCode({ firstName, code, expiresInMinutes }) {
 }
 
 /**
+ * El código para entrar de nuevo a quien olvidó su contraseña.
+ *
+ * Es el de `passwordChangeCode` con otro encabezado: aquí quien lo pide no ha
+ * entrado, así que el correo dice que es para recuperar el acceso.
+ */
+function passwordResetCode({ firstName, code, expiresInMinutes }) {
+  const grupos = code.slice(0, 3) + '<span style="color:#c3cbd8"> · </span>' + code.slice(3);
+
+  return {
+    subject: `${code} para recuperar tu contraseña · Acosta Research`,
+    text:
+      `Hola ${firstName}:
+
+` +
+      `Tu código para recuperar la contraseña es: ${code}
+` +
+      `Caduca en ${expiresInMinutes} minutos y solo se puede usar una vez.
+
+` +
+      'Si no lo pediste tú, ignora este mensaje: tu contraseña sigue siendo la de siempre.',
+    html: layout(
+      'Tu código para recuperar la contraseña',
+      `<p style="margin:0 0 22px;font-size:15px;line-height:1.6;color:#52606d">
+         Hola ${escapar(firstName)}: escríbelo en la pantalla donde lo pediste y elige tu contraseña nueva.
+       </p>
+
+       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+         <tr>
+           <td align="center" style="background:#f2f6fe;border:1px solid #d7e3fb;border-radius:12px;padding:26px 16px">
+             <div style="font-size:38px;font-weight:700;letter-spacing:.14em;color:#1a3fa8;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif">${grupos}</div>
+             <div style="margin-top:10px;font-size:12.5px;color:#7b8794">Caduca en ${expiresInMinutes} minutos</div>
+           </td>
+         </tr>
+       </table>
+
+       <p style="margin:22px 0 0;font-size:13.5px;line-height:1.65;color:#7b8794">
+         <b>Si no lo pediste tú, no hagas nada.</b> Sin este código no se cambia nada y
+         tu contraseña sigue siendo la de siempre.
+       </p>`,
+      { preheader: `Tu código es ${code}. Caduca en ${expiresInMinutes} minutos.` },
+    ),
+  };
+}
+
+/**
  * A quien acaba de recibir una cuenta de administrador.
  *
  * Lleva la contraseña dentro, y eso es una decisión incómoda que conviene
@@ -1611,6 +1656,7 @@ function ganadorDelSorteo({ nombre, sorteo, premio, duracionDias, codigo }) {
 module.exports = {
   emailVerificationCode,
   passwordChangeCode,
+  passwordResetCode,
   adminAccountCreated,
   licenseAlert,
   // Al revocar a mano desde el panel. La vigilancia usa `licenseAlert`.

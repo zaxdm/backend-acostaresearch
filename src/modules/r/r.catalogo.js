@@ -228,6 +228,18 @@ const PRUEBAS = [
       '(cv.model): en ensayos de campo, por debajo del 20 % se suele considerar aceptable.',
   },
   {
+    clave: 'superficie-de-respuesta',
+    patron: /\b(?:rsm|bbd|ccd|codings|canonical|steepest|ridge_analysis)\s*\(|\b(?:FO|SO|TWI)\s*\(/,
+    texto:
+      'Superficie de respuesta (Box-Behnken): el modelo cuadrático sirve si el ANOVA del modelo es ' +
+      'significativo (p < 0,05) y la falta de ajuste NO lo es (p ≥ 0,05; hace falta repetir el punto ' +
+      'central para poder calcularla). R² ajustado y R² predictivo deben ser parecidos (diferencia ' +
+      '< 0,20). Importan los términos lineales, de interacción y cuadráticos significativos. El ' +
+      'análisis canónico dice qué es el punto estacionario: autovalores todos negativos = máximo, ' +
+      'todos positivos = mínimo, mezclados = punto de silla; si cae fuera del rango estudiado no es ' +
+      'un óptimo fiable. Los factores se ajustan codificados (−1, 0, +1) y se reportan en unidades reales.',
+  },
+  {
     clave: 'bayes',
     patron: /\b(?:ttestBF|anovaBF|correlationBF|regressionBF|lmBF|contingencyTableBF|proportionBF)\s*\(/,
     texto:

@@ -100,7 +100,7 @@ $APT install -y --no-install-recommends \
   r-cran-moments r-cran-desctools r-cran-bayesfactor \
   r-cran-gtsummary r-cran-apatables r-cran-janitor r-cran-meta \
   r-cran-fixest r-cran-panelr r-cran-pdynmc \
-  r-cran-agricolae \
+  r-cran-agricolae r-cran-rsm \
   r-cran-sf r-cran-terra \
   r-cran-quanteda r-cran-quanteda.textstats r-cran-quanteda.textplots r-cran-topicmodels \
   r-cran-bibliometrix r-cran-igraph

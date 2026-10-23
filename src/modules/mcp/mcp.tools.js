@@ -2799,7 +2799,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         '· Encuestas con muestreo complejo: survey.\n' +
         '· Economía y finanzas: plm, fixest, panelr, pdynmc (panel dinámico GMM), AER, lmtest, ' +
         'sandwich, forecast, tseries, urca, zoo, xts.\n' +
-        '· Diseño experimental y agronomía: agricolae (DCA, DBCA, parcelas divididas; HSD, LSD, Duncan).\n' +
+        '· Diseño experimental y agronomía: agricolae (DCA, DBCA, parcelas divididas; HSD, LSD, Duncan) y rsm (superficie de respuesta: Box-Behnken con bbd(), compuesto central con ccd(), modelo cuadrático con rsm(), punto estacionario y análisis canónico).\n' +
         '· Biología y ambiente: vegan, ade4.\n' +
         '· Datos espaciales: sf y terra, con coordenadas o archivos que suba el tesista; sin mapas ' +
         'base de fondo, que se descargan de internet.\n' +

@@ -57,6 +57,7 @@ test('las pruebas de otras carreras traen su criterio', () => {
     ['difR::difMH(datos, group = "sexo", focal.name = "F")', /Mantel-Haenszel/],
     ['modelo <- seminr::estimate_pls(datos, medida, estructura)', /HTMT/],
     ['agricolae::HSD.test(modelo, "tratamiento")', /letra/],
+    ['ajuste <- rsm::rsm(y ~ SO(x1, x2, x3), data = ensayo)', /falta de ajuste/],
     ['BayesFactor::ttestBF(formula = y ~ g, data = datos)', /BF₁₀/],
     ['irr::kappa2(jueces)', /Landis/],
     ['MVN::mvn(datos[, 1:6])', /Mardia/],

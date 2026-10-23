@@ -157,6 +157,8 @@ const PAQUETES_PERMITIDOS = new Set([
   'pdynmc',
   // Diseño experimental y agronomía.
   'agricolae',
+  // Superficie de respuesta: Box-Behnken, compuesto central, punto estacionario.
+  'rsm',
   // Datos espaciales: coordenadas o archivos del tesista, sin mapas base (red).
   'sf',
   'terra',

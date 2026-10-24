@@ -264,13 +264,19 @@ const vecesQue = (texto, patron) => (String(texto).match(patron) ?? []).length;
  * cita, cada uno de sus años: así partir «(Pérez, 2020; Gómez, 2021)» en dos
  * narrativas tampoco se rechaza.
  */
+// El 24-oct, con apellidos compuestos: de «Fonseca Pérez (2022)» la huella toma
+// «Pérez» y de «(Fonseca Pérez, 2022)», «Fonseca»; de «(García Peña et al., 2023)»
+// toma «García» y de «García Peña et al. (2023)», «Peña». La cita seguía y el
+// párrafo se rechazaba. Por eso el apellido basta con que siga en el texto nuevo,
+// siempre que sus años sigan dentro de una cita.
 function citaPerdida(original, nuevo) {
   const despues = citasEnTexto(nuevo).map(huellaDe);
+  const palabras = new Set(String(nuevo).match(/\p{L}[\p{L}'’-]*/gu) ?? []);
   for (const cita of citasEnTexto(original)) {
     const { anos, apellido } = huellaDe(cita);
     if (anos.length === 0 || !apellido) continue;
     const sigue =
-      despues.some((huella) => huella.apellido === apellido) &&
+      (despues.some((huella) => huella.apellido === apellido) || palabras.has(apellido)) &&
       anos.every((ano) => despues.some((huella) => huella.anos.includes(ano)));
     if (!sigue) return cita;
   }
@@ -470,7 +476,23 @@ function comprobar(original, nuevo, opciones, citas = null) {
   const antes = cifrasDe(original);
   const despues = cifrasDe(limpio);
   if ([...antes].sort().join('|') !== [...despues].sort().join('|')) {
-    return `las cifras no son las mismas: «${antes.join(', ')}» → «${despues.join(', ')}»`;
+    // El cliente lee este motivo: solo lo que falta y lo que sobra, no las dos
+    // listas enteras (24-oct: dos filas de 25 números que nadie entendía).
+    const resta = (de, menos) => {
+      const quedan = [...menos];
+      return de.filter((cifra) => {
+        const i = quedan.indexOf(cifra);
+        if (i === -1) return true;
+        quedan.splice(i, 1);
+        return false;
+      });
+    };
+    const faltan = resta(antes, despues);
+    const sobran = resta(despues, antes);
+    const partes = [];
+    if (faltan.length > 0) partes.push(`se perdían ${faltan.length === 1 ? 'la cifra' : 'las cifras'} ${faltan.join(', ')}`);
+    if (sobran.length > 0) partes.push(`aparecían ${sobran.length === 1 ? 'la cifra' : 'las cifras'} ${sobran.join(', ')} que el original no tenía`);
+    return `las cifras no son las mismas: ${partes.join(' y ')}`;
   }
 
   if (opciones?.servicio === 'EDICION') {

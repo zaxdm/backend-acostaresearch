@@ -159,3 +159,23 @@ test('las cifras escritas de otra forma vuelven a la del autor; un dato distinto
   assert.match(motor.repararCifras(autor, 'Con 1 813 niños de uno a nueve años.'), /1 813.*uno a nueve/);
   assert.equal(motor.repararCifras('Uno de los estudios halló dos efectos.', 'Uno de los estudios halló dos efectos.'), 'Uno de los estudios halló dos efectos.');
 });
+
+test('una cita con apellido compuesto que cambia de forma sigue siendo una cita', () => {
+  const o = 'En Polonia, una encuesta a contadores del sector público atribuyó la exactitud del estado al control interno (García Peña et al., 2023), según el estudio citado aquí con más detalle.';
+  const n = 'Según García Peña et al. (2023), una encuesta en Polonia a contadores del sector público atribuyó la exactitud del estado al control interno, como se detalla aquí.';
+  assert.equal(motor.comprobar(o, n, { servicio: 'HUMANIZAR' }), null);
+  const o2 = 'El cuestionario de cinco niveles que Fonseca Pérez (2022) aplicó a 30 empleados mostró un resultado alto en todos los casos que se revisaron aquí.';
+  const n2 = 'Aplicado a 30 empleados, el cuestionario de cinco niveles (Fonseca Pérez, 2022) mostró un resultado alto en todos los casos que se revisaron.';
+  assert.equal(motor.comprobar(o2, n2, { servicio: 'HUMANIZAR' }), null);
+  // Sin la cita, sigue rechazándose aunque el apellido y el año queden sueltos.
+  const n3 = 'Aplicado a 30 empleados, el cuestionario de cinco niveles de Fonseca Pérez, publicado en 2022, mostró un resultado alto en todos los casos.';
+  assert.match(motor.comprobar(o2, n3, { servicio: 'HUMANIZAR' }), /dejó de ser una cita/);
+});
+
+test('el motivo de las cifras dice solo lo que falta y lo que sobra', () => {
+  const o = 'El cuestionario tuvo 21 ítems con una escala de 1, 2, 3, 4 y 5 puntos que se aplicó en 2011 a los empleados del área contable de la empresa.';
+  const n = 'Los empleados del área contable respondieron en 2011 un cuestionario de 21 ítems con una escala de 3 niveles, aplicado a todos.';
+  const motivo = motor.comprobar(o, n, { servicio: 'HUMANIZAR' });
+  assert.match(motivo, /se perdían las cifras 1, 2, 4, 5/);
+  assert.doesNotMatch(motivo, /→|21/);
+});

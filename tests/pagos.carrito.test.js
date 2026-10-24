@@ -194,6 +194,21 @@ falsificar('../src/modules/payments/payment.repository', {
     Object.assign(filas.get(id), { proofPath, status: 'IN_REVIEW' });
     return true;
   },
+  findInReviewForPlans: async (userId, planIds) =>
+    [...filas.values()]
+      .filter((f) => f.userId === userId && planIds.includes(f.planId) && f.status === 'IN_REVIEW')
+      .map(conPlan),
+  cancelInReview: async (ids, userId) => {
+    let cuenta = 0;
+    for (const id of ids) {
+      const fila = filas.get(id);
+      if (fila?.userId === userId && fila.status === 'IN_REVIEW') {
+        fila.status = 'CANCELLED';
+        cuenta += 1;
+      }
+    }
+    return cuenta;
+  },
   listInReview: async () =>
     [...filas.values()].filter((f) => f.status === 'IN_REVIEW').map(conPlan),
   markReviewed: async () => {},
@@ -510,6 +525,72 @@ test('rechazar el comprobante rechaza el carrito entero', async () => {
   assert.ok([...filas.values()].every((f) => f.status === 'REJECTED'));
 });
 
+// ── Un comprobante en revisión por producto (24-oct) ───────────────────────
+
+const yapeSuelto = (planCode = 'METODO', userId = 'user-1') =>
+  manualService.registrar({
+    userId,
+    planCode,
+    operationCode: '123456',
+    buffer: Buffer.from('png'),
+  });
+
+test('con un comprobante en revisión no se acepta otro del mismo producto', async () => {
+  await yapeSuelto();
+
+  await assert.rejects(yapeSuelto(), /Ya enviaste un comprobante de «Método de Tesis»/);
+  // Ni metido en un carrito.
+  await assert.rejects(
+    manualService.registrarCarrito({
+      userId: 'user-1',
+      items: [{ planCode: 'METODO' }, { planCode: 'ARTICULO' }],
+      operationCode: '123456',
+      buffer: Buffer.from('png'),
+    }),
+    /Ya enviaste/,
+  );
+  assert.equal(filas.size, 1);
+  // Se corta antes del OCR: no se gasta una lectura en una captura que no entra.
+  assert.equal(llamadas.revisiones.length, 1);
+  // Otro producto sí pasa.
+  await yapeSuelto('ARTICULO');
+  assert.equal(filas.size, 2);
+});
+
+test('cancelado el comprobante, se puede enviar otro', async () => {
+  const primero = await yapeSuelto();
+
+  const cancelado = await manualService.cancelarMio({ paymentId: primero.paymentId, userId: 'user-1' });
+  assert.equal(cancelado.payment.status, 'CANCELLED');
+  assert.equal(filas.get(primero.paymentId).status, 'CANCELLED');
+
+  const segundo = await yapeSuelto();
+  assert.equal(segundo.status, 'IN_REVIEW');
+});
+
+test('cancelar un carrito lo cancela entero, y uno ajeno no se toca', async () => {
+  await yapeDeCarrito();
+  const [primera] = [...filas.values()];
+
+  await assert.rejects(
+    manualService.cancelarMio({ paymentId: primera.id, userId: 'otra-persona' }),
+    /No encontramos ese pago/,
+  );
+  await manualService.cancelarMio({ paymentId: primera.id, userId: 'user-1' });
+  assert.ok([...filas.values()].every((f) => f.status === 'CANCELLED'));
+});
+
+test('un comprobante ya aprobado no se puede cancelar', async () => {
+  const enviado = await yapeSuelto();
+  await manualService.aprobar({ paymentId: enviado.paymentId, adminId: 'admin-1' });
+
+  await assert.rejects(
+    manualService.cancelarMio({ paymentId: enviado.paymentId, userId: 'user-1' }),
+    /ya fue revisado/,
+  );
+  assert.equal(filas.get(enviado.paymentId).status, 'PAID');
+});
+
 // ── Western Union ──────────────────────────────────────────────────────────
 
 test('Western Union cobra en dólares, al precio de PayPal, con su propia referencia', async () => {
@@ -534,8 +615,9 @@ test('Western Union cobra en dólares, al precio de PayPal, con su propia refere
   assert.equal(fila.discountCents, 1100);
   assert.match(llamadas.avisos[0].titulo, /^Western Union por revisar · US\$ 34\.00/);
 
+  // Otra cuenta: la primera ya tiene METODO en revisión.
   const carro = await manualService.registrarCarrito({
-    userId: 'user-1',
+    userId: 'user-2',
     items: [{ planCode: 'METODO' }, { planCode: 'ARTICULO' }],
     operationCode: '1234567890',
     buffer: Buffer.from('png'),
@@ -752,5 +834,7 @@ test('si el OCR duda o no pudo leer, el pago pasa igual', async () => {
     veredictoDelOcr = veredicto;
     const enviado = await yapeDeCarrito();
     assert.equal(enviado.status, 'IN_REVIEW');
+    // Fuera de la bandeja para que el segundo envío no choque con el primero.
+    filas.clear();
   }
 });

@@ -65,6 +65,12 @@ const manualController = {
     );
   }),
 
+  /** El comprador cancela su comprobante en revisión para mandar otro. */
+  cancelarMio: asyncHandler(async (req, res) => {
+    const resultado = await manualService.cancelarMio({ paymentId: req.params.id, userId: req.user.id });
+    return ok(res, resultado, 'Cancelamos tu comprobante. Ya puedes enviar otro.');
+  }),
+
   /**
    * Revisión previa de la captura, antes de enviarla: si parece un
    * comprobante y qué número de operación se lee. No guarda nada.

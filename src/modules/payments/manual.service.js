@@ -167,6 +167,25 @@ async function exigirComprobante(buffer, { amountCents, metodo, operationCode })
   return revision;
 }
 
+/**
+ * Un comprobante en revisión por producto (24-oct: lo pidió el dueño tras ver
+ * dos capturas del mismo comprador por el mismo plan). Para mandar otro, el
+ * comprador cancela el que tiene en «Mis compras».
+ */
+async function exigirSinPendiente(userId, planes) {
+  const pendientes = await paymentRepository.findInReviewForPlans(
+    userId,
+    planes.map((plan) => plan.id),
+  );
+  if (pendientes.length === 0) return;
+
+  const nombres = [...new Set(pendientes.map((p) => `«${p.plan.name}»`))].join(', ');
+  throw new AppError(
+    `Ya enviaste un comprobante de ${nombres} y lo estamos revisando. Espera a que te avisemos o, si te equivocaste, cancélalo en tu perfil → Mis compras y envía otro.`,
+    { statusCode: 409, code: ERROR_CODES.PAYMENT_FAILED },
+  );
+}
+
 /** Apunta el veredicto en las filas. Si falla, la bandeja no lo enseña y ya. */
 function apuntarRevision(ids, revision) {
   paymentRepository.saveProofCheck(ids, revision).catch((error) => {
@@ -337,6 +356,7 @@ const manualService = {
     }
 
     await comprobarRenovacion(userId, plan);
+    await exigirSinPendiente(userId, [plan]);
 
     const precio = medio.precio(plan);
     if (!precio || precio <= 0) {
@@ -457,6 +477,10 @@ const manualService = {
       medio: medio.nombre,
       discountCode,
     });
+    await exigirSinPendiente(
+      userId,
+      lineas.map((linea) => linea.plan),
+    );
     const amountCents = lineas.reduce((suma, linea) => suma + linea.amountCents, 0);
     const nombre = carrito.nombreDelCarrito(lineas.map((linea) => linea.plan));
     const cartId = crypto.randomUUID();
@@ -631,6 +655,35 @@ const manualService = {
       operacionLeida: revision.operacionLeida ?? null,
       montoVisto: revision.montoVisto ?? null,
     };
+  },
+
+  /**
+   * El comprador retira su comprobante en revisión para poder mandar otro. Un
+   * carrito se retira entero: es una sola captura. La imagen se queda, como la
+   * de un rechazado, para el historial del panel.
+   */
+  async cancelarMio({ paymentId, userId }) {
+    const payment = await prisma.payment.findUnique({
+      where: { id: paymentId },
+      select: { id: true, userId: true, status: true, cartId: true },
+    });
+    // Uno ajeno responde igual que uno que no existe.
+    if (!payment || payment.userId !== userId) throw new NotFoundError('No encontramos ese pago.');
+
+    const ids = payment.cartId
+      ? (await paymentRepository.findCart(payment.cartId)).map((fila) => fila.id)
+      : [payment.id];
+    const cancelados = await paymentRepository.cancelInReview(ids, userId);
+
+    if (cancelados === 0) {
+      throw new AppError('Este comprobante ya fue revisado: no se puede cancelar.', {
+        statusCode: 409,
+        code: ERROR_CODES.PAYMENT_FAILED,
+      });
+    }
+
+    logger.info({ userId, paymentId, cancelados }, 'El comprador canceló su comprobante en revisión');
+    return { payment: { id: paymentId, status: 'CANCELLED' } };
   },
 
   contarPendientes() {

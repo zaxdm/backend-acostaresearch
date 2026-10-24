@@ -76,6 +76,14 @@ router.post(
   manualController.revisarCaptura,
 );
 
+// El comprador retira su comprobante en revisión: solo se admite uno por producto.
+router.post(
+  '/:id/cancelar',
+  authenticate,
+  validate({ params: paymentParamsSchema }),
+  manualController.cancelarMio,
+);
+
 // ── Revisión: solo administradores ────────────────────────────────────────
 router.use(authenticate, authorize(ROLES.ADMIN));
 

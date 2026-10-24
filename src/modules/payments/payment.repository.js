@@ -363,6 +363,26 @@ const paymentRepository = {
     return count > 0;
   },
 
+  /**
+   * Los comprobantes de este comprador que siguen esperando revisión por alguno
+   * de estos planes. Con uno basta: el segundo solo llena la bandeja.
+   */
+  findInReviewForPlans(userId, planIds) {
+    return prisma.payment.findMany({
+      where: { userId, planId: { in: planIds }, status: 'IN_REVIEW' },
+      select: { id: true, plan: { select: { name: true } } },
+    });
+  },
+
+  /** El comprador retira su comprobante antes de que lo revisen. */
+  async cancelInReview(ids, userId) {
+    const { count } = await prisma.payment.updateMany({
+      where: { id: { in: ids }, userId, status: 'IN_REVIEW' },
+      data: { status: 'CANCELLED', errorCode: 'CANCELADO_POR_COMPRADOR' },
+    });
+    return count;
+  },
+
   /** Deja el pago rechazado con el motivo que verá el comprador. */
   async reject(id, { reviewedById, reviewNote }) {
     const { count } = await prisma.payment.updateMany({

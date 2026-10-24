@@ -2612,6 +2612,28 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
             'se importa nada de ahí.',
         );
       }
+      // Ya se trajo y no entró nada. NO es que falte sincronizar: se trae al
+      // elegir. Lo normal es que tenga solo PDFs sueltos, sin autor ni año, y
+      // eso no se cita. El 24-oct-2026 el asistente le dijo a una tesista que
+      // esperara a la noche y no iba a llegar nada.
+      if (
+        zotero?.coleccion &&
+        zotero.ultima &&
+        !zotero.trayendo &&
+        !zotero.error &&
+        b.deZotero === 0
+      ) {
+        avisos.push(
+          `Su Zotero YA SE TRAJO (de «${zotero.coleccion}», el ${fecha(zotero.ultima)}) y no ` +
+            'entró ninguna fuente. NO le digas que espere a la noche ni que falta sincronizar: ' +
+            'esperar no lo arregla. Casi siempre es porque en Zotero tiene solo PDFs sueltos, ' +
+            'sin autor ni fecha, y un PDF sin ficha no se puede citar. Dile que abra el Zotero de ' +
+            'ESCRITORIO (la web de Zotero no tiene esta opción), seleccione los PDFs, clic ' +
+            'derecho → «Recuperar metadatos del PDF», sincronice y pulse «Actualizar ahora» en ' +
+            '«Tu Zotero». Los que no se resuelvan (sin DOI) puede subirlos en «Mis fuentes» y ' +
+            'llenar la ficha a mano.',
+        );
+      }
       if (zotero?.error) {
         avisos.push(
           `La última vez que se intentó traer su Zotero falló: «${zotero.error}». Díselo; ` +
@@ -2647,7 +2669,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
               ? avisos.join(N)
               : 'Díselo tal cual y cuéntale cómo traerlas desde su perfil en la web: conectando ' +
                 'su Zotero o su Mendeley en «Tus herramientas» —elige una colección o carpeta y ' +
-                'se actualiza sola cada noche— o ' +
+                'se trae en ese momento y luego se pone al día sola cada noche— o ' +
                 'subiendo su export de Scopus, Web of Science o SciELO en «Mis fuentes».') +
             (env.zoteroEnabled
               ? `${N}${N}Mientras tanto, "buscar_fuentes" sigue buscando en la biblioteca de Acosta.`

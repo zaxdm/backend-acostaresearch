@@ -49,6 +49,17 @@ const TODA_LA_BIBLIOTECA = '*';
 const rutaDeItems = (collectionKey) =>
   collectionKey === TODA_LA_BIBLIOTECA ? '/items' : `/collections/${collectionKey}/items`;
 
+/**
+ * Los PDFs y notas sueltos: los que no cuelgan de ninguna ficha.
+ *
+ * Solo los de primer nivel (`/top`). Un PDF que cuelga de su artículo es un
+ * adjunto normal y no se cuenta; uno arrastrado a Zotero sin ficha es lo que
+ * queda fuera al traer, porque no tiene autor ni año que citar (24-oct-2026: una
+ * tesista con 18 PDFs así veía «18» junto a su colección y le entraban 0).
+ */
+const SUELTOS = 'attachment || note';
+const TOPE_DE_PAGINAS_SUELTAS = 20;
+
 async function respetarEspera(res) {
   const segundos = Number(res.headers.get('backoff') ?? res.headers.get('retry-after') ?? 0);
   if (!Number.isFinite(segundos) || segundos <= 0) return false;
@@ -139,6 +150,22 @@ async function colecciones(contexto) {
     if (datos.length < POR_PAGINA || inicio >= total) break;
   }
 
+  // `numItems` cuenta también los PDFs y notas sueltos, que no se traen. Se
+  // restan para que el número sea el de fuentes que entran de verdad. Si la
+  // cuenta de sueltos falla, queda el número de Zotero, como antes.
+  const sueltos = await sueltosDeLaBiblioteca(contexto).catch((fallo) => {
+    logger.warn({ err: fallo }, 'No se pudieron contar los PDFs sueltos de un Zotero');
+    return null;
+  });
+  if (sueltos) {
+    for (const coleccion of todas) {
+      const suyos = sueltos.porColeccion.get(coleccion.clave);
+      if (!suyos) continue;
+      coleccion.cuantas = Math.max(coleccion.cuantas - suyos.pdfs - suyos.notas, 0);
+      coleccion.sinFicha = suyos.pdfs;
+    }
+  }
+
   const porClave = new Map(todas.map((c) => [c.clave, c]));
   const conCamino = todas.map((coleccion) => {
     const camino = [coleccion.nombre];
@@ -151,10 +178,71 @@ async function colecciones(contexto) {
       camino.unshift(arriba.nombre);
       padre = arriba.padre;
     }
-    return { clave: coleccion.clave, nombre: camino.join(' › '), cuantas: coleccion.cuantas };
+    return {
+      clave: coleccion.clave,
+      nombre: camino.join(' › '),
+      cuantas: coleccion.cuantas,
+      sinFicha: coleccion.sinFicha ?? 0,
+    };
   });
 
   return conCamino.sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+}
+
+/**
+ * Los PDFs y notas sueltos de toda la biblioteca, contados por colección.
+ *
+ * Una sola pasada para todas las colecciones, en vez de una petición por
+ * colección: la mayoría no tiene ninguno y responde con una página vacía. Con
+ * tope de páginas: quien tenga miles de PDFs sueltos verá la cuenta de los
+ * primeros, que para decidir basta.
+ */
+async function sueltosDeLaBiblioteca(contexto) {
+  const porColeccion = new Map();
+  let inicio = 0;
+
+  for (let pagina = 0; pagina < TOPE_DE_PAGINAS_SUELTAS; pagina += 1) {
+    const { datos, total } = await pedir(contexto, '/items/top', {
+      format: 'json',
+      limit: POR_PAGINA,
+      start: inicio,
+      itemType: SUELTOS,
+    });
+
+    if (!Array.isArray(datos) || datos.length === 0) break;
+
+    for (const item of datos) {
+      const esPdf = item.data?.itemType === 'attachment';
+      for (const clave of item.data?.collections ?? []) {
+        const suyos = porColeccion.get(clave) ?? { pdfs: 0, notas: 0 };
+        if (esPdf) suyos.pdfs += 1;
+        else suyos.notas += 1;
+        porColeccion.set(clave, suyos);
+      }
+    }
+
+    inicio += POR_PAGINA;
+    if (datos.length < POR_PAGINA || inicio >= total) break;
+  }
+
+  return { porColeccion };
+}
+
+/**
+ * Cuántos PDFs sueltos hay en lo elegido: la colección o la biblioteca entera.
+ *
+ * Es lo que explica que una pasada traiga 0: no es que falte sincronizar, es
+ * que son PDFs sin ficha y no hay nada que citar.
+ */
+async function cuantosPdfsSinFicha(contexto, collectionKey) {
+  const ruta =
+    collectionKey === TODA_LA_BIBLIOTECA ? '/items/top' : `/collections/${collectionKey}/items/top`;
+  const { total } = await pedir(contexto, ruta, {
+    format: 'json',
+    limit: 1,
+    itemType: 'attachment',
+  });
+  return total;
 }
 
 /**
@@ -241,6 +329,7 @@ module.exports = {
   paginasDeItems,
   clavesDeLaColeccion,
   cuantasEnLaBiblioteca,
+  cuantosPdfsSinFicha,
   TODA_LA_BIBLIOTECA,
   POR_PAGINA,
 };

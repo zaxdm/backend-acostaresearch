@@ -150,13 +150,14 @@ async function colecciones(userId) {
   const cuenta = await exigirCuenta(userId);
   const contexto = contextoDe(cuenta);
 
-  const [suyas, enLaBiblioteca] = await Promise.all([
+  const [suyas, enLaBiblioteca, sinFicha] = await Promise.all([
     cliente.colecciones(contexto),
     cliente.cuantasEnLaBiblioteca(contexto).catch(() => null),
+    cliente.cuantosPdfsSinFicha(contexto, cliente.TODA_LA_BIBLIOTECA).catch(() => 0),
   ]);
 
   return {
-    biblioteca: { clave: cliente.TODA_LA_BIBLIOTECA, cuantas: enLaBiblioteca },
+    biblioteca: { clave: cliente.TODA_LA_BIBLIOTECA, cuantas: enLaBiblioteca, sinFicha },
     colecciones: suyas,
   };
 }
@@ -284,12 +285,18 @@ async function correr(userId) {
   const total = await repositorio.contarDeZotero(userId, cuenta.zoteroUserId);
   await repositorio.guardarPasada(userId, { libraryVersion: version, lastCount: total });
 
+  // Los PDFs sin ficha no se traen. Se cuentan para poder decírselo: sin esto,
+  // una pasada que trae 0 se ve igual que «ya estaba al día».
+  const sinFicha = await cliente
+    .cuantosPdfsSinFicha(contexto, cuenta.collectionKey)
+    .catch(() => 0);
+
   logger.info(
-    { userId, desde, hasta: version, guardadas, adoptadas, retiradas, total },
+    { userId, desde, hasta: version, guardadas, adoptadas, retiradas, total, sinFicha },
     'Biblioteca de un comprador sincronizada desde su Zotero',
   );
 
-  return { guardadas, adoptadas, retiradas, total };
+  return { guardadas, adoptadas, retiradas, total, sinFicha };
 }
 
 /**
@@ -333,6 +340,17 @@ async function estado(userId) {
     return { disponible: env.zoteroOauthEnabled, conectado: false };
   }
 
+  // Ya se trajo y entró 0: se pregunta a Zotero si es porque lo elegido son PDFs
+  // sin ficha. Solo en ese caso, para no hacer esperar a Zotero cada vez que se
+  // abre el panel.
+  const traidoYVacio =
+    cuenta.collectionKey && cuenta.lastRunAt && !cuenta.runningSince && !cuenta.lastCount;
+  const sinFicha = traidoYVacio
+    ? await cliente
+        .cuantosPdfsSinFicha(contextoDe(cuenta), cuenta.collectionKey)
+        .catch(() => 0)
+    : 0;
+
   return {
     disponible: env.zoteroOauthEnabled,
     conectado: true,
@@ -341,6 +359,7 @@ async function estado(userId) {
       ? { clave: cuenta.collectionKey, nombre: cuenta.collectionName }
       : null,
     fuentes: cuenta.lastCount,
+    sinFicha,
     ultima: cuenta.lastRunAt,
     trayendo: Boolean(cuenta.runningSince),
     error: cuenta.lastError,

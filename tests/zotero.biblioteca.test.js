@@ -109,6 +109,7 @@ const cliente = {
     }
   },
   clavesDeLaColeccion: async () => zotero.clavesVivas,
+  cuantosPdfsSinFicha: async () => zotero.sinFicha,
 };
 sustituir('../src/modules/zotero/biblioteca.client', cliente);
 
@@ -177,7 +178,13 @@ function empezar({ coleccion = 'ABCD1234', version = 0 } = {}) {
     borradoCon: null,
     cuantasDeZotero: 0,
   });
-  Object.assign(zotero, { items: [], clavesVivas: [], revocada: false, pedidoDesde: null });
+  Object.assign(zotero, {
+    items: [],
+    clavesVivas: [],
+    revocada: false,
+    pedidoDesde: null,
+    sinFicha: 0,
+  });
 }
 
 // ── Las pruebas ─────────────────────────────────────────────────────────────
@@ -402,4 +409,36 @@ test('si aquí hay menos de las que tiene en Zotero, se trae todo desde el princ
   assert.equal(zotero.pedidoDesde, 0, 'sin «desde»: la incremental nunca la habría traído');
   assert.equal(resultado.adoptadas, 1);
   assert.equal(baseDeDatos.pasada.libraryVersion, 4242);
+});
+
+test('una pasada que trae 0 dice cuántos PDF sin ficha se quedaron fuera (24-oct)', async () => {
+  empezar();
+  zotero.sinFicha = 18;
+
+  const resultado = await servicio.sincronizar('u1');
+
+  assert.equal(resultado.total, 0);
+  assert.equal(resultado.sinFicha, 18);
+});
+
+test('el panel ve los PDF sin ficha cuando ya se trajo y quedó en 0', async () => {
+  empezar();
+  baseDeDatos.cuenta.lastRunAt = new Date('2026-10-24T15:00:00Z');
+  zotero.sinFicha = 18;
+
+  const estado = await servicio.estado('u1');
+
+  assert.equal(estado.fuentes, 0);
+  assert.equal(estado.sinFicha, 18);
+});
+
+test('con fuentes, o sin haberse traído aún, no se le pregunta a Zotero por los sueltos', async () => {
+  empezar();
+  zotero.sinFicha = 18;
+
+  assert.equal((await servicio.estado('u1')).sinFicha, 0, 'sin pasada todavía');
+
+  baseDeDatos.cuenta.lastRunAt = new Date('2026-10-24T15:00:00Z');
+  baseDeDatos.cuenta.lastCount = 12;
+  assert.equal((await servicio.estado('u1')).sinFicha, 0, 'con 12 fuentes no hace falta');
 });

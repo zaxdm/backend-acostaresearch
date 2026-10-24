@@ -23,7 +23,7 @@ const { ValidationError } = require('../../shared/errors/AppError');
 const { MAXIMO_BYTES } = require('../projects/project.documento');
 
 const prepararService = require('./preparar.service');
-const { encargoSchema } = require('./preparar.schema');
+const { encargoSchema, rondaSchema } = require('./preparar.schema');
 
 const TIPO_DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
@@ -93,6 +93,21 @@ router.post(
   }),
 );
 
+/**
+ * Los capítulos de un Word antes de humanizarlo (24-oct-2026), para elegir los
+ * que no se tocan. No guarda nada. Va antes que `/:servicio`, como el reporte.
+ */
+router.post(
+  '/capitulos',
+  recibirDocumento,
+  asyncHandler(async (req, res) => {
+    if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+      throw new ValidationError('No llegó ningún archivo. Elige el .docx de tu documento y vuelve a subirlo.');
+    }
+    return ok(res, await prepararService.capitulos({ userId: req.user.id, buffer: req.body }));
+  }),
+);
+
 /** La pantalla entera: membresía, cupo del mes e historial. */
 router.get(
   '/',
@@ -116,11 +131,12 @@ router.post(
       servicio: String(req.params.servicio ?? '').toUpperCase(),
       idioma: req.query.idioma ?? null,
       reporteId: req.query.reporte ?? null,
+      ...(req.query.noTocar ? { noTocar: String(req.query.noTocar).split(',').filter(Boolean) } : {}),
     });
     if (!pedido.success) {
       throw new ValidationError(pedido.error.issues[0].message);
     }
-    const { servicio, idioma, reporteId } = pedido.data;
+    const { servicio, idioma, reporteId, noTocar } = pedido.data;
 
     if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
       throw new ValidationError(
@@ -135,9 +151,32 @@ router.post(
       buffer: req.body,
       nombre: nombreDelArchivo(req.get('X-Nombre-Archivo')),
       reporteId: reporteId ?? null,
+      noTocar: noTocar ?? null,
     });
 
     return created(res, hecho);
+  }),
+);
+
+/**
+ * Otra ronda de «Humanizar» sobre el Word ya entregado (24-oct-2026): con
+ * `reporteId` rehace lo que marcó el reporte nuevo, con `clave` un párrafo, y
+ * sin nada todo otra vez. Cuerpo JSON.
+ */
+router.post(
+  '/trabajos/:id/ronda',
+  asyncHandler(async (req, res) => {
+    const pedido = rondaSchema.safeParse(req.body ?? {});
+    if (!pedido.success) throw new ValidationError(pedido.error.issues[0].message);
+    return created(
+      res,
+      await prepararService.ronda({
+        userId: req.user.id,
+        id: req.params.id,
+        reporteId: pedido.data.reporteId ?? null,
+        clave: pedido.data.clave ?? null,
+      }),
+    );
   }),
 );
 

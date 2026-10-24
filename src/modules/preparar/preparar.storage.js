@@ -74,6 +74,26 @@ async function leerReporte(preparacionId) {
   }
 }
 
+/**
+ * Lo que el cliente pidió en «Humanizar» además del Word (24-oct-2026): los
+ * capítulos que no se tocan (`noTocar`, `excluir`), el párrafo que pidió
+ * rehacer (`solo`), de qué trabajo sale una ronda (`deId`) y si trajo reporte.
+ * Sin opciones, `leerOpciones` devuelve `{}`.
+ */
+const OPCIONES = 'opciones.json';
+async function guardarOpciones(preparacionId, opciones) {
+  const carpeta = carpetaDe(preparacionId);
+  await fs.mkdir(carpeta, { recursive: true });
+  await fs.writeFile(path.join(carpeta, OPCIONES), JSON.stringify(opciones));
+}
+async function leerOpciones(preparacionId) {
+  try {
+    return JSON.parse(await fs.readFile(rutaDe(preparacionId, OPCIONES), 'utf8')) ?? {};
+  } catch {
+    return {};
+  }
+}
+
 const leerEntrada = (preparacionId) => fs.readFile(rutaDe(preparacionId, ENTRADA));
 const leerSalida = (preparacionId) => fs.readFile(rutaDe(preparacionId, SALIDA));
 
@@ -110,6 +130,8 @@ module.exports = {
   leerSalida,
   guardarReporte,
   leerReporte,
+  guardarOpciones,
+  leerOpciones,
   haySalida,
   borrar,
   ENTRADA,

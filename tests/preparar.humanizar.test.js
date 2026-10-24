@@ -35,6 +35,7 @@ falsificar('../src/modules/preparar/preparar.repository', {
 
 falsificar('../src/modules/preparar/preparar.storage', {
   guardarEntrada: async () => {},
+  guardarOpciones: async () => {},
   leerEntrada: async () => {
     throw new Error('sin entrada en la prueba');
   },

@@ -180,6 +180,40 @@ function porCapitulos(parrafos) {
   return prosa;
 }
 
+/**
+ * Los capítulos del Word, para que el cliente elija cuáles no se tocan
+ * (24-oct-2026). Un capítulo es un título del nivel más alto que use el Word;
+ * sin estilos de título, una línea corta en mayúsculas o que empieza por
+ * «Capítulo». Solo salen los que tienen prosa que humanizar, con sus claves.
+ */
+function capitulosDe(parrafos) {
+  const niveles = parrafos.map((p) => p.nivel).filter(Boolean);
+  const minimo = niveles.length > 0 ? Math.min(...niveles) : null;
+  const esCapitulo = (parrafo) => {
+    const texto = parrafo.texto.trim();
+    if (!texto) return false;
+    if (minimo !== null) return parrafo.nivel === minimo;
+    return (
+      parrafo.palabras <= 8 &&
+      !/[.:;]$/.test(texto) &&
+      (/^cap[ií]tulo\b/i.test(texto) || (/\p{Lu}/u.test(texto) && texto === texto.toUpperCase()))
+    );
+  };
+  const prosa = new Set(porCapitulos(parrafos).map((p) => p.clave));
+  const capitulos = [];
+  let actual = null;
+  for (const parrafo of parrafos) {
+    if (esCapitulo(parrafo)) {
+      actual = { clave: parrafo.clave, titulo: parrafo.texto.trim().slice(0, 120), claves: [], palabras: 0 };
+      capitulos.push(actual);
+    } else if (actual && prosa.has(parrafo.clave)) {
+      actual.claves.push(parrafo.clave);
+      actual.palabras += parrafo.palabras;
+    }
+  }
+  return capitulos.filter((c) => c.claves.length > 0);
+}
+
 // ── Los moldes entre párrafos (lo de repeticiones.py de /turnitin) ─────────
 
 const ART = new Set(['el', 'la', 'los', 'las', 'un', 'una', 'en', 'con', 'por', 'para', 'de', 'del', 'al', 'a', 'se', 'lo']);
@@ -667,8 +701,12 @@ async function humanizar({
   // Solo estas claves se reescriben (los demás párrafos se quedan como están). Es la
   // Ruta 0 % de /turnitin: con el reporte de IA delante, lo limpio no se toca.
   soloClaves = null,
+  // Los párrafos de los capítulos que el cliente pidió no tocar (24-oct-2026).
+  excluir = null,
 }) {
-  const prosa = porCapitulos(parrafos).filter((p) => !soloClaves || soloClaves.has(p.clave));
+  const prosa = porCapitulos(parrafos).filter(
+    (p) => (!soloClaves || soloClaves.has(p.clave)) && !excluir?.has(p.clave),
+  );
   const estricto = Boolean(soloClaves);
   const actual = new Map();
   const malos = [];
@@ -735,6 +773,7 @@ async function humanizar({
 module.exports = {
   humanizar,
   porCapitulos,
+  capitulosDe,
   rutaDelTitulo,
   moldesDe,
   parecidos,

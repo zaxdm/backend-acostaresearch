@@ -316,11 +316,20 @@ async function producir({ preparacion, buffer, parrafos }) {
   // capítulo está; no los manda. Ver `preparar.humanizar` (21-oct-2026).
   // Con el reporte de IA de Turnitin, solo se rehace lo marcado y lo limpio se
   // queda como estaba (ver `preparar.reporte`, 24-oct-2026).
-  const reporte = preparacion.servicio === 'HUMANIZAR' ? await almacen.leerReporte(preparacion.id) : null;
-  const soloClaves = reporte ? informeDeReporte.marcadosDe(reporte, parrafos) : null;
+  // Con `solo` (rehacer un párrafo) se rehace ese y nada más; con `excluir`, los
+  // capítulos que el cliente pidió no tocar se quedan como están.
+  const humanizando = preparacion.servicio === 'HUMANIZAR';
+  const reporte = humanizando ? await almacen.leerReporte(preparacion.id) : null;
+  const opciones = humanizando ? await almacen.leerOpciones(preparacion.id) : {};
+  const soloClaves = Array.isArray(opciones.solo)
+    ? new Set(opciones.solo.map(String))
+    : reporte
+      ? informeDeReporte.marcadosDe(reporte, parrafos)
+      : null;
+  const excluir = Array.isArray(opciones.excluir) ? new Set(opciones.excluir.map(String)) : null;
   const { cambios: propuestos, malos, uso } =
-    preparacion.servicio === 'HUMANIZAR'
-      ? await humanizador.humanizar({ parrafos, alAvanzar, soloClaves })
+    humanizando
+      ? await humanizador.humanizar({ parrafos, alAvanzar, soloClaves, excluir })
       : await motor.prepararParrafos({
           parrafos: aMandar,
           servicio: preparacion.servicio,
@@ -516,7 +525,28 @@ async function rescatar(userId, ahora = new Date()) {
  * diría «tu documento tiene 8.000 palabras» antes de decirle que no puede
  * mandarlo.
  */
-async function recibirEncargo({ userId, servicio, idioma, buffer, nombre, reporteId = null }, ahora = new Date()) {
+/**
+ * Los capítulos elegidos para no tocar, comprobados contra el Word. Se
+ * reconocen por la clave de su título o, en una ronda (el Word ya humanizado),
+ * por el mismo título. Si no queda nada que humanizar, se dice antes de encargar.
+ */
+function capitulosANoTocar(parrafos, pedidos) {
+  if (!Array.isArray(pedidos) || pedidos.length === 0) return null;
+  const claves = new Set(pedidos.map((p) => String(p?.clave ?? p)));
+  const titulos = new Set(pedidos.map((p) => p?.titulo).filter(Boolean));
+  const capitulos = humanizador.capitulosDe(parrafos);
+  const elegidos = capitulos.filter((c) => claves.has(c.clave) || titulos.has(c.titulo));
+  if (elegidos.length === 0) return null;
+  if (elegidos.length === capitulos.length && humanizador.porCapitulos(parrafos).every((p) => elegidos.some((c) => c.claves.includes(p.clave)))) {
+    throw new ValidationError('Marcaste todos los capítulos para no tocarlos: no queda nada que humanizar.');
+  }
+  return {
+    noTocar: elegidos.map(({ clave, titulo }) => ({ clave, titulo })),
+    excluir: elegidos.flatMap((c) => c.claves),
+  };
+}
+
+async function recibirEncargo({ userId, servicio, idioma, buffer, nombre, reporteId = null, noTocar = null }, ahora = new Date()) {
   if (!env.prepararEnabled) throw servicioNoDisponible();
 
   // Humanizar, en prueba: solo quien puede, y sin tocar el cupo. Ver
@@ -542,6 +572,10 @@ async function recibirEncargo({ userId, servicio, idioma, buffer, nombre, report
   }
   // Antes de crear la fila: un reporte que no es de este Word se rechaza sin
   // dejar un trabajo a medias.
+  if (noTocar?.length && servicio !== 'HUMANIZAR') {
+    throw new ValidationError('Elegir capítulos que no se tocan solo sirve para humanizar.');
+  }
+  const capitulos = servicio === 'HUMANIZAR' ? capitulosANoTocar(leido.parrafos, noTocar) : null;
   const conReporte = reporteId
     ? informeDeReporte.paraElEncargo({ userId, reporteId, parrafos: leido.parrafos })
     : null;
@@ -561,6 +595,9 @@ async function recibirEncargo({ userId, servicio, idioma, buffer, nombre, report
 
   await almacen.guardarEntrada(preparacion.id, buffer);
   if (conReporte) await almacen.guardarReporte(preparacion.id, conReporte.reporte);
+  if (servicio === 'HUMANIZAR') {
+    await almacen.guardarOpciones(preparacion.id, { ...(capitulos ?? {}), conReporte: Boolean(conReporte) });
+  }
 
   logger.info(
     {
@@ -570,6 +607,7 @@ async function recibirEncargo({ userId, servicio, idioma, buffer, nombre, report
       idioma: destino,
       palabras: leido.palabras,
       ...(conReporte ? { conReporte: true, parrafosMarcados: conReporte.marcados } : {}),
+      ...(capitulos ? { capitulosSinTocar: capitulos.noTocar.length } : {}),
     },
     'Preparar documento: encargo recibido',
   );
@@ -582,6 +620,85 @@ async function recibirEncargo({ userId, servicio, idioma, buffer, nombre, report
     preparacion: paraLaWeb(preparacion),
     cupo: cupo ? { ...cupo, usados: cupo.usados + 1, restantes: Math.max(0, cupo.restantes - 1) } : null,
   };
+}
+
+/** «tesis.docx» → «tesis (ronda 2).docx»; «tesis (ronda 2).docx» → «… (ronda 3).docx». */
+function nombreDeRonda(nombre) {
+  const base = String(nombre).replace(/\.docx$/i, '');
+  const hallada = base.match(/^(.*) \(ronda (\d+)\)$/);
+  const [raiz, numero] = hallada ? [hallada[1], Number(hallada[2]) + 1] : [base, 2];
+  return `${raiz} (ronda ${numero}).docx`.slice(0, 255);
+}
+
+/**
+ * Otra ronda sobre un Word ya humanizado (24-oct-2026). Parte del Word que se
+ * le entregó, no del original, y hay tres formas:
+ *   · con `reporteId`: el reporte de IA nuevo; se rehace solo lo que marcó.
+ *   · con `clave`: «Rehacer un párrafo»; se rehace ese y nada más.
+ *   · sin nada: se humaniza todo otra vez (cuando Turnitin dio «*%» y no marca).
+ * Los capítulos que el cliente pidió no tocar siguen sin tocarse. Es otro
+ * trabajo, con su fila, para que el anterior se pueda seguir descargando.
+ */
+async function recibirRonda({ userId, id, reporteId = null, clave = null }) {
+  if (!env.prepararEnabled) throw servicioNoDisponible();
+  if (!(await puedeHumanizar(userId))) throw humanizarEnPrueba();
+
+  const previa = await repository.mia(userId, id);
+  if (!previa) throw new NotFoundError('Ese documento no existe o no es tuyo.');
+  if (previa.servicio !== 'HUMANIZAR') throw new ValidationError('Solo se puede pedir otra ronda de un documento humanizado.');
+  if (previa.estado !== 'LISTO' || !(await almacen.haySalida(id))) {
+    throw new ValidationError('Ese documento todavía no está listo.');
+  }
+  if (reporteId && clave) throw new ValidationError('Elige una cosa: el reporte nuevo o el párrafo que quieres rehacer.');
+
+  const buffer = await almacen.leerSalida(id);
+  const leido = cuerpoDelArchivo(buffer, 'HUMANIZAR');
+  const anteriores = await almacen.leerOpciones(id);
+  const capitulos = capitulosANoTocar(leido.parrafos, anteriores.noTocar);
+
+  let solo = null;
+  if (clave) {
+    const enProsa = humanizador.porCapitulos(leido.parrafos).some((p) => p.clave === String(clave));
+    if (!enProsa) {
+      throw new ValidationError('Ese párrafo no se puede rehacer: es un título, una tabla o un texto muy corto.');
+    }
+    solo = [String(clave)];
+  }
+  const conReporte = reporteId ? informeDeReporte.paraElEncargo({ userId, reporteId, parrafos: leido.parrafos }) : null;
+
+  const preparacion = await repository.crear({
+    userId,
+    docPackId: null,
+    servicio: 'HUMANIZAR',
+    idioma: null,
+    nombre: nombreDeRonda(previa.nombre),
+    palabras: leido.palabras,
+    bytes: buffer.length,
+    estado: 'EN_COLA',
+  });
+
+  await almacen.guardarEntrada(preparacion.id, buffer);
+  if (conReporte) await almacen.guardarReporte(preparacion.id, conReporte.reporte);
+  await almacen.guardarOpciones(preparacion.id, {
+    ...(capitulos ?? {}),
+    ...(solo ? { solo } : {}),
+    conReporte: Boolean(conReporte),
+    deId: id,
+  });
+
+  logger.info(
+    {
+      userId,
+      preparacionId: preparacion.id,
+      deId: id,
+      forma: solo ? 'parrafo' : conReporte ? 'reporte' : 'todo',
+      ...(conReporte ? { parrafosMarcados: conReporte.marcados } : {}),
+    },
+    'Preparar documento: otra ronda de humanizar',
+  );
+
+  trabajar(preparacion.id);
+  return { preparacion: paraLaWeb(preparacion), cupo: null };
 }
 
 // ── Lo que usa la web ──────────────────────────────────────────────────────
@@ -663,11 +780,47 @@ const prepararService = {
     return informeDeReporte.recibir({ userId, buffer });
   },
 
-  /** Cómo va un trabajo. Es lo que pregunta la web mientras espera. */
+  /**
+   * Los capítulos de un Word, antes de encargar «Humanizar», para que el
+   * cliente marque los que no se tocan. No guarda nada.
+   */
+  async capitulos({ userId, buffer }) {
+    if (!env.prepararEnabled) throw servicioNoDisponible();
+    if (!(await puedeHumanizar(userId))) throw humanizarEnPrueba();
+    const leido = cuerpoDelArchivo(buffer, 'HUMANIZAR');
+    return {
+      palabras: leido.palabras,
+      capitulos: humanizador
+        .capitulosDe(leido.parrafos)
+        .map(({ clave, titulo, palabras }) => ({ clave, titulo, palabras })),
+    };
+  },
+
+  /** Otra ronda sobre un Word humanizado: reporte nuevo, un párrafo o todo. Ver `recibirRonda`. */
+  ronda(peticion) {
+    return enSerie(`preparar:encargo:${peticion.userId}`, () => recibirRonda(peticion));
+  },
+
+  /**
+   * Cómo va un trabajo. Es lo que pregunta la web mientras espera. Humanizando
+   * trae además `detalle`: si llevó reporte, qué capítulos no se tocaron, si
+   * fue un párrafo rehecho y de qué trabajo sale.
+   */
   async ver({ userId, id }) {
     const preparacion = await repository.mia(userId, id);
     if (!preparacion) throw new NotFoundError('Ese documento no existe o no es tuyo.');
-    return paraLaWeb(preparacion);
+    const web = paraLaWeb(preparacion);
+    if (preparacion.servicio !== 'HUMANIZAR') return web;
+    const opciones = await almacen.leerOpciones(id);
+    return {
+      ...web,
+      detalle: {
+        conReporte: Boolean(opciones.conReporte),
+        noTocar: Array.isArray(opciones.noTocar) ? opciones.noTocar.map((c) => c.titulo) : [],
+        parrafo: Array.isArray(opciones.solo) && opciones.solo.length > 0,
+        deId: opciones.deId ?? null,
+      },
+    };
   },
 
   /**
@@ -770,6 +923,7 @@ const prepararService = {
   // servicio dentro del .docx.
   motivosDe,
   alcanceDe,
+  nombreDeRonda,
 };
 
 module.exports = prepararService;

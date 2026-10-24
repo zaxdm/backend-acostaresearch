@@ -40,6 +40,15 @@ const encargoSchema = z.object({
     .optional(),
   // El reporte de IA subido antes con `POST /reporte-ia` (solo «Humanizar»).
   reporteId: z.string().uuid('Ese reporte no es válido: vuelve a subirlo.').nullable().optional(),
+  // Las claves de los títulos de capítulo que no se tocan (solo «Humanizar»), de
+  // `POST /capitulos`. En la URL, separadas por comas.
+  noTocar: z.array(z.string().regex(/^[\w:.-]{1,40}$/, 'Esos capítulos no son válidos: vuelve a elegirlos.')).max(60).optional(),
 });
 
-module.exports = { encargoSchema, SERVICIOS };
+/** Otra ronda de «Humanizar»: el reporte nuevo, un párrafo, o nada (todo otra vez). */
+const rondaSchema = z.object({
+  reporteId: z.string().uuid('Ese reporte no es válido: vuelve a subirlo.').nullable().optional(),
+  clave: z.string().regex(/^[\w:.-]{1,40}$/, 'Ese párrafo no es válido.').nullable().optional(),
+});
+
+module.exports = { encargoSchema, rondaSchema, SERVICIOS };

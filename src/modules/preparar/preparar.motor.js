@@ -147,6 +147,40 @@ async function enParalelo(tareas, aLaVez) {
 /** Las tiras de dígitos del texto, en orden. «3,5 %» y «3.5%» dan lo mismo. */
 const cifrasDe = (texto) => String(texto).match(/\d+/g) ?? [];
 
+const PALABRAS_NUMERO = { uno: '1', dos: '2', tres: '3', cuatro: '4', cinco: '5', seis: '6', siete: '7', ocho: '8', nueve: '9', diez: '10' };
+const cuantasVeces = (lista, valor) => lista.filter((x) => x === valor).length;
+
+/**
+ * Humanizando, devuelve a la forma del autor las cifras que el modelo escribió
+ * de otra manera sin cambiar el dato: «1 812» cuando el autor puso «1812», y
+ * «de uno a ocho» cuando puso «de 1 a 8». Sin esto, la comprobación de cifras
+ * dejaba el párrafo en su original, que es texto de IA puro (24-oct-2026: dos
+ * párrafos marcados de una tesis, tres intentos cada uno). Solo se toca lo que
+ * falta en el texto nuevo; un dato distinto sigue sin pasar.
+ */
+function repararCifras(original, nuevo) {
+  if (typeof nuevo !== 'string') return nuevo;
+  let texto = nuevo;
+  const delAutor = String(original);
+
+  // Miles con espacio: solo si el autor escribió el número junto.
+  texto = texto.replace(/\b(\d{1,3})[   ](\d{3})\b/g, (todo, a, b) => {
+    const junto = `${a}${b}`;
+    return new RegExp(`(^|[^\\d])${junto}([^\\d]|$)`).test(delAutor) && !delAutor.includes(todo) ? junto : todo;
+  });
+
+  // Números del uno al diez en letra, cuando al texto nuevo le falta ese dígito.
+  const faltan = (valor) => cuantasVeces(cifrasDe(delAutor), valor) > cuantasVeces(cifrasDe(texto), valor);
+  texto = texto.replace(
+    /\b(de )?(uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)( a | y )(uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\b/gi,
+    (todo, de, x, enlace, y) => {
+      const [dx, dy] = [PALABRAS_NUMERO[x.toLowerCase()], PALABRAS_NUMERO[y.toLowerCase()]];
+      return faltan(dx) && faltan(dy) && delAutor.includes(`${dx}${enlace}${dy}`) ? `${de ?? ''}${dx}${enlace}${dy}` : todo;
+    },
+  );
+  return texto;
+}
+
 /**
  * Cuánto puede crecer o encoger un párrafo, en caracteres, según lo que se le
  * haya pedido.
@@ -661,7 +695,8 @@ async function pedirTanda(parrafos, opciones, generar) {
   const buenos = {};
   const malos = [];
   for (const parrafo of parrafos) {
-    const nuevo = devuelto?.[String(claveDe(parrafo))];
+    const crudo = devuelto?.[String(claveDe(parrafo))];
+    const nuevo = opciones?.servicio === 'HUMANIZAR' ? repararCifras(parrafo.texto, crudo) : crudo;
     const motivo = comprobar(parrafo.texto, nuevo, opciones, parrafo.citas);
     // Humanizando, un rechazo leve guarda lo que volvió: si el reintento
     // tampoco sale limpio, esto es mejor que el original. Ver `esLeve`.
@@ -1012,6 +1047,7 @@ module.exports = {
   frasePerdida,
   sigueSinTraducir,
   cifrasDe,
+  repararCifras,
   margenes,
   prepararParrafos,
   conReintento,

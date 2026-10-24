@@ -150,3 +150,12 @@ test('con soloClaves, el humanizador solo manda los marcados', async () => {
   assert.ok(mandados.length > 0);
   assert.ok(mandados.every((clave) => clave === '2'), mandados.join(','));
 });
+
+test('las cifras escritas de otra forma vuelven a la del autor; un dato distinto no', () => {
+  const autor = 'Furenes et al. (2021) reunieron 39 estudios con 1812 niños de 1 a 8 años y 149 400 estudiantes.';
+  const modelo = 'Con 1 812 niños de uno a ocho años y 149 400 estudiantes, Furenes et al. (2021) reunieron 39 estudios.';
+  const reparado = motor.repararCifras(autor, modelo);
+  assert.equal(reparado, 'Con 1812 niños de 1 a 8 años y 149 400 estudiantes, Furenes et al. (2021) reunieron 39 estudios.');
+  assert.match(motor.repararCifras(autor, 'Con 1 813 niños de uno a nueve años.'), /1 813.*uno a nueve/);
+  assert.equal(motor.repararCifras('Uno de los estudios halló dos efectos.', 'Uno de los estudios halló dos efectos.'), 'Uno de los estudios halló dos efectos.');
+});

@@ -561,7 +561,7 @@ async function corregir({ pedidos, entradaDe, sistema, prosa, generar, modelos, 
         return;
       }
       for (const p of tanda) {
-        const nuevo = devuelto?.[p.clave];
+        const nuevo = motor.repararCifras(porClave.get(p.clave)?.texto, devuelto?.[p.clave]);
         const original = porClave.get(p.clave);
         const motivo = motor.comprobar(original.texto, nuevo, { servicio: 'HUMANIZAR', ...(estricto ? { estricto } : {}) }, original.citas);
         if (motivo) {

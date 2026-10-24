@@ -66,8 +66,61 @@ function montoEn(texto, amountCents) {
   return amountCents % 100 === 0 && new RegExp(`(^|[^\\d.,])${enteros}(?![\\d.,]*\\d)`).test(texto);
 }
 
+const MESES = { ene: 1, feb: 2, mar: 3, abr: 4, may: 5, jun: 6, jul: 7, ago: 8, set: 9, sep: 9, oct: 10, nov: 11, dic: 12 };
+
+/** Un día como 'AAAA-MM-DD' en hora de Lima, que es la de las capturas. */
+function diaEnLima(fecha) {
+  return fecha.toLocaleDateString('en-CA', { timeZone: 'America/Lima' });
+}
+
+/**
+ * Las fechas que se leen en la captura, como 'AAAA-MM-DD': «24/10/2026» o
+ * «24 oct. 2026» (sin año se entiende el de `hoy`).
+ */
+function fechasEn(texto, hoy) {
+  const anioDeHoy = Number(diaEnLima(hoy).slice(0, 4));
+  const fechas = [];
+  const apuntar = (dia, mes, anio) => {
+    const a = anio < 100 ? 2000 + anio : anio;
+    if (dia < 1 || dia > 31 || mes < 1 || mes > 12 || a < 2000) return;
+    fechas.push(`${a}-${String(mes).padStart(2, '0')}-${String(dia).padStart(2, '0')}`);
+  };
+  for (const m of texto.matchAll(/(?<!\d)(\d{1,2})[/.-](\d{1,2})[/.-](\d{4}|\d{2})(?!\d)/g)) {
+    apuntar(Number(m[1]), Number(m[2]), Number(m[3]));
+  }
+  for (const m of texto.matchAll(
+    /(?<!\d)(\d{1,2})\s*(?:de\s+)?(ene|feb|mar|abr|may|jun|jul|ago|set|sep|oct|nov|dic)[a-z]*\.?(?:\s*(?:de\s+|del\s+)?(\d{4}))?/g,
+  )) {
+    apuntar(Number(m[1]), MESES[m[2]], m[3] ? Number(m[3]) : anioDeHoy);
+  }
+  return fechas;
+}
+
+/**
+ * Si la captura es de hoy o de ayer (hora de Lima). Null si no se leyó
+ * ninguna fecha: el OCR no siempre la encuentra y eso no es culpa del cliente.
+ */
+function fechaReciente(texto, hoy = new Date()) {
+  const fechas = fechasEn(texto, hoy);
+  if (fechas.length === 0) return null;
+  const validas = new Set([diaEnLima(hoy), diaEnLima(new Date(hoy.getTime() - 86_400_000))]);
+  return fechas.some((fecha) => validas.has(fecha));
+}
+
+/**
+ * Si aparece a quién se pagó: alguna palabra del titular (de cuatro letras o
+ * más, para no casar «de» o «la»). Null si no sabemos el titular.
+ */
+function destinatarioEn(texto, titular) {
+  const palabras = normalizar(titular)
+    .split(/[^a-z]+/)
+    .filter((palabra) => palabra.length >= 4);
+  if (palabras.length === 0) return null;
+  return palabras.some((palabra) => new RegExp(`(^|[^a-z])${palabra}([^a-z]|$)`).test(texto));
+}
+
 /** El veredicto a partir del texto ya leído. Separado del OCR para probarlo. */
-function analizarTexto(texto, { amountCents, metodo = 'YAPE', operationCode } = {}) {
+function analizarTexto(texto, { amountCents, metodo = 'YAPE', operationCode, titular, hoy } = {}) {
   const limpio = normalizar(texto);
   const palabras = (PALABRAS[metodo] ?? PALABRAS.YAPE).test(limpio);
   const operacionLeida = operacionEn(limpio, metodo);
@@ -83,7 +136,15 @@ function analizarTexto(texto, { amountCents, metodo = 'YAPE', operationCode } = 
   if (palabras && huellas >= 2) veredicto = 'OK';
   else if (huellas >= 1) veredicto = 'DUDOSO';
 
-  return { veredicto, operacionLeida, montoVisto, operacionCoincide };
+  return {
+    veredicto,
+    operacionLeida,
+    montoVisto,
+    operacionCoincide,
+    // Estas dos solo las usa el envío para frenar; no se guardan en el pago.
+    fechaReciente: fechaReciente(limpio, hoy),
+    destinatarioVisto: titular ? destinatarioEn(limpio, titular) : null,
+  };
 }
 
 /**
@@ -111,4 +172,4 @@ async function revisarCaptura(buffer, opciones = {}) {
   }
 }
 
-module.exports = { analizarTexto, revisarCaptura };
+module.exports = { analizarTexto, revisarCaptura, fechaReciente, destinatarioEn };

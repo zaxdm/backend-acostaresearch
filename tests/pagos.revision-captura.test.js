@@ -76,3 +76,41 @@ test('en Western Union busca el MTCN de 10 dígitos', () => {
     '1234567890',
   );
 });
+
+// ── Fecha, destinatario y correo temporal (24-oct-2026) ────────────────────
+
+const { fechaReciente, destinatarioEn } = require('../src/modules/payments/proof.revision');
+const { esCorreoDesechable } = require('../src/shared/utils/correo-desechable');
+
+// 24-oct-2026 a mediodía en Lima (UTC−5).
+const HOY = new Date('2026-10-24T17:00:00Z');
+
+test('la fecha de la captura vale si es de hoy o de ayer, en hora de Lima', () => {
+  assert.equal(fechaReciente('24 oct. 2026 - 12:10 p. m.', HOY), true);
+  assert.equal(fechaReciente('fecha 23/10/2026', HOY), true);
+  assert.equal(fechaReciente('el 24 de octubre', HOY), true);
+  assert.equal(fechaReciente('12 sep. 2026', HOY), false);
+  assert.equal(fechaReciente('20/10/2026', HOY), false);
+  // Sin fecha legible no se juzga, y un importe no es una fecha.
+  assert.equal(fechaReciente('s/ 159.00 operacion 58392017', HOY), null);
+  // A las 23:30 de Lima ya es «mañana» en UTC: manda la hora de Lima.
+  assert.equal(fechaReciente('24/10/2026', new Date('2026-10-25T04:30:00Z')), true);
+});
+
+test('el destinatario se busca por las palabras del titular', () => {
+  assert.equal(destinatarioEn('destino benicio a. 159.00', 'Benicio Gonzalo Acosta Enriquez'), true);
+  assert.equal(destinatarioEn('destino juan perez 159.00', 'Benicio Gonzalo Acosta Enriquez'), false);
+  // «acostado» no es «acosta».
+  assert.equal(destinatarioEn('estaba acostado', 'Acosta'), false);
+  assert.equal(destinatarioEn('lo que sea', ''), null);
+});
+
+test('los correos temporales se reconocen, los de siempre no', () => {
+  assert.equal(esCorreoDesechable('cavonod498@37xiao.com'), true);
+  assert.equal(esCorreoDesechable('x@mailinator.com'), true);
+  assert.equal(esCorreoDesechable('x@sub.mailinator.com'), true);
+  for (const correo of ['ana@gmail.com', 'ana@hotmail.com', 'ana@outlook.com', 'ana@unitru.edu.pe', 'ana@yahoo.es']) {
+    assert.equal(esCorreoDesechable(correo), false, correo);
+  }
+  assert.equal(esCorreoDesechable(''), false);
+});

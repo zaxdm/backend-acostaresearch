@@ -374,6 +374,27 @@ const paymentRepository = {
     });
   },
 
+  /**
+   * Si ese número de operación ya está en otro pago en revisión o pagado. Uno
+   * rechazado o cancelado no cuenta: el mismo pago puede volver con otra captura.
+   */
+  async operationCodeInUse({ provider, operationCode }) {
+    const fila = await prisma.payment.findFirst({
+      where: { provider, operationCode, status: { in: ['IN_REVIEW', 'PAID'] } },
+      select: { id: true },
+    });
+    return Boolean(fila);
+  },
+
+  /** Cuántos comprobantes le rechazamos desde `desde` (un carrito cuenta uno). */
+  async countRecentRejections({ userId, providers, desde }) {
+    const filas = await prisma.payment.findMany({
+      where: { userId, provider: { in: providers }, status: 'REJECTED', reviewedAt: { gte: desde } },
+      select: { id: true, cartId: true },
+    });
+    return new Set(filas.map((fila) => fila.cartId ?? fila.id)).size;
+  },
+
   /** El comprador retira su comprobante antes de que lo revisen. */
   async cancelInReview(ids, userId) {
     const { count } = await prisma.payment.updateMany({

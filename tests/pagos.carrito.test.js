@@ -36,6 +36,7 @@ const envFalso = {
   ADMIN_NOTIFY_EMAIL: 'admin@acosta.pe',
   APP_URL: 'https://acosta.pe',
   yape: { titular: 'Acosta', numero: '999' },
+  westernUnion: { activo: false },
 };
 
 const PLANES = {
@@ -82,6 +83,7 @@ let descuentos = {}; // código → descuento
 let generales = {}; // código del carrito sin plan → registro
 let fallaLaEntregaDe = null; // código de plan cuya entrega revienta
 let veredictoDelOcr = 'OK'; // lo que «lee» el OCR falso en la captura
+let lecturaExtra = {}; // operacionCoincide, fechaReciente, destinatarioVisto
 
 function conPlan(fila) {
   const plan = Object.values(PLANES).find((p) => p.id === fila.planId);
@@ -96,8 +98,15 @@ falsificar('../src/lib/emailTemplates', {
   manualPaymentReceived: (datos) => ({ subject: 'yape', datos }),
   manualPaymentRejected: (datos) => ({ subject: 'rechazo', datos }),
 });
+let correoDelComprador = 'tesista@correo.pe';
+falsificar('../src/modules/payments/medio.service', {
+  paraElCheckout: async ({ yape, westernUnion }) => ({
+    yape: { ...yape, titular: 'Benicio Acosta' },
+    westernUnion,
+  }),
+});
 falsificar('../src/lib/prisma', {
-  user: { findUnique: async () => ({ id: 'user-1', email: 'tesista@correo.pe', firstName: 'Ana' }) },
+  user: { findUnique: async () => ({ id: 'user-1', email: correoDelComprador, firstName: 'Ana' }) },
   payment: {
     findUnique: async ({ where }) => (filas.has(where.id) ? conPlan(filas.get(where.id)) : null),
   },
@@ -131,7 +140,11 @@ falsificar('../src/modules/licensing/license.repository', {
 falsificar('../src/modules/payments/proof.revision', {
   revisarCaptura: async (_buffer, opciones) => {
     llamadas.revisiones.push(opciones);
-    return { veredicto: veredictoDelOcr, operacionLeida: opciones.operationCode ?? null };
+    return {
+      veredicto: veredictoDelOcr,
+      operacionLeida: opciones.operationCode ?? null,
+      ...lecturaExtra,
+    };
   },
 });
 falsificar('../src/modules/payments/proof.storage', {
@@ -194,6 +207,19 @@ falsificar('../src/modules/payments/payment.repository', {
     Object.assign(filas.get(id), { proofPath, status: 'IN_REVIEW' });
     return true;
   },
+  operationCodeInUse: async ({ provider, operationCode }) =>
+    [...filas.values()].some(
+      (f) =>
+        f.provider === provider &&
+        f.operationCode === operationCode &&
+        ['IN_REVIEW', 'PAID'].includes(f.status),
+    ),
+  countRecentRejections: async ({ userId }) =>
+    new Set(
+      [...filas.values()]
+        .filter((f) => f.userId === userId && f.status === 'REJECTED')
+        .map((f) => f.cartId ?? f.id),
+    ).size,
   findInReviewForPlans: async (userId, planIds) =>
     [...filas.values()]
       .filter((f) => f.userId === userId && planIds.includes(f.planId) && f.status === 'IN_REVIEW')
@@ -248,6 +274,8 @@ test.beforeEach(() => {
   generales = {};
   fallaLaEntregaDe = null;
   veredictoDelOcr = 'OK';
+  lecturaExtra = {};
+  correoDelComprador = 'tesista@correo.pe';
 });
 
 /** La orden de PayPal recién creada. */
@@ -468,7 +496,7 @@ async function yapeDeCarrito() {
   return manualService.registrarCarrito({
     userId: 'user-1',
     items: [{ planCode: 'METODO', discountCode: 'PROMO40' }, { planCode: 'ARTICULO' }],
-    operationCode: '123456',
+    operationCode: '583920',
     buffer: Buffer.from('png'),
   });
 }
@@ -482,7 +510,7 @@ test('el Yape de un carrito es una captura por la suma en soles', async () => {
   const guardadas = [...filas.values()];
   assert.equal(guardadas.length, 2);
   assert.ok(guardadas.every((f) => f.proofPath === 'captura-1.png' && f.status === 'IN_REVIEW'));
-  assert.ok(guardadas.every((f) => f.operationCode === '123456'));
+  assert.ok(guardadas.every((f) => f.operationCode === '583920'));
   // Un solo empujón al móvil, por la suma.
   assert.equal(llamadas.avisos.length, 1);
   assert.match(llamadas.avisos[0].titulo, /339\.00/);
@@ -509,7 +537,7 @@ test('aprobar una fila del carrito entrega todos sus productos', async () => {
   assert.equal(resultado.alreadyProcessed, false);
   assert.equal(resultado.entregados.length, 2);
   assert.ok([...filas.values()].every((f) => f.status === 'PAID'));
-  assert.ok(llamadas.entregas.every((e) => e.captura.captureId === '123456'));
+  assert.ok(llamadas.entregas.every((e) => e.captura.captureId === '583920'));
 });
 
 test('rechazar el comprobante rechaza el carrito entero', async () => {
@@ -527,11 +555,11 @@ test('rechazar el comprobante rechaza el carrito entero', async () => {
 
 // ── Un comprobante en revisión por producto (24-oct) ───────────────────────
 
-const yapeSuelto = (planCode = 'METODO', userId = 'user-1') =>
+const yapeSuelto = (planCode = 'METODO', operationCode = '583920') =>
   manualService.registrar({
-    userId,
+    userId: 'user-1',
     planCode,
-    operationCode: '123456',
+    operationCode,
     buffer: Buffer.from('png'),
   });
 
@@ -544,7 +572,7 @@ test('con un comprobante en revisión no se acepta otro del mismo producto', asy
     manualService.registrarCarrito({
       userId: 'user-1',
       items: [{ planCode: 'METODO' }, { planCode: 'ARTICULO' }],
-      operationCode: '123456',
+      operationCode: '583920',
       buffer: Buffer.from('png'),
     }),
     /Ya enviaste/,
@@ -553,7 +581,7 @@ test('con un comprobante en revisión no se acepta otro del mismo producto', asy
   // Se corta antes del OCR: no se gasta una lectura en una captura que no entra.
   assert.equal(llamadas.revisiones.length, 1);
   // Otro producto sí pasa.
-  await yapeSuelto('ARTICULO');
+  await yapeSuelto('ARTICULO', '583921');
   assert.equal(filas.size, 2);
 });
 
@@ -591,6 +619,63 @@ test('un comprobante ya aprobado no se puede cancelar', async () => {
   assert.equal(filas.get(enviado.paymentId).status, 'PAID');
 });
 
+// ── Capturas falsas (24-oct) ───────────────────────────────────────────────
+
+const yapeCon = (operationCode, planCode = 'METODO') =>
+  manualService.registrar({ userId: 'user-1', planCode, operationCode, buffer: Buffer.from('png') });
+
+test('un número de operación de relleno no entra, y no gasta lectura', async () => {
+  for (const codigo of ['77777777', '000000', '123456', '987654']) {
+    await assert.rejects(yapeCon(codigo), /no es válido/, codigo);
+  }
+  assert.equal(filas.size, 0);
+  assert.equal(llamadas.revisiones.length, 0);
+});
+
+test('un número de operación ya usado en otro pago no entra', async () => {
+  await yapeCon('583920');
+  await assert.rejects(yapeCon('583920', 'ARTICULO'), /ya se usó/);
+  // Rechazado, el mismo número puede volver con otra captura.
+  filas.get('pay-1').status = 'REJECTED';
+  const otra = await yapeCon('583920', 'ARTICULO');
+  assert.equal(otra.status, 'IN_REVIEW');
+});
+
+test('un correo temporal no puede enviar comprobantes', async () => {
+  correoDelComprador = 'cavonod498@37xiao.com';
+  await assert.rejects(yapeCon('583920'), /correos temporales/);
+  correoDelComprador = 'otro@mailinator.com';
+  await assert.rejects(yapeCon('583920'), /correos temporales/);
+  assert.equal(filas.size, 0);
+});
+
+test('con dos rechazos en el día no se aceptan más envíos', async () => {
+  await yapeCon('583920');
+  filas.get('pay-1').status = 'REJECTED';
+  await yapeCon('583921');
+  filas.get('pay-2').status = 'REJECTED';
+
+  await assert.rejects(yapeCon('583922'), /hasta mañana/);
+});
+
+test('se frena la captura sin el número escrito, de otra fecha o sin destinatario', async () => {
+  const casos = [
+    [{ operacionCoincide: false }, /no aparece en la captura/],
+    [{ fechaReciente: false }, /no es de hoy ni de ayer/],
+    [{ destinatarioVisto: false }, /a quién pagaste/],
+  ];
+  for (const [lectura, mensaje] of casos) {
+    lecturaExtra = lectura;
+    await assert.rejects(yapeCon('583920'), mensaje);
+  }
+  assert.equal(filas.size, 0);
+  // Si el OCR no encontró fecha ni nombre (null), pasa.
+  lecturaExtra = { fechaReciente: null, destinatarioVisto: null, operacionCoincide: true };
+  assert.equal((await yapeCon('583920')).status, 'IN_REVIEW');
+  // Y el titular que se busca es el configurado.
+  assert.equal(llamadas.revisiones.at(-1).titular, 'Benicio Acosta');
+});
+
 // ── Western Union ──────────────────────────────────────────────────────────
 
 test('Western Union cobra en dólares, al precio de PayPal, con su propia referencia', async () => {
@@ -601,7 +686,7 @@ test('Western Union cobra en dólares, al precio de PayPal, con su propia refere
     userId: 'user-1',
     planCode: 'METODO',
     discountCode: 'PROMO40',
-    operationCode: '1234567890',
+    operationCode: '5839201746',
     buffer: Buffer.from('png'),
     metodo: 'WESTERN_UNION',
   });
@@ -619,7 +704,7 @@ test('Western Union cobra en dólares, al precio de PayPal, con su propia refere
   const carro = await manualService.registrarCarrito({
     userId: 'user-2',
     items: [{ planCode: 'METODO' }, { planCode: 'ARTICULO' }],
-    operationCode: '1234567890',
+    operationCode: '5839201747',
     buffer: Buffer.from('png'),
     metodo: 'WESTERN_UNION',
   });
@@ -634,7 +719,7 @@ test('sin beneficiario configurado no se acepta un Western Union', async () => {
     manualService.registrar({
       userId: 'user-1',
       planCode: 'METODO',
-      operationCode: '1234567890',
+      operationCode: '5839201746',
       buffer: Buffer.from('png'),
       metodo: 'WESTERN_UNION',
     }),
@@ -688,7 +773,7 @@ test('la captura se lee antes de abrir el pago y el veredicto queda en todas las
 
   assert.equal(llamadas.revisiones.length, 1);
   assert.equal(llamadas.revisiones[0].amountCents, 33900);
-  assert.equal(llamadas.revisiones[0].operationCode, '123456');
+  assert.equal(llamadas.revisiones[0].operationCode, '583920');
   assert.equal(llamadas.proofChecks.length, 1);
   assert.equal(llamadas.proofChecks[0].ids.length, 2);
   assert.equal(llamadas.proofChecks[0].revision.veredicto, 'OK');
@@ -820,7 +905,7 @@ test('una imagen que no parece un comprobante no abre ningún pago', async () =>
     manualService.registrar({
       userId: 'user-1',
       planCode: 'METODO',
-      operationCode: '01234567',
+      operationCode: '58392017',
       buffer: Buffer.from('png'),
     }),
     /no parece un comprobante/,

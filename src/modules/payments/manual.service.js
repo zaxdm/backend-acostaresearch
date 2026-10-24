@@ -19,6 +19,8 @@ const carrito = require('./payment.carrito');
 const { comprobarRenovacion } = require('./payment.renovacion');
 const { AppError, NotFoundError } = require('../../shared/errors/AppError');
 const billeteraService = require('./billetera.service');
+const medioService = require('./medio.service');
+const { esCorreoDesechable } = require('../../shared/utils/correo-desechable');
 
 /**
  * Pago manual por Yape o por Western Union.
@@ -157,14 +159,112 @@ async function exigirComprobante(buffer, { amountCents, metodo, operationCode })
   // La lectura automática está hecha para las pantallas de Yape y de Western
   // Union. La de una billetera de país no se lee: la mira quien la aprueba.
   if (metodo === billeteraService.PROVEEDOR) return { veredicto: 'SIN_LEER' };
-  const revision = await revisarCaptura(buffer, { amountCents, metodo, operationCode });
+  const titular = await titularEsperado(metodo);
+  const revision = await revisarCaptura(buffer, { amountCents, metodo, operationCode, titular });
+  const rechazar = (mensaje) => {
+    throw new AppError(mensaje, { statusCode: 422, code: ERROR_CODES.VALIDATION_ERROR });
+  };
   if (revision.veredicto === 'NO_PARECE') {
-    throw new AppError(
+    rechazar(
       'Esa imagen no parece un comprobante de pago. Sube la pantalla que te muestra Yape (o tu recibo de Western Union) con el monto, la fecha y el número de operación.',
-      { statusCode: 422, code: ERROR_CODES.VALIDATION_ERROR },
+    );
+  }
+  // Lo de abajo solo frena cuando el OCR leyó algo: SIN_LEER no trae estos
+  // campos, y un fallo nuestro no puede dejar a nadie sin pagar (24-oct).
+  if (revision.operacionCoincide === false) {
+    rechazar(
+      'El número de operación que escribiste no aparece en la captura. Escribe el que sale en esta misma pantalla.',
+    );
+  }
+  if (revision.fechaReciente === false) {
+    rechazar(
+      'La fecha de la captura no es de hoy ni de ayer. Sube el comprobante del pago que acabas de hacer; si pagaste antes, escríbenos por WhatsApp.',
+    );
+  }
+  if (revision.destinatarioVisto === false) {
+    rechazar(
+      'En la captura no aparece a quién pagaste. Sube la pantalla completa del comprobante, donde se ve el nombre del destinatario.',
     );
   }
   return revision;
+}
+
+/**
+ * A nombre de quién tiene que salir el pago. El de Yape puede no estar
+ * configurado (en producción solo hay QR): entonces vale el beneficiario de
+ * Western Union, que es la misma persona. Si no se puede saber, null y no se
+ * comprueba.
+ */
+async function titularEsperado(metodo) {
+  try {
+    const { yape, westernUnion } = await medioService.paraElCheckout({
+      yape: manualService.datosDePago(),
+      westernUnion: manualService.datosWesternUnion(),
+    });
+    if (metodo === 'WESTERN_UNION') return westernUnion?.beneficiario || null;
+    return yape?.titular || westernUnion?.beneficiario || env.westernUnion.beneficiario || null;
+  } catch (error) {
+    logger.warn({ err: error }, 'No se pudo saber el titular para revisar la captura');
+    return null;
+  }
+}
+
+/** «77777777», «000000», «123456» o «987654»: un número de relleno, no una operación. */
+function operacionDeRelleno(codigo) {
+  const texto = String(codigo || '');
+  if (texto.length < 2) return false;
+  if (/^(.)\1+$/.test(texto)) return true;
+  if (!/^\d+$/.test(texto)) return false;
+  const cifras = [...texto].map(Number);
+  const paso = cifras[1] - cifras[0];
+  if (Math.abs(paso) !== 1) return false;
+  return cifras.every((cifra, i) => i === 0 || cifra - cifras[i - 1] === paso);
+}
+
+const DIA_MS = 24 * 60 * 60 * 1000;
+/** Rechazos en 24 h a partir de los cuales no se aceptan más envíos ese día. */
+const TOPE_DE_RECHAZOS = 2;
+
+/**
+ * Lo que se mira antes de leer la captura (24-oct, tras dos capturas falsas
+ * de un correo temporal): correo desechable, demasiados rechazos seguidos, y
+ * un número de operación de relleno o que ya usó otro pago. Va antes del OCR
+ * para no gastar lecturas en lo que no va a entrar.
+ */
+async function exigirEnvioCreible(userId, { proveedor, operationCode }) {
+  const usuario = await prisma.user.findUnique({ where: { id: userId }, select: { email: true } });
+  if (esCorreoDesechable(usuario?.email)) {
+    throw new AppError(
+      'No aceptamos pagos desde correos temporales. Entra con tu correo personal (Gmail, Outlook…) o escríbenos por WhatsApp.',
+      { statusCode: 403, code: ERROR_CODES.PAYMENT_FAILED },
+    );
+  }
+
+  const rechazos = await paymentRepository.countRecentRejections({
+    userId,
+    providers: PROVEEDORES,
+    desde: new Date(Date.now() - DIA_MS),
+  });
+  if (rechazos >= TOPE_DE_RECHAZOS) {
+    throw new AppError(
+      'Rechazamos tus últimos comprobantes y no podrás enviar otro hasta mañana. Si tu pago es real, escríbenos por WhatsApp con la captura.',
+      { statusCode: 429, code: ERROR_CODES.PAYMENT_FAILED },
+    );
+  }
+
+  if (!operationCode) return;
+  if (operacionDeRelleno(operationCode)) {
+    throw new AppError(
+      'Ese número de operación no es válido. Escribe el que sale en tu comprobante.',
+      { statusCode: 422, code: ERROR_CODES.VALIDATION_ERROR },
+    );
+  }
+  if (await paymentRepository.operationCodeInUse({ provider: proveedor, operationCode })) {
+    throw new AppError(
+      'Ese número de operación ya se usó en otro pago. Revisa que sea el de este comprobante.',
+      { statusCode: 409, code: ERROR_CODES.PAYMENT_FAILED },
+    );
+  }
 }
 
 /**
@@ -188,7 +288,10 @@ async function exigirSinPendiente(userId, planes) {
 
 /** Apunta el veredicto en las filas. Si falla, la bandeja no lo enseña y ya. */
 function apuntarRevision(ids, revision) {
-  paymentRepository.saveProofCheck(ids, revision).catch((error) => {
+  // Solo lo que enseña la bandeja: la columna corta a 255 caracteres.
+  const { veredicto, operacionLeida, montoVisto, operacionCoincide } = revision;
+  const guardar = { veredicto, operacionLeida, montoVisto, operacionCoincide };
+  paymentRepository.saveProofCheck(ids, guardar).catch((error) => {
     logger.warn({ err: error, ids }, 'No se pudo apuntar la revisión automática de la captura');
   });
 }
@@ -357,6 +460,7 @@ const manualService = {
 
     await comprobarRenovacion(userId, plan);
     await exigirSinPendiente(userId, [plan]);
+    await exigirEnvioCreible(userId, { proveedor: medio.proveedor, operationCode });
 
     const precio = medio.precio(plan);
     if (!precio || precio <= 0) {
@@ -481,6 +585,7 @@ const manualService = {
       userId,
       lineas.map((linea) => linea.plan),
     );
+    await exigirEnvioCreible(userId, { proveedor: medio.proveedor, operationCode });
     const amountCents = lineas.reduce((suma, linea) => suma + linea.amountCents, 0);
     const nombre = carrito.nombreDelCarrito(lineas.map((linea) => linea.plan));
     const cartId = crypto.randomUUID();

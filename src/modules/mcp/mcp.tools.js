@@ -2772,8 +2772,21 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         'la matriz con código: una fila por caso, juntando los informes de un mismo caso por el nombre ' +
         'del archivo o por su carpeta, y sin los datos personales. NUNCA le pidas que la pase a mano ni ' +
         'que te pegue los PDF para transcribirlos tú. Al volver, la sesión dice cómo se armó y qué revisar.\n' +
+        '· spss: ejecuta sintaxis de SPSS de verdad, en PSPP (ver SPSS).\n' +
         '· reiniciar: borra los objetos y vuelve a leer sus datos.\n' +
         '· informe: arma el informe en Word del análisis y da el enlace (ver INFORME EN WORD).\n\n' +
+        'SPSS: si el tesista quiere su análisis «en SPSS», o su asesor lo exige, usa spss en vez de ' +
+        'codigo. Lo ejecuta PSPP, el programa libre de GNU que corre la misma sintaxis que IBM SPSS y ' +
+        'lee y escribe .sav. Los datos de la sesión ya están abiertos, incluido lo que hayas creado en ' +
+        'R (puntajes, recodificaciones), así que no pongas GET FILE. Escribe como en SPSS: FREQUENCIES, ' +
+        'DESCRIPTIVES, EXAMINE (normalidad con /PLOT NPPLOT), RELIABILITY (alfa de Cronbach), ' +
+        'CORRELATIONS, NONPAR CORR (Spearman), T-TEST, ONEWAY, NPAR TESTS (Mann-Whitney, Wilcoxon, ' +
+        'Kruskal-Wallis, chi-cuadrado), CROSSTABS, REGRESSION, LOGISTIC REGRESSION, FACTOR, COMPUTE, ' +
+        'RECODE y VALUE LABELS. Lo que PSPP no tiene (ecuaciones estructurales, PLS-SEM, AMOS, modelos ' +
+        'mixtos) hazlo con codigo en R. Las tablas salen en inglés, como en un SPSS en inglés: ' +
+        'explícaselas en su idioma. Al tesista le quedan para bajar el .sav con sus etiquetas, la ' +
+        'sintaxis entera y las tablas en un archivo que abre Word; la respuesta dice sus nombres. En ' +
+        'su tesis se escribe «procesado con PSPP, compatible con IBM SPSS»; NUNCA que se usó IBM SPSS.\n\n' +
         'ANTES DE CORRER PRUEBAS, PREGÚNTALE lo que no sepas —sus variables y dimensiones, qué ' +
         'ítems forman cada una, si su hipótesis es de relación o de diferencia—, y mira antes ' +
         '"mi_proyecto" o "ver_capitulo": la metodología puede estar ya acordada. Ve por pasos ' +
@@ -2875,7 +2888,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         'que vayan al texto se guardan con "guardar_analisis" (resultados), como siempre.',
       inputSchema: ESQUEMA_TRABAJAR_EN_R,
     },
-    async ({ codigo, reiniciar, descargar, subir, informe }) => {
+    async ({ codigo, spss, reiniciar, descargar, subir, informe }) => {
       // El informe va aparte: no ejecuta R, arma un Word con lo que ya salió.
       if (informe) {
         const cupo = await cupoDePrueba('trabajar_en_r');
@@ -2899,7 +2912,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
       }
 
       // Solo ejecutar gasta cupo en un conector de prueba: mirar la sesión no.
-      if (typeof codigo === 'string' && codigo.trim() !== '') {
+      if ((typeof codigo === 'string' && codigo.trim() !== '') || (typeof spss === 'string' && spss.trim() !== '')) {
         const cupo = await cupoDePrueba('trabajar_en_r');
         if (cupo.bloqueo) return cupo.bloqueo;
       }
@@ -2910,6 +2923,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
           userId: licencia.user.id,
           productCode: licencia.productCode,
           codigo,
+          spss,
           reiniciar,
           descargar,
           subir,

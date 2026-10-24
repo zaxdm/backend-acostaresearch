@@ -33,9 +33,12 @@ const {
   crearMotor,
   conductorSystemd,
   conductorLocal,
+  conductorPsppSystemd,
+  conductorPsppLocal,
   MotorNoDisponible,
   MotorOcupado,
 } = require('./r.motor');
+const spss = require('./r.spss');
 
 const RUNNER = path.resolve(__dirname, '../../../r/ejecutar.R');
 
@@ -64,6 +67,10 @@ function motorActual() {
         env.rMotor === 'systemd'
           ? conductorSystemd({ limiteSegundos })
           : conductorLocal({ rscript: env.RSCRIPT, runner: RUNNER, limiteSegundos }),
+      conductorSpss:
+        env.rMotor === 'systemd'
+          ? conductorPsppSystemd({ limiteSegundos })
+          : conductorPsppLocal({ pspp: env.PSPP, limiteSegundos }),
       limiteSegundos,
       maxSimultaneas: env.R_MAX_SIMULTANEAS,
     });
@@ -185,6 +192,133 @@ const RESULTADOS = {
     'sesión, que sigue como antes. Evita crear objetos enormes.',
 };
 
+const RESULTADOS_SPSS = {
+  ok: null,
+  error:
+    'PSPP SE PARÓ EN UN ERROR (los comandos de antes del error sí corrieron). Lee los MENSAJES ' +
+    'DE PSPP, corrige la sintaxis y vuelve a llamar. Si el comando no existe en PSPP, hazlo con ' +
+    'codigo en R. No le enseñes el error al tesista si lo puedes arreglar tú.',
+  datos:
+    'NO SE PUDIERON PASAR SUS DATOS A SPSS, así que PSPP no llegó a correr. La consola de R de ' +
+    'abajo dice por qué: arréglalo con codigo (que `datos` sea una tabla) y vuelve a llamar con spss.',
+  tiempo:
+    'SE CORTÓ POR TIEMPO: la sintaxis pasó del límite. Divídela en llamadas más cortas.',
+  cortado: 'PSPP SE CORTÓ ANTES DE TERMINAR, casi seguro por memoria. Divide la sintaxis.',
+};
+
+const NO_DISPONIBLE_SPSS =
+  'La sintaxis de SPSS (PSPP) no está disponible ahora mismo en el servidor. No se ejecutó nada. ' +
+  'Haz ese mismo análisis con codigo en R y díselo al tesista con normalidad; la sintaxis de ' +
+  'SPSS se la puedes escribir para que la corra en su SPSS.';
+
+/**
+ * Lo que se guarda en el proyecto como guion: el de R y, debajo, la sintaxis
+ * de SPSS comentada, para que el guion siga corriendo en RStudio.
+ */
+function guionConSintaxis(guion, sintaxis) {
+  if (!sintaxis) return guion;
+  const comentada = String(sintaxis)
+    .trimEnd()
+    .split('\n')
+    .map((l) => `# ${l}`)
+    .join('\n');
+  return `${String(guion ?? '').trimEnd()}\n\n# ── Sintaxis de SPSS, ejecutada en PSPP (en ${spss.SINTAXIS}) ──\n${comentada}\n`;
+}
+
+/**
+ * La rama de `spss` de `trabajar_en_r`: ejecuta sintaxis de SPSS en PSPP.
+ * Devuelve `{ contenido, bloqueo }`, como `trabajar`.
+ */
+async function trabajarSpss({ m, userId, productCode, sintaxis }) {
+  const bloqueo = spss.revisar(sintaxis);
+  if (bloqueo) {
+    logger.warn({ userId, regla: bloqueo.regla, fragmento: bloqueo.fragmento }, 'Sintaxis de SPSS bloqueada');
+    return {
+      bloqueo,
+      contenido: texto(
+        `NO SE EJECUTÓ: la sintaxis ${bloqueo.motivo} («${bloqueo.fragmento}»), y eso no se permite ` +
+          'aquí. Solo se trabaja con los datos de la sesión, que ya están abiertos: no hace falta GET ' +
+          'FILE ni rutas. Reescríbela sin eso.',
+      ),
+    };
+  }
+  if (!m.spssDisponible || !m.spssDisponible()) return { contenido: texto(NO_DISPONIBLE_SPSS) };
+
+  const proyecto = await projectRepository.asegurar(userId, productCode);
+  let hecho;
+  try {
+    hecho = await m.ejecutarSpss(proyecto.id, sintaxis);
+  } catch (error) {
+    if (error instanceof MotorNoDisponible) {
+      logger.error({ err: error, userId }, 'PSPP no está disponible');
+      return { contenido: texto(NO_DISPONIBLE_SPSS) };
+    }
+    if (error instanceof MotorOcupado) {
+      return {
+        contenido: texto(
+          'Ahora mismo hay varios análisis en marcha y no quedó sitio. No se ejecutó nada: vuelve a ' +
+            'llamar con la misma sintaxis en unos segundos.',
+        ),
+      };
+    }
+    throw error;
+  }
+
+  if (hecho.sinDatos) {
+    return { contenido: texto(`Todavía no hay datos en la sesión.${N}${N}${avisoDeSubida({ userId, productCode })}`) };
+  }
+  if (hecho.bibliografica) {
+    return {
+      contenido: texto(
+        'Los datos de la sesión son un exporte bibliográfico, no una matriz: SPSS no sirve para eso. ' +
+          'Sigue con las funciones del mapeo en R.',
+      ),
+    };
+  }
+
+  const partes = [];
+  const aviso = RESULTADOS_SPSS[hecho.resultado];
+  if (aviso) partes.push(aviso);
+  if (hecho.renombradas.length > 0) {
+    partes.push(
+      'NOMBRES CAMBIADOS PARA SPSS (algunos nombres de R no valen en SPSS; en la sintaxis usa el ' +
+        `nuevo): ${hecho.renombradas.map((r) => `${r.antes} → ${r.ahora}`).join(', ')}.`,
+    );
+  }
+  partes.push(
+    `${hecho.resultado === 'datos' ? 'CONSOLA DE R' : 'SALIDA DE PSPP'}:${N}` +
+      (recortarConsola(hecho.salida) || '(sin salida)'),
+  );
+
+  const estado = describirEstado({ ...hecho.estado, archivos: hecho.archivos });
+  if (estado) partes.push(estado);
+
+  if (hecho.resultado === 'ok') {
+    partes.push(
+      `PARA EL TESISTA (con descargar): ${spss.SAV} (su matriz con las etiquetas, se abre en SPSS), ` +
+        `${spss.SINTAXIS} (toda la sintaxis que corrió bien, para repetirla en su SPSS) y ${spss.TABLAS} ` +
+        '(las tablas de esta llamada; se abre en Word). En el informe, la nota de las tablas dice ' +
+        '«Procesado con PSPP 2.0, compatible con IBM SPSS»: nunca escribas que se usó IBM SPSS.',
+    );
+  }
+
+  const guardado = await guardarEnElProyecto({
+    userId,
+    productCode,
+    guion: guionConSintaxis(hecho.guion, hecho.sintaxis),
+    consola: hecho.consola,
+  });
+  partes.push(
+    guardado
+      ? 'Guardado en su análisis: "ver_analisis" ya lo lee. Las cifras que vayan al texto, guárdalas ' +
+          'con "guardar_analisis" (resultados).'
+      : 'OJO: esta vez NO se pudo guardar en su análisis. Lo ejecutado sigue en la sesión; vuelve a ' +
+          'intentarlo más tarde.',
+  );
+
+  return { contenido: texto(partes.join(`${N}${N}`)) };
+}
+
 function ultimos(textoLargo) {
   const t = String(textoLargo ?? '');
   return t.length > MAXIMO_ANALISIS ? t.slice(-MAXIMO_ANALISIS) : t;
@@ -255,11 +389,24 @@ function avisoDeResubida({ userId, productCode }) {
  * el bloqueo —si el filtro paró el código— es para que la herramienta lo anote
  * en el uso de la licencia.
  */
-async function trabajar({ userId, productCode, codigo, reiniciar = false, descargar, subir = false }) {
+async function trabajar({ userId, productCode, codigo, spss: sintaxis, reiniciar = false, descargar, subir = false }) {
   const m = motorActual();
   if (!m || !(await m.listo())) return { contenido: texto(NO_DISPONIBLE) };
 
   const orden = typeof codigo === 'string' ? codigo.trim() : '';
+  const deSpss = typeof sintaxis === 'string' ? sintaxis.trim() : '';
+
+  if (deSpss) {
+    if (orden || reiniciar) {
+      return {
+        contenido: texto(
+          'NO SE EJECUTÓ NADA: manda spss solo, sin codigo ni reiniciar en la misma llamada. Primero ' +
+            'lo de R y, en otra llamada, la sintaxis de SPSS.',
+        ),
+      };
+    }
+    return trabajarSpss({ m, userId, productCode, sintaxis: deSpss });
+  }
 
   if (orden) {
     const bloqueo = filtro.revisar(orden);
@@ -344,10 +491,12 @@ async function trabajar({ userId, productCode, codigo, reiniciar = false, descar
     }
 
     const bibliografico = await m.esBibliografica(sesion);
+    // La sintaxis de SPSS de la sesión, si la hay, sigue en el análisis guardado.
+    const sintaxisGuardada = bibliografico ? null : await m.leerArchivo(sesion, spss.SINTAXIS).catch(() => null);
     const guardado = await guardarEnElProyecto({
       userId,
       productCode,
-      guion: hecho.guion,
+      guion: guionConSintaxis(hecho.guion, sintaxisGuardada ? sintaxisGuardada.toString('utf8') : null),
       consola: hecho.consola,
       bibliografico,
     });
@@ -686,4 +835,5 @@ module.exports = {
   usarMotor,
   describirEstado,
   recortarConsola,
+  guionConSintaxis,
 };

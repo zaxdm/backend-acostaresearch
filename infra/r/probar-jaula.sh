@@ -82,6 +82,35 @@ comprobar "la jaula del mapeo tiene 900 MB y la de siempre sigue en 400" \
 unset UNIDAD
 rm -f "$CARPETA/paquetes.txt" "$CARPETA/entorno.RData" "$CARPETA"/figura_*.png "$CARPETA/datos.txt"
 
+echo "── SPSS (la jaula de PSPP) ──"
+# R escribe el .sav, como lo hace el backend antes de cada sintaxis, y PSPP lo
+# lee dentro de acostaresearch-r-pspp. Luego, lo que --safer y la jaula tienen
+# que impedir.
+# ejecutar_pspp "<sintaxis>"  →  deja la salida y los mensajes de PSPP en $SALIDA
+ejecutar_pspp() {
+  rm -f "$CARPETA/salida-spss.txt" "$CARPETA/errores-spss.txt" "$CARPETA/resultados-spss.odt"
+  printf '%s\n' "$1" | sudo -u acosta tee "$CARPETA/orden.sps" >/dev/null
+  sudo -u acosta systemctl start --no-ask-password "acostaresearch-r-pspp@$ID.service" 2>/tmp/jaula-err-$$ || true
+  SALIDA="$(cat "$CARPETA/salida-spss.txt" "$CARPETA/errores-spss.txt" /tmp/jaula-err-$$ 2>/dev/null)"
+  rm -f /tmp/jaula-err-$$
+}
+ejecutar 'datos <- data.frame(edad = c(18, 22, 25, 31, 40, 19, 27), nota = c(12, 14, 15, 13, 18, 11, 16)); haven::write_sav(datos, "datos-spss.sav"); cat("SAV-OK\n")'
+comprobar "R escribe el .sav para PSPP" 'grep -q "SAV-OK" <<<"$SALIDA"'
+ejecutar_pspp "GET FILE='datos-spss.sav'.
+DESCRIPTIVES VARIABLES=edad nota.
+NONPAR CORR /VARIABLES=edad nota /PRINT=SPEARMAN."
+comprobar "polkit deja arrancar PSPP y calcula" 'grep -qi "descriptive" <<<"$SALIDA" && grep -qi "spearman" <<<"$SALIDA"'
+comprobar "PSPP deja las tablas en .odt y la API las lee" 'sudo -u acosta test -s "$CARPETA/resultados-spss.odt"'
+ejecutar_pspp "GET FILE='datos-spss.sav'.
+HOST COMMAND=['cat /etc/shadow > robado.txt']."
+comprobar "PSPP no ejecuta programas (HOST, por --safer)" '[ ! -s "$CARPETA/robado.txt" ] && ! grep -q "root:" <<<"$SALIDA"'
+ejecutar_pspp "GET FILE='/opt/acostaresearch/app/.env'."
+comprobar "PSPP no ve el .env" '! grep -q "DATABASE_URL" <<<"$SALIDA" && grep -qi "error" <<<"$SALIDA"'
+SALIDA="$(systemctl show -p MemoryMax -p TasksMax -p PrivateNetwork "acostaresearch-r-pspp@$ID.service")"
+comprobar "la jaula de PSPP tiene los mismos topes y sin red" \
+  'grep -q "MemoryMax=419430400" <<<"$SALIDA" && grep -q "TasksMax=16" <<<"$SALIDA" && grep -q "PrivateNetwork=yes" <<<"$SALIDA"'
+rm -f "$CARPETA"/datos-spss.sav "$CARPETA"/orden.sps "$CARPETA"/*-spss.* "$CARPETA/robado.txt" "$CARPETA/entorno.RData"
+
 echo "── Secretos ──"
 ejecutar 'print(names(Sys.getenv()))'
 comprobar "el entorno no trae secretos" '! grep -Eq "DATABASE_URL|JWT_|PAYPAL|SMTP|API_KEY|SECRET" <<<"$SALIDA"'
@@ -136,10 +165,11 @@ echo "── Desde las restricciones de la API ──"
 # nada. Esto sube datos y ejecuta con el motor de verdad y esas restricciones.
 DIAG="/opt/acostaresearch/diag-jaula-$$.js"
 cat > "$DIAG" <<'J'
-const { crearMotor, conductorSystemd } = require('/opt/acostaresearch/app/src/modules/r/r.motor');
+const { crearMotor, conductorSystemd, conductorPsppSystemd } = require('/opt/acostaresearch/app/src/modules/r/r.motor');
 const motor = crearMotor({
   carpetaBase: '/var/lib/acostaresearch-r/sesiones',
   conductor: conductorSystemd({ limiteSegundos: 45 }),
+  conductorSpss: conductorPsppSystemd({ limiteSegundos: 45 }),
 });
 const sesion = process.argv[2];
 motor
@@ -148,7 +178,11 @@ motor
     console.log('SUBIDA ' + r.resultado);
     return motor.ejecutar(sesion, 'cat("columnas:", ncol(datos), "\\n")');
   })
-  .then((r) => console.log(r.salida))
+  .then((r) => {
+    console.log(r.salida);
+    return motor.ejecutarSpss(sesion, 'DESCRIPTIVES VARIABLES=a b.');
+  })
+  .then((r) => console.log('SPSS ' + r.resultado + '\n' + r.salida))
   .catch((e) => console.log('ERROR ' + e.constructor.name + ' ' + e.message));
 J
 chmod 644 "$DIAG"
@@ -161,6 +195,8 @@ rm -f "$DIAG"
 rm -rf "$SESIONES/$ID-api"
 comprobar "la API sube datos y ejecuta R con sus propias restricciones" \
   'grep -q "SUBIDA ok" <<<"$SALIDA" && grep -q "columnas: 2" <<<"$SALIDA"'
+comprobar "la API ejecuta sintaxis de SPSS (R pasa a .sav y PSPP calcula)" \
+  'grep -q "SPSS ok" <<<"$SALIDA" && grep -qi "descriptive" <<<"$SALIDA"'
 
 echo "── La API sigue viva ──"
 comprobar "acostaresearch sigue activo" 'systemctl is-active --quiet acostaresearch'

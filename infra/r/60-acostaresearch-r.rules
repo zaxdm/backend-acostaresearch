@@ -2,6 +2,7 @@
 //
 // Solo las plantillas acostaresearch-r@<id>.service y su gemela con más
 // memoria para el mapeo bibliométrico, acostaresearch-r-biblio@<id>.service,
+// y la que corre PSPP (sintaxis de SPSS), acostaresearch-r-pspp@<id>.service,
 // con un id de letras, cifras y guiones, y solo start y stop. No puede arrancar
 // otras unidades, ni cambiar cómo es la jaula, ni lanzar systemd-run con
 // opciones a su gusto: aunque
@@ -19,7 +20,7 @@ polkit.addRule(function (action, subject) {
 
   if (
     typeof unidad === "string" &&
-    /^acostaresearch-r(?:-biblio)?@[A-Za-z0-9][A-Za-z0-9_-]{0,80}\.service$/.test(unidad) &&
+    /^acostaresearch-r(?:-biblio|-pspp)?@[A-Za-z0-9][A-Za-z0-9_-]{0,80}\.service$/.test(unidad) &&
     (verbo === "start" || verbo === "stop")
   ) {
     return polkit.Result.YES;

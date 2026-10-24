@@ -618,6 +618,14 @@ const ESQUEMA_TRABAJAR_EN_R = fromJsonSchema({
         'El código de R que ejecutar, tal cual. Varias líneas valen: se ejecutan en orden, como ' +
         'en la consola, y se para en el primer error. Déjalo vacío para ver qué hay en la sesión.',
     },
+    spss: {
+      type: 'string',
+      maxLength: 20000,
+      description:
+        'Sintaxis de SPSS que se ejecuta de verdad en PSPP sobre los datos de la sesión, que ya están ' +
+        'abiertos (sin GET FILE ni rutas). Va sola, sin codigo en la misma llamada. Ver SPSS en la ' +
+        'descripción de la herramienta.',
+    },
     reiniciar: {
       type: 'boolean',
       description:

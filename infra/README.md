@@ -25,7 +25,8 @@ si algún día divergen, manda el servidor.
 | `systemd/acostaresearch-bibliotecas.*` | `/etc/systemd/system/` | Trae la colección de Zotero de cada comprador que la conectó, a las 05:30 UTC, las 00:30 en Lima |
 | `r/acostaresearch-r@.service` | `/etc/systemd/system/` | La jaula donde corre el R de «trabajar_en_r»: sin red, sin ver /opt ni /var, sin el entorno de la API, 400 MB, un núcleo, 16 procesos y 45 s |
 | `r/acostaresearch-r.slice` | `/etc/systemd/system/` | El tope de todas las sesiones de R juntas: 1,5 GB y núcleo y medio |
-| `r/60-acostaresearch-r.rules` | `/etc/polkit-1/rules.d/` | Deja al usuario de la API arrancar y parar esa plantilla, y nada más |
+| `r/pspp.conf` | `/etc/systemd/system/acostaresearch-r-pspp@.service.d/` | La jaula de PSPP (sintaxis de SPSS, `trabajar_en_r` → `spss`): copia de la de R con otro `ExecStart`. Ver `src/modules/r/r.spss.js` |
+| `r/60-acostaresearch-r.rules` | `/etc/polkit-1/rules.d/` | Deja al usuario de la API arrancar y parar esa plantilla (y sus gemelas `-biblio` y `-pspp`), y nada más |
 | `r/instalar.sh` | se ejecuta desde `/opt/acostaresearch/app/infra/r/` | Instala R, el usuario `acosta-r`, la carpeta de sesiones, lo de arriba y 2 GB de swap |
 | `r/probar-jaula.sh` | se ejecuta desde `/opt/acostaresearch/app/infra/r/` | Intenta escapar de la jaula (secretos, red, memoria, tiempo, procesos, disco, ejecutar lo que escribe) y dice si lo consigue |
 | `r/disco-de-sesiones.sh` | se ejecuta desde `/opt/acostaresearch/app/infra/r/` | Pone las sesiones de R en una imagen propia de 4 GB montada con `noexec`: llenarla ya no llena el disco de la API, el registro y el respaldo. Se puede repetir |

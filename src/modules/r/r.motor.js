@@ -48,6 +48,7 @@ const fsSync = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { execFile } = require('node:child_process');
+const spss = require('./r.spss');
 
 /** Nombres de carpeta de sesión: el id del proyecto, que pone la base. */
 const SESION_SEGURA = /^[A-Za-z0-9][A-Za-z0-9_-]{0,80}$/;
@@ -81,6 +82,9 @@ const INTERNOS = new Set([
   'paquetes.txt',
   'bibliografia',
   'origen.txt',
+  spss.ORDEN,
+  spss.SALIDA,
+  spss.ERRORES,
 ]);
 
 /**
@@ -409,12 +413,62 @@ function conductorLocal({ rscript, runner, limiteSegundos }) {
     });
 }
 
+/**
+ * PSPP en el servidor: la jaula gemela de la de R (infra/r/pspp.conf). Lo que
+ * ejecuta y con qué opciones lo fija la unidad; el backend solo la arranca.
+ */
+function conductorPsppSystemd({ unidad = 'acostaresearch-r-pspp', limiteSegundos }) {
+  return ({ sesion }) =>
+    new Promise((resolve) => {
+      execFile(
+        'systemctl',
+        ['start', '--no-ask-password', '--quiet', `${unidad}@${sesion}.service`],
+        { timeout: (limiteSegundos + 30) * 1000, env: { PATH: '/usr/sbin:/usr/bin:/sbin:/bin' } },
+        (error, _stdout, stderr) =>
+          resolve({ fallo: error ? String(error.code ?? 'error') : null, stderr: String(stderr ?? '') }),
+      );
+    });
+}
+
+/** Las opciones de PSPP, las mismas que pone la unidad del servidor. */
+const ARGUMENTOS_PSPP = [
+  '--safer',
+  '--no-statrc',
+  `--error-file=${spss.ERRORES}`,
+  `--output=${spss.SALIDA}`,
+  `--output=${spss.TABLAS}`,
+  spss.ORDEN,
+];
+
+/** En desarrollo: el pspp instalado, con un entorno vacío, como Rscript. */
+function conductorPsppLocal({ pspp, limiteSegundos }) {
+  return ({ carpeta }) =>
+    new Promise((resolve) => {
+      const entorno = { LANG: 'C.UTF-8', HOME: carpeta, TMPDIR: carpeta };
+      for (const clave of ['SystemRoot', 'windir', 'TEMP', 'TMP']) {
+        if (process.env[clave]) entorno[clave] = process.env[clave];
+      }
+      if (process.platform !== 'win32') entorno.PATH = '/usr/local/bin:/usr/bin:/bin';
+      execFile(
+        pspp,
+        ARGUMENTOS_PSPP,
+        { cwd: carpeta, env: entorno, windowsHide: true, timeout: limiteSegundos * 1000, killSignal: 'SIGKILL' },
+        (error, _stdout, stderr) =>
+          resolve({
+            fallo: error ? String(error.code ?? 'error') : null,
+            stderr: error?.code === 'ENOENT' ? `not found: ${pspp}` : String(stderr ?? ''),
+          }),
+      );
+    });
+}
+
 // ── El motor ────────────────────────────────────────────────────────────────
 
 /**
  * @param {object} opciones
  * @param {string} opciones.carpetaBase   donde viven las carpetas de sesión
  * @param {Function} opciones.conductor   ({ sesion, carpeta }) => Promise<{ fallo, stderr }>
+ * @param {Function} [opciones.conductorSpss]  lo mismo para PSPP; sin él, SPSS no está disponible
  * @param {number} [opciones.limiteSegundos]  el mismo que `TimeoutStartSec` de la unidad
  * @param {number} [opciones.maxSimultaneas]  procesos de R a la vez en todo el servidor
  * @param {number} [opciones.esperaMaximaMs]  cuánto se espera una plaza antes de rendirse
@@ -422,6 +476,7 @@ function conductorLocal({ rscript, runner, limiteSegundos }) {
 function crearMotor({
   carpetaBase,
   conductor,
+  conductorSpss = null,
   limiteSegundos = 45,
   maxSimultaneas = 4,
   esperaMaximaMs = 20_000,
@@ -518,12 +573,17 @@ function crearMotor({
     return carpeta;
   }
 
-  /** Ejecuta el código tal cual. Solo se llama dentro del turno de la sesión. */
-  async function correr(sesion, codigo) {
+  /**
+   * Ejecuta el código tal cual. Solo se llama dentro del turno de la sesión.
+   *
+   * `conservarGraficos` es para el paso a .sav antes de SPSS: no dibuja nada,
+   * y vaciar `graficos/` borraría las figuras que el análisis dejó ahí.
+   */
+  async function correr(sesion, codigo, { conservarGraficos = false } = {}) {
     const carpeta = await prepararCarpeta(sesion);
     const g = await grupo();
     const graficos = path.join(carpeta, 'graficos');
-    await vaciar(graficos);
+    if (!conservarGraficos) await vaciar(graficos);
     await asegurarCarpeta(graficos, g);
     await Promise.all(['fin', 'salida.txt', 'estado.tsv'].map((n) => fs.rm(path.join(carpeta, n), BORRAR)));
     await escribirSeguro(carpeta, 'orden.R', codigo, g);
@@ -584,9 +644,19 @@ function crearMotor({
 
   async function borrarSesionSinTurno(carpeta) {
     await Promise.all(
-      ['entorno.RData', 'paquetes.txt', 'guion.R', 'consola.txt', 'estado.tsv', 'salida.txt', 'fin'].map((n) =>
-        fs.rm(path.join(carpeta, n), BORRAR),
-      ),
+      [
+        'entorno.RData',
+        'paquetes.txt',
+        'guion.R',
+        'consola.txt',
+        'estado.tsv',
+        'salida.txt',
+        'fin',
+        // Lo de SPSS es de los datos de antes: con otros datos no vale.
+        spss.SINTAXIS,
+        spss.SAV,
+        spss.TABLAS,
+      ].map((n) => fs.rm(path.join(carpeta, n), BORRAR)),
     );
     await vaciar(path.join(carpeta, 'graficos'));
   }
@@ -620,6 +690,113 @@ function crearMotor({
           conGuion: hecho.resultado === 'ok',
         });
         return { ...hecho, ...acumulado };
+      });
+    },
+
+    /** ¿Está PSPP configurado? */
+    spssDisponible() {
+      return conductorSpss !== null;
+    },
+
+    /**
+     * Ejecuta sintaxis de SPSS con PSPP sobre los datos de la sesión (ver
+     * r.spss). Primero R pasa `datos` a .sav; luego PSPP abre ese .sav y corre
+     * la sintaxis. Lo que corrió sin error se suma a `sintaxis.sps`, y la
+     * salida, a la consola de la sesión: así el repaso de cifras del informe
+     * también ve las de SPSS.
+     *
+     * Devuelve `{ sinDatos: true }` o `{ bibliografica: true }` si no hay a qué
+     * aplicarla, y si no, lo mismo que `ejecutar` más `sintaxis` (la acumulada)
+     * y `renombradas`.
+     */
+    ejecutarSpss(sesion, sintaxis) {
+      if (!conductorSpss) return Promise.reject(new MotorNoDisponible('PSPP no está configurado'));
+      return enSuTurno(sesion, async () => {
+        const carpeta = await prepararCarpeta(sesion);
+        const g = await grupo();
+        if ((await leerTexto(path.join(carpeta, 'lectura.R'), 4096)) === null) return { sinDatos: true };
+        if (await esBibliografica(carpeta)) return { bibliografica: true };
+
+        // 1. Los datos de la sesión, a .sav.
+        await fs.rm(path.join(carpeta, spss.SAV), BORRAR);
+        const exportado = await correr(sesion, spss.EXPORTAR, { conservarGraficos: true });
+        const sav = await fs.lstat(path.join(carpeta, spss.SAV)).catch(() => null);
+        const base = {
+          estado: exportado.estado,
+          graficos: [],
+          totalGraficos: 0,
+          renombradas: spss.renombradas(exportado.salida),
+        };
+        if (exportado.resultado !== 'ok' || !sav?.isFile()) {
+          return {
+            ...base,
+            resultado: 'datos',
+            salida: exportado.salida,
+            archivos: await listarArchivos(carpeta),
+            ocupados: await ocupacion(carpeta),
+            segundos: exportado.segundos,
+            guion: (await leerTexto(path.join(carpeta, 'guion.R'), MAXIMO_ACUMULADO * 2)) ?? CABECERA_GUION,
+            consola: (await leerTexto(path.join(carpeta, 'consola.txt'), MAXIMO_ACUMULADO * 2)) ?? '',
+            sintaxis: (await leerTexto(path.join(carpeta, spss.SINTAXIS), MAXIMO_ACUMULADO * 2)) ?? '',
+          };
+        }
+
+        // 2. PSPP, en su jaula.
+        await Promise.all([spss.SALIDA, spss.ERRORES, spss.TABLAS].map((n) => fs.rm(path.join(carpeta, n), BORRAR)));
+        await escribirSeguro(carpeta, spss.ORDEN, spss.armarOrden(sintaxis), g);
+
+        await pedirPlaza();
+        const inicio = Date.now();
+        let resultado;
+        try {
+          resultado = await conductorSpss({ sesion, carpeta });
+        } finally {
+          soltarPlaza();
+        }
+        const segundos = (Date.now() - inicio) / 1000;
+
+        const salida = await leerTexto(path.join(carpeta, spss.SALIDA), MAXIMO_SALIDA);
+        const mensajes = await leerTexto(path.join(carpeta, spss.ERRORES), MAXIMO_ESTADO);
+
+        let estadoFinal;
+        if (salida === null && mensajes === null) {
+          if (resultado.fallo && NO_DISPONIBLE.test(resultado.stderr)) {
+            throw new MotorNoDisponible(resultado.stderr.trim().slice(0, 300));
+          }
+          estadoFinal = segundos >= limiteSegundos - 1 ? 'tiempo' : 'cortado';
+        } else if (resultado.fallo && segundos >= limiteSegundos - 1) {
+          estadoFinal = 'tiempo';
+        } else {
+          estadoFinal = resultado.fallo || spss.hayErrores(mensajes) ? 'error' : 'ok';
+        }
+
+        const texto = [salida, mensajes && mensajes.trim() ? `MENSAJES DE PSPP:\n${mensajes.trim()}` : null]
+          .filter(Boolean)
+          .join('\n\n');
+
+        // 3. La sintaxis acumulada y la consola.
+        const previa = (await leerTexto(path.join(carpeta, spss.SINTAXIS), MAXIMO_ACUMULADO * 2)) ?? spss.CABECERA_SINTAXIS;
+        const acumulada =
+          estadoFinal === 'ok' ? cola(`${previa.replace(/\n*$/, '\n\n')}${String(sintaxis).trim()}\n`) : previa;
+        if (estadoFinal === 'ok') await escribirSeguro(carpeta, spss.SINTAXIS, acumulada, g);
+
+        const consolaPrevia = (await leerTexto(path.join(carpeta, 'consola.txt'), MAXIMO_ACUMULADO * 2)) ?? '';
+        const bloque = `── SPSS (PSPP) ──\n${String(sintaxis).trim()}\n\n${texto}`;
+        const consola = cola(consolaPrevia ? `${consolaPrevia.replace(/\n*$/, '\n')}${bloque}\n` : `${bloque}\n`);
+        await escribirSeguro(carpeta, 'consola.txt', consola, g);
+
+        return {
+          ...base,
+          resultado: estadoFinal,
+          salida: texto,
+          salidaTruncada: false,
+          archivos: await listarArchivos(carpeta),
+          ocupados: await ocupacion(carpeta),
+          segundos,
+          guion: (await leerTexto(path.join(carpeta, 'guion.R'), MAXIMO_ACUMULADO * 2)) ?? CABECERA_GUION,
+          consola,
+          sintaxis: acumulada === spss.CABECERA_SINTAXIS ? '' : acumulada,
+        };
       });
     },
 
@@ -752,6 +929,9 @@ module.exports = {
   crearMotor,
   conductorSystemd,
   conductorLocal,
+  conductorPsppSystemd,
+  conductorPsppLocal,
+  ARGUMENTOS_PSPP,
   esBibliografica,
   parsearEstado,
   leerSeguro,

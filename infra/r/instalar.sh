@@ -104,6 +104,10 @@ $APT install -y --no-install-recommends \
   r-cran-sf r-cran-terra \
   r-cran-quanteda r-cran-quanteda.textstats r-cran-quanteda.textplots r-cran-topicmodels \
   r-cran-bibliometrix r-cran-igraph
+# PSPP: ejecuta la sintaxis de SPSS (ver src/modules/r/r.spss.js). Es de Ubuntu,
+# no de r2u. Arrastra su interfaz gráfica, que aquí no se usa.
+$APT install -y --no-install-recommends pspp
+pspp --version | head -1
 # bibliometrix arrastra shiny, plotly y visNetwork (su biblioshiny): se instalan
 # pero no sirven aquí, porque la jaula no tiene red ni proceso vivo que sirva una
 # web. Se usa por funciones, desde la conversación.
@@ -136,6 +140,10 @@ install -m 0644 "$ORIGEN/acostaresearch-r.slice" /etc/systemd/system/
 install -m 0644 "$ORIGEN/acostaresearch-r@.service" /etc/systemd/system/acostaresearch-r-biblio@.service
 install -d -m 0755 /etc/systemd/system/acostaresearch-r-biblio@.service.d
 install -m 0644 "$ORIGEN/biblio-memoria.conf" /etc/systemd/system/acostaresearch-r-biblio@.service.d/memoria.conf
+# La jaula de PSPP: también la MISMA unidad, con otro programa (pspp.conf).
+install -m 0644 "$ORIGEN/acostaresearch-r@.service" /etc/systemd/system/acostaresearch-r-pspp@.service
+install -d -m 0755 /etc/systemd/system/acostaresearch-r-pspp@.service.d
+install -m 0644 "$ORIGEN/pspp.conf" /etc/systemd/system/acostaresearch-r-pspp@.service.d/pspp.conf
 install -d -m 0755 /etc/polkit-1/rules.d
 install -m 0644 "$ORIGEN/60-acostaresearch-r.rules" /etc/polkit-1/rules.d/
 # La unidad de la API lleva ProtectSystem=strict y solo escribe en

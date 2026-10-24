@@ -581,6 +581,9 @@ const schema = z.object({
   R_SESIONES_DIR: vacioComoAusente(z.string()),
   // Solo para el modo local. En Windows, la ruta entera a Rscript.exe.
   RSCRIPT: z.string().default('Rscript'),
+  // Lo mismo para PSPP, que ejecuta la sintaxis de SPSS (ver r.spss). En el
+  // servidor lo arranca su jaula (infra/r/pspp.conf) y esto no se usa.
+  PSPP: z.string().default('pspp'),
   // Procesos de R a la vez en todo el servidor. Cuatro caben holgados en el
   // tope de 1,5 GB del slice con 400 MB cada uno.
   R_MAX_SIMULTANEAS: z.coerce.number().int().positive().default(4),

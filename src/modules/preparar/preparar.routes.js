@@ -67,6 +67,32 @@ function recibirDocumento(req, res, next) {
   });
 }
 
+const cuerpoDeReporte = express.raw({ type: ['application/pdf', 'application/octet-stream'], limit: MAXIMO_BYTES });
+
+/**
+ * El reporte de IA de Turnitin en PDF, para «Humanizar» (24-oct-2026). Va
+ * antes que `/:servicio` para que «reporte-ia» no se lea como un servicio.
+ * Devuelve `{ reporteId, porcentaje, palabrasMarcadas }`; el encargo lo usa con
+ * `?reporte=<reporteId>`.
+ */
+router.post(
+  '/reporte-ia',
+  (req, res, next) =>
+    cuerpoDeReporte(req, res, (error) =>
+      next(
+        error?.type === 'entity.too.large'
+          ? new ValidationError(`Ese PDF pasa de ${MAXIMO_BYTES / 1024 / 1024} MB.`)
+          : error,
+      ),
+    ),
+  asyncHandler(async (req, res) => {
+    if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+      throw new ValidationError('No llegó ningún archivo. Elige el PDF del reporte de IA y vuelve a subirlo.');
+    }
+    return created(res, await prepararService.recibirReporte({ userId: req.user.id, buffer: req.body }));
+  }),
+);
+
 /** La pantalla entera: membresía, cupo del mes e historial. */
 router.get(
   '/',
@@ -89,11 +115,12 @@ router.post(
     const pedido = encargoSchema.safeParse({
       servicio: String(req.params.servicio ?? '').toUpperCase(),
       idioma: req.query.idioma ?? null,
+      reporteId: req.query.reporte ?? null,
     });
     if (!pedido.success) {
       throw new ValidationError(pedido.error.issues[0].message);
     }
-    const { servicio, idioma } = pedido.data;
+    const { servicio, idioma, reporteId } = pedido.data;
 
     if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
       throw new ValidationError(
@@ -107,6 +134,7 @@ router.post(
       idioma,
       buffer: req.body,
       nombre: nombreDelArchivo(req.get('X-Nombre-Archivo')),
+      reporteId: reporteId ?? null,
     });
 
     return created(res, hecho);

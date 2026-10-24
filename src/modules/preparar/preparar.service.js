@@ -62,6 +62,7 @@ const cuerpo = require('./preparar.cuerpo');
 const partes = require('./preparar.partes');
 const motor = require('./preparar.motor');
 const humanizador = require('./preparar.humanizar');
+const informeDeReporte = require('./preparar.reporte');
 const cambios = require('./preparar.cambios');
 const traduccion = require('./preparar.traduccion');
 const aviso = require('./preparar.aviso');
@@ -313,9 +314,13 @@ async function producir({ preparacion, buffer, parrafos }) {
   // Humanizando va con la skill del servidor: un capítulo por vez y dos
   // pasadas sobre el documento entero. Necesita los títulos para saber en qué
   // capítulo está; no los manda. Ver `preparar.humanizar` (21-oct-2026).
+  // Con el reporte de IA de Turnitin, solo se rehace lo marcado y lo limpio se
+  // queda como estaba (ver `preparar.reporte`, 24-oct-2026).
+  const reporte = preparacion.servicio === 'HUMANIZAR' ? await almacen.leerReporte(preparacion.id) : null;
+  const soloClaves = reporte ? informeDeReporte.marcadosDe(reporte, parrafos) : null;
   const { cambios: propuestos, malos, uso } =
     preparacion.servicio === 'HUMANIZAR'
-      ? await humanizador.humanizar({ parrafos, alAvanzar })
+      ? await humanizador.humanizar({ parrafos, alAvanzar, soloClaves })
       : await motor.prepararParrafos({
           parrafos: aMandar,
           servicio: preparacion.servicio,
@@ -511,7 +516,7 @@ async function rescatar(userId, ahora = new Date()) {
  * diría «tu documento tiene 8.000 palabras» antes de decirle que no puede
  * mandarlo.
  */
-async function recibirEncargo({ userId, servicio, idioma, buffer, nombre }, ahora = new Date()) {
+async function recibirEncargo({ userId, servicio, idioma, buffer, nombre, reporteId = null }, ahora = new Date()) {
   if (!env.prepararEnabled) throw servicioNoDisponible();
 
   // Humanizar, en prueba: solo quien puede, y sin tocar el cupo. Ver
@@ -532,6 +537,14 @@ async function recibirEncargo({ userId, servicio, idioma, buffer, nombre }, ahor
 
   const destino = idiomaDe(servicio, idioma);
   const leido = cuerpoDelArchivo(buffer, servicio);
+  if (reporteId && servicio !== 'HUMANIZAR') {
+    throw new ValidationError('El reporte de IA solo sirve para humanizar.');
+  }
+  // Antes de crear la fila: un reporte que no es de este Word se rechaza sin
+  // dejar un trabajo a medias.
+  const conReporte = reporteId
+    ? informeDeReporte.paraElEncargo({ userId, reporteId, parrafos: leido.parrafos })
+    : null;
 
   const preparacion = await repository.crear({
     userId,
@@ -547,9 +560,17 @@ async function recibirEncargo({ userId, servicio, idioma, buffer, nombre }, ahor
   });
 
   await almacen.guardarEntrada(preparacion.id, buffer);
+  if (conReporte) await almacen.guardarReporte(preparacion.id, conReporte.reporte);
 
   logger.info(
-    { userId, preparacionId: preparacion.id, servicio, idioma: destino, palabras: leido.palabras },
+    {
+      userId,
+      preparacionId: preparacion.id,
+      servicio,
+      idioma: destino,
+      palabras: leido.palabras,
+      ...(conReporte ? { conReporte: true, parrafosMarcados: conReporte.marcados } : {}),
+    },
     'Preparar documento: encargo recibido',
   );
 
@@ -630,6 +651,16 @@ const prepararService = {
     // meter dos. De persona en persona y no global: esto es una comprobación y
     // una fila, no el trabajo pesado, y nadie tiene que esperar a otro.
     return enSerie(`preparar:encargo:${peticion.userId}`, () => recibirEncargo(peticion, ahora));
+  },
+
+  /**
+   * El reporte de IA de Turnitin, antes de encargar «Humanizar». Se lee y se
+   * guarda una hora; el encargo lo usa con `reporteId`. Ver `preparar.reporte`.
+   */
+  async recibirReporte({ userId, buffer }) {
+    if (!env.prepararEnabled) throw servicioNoDisponible();
+    if (!(await puedeHumanizar(userId))) throw humanizarEnPrueba();
+    return informeDeReporte.recibir({ userId, buffer });
   },
 
   /** Cómo va un trabajo. Es lo que pregunta la web mientras espera. */

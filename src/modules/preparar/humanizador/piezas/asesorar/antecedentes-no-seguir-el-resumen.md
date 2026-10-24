@@ -1,0 +1,6 @@
+CUANDO: el párrafo reporta un estudio previo: lleva cita Autor (año) y alguna de «tuvo como objetivo|el objetivo fue|se llegó a la conclusión|concluyó|resultados|su muestra|aporta al presente estudio|antecedente»
+- No sigas el orden del resumen del artículo frase por frase (objetivo, método, resultados, conclusión): la similitud lo empareja con la propia fuente. Cambia el orden de la información y entra por el lugar, por la muestra o por el hallazgo («Fueron 17 niños de cinco años quienes…», «En una clínica de…»).
+- Evita las fórmulas que se repiten en todos los antecedentes: «tuvo como objetivo determinar…», «Se llegó a la conclusión de que…», «Este antecedente aporta al presente estudio…». Di lo que el estudio hizo con un verbo propio, y no las cambies por otra fórmula que también repitas.
+- Cuando el original cierra cada antecedente con su relación con la tesis, que dos seguidos no cierren con la misma frase («esta tesis… en una empresa de…»). Varía la forma o funde la relación en la oración del hallazgo. Si el original no la trae, no la escribas.
+- Cuenta lo que el estudio dice con tus palabras y no copies sus oraciones. Los datos, la muestra y el coeficiente son los del original: no añadas ninguno ni cambies su magnitud.
+- Si hay un antecedente que no favorece del todo la hipótesis, conserva su matiz tal cual.

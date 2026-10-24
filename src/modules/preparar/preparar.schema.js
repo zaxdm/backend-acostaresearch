@@ -38,6 +38,8 @@ const encargoSchema = z.object({
     })
     .nullable()
     .optional(),
+  // El reporte de IA subido antes con `POST /reporte-ia` (solo «Humanizar»).
+  reporteId: z.string().uuid('Ese reporte no es válido: vuelve a subirlo.').nullable().optional(),
 });
 
 module.exports = { encargoSchema, SERVICIOS };

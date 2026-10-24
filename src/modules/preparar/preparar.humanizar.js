@@ -37,6 +37,7 @@ const cuerpo = require('./preparar.cuerpo');
 const motor = require('./preparar.motor');
 const prompt = require('./preparar.prompt');
 const tipografia = require('./preparar.tipografia');
+const piezas = require('./preparar.piezas');
 
 const CARPETA = path.join(__dirname, 'humanizador');
 
@@ -111,6 +112,9 @@ function leerSkill(carpeta = CARPETA) {
     pasada: leer('pasada-documento.md'),
     romper: leer('romper-plantilla.md'),
     rutas: {},
+    // Las reglas de /turnitin, del humanizador, de /asesorar y de las skills de
+    // capítulo, en piezas que se mandan según lo que trae cada tanda.
+    piezas: piezas.leerPiezas(path.join(carpeta, 'piezas'), carpeta === CARPETA),
   };
   for (const ruta of Object.keys(NOMBRES)) {
     skill.rutas[ruta] = `${leer(`rutas/${ruta}.md`)}\n\n${leer(`ejemplos/${ruta}.md`)}`;
@@ -119,8 +123,8 @@ function leerSkill(carpeta = CARPETA) {
   return skill;
 }
 
-const sistemaDe = (skill, ruta, insistir) =>
-  [skill.nucleo, skill.rutas[ruta], FORMATO, insistir ? INSISTIR : null].filter(Boolean).join('\n\n');
+const sistemaDe = (skill, ruta, insistir, extras) =>
+  [skill.nucleo, skill.rutas[ruta], extras, FORMATO, insistir ? INSISTIR : null].filter(Boolean).join('\n\n');
 
 // ── El documento por capítulos ─────────────────────────────────────────────
 
@@ -139,12 +143,17 @@ function rutaDelTitulo(parrafo) {
  */
 function porCapitulos(parrafos) {
   let ruta = 'introduccion-marco';
+  let titulo = '';
   const prosa = [];
   for (const parrafo of parrafos) {
     const nueva = rutaDelTitulo(parrafo);
     if (nueva) ruta = nueva;
+    // El último título, cualquiera que sea: las piezas de capítulo se eligen
+    // por la sección en que está el párrafo («Antecedentes», «Limitaciones»).
+    const texto = parrafo.texto.trim();
+    if (parrafo.nivel || (parrafo.palabras <= 12 && !/[.:;]$/.test(texto))) titulo = texto;
     if (parrafo.nivel || parrafo.palabras < 15 || cuerpo.ROTULO.test(parrafo.texto.trim())) continue;
-    prosa.push({ ...parrafo, ruta });
+    prosa.push({ ...parrafo, ruta, titulo });
   }
   return prosa;
 }
@@ -390,7 +399,7 @@ const sumar = (uso, otro) => {
 };
 
 /** Paso 1: capítulo por capítulo, con las comprobaciones del servicio y un tercer intento. */
-async function porRutas({ prosa, skill, generar, modelos, actual, malos, uso, porTanda, avance, plantilla }) {
+async function porRutas({ prosa, skill, generar, modelos, actual, malos, uso, porTanda, avance, plantilla, tipos, piezasUsadas }) {
   const usadas = [];
   for (const ruta of Object.keys(NOMBRES)) {
     const suyos = prosa.filter((parrafo) => parrafo.ruta === ruta);
@@ -402,6 +411,10 @@ async function porRutas({ prosa, skill, generar, modelos, actual, malos, uso, po
       const insistir = peticion.sistema !== prompt.HUMANIZAR;
       const entrada = JSON.parse(peticion.mensajes[0].texto);
       const comparten = Object.keys(entrada).filter((clave) => plantilla.has(clave));
+      // Las piezas que tocan a los párrafos de ESTA llamada.
+      const deLaTanda = suyos.filter((parrafo) => parrafo.clave in entrada);
+      const extras = piezas.elegir(skill.piezas, deLaTanda, tipos);
+      for (const nombre of extras.nombres) piezasUsadas.set(nombre, (piezasUsadas.get(nombre) ?? 0) + 1);
       const texto = JSON.stringify({
         seccion: NOMBRES[ruta],
         ya_usadas: usadas.slice(-30),
@@ -412,7 +425,7 @@ async function porRutas({ prosa, skill, generar, modelos, actual, malos, uso, po
       });
       return generar({
         ...peticion,
-        sistema: sistemaDe(skill, ruta, insistir),
+        sistema: sistemaDe(skill, ruta, insistir, extras.texto),
         mensajes: [{ rol: 'usuario', texto }],
         ...(modelos ? { modelos } : {}),
         ...holgura(peticion.maxTokens),
@@ -577,7 +590,7 @@ async function pasada({ prosa, skill, generar, modelos, actual, uso, porTanda, d
       ya_usadas: usadas,
       parrafos: Object.fromEntries(tanda.map((p) => [p.clave, { texto: p.texto, nota: notas.get(p.clave).join('; ') }])),
     }),
-    sistema: `${skill.pasada}\n\n${FORMATO_PASADA}`,
+    sistema: [skill.pasada, piezas.paraLaPasada(skill.piezas), FORMATO_PASADA].filter(Boolean).join('\n\n'),
     prosa,
     generar,
     modelos,
@@ -604,12 +617,17 @@ async function humanizar({
   porTanda = env.PREPARAR_PALABRAS_POR_TANDA,
   conPasada = true,
   alAvanzar = () => {},
+  // Solo estas claves se reescriben (los demás párrafos se quedan como están). Es la
+  // Ruta 0 % de /turnitin: con el reporte de IA delante, lo limpio no se toca.
+  soloClaves = null,
 }) {
-  const prosa = porCapitulos(parrafos);
+  const prosa = porCapitulos(parrafos).filter((p) => !soloClaves || soloClaves.has(p.clave));
   const actual = new Map();
   const malos = [];
   const uso = { llamadas: 0, entrada: 0, salida: 0 };
   const plantilla = plantillasCompartidas(prosa);
+  const tipos = piezas.tipoDeTrabajo(parrafos);
+  const piezasUsadas = new Map();
   // Qué hizo cada ronda: cuántos pidió, cuántos cambió y por qué rechazó el
   // resto. Para el script de prueba y el log.
   const rondas = [];
@@ -633,7 +651,7 @@ async function humanizar({
     },
   };
 
-  await porRutas({ prosa, skill, generar, modelos, actual, malos, uso, porTanda, avance, plantilla });
+  await porRutas({ prosa, skill, generar, modelos, actual, malos, uso, porTanda, avance, plantilla, tipos, piezasUsadas });
 
   if (actual.size === 0 && prosa.length > 0) {
     throw new Error(malos[0]?.motivo ?? 'El modelo no devolvió ningún párrafo utilizable.');
@@ -663,7 +681,7 @@ async function humanizar({
 
   // Un párrafo que una ronda posterior reescribió ya no está «sin humanizar».
   const quedan = malos.filter((malo) => actual.get(String(malo.id)) === trasElPaso1.get(String(malo.id)));
-  return { cambios, malos: quedan, tandas, uso, rondas };
+  return { cambios, malos: quedan, tandas, uso, rondas, tipos: [...tipos], piezas: Object.fromEntries(piezasUsadas) };
 }
 
 module.exports = {

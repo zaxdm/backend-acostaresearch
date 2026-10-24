@@ -1,0 +1,10 @@
+CUANDO: titulo~/conclusiones?|recomendaciones?|plan de acci[oó]n|riesgos de la implementaci[oó]n|limitaciones/i  o  texto~/\b(se recomienda|conviene|no conviene|conviene si|qu[ie][eé]n|para cu[aá]ndo|c[oó]mo se sabr[aá])\b/i
+TRABAJO: informe de curso y de empresa (cierre)
+
+Cadena: evidencia → hallazgo → conclusión → recomendación → acción. Cada eslabón se rastrea hacia atrás; no cortes ninguno.
+- Conclusiones: una por objetivo, apartado o hallazgo, más una final que responde a la pregunta guía (curso) o a la decisión del encargo (empresa). Tres a cinco oraciones: qué se buscaba o encontró, qué significa y, si importa, qué tan firme es. Sin datos nuevos, sin citas, sin recomendar todavía. La conclusión explica el hallazgo, no lo repite. En una factibilidad es binaria y va primero (conviene, no conviene, conviene si…). No abras todas con «Se concluye que». En curso, la postura del estudiante aparece en la final.
+- Recomendaciones: cada una nace de una conclusión. Curso: dos a cinco, a quién va dirigida y qué hacer en concreto («A la municipalidad: abrir una ventanilla de crédito…, porque la falta de crédito fue la causa principal»). Empresa: de tres a ocho, y cada una responde cinco preguntas que cuentas antes y después: qué hacer (infinitivo), quién (el cargo, no la persona), para cuándo (una fecha), cuánto cuesta (en soles o «sin costo directo») y cómo se sabrá que funcionó (indicador y meta). Las marcas [POR CONFIRMAR CON LA EMPRESA: …] se quedan.
+- Lo que la empresa no puede hacer no se recomienda; no las pases a un condicional de relleno («podría considerarse que sería recomendable evaluar…» es «conviene…»).
+- La tabla de priorización, el plan de acción y la de riesgos (probabilidad, impacto, mitigación y responsable) no se tocan. Un riesgo sin mitigación es una advertencia: no la quites.
+- Limitaciones: acotan el alcance, dicen de qué cifra desconfiar y qué no debería concluirse. No se suavizan ni se vuelven disculpa.
+- No cierres con optimismo («posiciona a la empresa para el futuro»).

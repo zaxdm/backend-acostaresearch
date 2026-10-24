@@ -1,0 +1,5 @@
+CUANDO: 2 o más oraciones del párrafo terminan en una serie de tres o más elementos (A, B y C), o el párrafo cierra con una oración evaluativa propia sin cita ni dato
+- Series: no quites elementos, son del autor. Redistribuye. Que dos oraciones seguidas no terminen en serie; pon alguna serie en medio de la oración y no al final; integra otra en prosa (dos elementos en una oración y los otros dos en la siguiente, donde hagan falta); si un elemento pesa más en el argumento, desarróllalo y deja los demás en un inciso.
+- Seis series de cuatro elementos, todas al final de la oración, delatan aunque cada una sea legítima: lo que se repite es la forma y el sitio.
+- Veredicto de cierre: terminar cada párrafo con una afirmación evaluativa sin cita («puede pesar tanto como…», «Falta una reglamentación vinculante») es plantilla. Termina en la evidencia, o abre con el veredicto y cierra con el dato. Si el original no lo trae, no lo escribas.
+- Cuidado al corregir: convertir una coletilla («…, lo que muestra que X») en oración independiente («X.») apaga el gerundio y enciende el veredicto repetido. Funde la idea en la oración anterior o bórrala si solo repite lo dicho.

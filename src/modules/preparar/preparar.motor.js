@@ -259,13 +259,37 @@ const marcadoresDe = (texto) => (String(texto).match(MARCADOR_DE_LISTA) ?? []).m
  * «los investigadores», el texto nuevo tampoco (22-oct: «el equipo codificó las
  * evidencias» en una revisión que no nombraba a nadie).
  */
-const SUJETO_INVENTADO = /\b(el equipo|nuestro equipo|los investigadores|las investigadoras|nosotros|nosotras)\b/giu;
+// El 24-oct, en una metodología en futuro: «…y volvemos a conservar a quienes firmen».
+// Los verbos en primera persona del plural son una lista y no «-amos/-emos/-imos»,
+// porque «últimos», «mínimos» y «gramos» también acaban así.
+const SUJETO_INVENTADO =
+  /\b(el equipo|nuestro equipo|los investigadores|las investigadoras|nosotros|nosotras|nuestr[oa]s?|(volvemos|podemos|vemos|debemos|tenemos|consideramos|observamos|presentamos|analizamos|encontramos|hacemos|proponemos|realizamos|obtuvimos|hallamos|concluimos|buscamos|medimos|aplicamos|evaluamos|queremos|sabemos|creemos|partimos|seguimos|usamos|utilizamos|identificamos|describimos|estimamos|esperamos|pretendemos|planteamos|recogemos|aportamos))\b/giu;
 
 /**
  * Los rechazos de humanizar que no estropean nada: un molde, una palabra de la
  * lista, una raya o un párrafo casi igual. Se reintentan, pero si el reintento
  * tampoco sale limpio se entrega la reescritura. Ver `prepararParrafos`.
  */
+/**
+ * Cuánto del texto nuevo es del original: la parte de sus secuencias de cuatro
+ * palabras que ya estaba allí. Los Word que dieron 0 % copian el 23–25 % de
+ * media; un párrafo suelto por encima de la mitad es el que Turnitin marca.
+ */
+const COPIA_MAXIMA = 0.5;
+const ENUNCIADO = /\(\s*[a-d]\s*\)|¿|\b(objetivos?|problemas?|preguntas?) (general|espec[ií]fic)|\bhip[oó]tesis\b|\bH[01₀₁]\b/i;
+function copiaDelOriginal(original, nuevo, n = 4) {
+  const tramos = (texto) => {
+    const palabras = (String(texto).toLowerCase().match(/\p{L}+/gu) ?? []);
+    const lista = [];
+    for (let i = 0; i + n <= palabras.length; i += 1) lista.push(palabras.slice(i, i + n).join(' '));
+    return lista;
+  };
+  const suyos = tramos(nuevo);
+  if (suyos.length === 0) return 0;
+  const antes = new Set(tramos(original));
+  return suyos.filter((tramo) => antes.has(tramo)).length / suyos.length;
+}
+
 const esLeve = (motivo) => /^el texto nuevo metió|^el modelo lo devolvió casi igual/.test(String(motivo));
 
 /**
@@ -284,6 +308,15 @@ function comprobarHumanizado(original, nuevo) {
     const { iguales, total } = controles.identicas(original, nuevo);
     if (total > 0 && iguales * 2 > total) {
       return `el modelo lo devolvió casi igual (${iguales} de ${total} oraciones idénticas)`;
+    }
+    // 24-oct: en una tesis con 97 % de IA, cuatro párrafos volvieron con el 72–84 %
+    // de sus secuencias de cuatro palabras iguales a las del original (cambiadas
+    // dos palabras por oración, ninguna idéntica) y Turnitin los marcó enteros.
+    // Los enunciados del estudio se copian con su forma a propósito (ver
+    // «ENUNCIADOS DEL ESTUDIO» en `humanizador/nucleo.md`): no cuentan.
+    const copia = ENUNCIADO.test(original) ? 0 : copiaDelOriginal(original, nuevo);
+    if (copia > COPIA_MAXIMA) {
+      return `el modelo lo devolvió casi igual (conserva el ${Math.round(copia * 100)} % de las secuencias de cuatro palabras del original)`;
     }
   }
 

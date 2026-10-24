@@ -22,6 +22,9 @@
  *   --por-tanda <n>     palabras por llamada (por defecto la del servicio, 900).
  *                       Los modelos que razonan despacio (GLM de NVIDIA) necesitan 300.
  *   --salida <carpeta>  dónde dejar los Word (por defecto, junto al original)
+ *   --marcado <json>    el JSON de `marcado_ia.py` (lo que Turnitin resaltó): solo se reescriben
+ *                       esos párrafos y el resto queda tal cual (Ruta 0 % de /turnitin)
+ *   --reporte <pdf>     lo mismo con el PDF del reporte de IA, leído como lo lee el servicio
  */
 
 const fs = require('fs');
@@ -68,11 +71,26 @@ function argumentos(lista) {
   return args;
 }
 
-async function probar({ ruta, modelo, skill, conPasada, salida, porTanda }) {
+async function probar({ ruta, modelo, skill, conPasada, salida, porTanda, marcado, reporte }) {
   const buffer = fs.readFileSync(ruta);
   const { parrafos } = cuerpo.cuerpoDe(buffer);
   const prosa = humanizador.porCapitulos(parrafos);
   const inicio = Date.now();
+
+  // Los párrafos que Turnitin marcó, buscados por su texto (la numeración del
+  // reporte no es la del servicio).
+  let soloClaves = null;
+  if (reporte) {
+    const leido = await require('../src/modules/projects/project.reporte-ia').leer(fs.readFileSync(reporte));
+    soloClaves = require('../src/modules/preparar/preparar.reporte').marcadosDe(leido, parrafos);
+    console.log(`  reporte: ${leido.porcentaje} % de IA, ${soloClaves.size} párrafos marcados en el Word`);
+  } else if (marcado) {
+    const limpio = (t) => String(t).replace(/\s+/g, ' ').trim().slice(0, 70);
+    const marcados = JSON.parse(fs.readFileSync(marcado, 'utf8')).map((m) => limpio(m.oraciones.map((o) => o.texto).join('')));
+    soloClaves = new Set(prosa.filter((p) => marcados.includes(limpio(p.texto))).map((p) => p.clave));
+    console.log(`  reporte: ${marcados.length} párrafos marcados, ${soloClaves.size} encontrados en el Word`);
+    if (soloClaves.size === 0) throw new Error('Ningún párrafo del reporte se encontró en el Word: ¿es el mismo documento?');
+  }
 
   console.log(`\n${modelo}`);
   const porRuta = Object.keys(humanizador.NOMBRES)
@@ -80,12 +98,13 @@ async function probar({ ruta, modelo, skill, conPasada, salida, porTanda }) {
     .filter(([, n]) => n > 0);
   console.log(`  ${porRuta.map(([nombre, n]) => `${nombre}: ${n}`).join(' · ')}`);
 
-  const { cambios, malos, uso, rondas } = await humanizador.humanizar({
+  const { cambios, malos, uso, rondas, tipos, piezas } = await humanizador.humanizar({
     parrafos,
     modelos: [modelo],
     skill,
     conPasada,
     porTanda,
+    soloClaves,
   });
 
   const hecho = traduccion.traducir(buffer, cambios, prosa, { idioma: null });
@@ -96,6 +115,10 @@ async function probar({ ruta, modelo, skill, conPasada, salida, porTanda }) {
   const antes = medir(prosa.map((p) => p.texto));
   const despues = medir(prosa.map((p) => cambios[p.clave]?.texto ?? p.texto));
   const coste = costeDe(modelo, uso);
+  if (piezas) {
+    const usadas = Object.entries(piezas).sort((a, b) => b[1] - a[1]).map(([nombre, n]) => `${nombre} ×${n}`);
+    console.log(`  trabajo: ${tipos?.length ? tipos.join(', ') : 'tesis'} · piezas (${usadas.length}): ${usadas.join(', ')}`);
+  }
   for (const r of rondas) {
     const rechazos = Object.entries(r.rechazos).map(([m, n]) => `${n}× ${m}`).join('; ');
     console.log(`  ${r.paso}: ${r.pedidos} pedidos, ${r.tocados} cambiados${r.fallidas ? `, ${r.fallidas} tandas fallidas` : ''}${rechazos ? ` · rechazos: ${rechazos}` : ''}`);
@@ -122,7 +145,7 @@ async function principal() {
 
   for (const modelo of modelos) {
     try {
-      await probar({ ruta, modelo, skill, conPasada: !args['sin-pasada'], salida, porTanda });
+      await probar({ ruta, modelo, skill, conPasada: !args['sin-pasada'], salida, porTanda, marcado: typeof args.marcado === 'string' ? path.resolve(args.marcado) : null, reporte: typeof args.reporte === 'string' ? path.resolve(args.reporte) : null });
     } catch (error) {
       console.log(`\n${modelo}\n  FALLÓ: ${error.message}`);
     }

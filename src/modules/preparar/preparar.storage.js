@@ -55,6 +55,25 @@ async function guardarSalida(preparacionId, buffer) {
   await fs.writeFile(path.join(carpeta, SALIDA), buffer);
 }
 
+/**
+ * El reporte de IA de Turnitin de un encargo de «Humanizar», si lo trajo: solo
+ * las palabras y cuáles estaban marcadas (ver `preparar.reporte`). Sin reporte,
+ * `leerReporte` devuelve null.
+ */
+const REPORTE = 'reporte-ia.json';
+async function guardarReporte(preparacionId, reporte) {
+  const carpeta = carpetaDe(preparacionId);
+  await fs.mkdir(carpeta, { recursive: true });
+  await fs.writeFile(path.join(carpeta, REPORTE), JSON.stringify(reporte));
+}
+async function leerReporte(preparacionId) {
+  try {
+    return JSON.parse(await fs.readFile(rutaDe(preparacionId, REPORTE), 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
 const leerEntrada = (preparacionId) => fs.readFile(rutaDe(preparacionId, ENTRADA));
 const leerSalida = (preparacionId) => fs.readFile(rutaDe(preparacionId, SALIDA));
 
@@ -89,6 +108,8 @@ module.exports = {
   guardarSalida,
   leerEntrada,
   leerSalida,
+  guardarReporte,
+  leerReporte,
   haySalida,
   borrar,
   ENTRADA,

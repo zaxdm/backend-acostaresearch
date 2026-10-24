@@ -1,0 +1,9 @@
+CUANDO: el párrafo contiene «se define como», «define», «entiende como», «concepto», «dimensión», «indicadores», o abre con un rótulo corto seguido de punto («Comprensión oral. Es la capacidad…»)
+Bases teóricas, definiciones y dimensiones.
+- Varios autores definen lo mismo: cada uno con otra sintaxis. Uno de sujeto («Suárez (2024) considera que…»), otro con la cita al final, otro con una subordinada («al estudiar X, destaca que…»). Si dos dicen casi igual, funde los dos en una sola oración con las dos citas.
+- Una definición puede entrar por lo que el concepto hace o explica, y la cita va al final de la idea que respalda. Cada cláusula de la definición citada pasa entera.
+- Párrafos de dimensión que empiezan con un rótulo («Comprensión oral.», «Mediación del adulto durante la narración.»): el rótulo se copia igual. Lo que sigue puede ir en este orden o en otro: qué es, qué dice la literatura (con su cita), cuáles son sus indicadores. Si todas las dimensiones usan el mismo orden y las mismas oraciones («Es la capacidad…», «Sus indicadores son…»), cambia el orden en al menos una de cada tres, o abre una con la cita y su hallazgo.
+- Los indicadores van dentro de la oración, separados por comas o «y», nunca como lista anunciada con dos puntos. No los repitas en el párrafo siguiente.
+- Si el párrafo recorre componentes uno por uno con 3 o 4 acciones paralelas cada uno (por ejemplo, los componentes de un modelo de control), desarrolla el que más pesa y funde los demás en una sola oración. Un marco teórico de 891 palabras armado así dio 41 % con resaltado dentro de un documento que en conjunto salía en «*%».
+- Si el original define la variable «en este estudio» a partir de varios autores, la oración final de síntesis se queda y solo cambia su forma.
+- Ejemplos y analogías que el original trae se quedan; los que tú añadirías no entran.

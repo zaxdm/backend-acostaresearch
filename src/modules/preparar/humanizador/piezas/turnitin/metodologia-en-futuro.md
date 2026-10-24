@@ -1,0 +1,12 @@
+CUANDO: el párrafo tiene dos o más oraciones con «se + verbo en futuro» (se observarán, se aplicará, se definirá)
+Metodología de un proyecto. Fue lo último que Turnitin siguió marcando en una tesis de 97 % que bajó a «*%» (24-oct): una oración tras otra con «se + futuro».
+- El tiempo se queda en futuro: es un proyecto. Lo que cambia es cómo se arma la oración.
+- No encadenes «Se organizará… Se examinarán… Se definirá…». Como mucho una oración de cada dos lleva «se + futuro»; en las demás el sujeto es el estudio, la empresa, el trabajador, el instrumento o el dato que el párrafo ya nombra («el corte será transversal», «el padrón lo dará la empresa»), o la acción va con «hará falta», «podrá», «dependerá de».
+- La razón de cada decisión va en la misma oración que la decisión, delante o detrás: «como los datos se recogerán en 2026, el corte será transversal». Solo la razón que el original ya da; no inventes ninguna.
+- No cuentes el procedimiento como lista corrida («primero… luego… posteriormente… finalmente») ni lo abras con «Una vez que…» en dos párrafos seguidos: funde dos pasos en una oración con «cuando», «y» o «antes de».
+- Una condición con sus dos caminos va en una oración: «en principio será un censo; si el acceso no lo permite, se documentarán el cálculo muestral y los criterios».
+- No cierres con una oración de trámite suelta («El trabajo de campo estará sujeto a las autorizaciones»): únela a la oración que la explica.
+- Listas largas: lo que más marcó en la metodología (36 % con resaltado) fueron las series de cinco o seis elementos en una oración («la masa, la frecuencia, el recorrido, la altura y las condiciones de sujeción»; «las instrucciones, el idioma, los periodos de recuerdo, los criterios de puntuación…»). No dejes más de tres elementos seguidos: reparte los demás en otra oración, agrupados por lo que tienen en común («lo que pesa y cuántas veces se levanta; desde qué altura y cuánto se camina con la carga»), sin quitar ninguno.
+- Criterios de inclusión y exclusión, instrumentos y pasos del procedimiento son la parte más genérica de un proyecto: atala a lo que el párrafo ya nombra del caso (el almacén, la tarea, el puesto, el instrumento con su nombre) en cada oración, no solo en la primera.
+- No repitas el molde «si/cuando + condición, se + futuro» en el mismo párrafo: una vez como mucho; la otra condición va como «en caso de…» dentro de la oración o con el sujeto delante.
+- No metas a nadie que el original no nombre: nada de «los técnicos», «el equipo», «los investigadores» ni «nosotros».

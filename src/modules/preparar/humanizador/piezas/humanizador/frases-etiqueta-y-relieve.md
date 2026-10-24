@@ -1,0 +1,7 @@
+CUANDO: el párrafo tiene una oración de 9 palabras o menos que no es título ni dato, o contiene «Es/Fue precisamente|justamente», «de otro orden», «no se reduce a», «tiene una consecuencia», «ocurre en dos planos»
+- Frase-etiqueta: oración corta que anuncia lo que la siguiente desarrolla («El problema no se reduce al acceso.», «Las limitaciones, en cambio, son de otro orden.», «Eso tiene una consecuencia práctica.», «Pérez et al. (2022) matizan.» y luego el matiz). No informa: fúndela con la oración que desarrolla, o bórrala.
+- Si al fundir sale una oración sobrecargada con dos datos de dos fuentes distintas, parte ESA por donde cambia el dato: dos hechos, dos citas, dos oraciones que informan. No repongas una frase corta inventada: sería otra etiqueta.
+- Oración de relieve («Es precisamente en este punto donde surge la necesidad…», «Es justamente esta brecha la que explica…»): dilo directo («De ahí nace la necesidad…», «Esa brecha explica…»).
+- Transición que promete sin entregar («Esa distancia tiene una explicación de otro orden.») y apertura sentenciosa que la oración siguiente no retoma («En la región la brecha es estructural.»): quita el anuncio y deja la afirmación con su dato, o funde apertura y siguiente en una sola oración.
+- Cierre que avisa que algo importa («El aporte para esta tesis es directo: …»): borra el aviso y deja la afirmación.
+- Prueba: lee solo las dos primeras oraciones. Si no se ve el enlace entre ellas, la apertura sobra o hay que fundirla.

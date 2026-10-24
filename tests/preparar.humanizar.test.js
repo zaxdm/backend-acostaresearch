@@ -143,6 +143,36 @@ test('un párrafo largo devuelto casi igual se rechaza', () => {
   assert.match(motor.comprobarHumanizado(PARRAFO, casiIgual), /casi igual/);
 });
 
+test('un párrafo con dos palabras cambiadas por oración se rechaza aunque ninguna oración sea idéntica', () => {
+  const original =
+    'La manipulación manual de cargas abarca las acciones realizadas mediante esfuerzo humano para elevar, descender, sostener y trasladar materiales, y su evaluación considerará la masa de los objetos, cuántas veces son movilizados y la distancia recorrida. ' +
+    'El procedimiento de registro y los criterios de puntuación se concretarán según las actividades que se observen efectivamente en el lugar de trabajo.';
+  const retocado = original
+    .replace('abarca', 'comprende')
+    .replace('realizadas', 'ejecutadas')
+    .replace('considerará', 'tomará en cuenta')
+    .replace('se concretarán', 'se precisarán');
+  assert.match(motor.comprobarHumanizado(original, retocado), /conserva el \d+ % de las secuencias/);
+});
+
+test('una reescritura de verdad no se rechaza por copiar poco del original', () => {
+  const original =
+    'La manipulación manual de cargas abarca las acciones realizadas mediante esfuerzo humano para elevar, descender, sostener y trasladar materiales, y su evaluación considerará la masa de los objetos, cuántas veces son movilizados y la distancia recorrida.';
+  const nuevo =
+    'Para valorar cuánto pesa levantar y trasladar mercancía a mano, se anotarán el peso de cada objeto, las veces que se mueve y el trecho que se recorre con él, porque esas acciones dependen del esfuerzo de la persona.';
+  assert.equal(motor.comprobarHumanizado(original, nuevo), null);
+});
+
+test('un verbo en primera persona del plural que el original no traía se rechaza', () => {
+  const original =
+    'A cada candidato se le explicará que la decisión es voluntaria y que puede retirarse sin que eso repercuta en su empleo, y se conservará el consentimiento de quienes lo firmen antes de observar sus tareas habituales en el almacén.';
+  const nuevo =
+    'Antes de observar sus tareas habituales en el almacén, cada candidato sabrá que su decisión es voluntaria y que retirarse no afectará su empleo, y volvemos a conservar a quienes firmen el consentimiento.';
+  assert.match(motor.comprobarHumanizado(original, nuevo), /sujeto/);
+  const limpio = nuevo.replace('y volvemos a conservar a quienes firmen el consentimiento', 'y se guardará el consentimiento de quienes lo firmen');
+  assert.equal(motor.comprobarHumanizado(original, limpio), null);
+});
+
 test('un párrafo corto devuelto igual no se rechaza: puede ser un rótulo', () => {
   const corto = 'Población y muestra del estudio.';
   assert.equal(motor.comprobarHumanizado(corto, corto), null);

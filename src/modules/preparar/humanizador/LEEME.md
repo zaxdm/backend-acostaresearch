@@ -189,3 +189,22 @@ aprendió:
   criterios, instrumentos y procedimiento: series de cinco o seis elementos en una oración, «si…, se +
   futuro» repetido, trámite genérico). Con la pieza ampliada (listas de tres como mucho, atar cada oración
   al caso, una sola condición por párrafo) y el servicio rehaciendo solo esos 4 párrafos: **0 %**.
+
+## Con reporte: lo marcado se rehace, no se maquilla (24-oct-2026)
+
+Edheliza (57 %) con su reporte por la web dio «*%». Comparado con la versión a mano que dio 0 % sobre los
+mismos 31 párrafos marcados: las dos rehicieron casi todas las oraciones marcadas, pero el servicio las
+maquilló (copia del original 34 % frente a 26 %; «La realidad mostró entonces una escuela que…» casi igual) y
+las fundió (118 oraciones frente a 146; media 33,6 frente a 27,1). Con reporte (`estricto`):
+
+- `motor.comprobarMarcado` rechaza en lo marcado: copia > 35 % de las secuencias de cuatro palabras, menos
+  oraciones que el original, una oración de más de 50 palabras (si el original no la tenía). Calibrado: a mano
+  fallan 10 de 31, el servicio v1 19.
+- `MARCADO` va AL FINAL del prompt y manda sobre lo que el núcleo dice de fundir (delante, el modelo fundía
+  igual: la v2 dio 106 oraciones).
+- El reintento lleva el motivo del rechazo (`fallo_anterior`), y lo que falla por algo leve no se entrega en la
+  segunda vuelta (`promoverLeves: false`): va a un tercer intento, y solo si tampoco sale se queda la mejor
+  versión.
+
+Resultado en local (v3): 138 oraciones, media 30,2, 10 de 31 sin cumplir. Dos párrafos marcados se quedaron
+en el original porque el modelo cambiaba una cifra en los tres intentos. Falta Turnitin.

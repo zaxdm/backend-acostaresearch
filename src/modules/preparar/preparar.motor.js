@@ -290,6 +290,39 @@ function copiaDelOriginal(original, nuevo, n = 4) {
   return suyos.filter((tramo) => antes.has(tramo)).length / suyos.length;
 }
 
+/**
+ * Lo que se exige a un párrafo que el reporte de IA de Turnitin marcó (con
+ * reporte, `estricto`). Calibrado el 24-oct-2026 con una tesis de 57 %: la
+ * versión a mano que dio 0 % y la del servicio que se quedó en «*%» rehicieron
+ * las mismas oraciones, pero el servicio las maquilló (copia del 34 % frente al
+ * 26 %) y las fundió (150 oraciones frente a 175). De sus 31 párrafos marcados,
+ * con copia > 35 %: a mano 6, servicio 13; con menos oraciones que el original:
+ * 4 y 13; con una oración de más de 50 palabras: 4 y 9.
+ */
+const COPIA_MARCADO = 0.35;
+const ORACION_MAXIMA_MARCADO = 50;
+const oracionesDe = (texto) =>
+  String(texto)
+    .replace(/\bet al\./g, 'et al')
+    .split(/(?<=[.?!])\s+/)
+    .filter((o) => palabrasDe(o) > 2);
+function comprobarMarcado(original, nuevo) {
+  const copia = copiaDelOriginal(original, nuevo);
+  if (copia > COPIA_MARCADO) {
+    return `el modelo lo devolvió casi igual: es un párrafo marcado por Turnitin y conserva el ${Math.round(copia * 100)} % de sus secuencias de cuatro palabras; cambia el armado de cada frase`;
+  }
+  const antes = oracionesDe(original);
+  const despues = oracionesDe(nuevo);
+  if (despues.length < antes.length) {
+    return `el texto nuevo metió menos oraciones (${despues.length}) que el original (${antes.length}): en lo marcado no se funde, se parte`;
+  }
+  const larga = Math.max(0, ...despues.map(palabrasDe));
+  if (larga > ORACION_MAXIMA_MARCADO && larga > Math.max(0, ...antes.map(palabrasDe))) {
+    return `el texto nuevo metió una oración de ${larga} palabras: pártela`;
+  }
+  return null;
+}
+
 const esLeve = (motivo) => /^el texto nuevo metió|^el modelo lo devolvió casi igual/.test(String(motivo));
 
 /**
@@ -303,7 +336,11 @@ const esLeve = (motivo) => /^el texto nuevo metió|^el modelo lo devolvió casi 
  * modelo que el original NO traía y las rayas nuevas. La concordancia se queda
  * en el prompt: su expresión también caza frases correctas.
  */
-function comprobarHumanizado(original, nuevo) {
+function comprobarHumanizado(original, nuevo, opciones = {}) {
+  if (opciones?.estricto && palabrasDe(original) >= PROSA_MINIMA && !ENUNCIADO.test(original)) {
+    const motivo = comprobarMarcado(original, nuevo);
+    if (motivo) return motivo;
+  }
   if (palabrasDe(original) >= PROSA_MINIMA) {
     const { iguales, total } = controles.identicas(original, nuevo);
     if (total > 0 && iguales * 2 > total) {
@@ -411,7 +448,7 @@ function comprobar(original, nuevo, opciones, citas = null) {
   // palabras con las que cuenta. Lo que se pierde de verdad —cifras, citas,
   // remisiones con su número— ya se mira arriba, y el largo, abajo.
   if (opciones?.servicio === 'HUMANIZAR') {
-    const motivo = comprobarHumanizado(original, limpio);
+    const motivo = comprobarHumanizado(original, limpio, opciones);
     if (motivo) return motivo;
   }
 
@@ -597,6 +634,9 @@ async function pedirTanda(parrafos, opciones, generar) {
 
   const { texto } = await generar({
     sistema: prompt.sistemaDe(opciones),
+    // Humanizando, en el reintento: por qué se rechazó la vez anterior. Lo lee
+    // `preparar.humanizar`, que arma su propia instrucción.
+    ...(opciones?.fallo ? { fallo: opciones.fallo } : {}),
     mensajes: [{ rol: 'usuario', texto: JSON.stringify(entrada) }],
     modelos: modelos(opciones?.servicio),
     maxTokens: tokensPara(palabras),
@@ -788,8 +828,11 @@ async function prepararParrafos({
   // Se llama con (hechas, total) cada vez que termina una tanda, para que la
   // web enseñe «sección 4 de 12». Un fallo aquí no puede tumbar el trabajo.
   alAvanzar = () => {},
+  // Humanizar con reporte de IA: lo marcado pasa además `comprobarMarcado`.
+  estricto = false,
+  promoverLeves = true,
 }) {
-  const opciones = { servicio, idioma };
+  const opciones = { servicio, idioma, ...(estricto ? { estricto: true } : {}) };
   const tandas = tandasDe(parrafos, porTanda);
   let hechas = 0;
   const contar = () => {
@@ -872,11 +915,12 @@ async function prepararParrafos({
   const cortados = primerosMalos.filter((malo) => malo.sinCupo);
 
   const segundaVuelta = await enParalelo(
-    porReintentar.map(({ id }) => async () => {
+    porReintentar.map(({ id, motivo }) => async () => {
       const parrafo = porClave.get(String(id));
       try {
         // Humanizando, el reintento lleva el aviso de qué no volver a meter.
-        return await pedirTanda([parrafo], { ...opciones, insistir: servicio === 'HUMANIZAR' }, pedir);
+        const humanizando = servicio === 'HUMANIZAR';
+        return await pedirTanda([parrafo], { ...opciones, insistir: humanizando, ...(humanizando ? { fallo: motivo } : {}) }, pedir);
       } catch (error) {
         return { buenos: {}, malos: [{ id, motivo: error.message }] };
       }
@@ -892,7 +936,10 @@ async function prepararParrafos({
   // prueba salió IGUAL que el original porque su reescritura traía unos dos
   // puntos. Las cifras, las citas o el largo no son leves y siguen dejando el
   // original. Se queda la última versión, la del reintento.
-  if (servicio === 'HUMANIZAR') {
+  //
+  // Con `promoverLeves: false` se quedan en `malos` con su `candidato`, para que
+  // quien llama les dé otra vuelta (Humanizar con reporte de IA, 24-oct-2026).
+  if (servicio === 'HUMANIZAR' && promoverLeves) {
     for (let i = malos.length - 1; i >= 0; i -= 1) {
       if (!malos[i].candidato) continue;
       buenos[malos[i].id] = malos[i].candidato;

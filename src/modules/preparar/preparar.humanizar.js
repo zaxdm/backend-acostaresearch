@@ -71,6 +71,7 @@ ENTRADA: un objeto JSON con
 - "comparten_plantilla" (si viene): los párrafos de esta tanda que en el original siguen la misma
   plantilla que otros del documento, cada uno con la arquitectura que le toca. Úsala: es lo que
   evita que los hermanos vuelvan a salir parecidos.
+- "fallo_anterior" (si viene): por qué se rechazó tu versión anterior de esos párrafos. Corrígelo.
 
 SALIDA: solo un objeto JSON con EXACTAMENTE las claves de "parrafos" y, como valor, el texto
 nuevo de ese párrafo. Nada fuera del JSON. Un párrafo por clave: no juntes dos párrafos en uno
@@ -101,6 +102,23 @@ revisa antes de devolverlo cada cifra y cada cita, y que no lleve dos puntos en 
 solo… sino», «más allá de», rayas (—) ni palabras de la lista QUITA.
 `.trim();
 
+/**
+ * Con el reporte de IA de Turnitin delante, cada párrafo que llega está
+ * marcado. Lo que separó el 0 % del «*%» en la misma tesis (24-oct-2026): la
+ * versión que dio 0 % cambió el armado de cada frase marcada y partió oraciones;
+ * la que no, las maquilló cambiando dos palabras y las fundió. Ver
+ * `motor.comprobarMarcado`, que lo exige.
+ */
+const MARCADO = `
+ESTOS PÁRRAFOS LOS MARCÓ TURNITIN COMO IA. Maquillarlos no basta: cambiar un conector, «todavía» por «seguía» o quitar un «sin embargo» deja la misma frase y vuelve a salir marcada.
+- Cada frase se arma de nuevo: otro sujeto, otro verbo, otro orden. De una oración del original no quedan más de tres o cuatro palabras seguidas, salvo nombres, citas, términos técnicos y cifras.
+- Verbos corrientes y concretos: «vieron», «obtuvieron», «le ganaban al papel», «se quedó en», en vez de «evidenció», «se constató», «superaban».
+- No fundas: en lo marcado sale el mismo número de oraciones que en el original, o más. Parte las largas; ninguna pasa de 45 palabras.
+- Las frases de cierre o de balance («La realidad mostró, entonces, una escuela que… y una literatura que…») son las que más marca: dilas de otra forma, más llana, o únelas al dato del que salen.
+- Esto manda sobre lo que el núcleo dice de fundir y de las medias de 30 a 40 palabras: en un párrafo marcado no se funde.
+- Si un párrafo trae "fallo_anterior", es por qué se rechazó tu versión anterior: corrígelo.
+`.trim();
+
 let enMemoria = null;
 
 /** Los textos de la skill. Se leen una vez; `carpeta` sirve para probar otra copia. */
@@ -123,8 +141,12 @@ function leerSkill(carpeta = CARPETA) {
   return skill;
 }
 
-const sistemaDe = (skill, ruta, insistir, extras) =>
-  [skill.nucleo, skill.rutas[ruta], extras, FORMATO, insistir ? INSISTIR : null].filter(Boolean).join('\n\n');
+// MARCADO va al final: el modelo obedece lo último, y tiene que mandar sobre
+// lo que el núcleo dice de fundir (24-oct-2026: delante, se fundía igual).
+const sistemaDe = (skill, ruta, insistir, extras, estricto = false) =>
+  [skill.nucleo, skill.rutas[ruta], extras, FORMATO, insistir ? INSISTIR : null, estricto ? MARCADO : null]
+    .filter(Boolean)
+    .join('\n\n');
 
 // ── El documento por capítulos ─────────────────────────────────────────────
 
@@ -399,8 +421,11 @@ const sumar = (uso, otro) => {
 };
 
 /** Paso 1: capítulo por capítulo, con las comprobaciones del servicio y un tercer intento. */
-async function porRutas({ prosa, skill, generar, modelos, actual, malos, uso, porTanda, avance, plantilla, tipos, piezasUsadas }) {
+async function porRutas({ prosa, skill, generar, modelos, actual, malos, uso, porTanda, avance, plantilla, tipos, piezasUsadas, estricto }) {
   const usadas = [];
+  // Por qué se rechazó cada párrafo la última vez, para decírselo al modelo en
+  // el siguiente intento.
+  const fallos = new Map();
   for (const ruta of Object.keys(NOMBRES)) {
     const suyos = prosa.filter((parrafo) => parrafo.ruta === ruta);
     if (suyos.length === 0) continue;
@@ -411,6 +436,11 @@ async function porRutas({ prosa, skill, generar, modelos, actual, malos, uso, po
       const insistir = peticion.sistema !== prompt.HUMANIZAR;
       const entrada = JSON.parse(peticion.mensajes[0].texto);
       const comparten = Object.keys(entrada).filter((clave) => plantilla.has(clave));
+      const fallo = Object.fromEntries(
+        Object.keys(entrada)
+          .map((clave) => [clave, peticion.fallo ?? fallos.get(clave)])
+          .filter(([, motivo]) => motivo),
+      );
       // Las piezas que tocan a los párrafos de ESTA llamada.
       const deLaTanda = suyos.filter((parrafo) => parrafo.clave in entrada);
       const extras = piezas.elegir(skill.piezas, deLaTanda, tipos);
@@ -422,10 +452,12 @@ async function porRutas({ prosa, skill, generar, modelos, actual, malos, uso, po
         ...(comparten.length > 0
           ? { comparten_plantilla: Object.fromEntries(comparten.map((clave) => [clave, plantilla.get(clave)])) }
           : {}),
+        ...(Object.keys(fallo).length > 0 ? { fallo_anterior: fallo } : {}),
       });
+      const { fallo: _fallo, ...resto } = peticion;
       return generar({
-        ...peticion,
-        sistema: sistemaDe(skill, ruta, insistir, extras.texto),
+        ...resto,
+        sistema: sistemaDe(skill, ruta, insistir, extras.texto, estricto),
         mensajes: [{ rol: 'usuario', texto }],
         ...(modelos ? { modelos } : {}),
         ...holgura(peticion.maxTokens),
@@ -433,12 +465,15 @@ async function porRutas({ prosa, skill, generar, modelos, actual, malos, uso, po
     };
 
     const base = avance.hechas;
-    const intentar = (parrafos, alAvanzar) =>
-      motor.prepararParrafos({ parrafos, servicio: 'HUMANIZAR', generar: pedir, porTanda, alAvanzar });
+    const intentar = (parrafos, alAvanzar, promoverLeves = true) =>
+      motor.prepararParrafos({ parrafos, servicio: 'HUMANIZAR', generar: pedir, porTanda, alAvanzar, estricto, promoverLeves });
 
     let hecho;
     try {
-      hecho = await intentar(suyos, (hechas) => avance.marcar(base + hechas));
+      // Con reporte, lo que falla dos veces por algo leve no se entrega todavía:
+      // va al tercer intento con su motivo, y solo si tampoco sale se queda la
+      // mejor versión (`candidato`).
+      hecho = await intentar(suyos, (hechas) => avance.marcar(base + hechas), !estricto);
     } catch (error) {
       // `prepararParrafos` falla si no salió NINGUNO. Un capítulo entero sin
       // humanizar no tumba el documento: quedan como estaban, con su motivo.
@@ -452,6 +487,8 @@ async function porRutas({ prosa, skill, generar, modelos, actual, malos, uso, po
     // «cabe destacar» y «crucial» quedó intacto con GLM-5).
     if (hecho.malos.length > 0) {
       const otraVez = suyos.filter((parrafo) => hecho.malos.some((malo) => String(malo.id) === parrafo.clave));
+      for (const malo of hecho.malos) fallos.set(String(malo.id), malo.motivo);
+      const candidatos = new Map(hecho.malos.filter((m) => m.candidato).map((m) => [String(m.id), m.candidato]));
       try {
         const segundo = await intentar(otraVez);
         Object.assign(hecho.cambios, segundo.cambios);
@@ -459,6 +496,14 @@ async function porRutas({ prosa, skill, generar, modelos, actual, malos, uso, po
         sumar(uso, segundo.uso);
       } catch {
         // Se quedan los motivos del primer intento.
+      }
+      // Lo que ni el tercer intento sacó: la mejor versión del primero, que es
+      // mejor que dejar el original marcado.
+      for (let i = hecho.malos.length - 1; i >= 0; i -= 1) {
+        const clave = String(hecho.malos[i].id);
+        if (!candidatos.has(clave)) continue;
+        hecho.cambios[clave] = { texto: tipografia.arreglar(candidatos.get(clave)) };
+        hecho.malos.splice(i, 1);
       }
     }
 
@@ -479,7 +524,7 @@ async function porRutas({ prosa, skill, generar, modelos, actual, malos, uso, po
  * valen todas: cifras, citas, vocabulario; y no la de «casi igual»). Lo que no
  * pasa, o una tanda que falla, deja lo que había. Devuelve cuántos cambió.
  */
-async function corregir({ pedidos, entradaDe, sistema, prosa, generar, modelos, actual, uso, porTanda, diario }) {
+async function corregir({ pedidos, entradaDe, sistema, prosa, generar, modelos, actual, uso, porTanda, diario, estricto = false }) {
   const porClave = new Map(prosa.map((parrafo) => [parrafo.clave, parrafo]));
   const ronda = { pedidos: pedidos.length, tocados: 0, rechazos: {}, fallidas: 0 };
   const rechazar = (motivo) => {
@@ -518,7 +563,7 @@ async function corregir({ pedidos, entradaDe, sistema, prosa, generar, modelos, 
       for (const p of tanda) {
         const nuevo = devuelto?.[p.clave];
         const original = porClave.get(p.clave);
-        const motivo = motor.comprobar(original.texto, nuevo, { servicio: 'HUMANIZAR' }, original.citas);
+        const motivo = motor.comprobar(original.texto, nuevo, { servicio: 'HUMANIZAR', ...(estricto ? { estricto } : {}) }, original.citas);
         if (motivo) {
           rechazar(motivo);
           continue;
@@ -541,7 +586,7 @@ const textosDe = (prosa, actual) =>
  * Paso 2: los párrafos que se parecen demasiado a uno anterior se reescriben
  * enteros, viendo las frases repetidas y el párrafo al que se parecen.
  */
-async function romperPlantillas({ prosa, skill, generar, modelos, actual, uso, porTanda, diario, ronda = 1 }) {
+async function romperPlantillas({ prosa, skill, generar, modelos, actual, uso, porTanda, diario, ronda = 1, estricto = false }) {
   const textos = textosDe(prosa, actual);
   const repetidos = parecidos(textos);
   if (repetidos.size === 0) return 0;
@@ -569,12 +614,13 @@ async function romperPlantillas({ prosa, skill, generar, modelos, actual, uso, p
     uso,
     // Cada párrafo viaja con el que se le parece: la tanda, a la mitad.
     porTanda: Math.ceil(porTanda / 2),
+    estricto,
     diario: diario && { push: (r) => diario.push({ paso: 'plantilla', ...r }) },
   });
 }
 
 /** Paso 3: una pasada sobre el documento entero. Devuelve cuántos párrafos cambió. */
-async function pasada({ prosa, skill, generar, modelos, actual, uso, porTanda, diario }) {
+async function pasada({ prosa, skill, generar, modelos, actual, uso, porTanda, diario, estricto = false }) {
   const textos = textosDe(prosa, actual);
   const notas = moldesDe(textos);
   if (notas.size === 0) return 0;
@@ -597,6 +643,7 @@ async function pasada({ prosa, skill, generar, modelos, actual, uso, porTanda, d
     actual,
     uso,
     porTanda,
+    estricto,
     diario: diario && { push: (r) => diario.push({ paso: 'pasada', ...r }) },
   });
 }
@@ -622,6 +669,7 @@ async function humanizar({
   soloClaves = null,
 }) {
   const prosa = porCapitulos(parrafos).filter((p) => !soloClaves || soloClaves.has(p.clave));
+  const estricto = Boolean(soloClaves);
   const actual = new Map();
   const malos = [];
   const uso = { llamadas: 0, entrada: 0, salida: 0 };
@@ -651,7 +699,7 @@ async function humanizar({
     },
   };
 
-  await porRutas({ prosa, skill, generar, modelos, actual, malos, uso, porTanda, avance, plantilla, tipos, piezasUsadas });
+  await porRutas({ prosa, skill, generar, modelos, actual, malos, uso, porTanda, avance, plantilla, tipos, piezasUsadas, estricto });
 
   if (actual.size === 0 && prosa.length > 0) {
     throw new Error(malos[0]?.motivo ?? 'El modelo no devolvió ningún párrafo utilizable.');
@@ -664,12 +712,12 @@ async function humanizar({
     // → 19 → … párrafos por encima del límite). Una ronda sin nada que hacer
     // no llama al modelo.
     for (let ronda = 1; ronda <= RONDAS_CONTRA_PLANTILLA; ronda += 1) {
-      await romperPlantillas({ prosa, skill, generar, modelos, actual, uso, porTanda, diario: rondas, ronda });
+      await romperPlantillas({ prosa, skill, generar, modelos, actual, uso, porTanda, diario: rondas, ronda, estricto });
       avance.marcar(tandas + ronda);
     }
-    await pasada({ prosa, skill, generar, modelos, actual, uso, porTanda, diario: rondas });
+    await pasada({ prosa, skill, generar, modelos, actual, uso, porTanda, diario: rondas, estricto });
     avance.marcar(tandas + RONDAS_CONTRA_PLANTILLA + 1);
-    await pasada({ prosa, skill, generar, modelos, actual, uso, porTanda, diario: rondas });
+    await pasada({ prosa, skill, generar, modelos, actual, uso, porTanda, diario: rondas, estricto });
     avance.marcar(tandas + RONDAS_CONTRA_PLANTILLA + 2);
   }
 

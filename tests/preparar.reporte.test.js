@@ -82,6 +82,53 @@ test('un PDF que no es PDF se rechaza con un mensaje para el cliente', async () 
   await assert.rejects(informe.recibir({ userId: 'u1', buffer: Buffer.from('hola') }), /no es un PDF/);
 });
 
+const motor = require('../src/modules/preparar/preparar.motor');
+
+const ORIGINAL_MARCADO =
+  'La evidencia acumulada, sin embargo, no fue tan uniforme como el entusiasmo. Savva y Pérez (2021) hallaron un efecto global pequeño a favor de los libros electrónicos, pero ninguna diferencia en la comprensión de historias. La realidad mostró, entonces, una escuela que adoptaba narraciones digitales y una literatura que todavía discutía en qué condiciones estas ayudaban a comprender.';
+
+test('con reporte, un párrafo marcado y solo maquillado se rechaza por ser lo marcado', () => {
+  const maquillado =
+    'Pero la evidencia acumulada no fue tan uniforme como el entusiasmo. Savva y Pérez (2021) hallaron un efecto global pequeño a favor de los libros electrónicos, aunque sin diferencias en la comprensión de historias. La realidad mostró entonces una escuela que adoptaba narraciones digitales y una literatura que seguía discutiendo en qué condiciones ayudaban a comprender.';
+  assert.match(motor.comprobarHumanizado(ORIGINAL_MARCADO, maquillado, { estricto: true }), /marcado por Turnitin/);
+});
+
+test('con reporte, fundir lo marcado en menos oraciones se rechaza', () => {
+  const fundido =
+    'Los resultados de la investigación salieron menos parejos que el entusiasmo inicial, ya que Savva y Pérez (2021) obtuvieron para el libro electrónico un efecto global pequeño a su favor y ninguna diferencia cuando se medía comprender historias, de modo que la escuela ya usaba relatos en pantalla mientras los estudios seguían sin acuerdo sobre cuándo servían.';
+  assert.match(motor.comprobarHumanizado(ORIGINAL_MARCADO, fundido, { estricto: true }), /menos oraciones/);
+});
+
+test('con reporte, una reescritura de verdad pasa', () => {
+  const rehecho =
+    'La investigación encontró resultados menos parejos que el entusiasmo. Savva y Pérez (2021) obtuvieron para el libro electrónico un efecto global pequeño a su favor. Cuando lo medido era comprender historias, no hubo ninguna diferencia. La escuela, así, ya usaba relatos en pantalla mientras los estudios seguían sin ponerse de acuerdo sobre cuándo servían para entender.';
+  assert.equal(motor.comprobarHumanizado(ORIGINAL_MARCADO, rehecho, { estricto: true }), null);
+});
+
+test('con reporte, lo fundido va a otro intento con su motivo y se entrega lo que cumple', async () => {
+  const fundido =
+    'Los resultados de la investigación salieron menos parejos que el entusiasmo inicial, ya que Savva y Pérez (2021) obtuvieron para el libro electrónico un efecto global pequeño a su favor y ninguna diferencia cuando se medía comprender historias, de modo que la escuela ya usaba relatos en pantalla mientras los estudios seguían sin acuerdo sobre cuándo servían.';
+  const rehecho =
+    'La investigación encontró resultados menos parejos que el entusiasmo. Savva y Pérez (2021) obtuvieron para el libro electrónico un efecto global pequeño a su favor. Cuando lo medido era comprender historias, no hubo ninguna diferencia. La escuela, así, ya usaba relatos en pantalla mientras los estudios seguían sin ponerse de acuerdo sobre cuándo servían para entender.';
+  const vistos = [];
+  const generar = async (peticion) => {
+    const entrada = JSON.parse(peticion.mensajes[0].texto);
+    vistos.push(entrada.fallo_anterior ?? null);
+    const salida = {};
+    for (const clave of Object.keys(entrada.parrafos)) salida[clave] = entrada.fallo_anterior ? rehecho : fundido;
+    return { texto: JSON.stringify(salida), uso: { promptTokenCount: 1, candidatesTokenCount: 1 } };
+  };
+  const { cambios } = await humanizador.humanizar({
+    parrafos: [parrafo('9', ORIGINAL_MARCADO)],
+    generar,
+    modelos: ['falso'],
+    conPasada: false,
+    soloClaves: new Set(['9']),
+  });
+  assert.equal(cambios['9'].texto, rehecho);
+  assert.match(JSON.stringify(vistos.filter(Boolean)[0]), /menos oraciones/);
+});
+
 test('con soloClaves, el humanizador solo manda los marcados', async () => {
   const mandados = [];
   const generar = async (peticion) => {

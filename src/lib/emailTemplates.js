@@ -1192,6 +1192,16 @@ function activationCode({ codes, planName, expiresAt, conector = true }) {
         ? 'En cuanto lo canjees te llega otro correo con tu URL personal del conector, que es lo que se pega en Claude.'
         : 'En cuanto lo canjees podrás preparar tus documentos desde la web. No hay nada que instalar.',
       '',
+      // La guía va ya con el código (24-oct, Benicio): quien paga quiere ver
+      // cómo se instala sin esperar al segundo correo.
+      ...(conector
+        ? [
+            'Cómo instalarlo, en video:',
+            VIDEO_DE_INICIO,
+            `Guía de instalación con capturas (PDF): ${guiaUrl()}`,
+            '',
+          ]
+        : []),
       'Si algo no te cuadra, respóndenos a este mensaje.',
     ].join('\n'),
     html: layout(
@@ -1232,7 +1242,26 @@ function activationCode({ codes, planName, expiresAt, conector = true }) {
                 instalar.`
          }
        </p>
-
+${
+  conector
+    ? `
+       <p style="margin:0 0 10px;font-size:13px;font-weight:650;color:#52606d">
+         CÓMO INSTALARLO
+       </p>
+       <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 12px">
+         <tr>
+           <td style="border-radius:10px;background:#1a56db">
+             <a href="${VIDEO_DE_INICIO}" style="display:inline-block;padding:13px 26px;font-size:15px;
+                       font-weight:650;color:#ffffff;text-decoration:none">▶ Ver el video</a>
+           </td>
+         </tr>
+       </table>
+       <p style="margin:0 0 22px;font-size:13.5px">
+         <a href="${guiaUrl()}" style="color:#1a56db">Guía de instalación en PDF, con capturas</a>
+       </p>
+`
+    : ''
+}
        <p style="margin:0;font-size:13.5px;line-height:1.65;color:#7b8794">
          Si algo no te cuadra, responde a este mensaje y lo miramos.
        </p>`,

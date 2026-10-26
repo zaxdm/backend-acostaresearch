@@ -43,6 +43,20 @@ const authController = {
     );
   }),
 
+  /** La página del botón del correo: qué entrega el código y a qué correo. */
+  verActivacion: asyncHandler(async (req, res) => {
+    return ok(res, await authService.verActivacion(req.body.codigo));
+  }),
+
+  /** Cuenta nueva + sesión + canje, desde el botón del correo del código. */
+  activar: asyncHandler(async (req, res) => {
+    const { user, canje, accessToken, refreshToken, refreshExpiresAt } =
+      await authService.activarConCodigo(req.body, extractContext(req));
+
+    setRefreshCookie(res, refreshToken, refreshExpiresAt);
+    return ok(res, { user, accessToken, canje }, { message: 'Tu acceso está activo.' });
+  }),
+
   refresh: asyncHandler(async (req, res) => {
     const { accessToken, refreshToken, refreshExpiresAt } = await authService.refresh(
       readRefreshCookie(req),

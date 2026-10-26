@@ -5,6 +5,8 @@ const validate = require('../../middlewares/validate');
 const authenticate = require('../../middlewares/authenticate');
 const { authLimiter, emailLimiter } = require('../../middlewares/rateLimit');
 const {
+  verActivacionSchema,
+  activarSchema,
   googleSchema,
   registerSchema,
   loginSchema,
@@ -23,6 +25,16 @@ router.post('/login', authLimiter, validate({ body: loginSchema }), authControll
 // Entrar y darse de alta con Google son la misma ruta: quien pulsa el botón no
 // sabe —ni tiene por qué— si ya tenía cuenta aquí.
 router.post('/google', authLimiter, validate({ body: googleSchema }), authController.google);
+
+// El botón «Activar mi acceso» del correo del código (26-oct). Con el freno de
+// los accesos: un código son 12 caracteres y sin él se podría barrer.
+router.post(
+  '/activar/ver',
+  authLimiter,
+  validate({ body: verActivacionSchema }),
+  authController.verActivacion,
+);
+router.post('/activar', authLimiter, validate({ body: activarSchema }), authController.activar);
 
 // Se autentica con la cookie httpOnly, no con el access token.
 router.post('/refresh', authController.refresh);

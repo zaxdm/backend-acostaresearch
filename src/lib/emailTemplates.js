@@ -1151,6 +1151,9 @@ function activationCode({ codes, planName, expiresAt, conector = true }) {
     codes.length === 1
       ? `${appUrl()}/planes?codigo=${encodeURIComponent(codes[0])}`
       : `${appUrl()}/planes`;
+  // El botón «Activar mi acceso» (26-oct). El código va detrás de «#», que el
+  // navegador no manda al servidor: así no queda escrito en ningún registro.
+  const activar = (codigo) => `${appUrl()}/auth/activar#${encodeURIComponent(codigo)}`;
   const vence = fecha(expiresAt);
   const caduca = vence ? ` Tienes hasta el ${vence} para canjearlo.` : '';
   const varios = codes.length > 1;
@@ -1163,6 +1166,12 @@ function activationCode({ codes, planName, expiresAt, conector = true }) {
                      padding:22px 16px">
              <div style="font-family:Consolas,'Courier New',monospace;font-size:23px;font-weight:700;
                          letter-spacing:.06em;color:#1a3fa8;word-break:break-all">${escapar(codigo)}</div>
+             ${
+               varios
+                 ? `<div style="margin-top:10px;font-size:14px"><a href="${escapar(activar(codigo))}"
+                      style="color:#1a56db;font-weight:650">Activar este acceso</a></div>`
+                 : ''
+             }
            </td>
          </tr>
          <tr><td style="height:10px;line-height:10px">&nbsp;</td></tr>`,
@@ -1178,19 +1187,25 @@ function activationCode({ codes, planName, expiresAt, conector = true }) {
     text: [
       'Hola:',
       '',
-      `Recibimos tu pago de «${planName}». Este es tu código de activación:`,
+      `Recibimos tu pago de «${planName}».`,
       '',
+      ...(varios
+        ? [
+            'Para activar cada acceso, abre su enlace:',
+            ...codes.map((codigo) => `  ${codigo}: ${activar(codigo)}`),
+          ]
+        : [
+            'Activa tu acceso aquí (solo te pedimos tu nombre y una contraseña):',
+            activar(codes[0]),
+          ]),
+      '',
+      `¿El enlace no funciona? ${varios ? 'Tus códigos son' : 'Tu código es'}:`,
       ...codes.map((codigo) => `  ${codigo}`),
-      '',
-      `Guárdalo: es de un solo uso y no podemos volver a mostrártelo.${caduca}`,
-      '',
-      'Cómo activarlo, en dos pasos:',
-      `  1. Crea tu cuenta en ${registro} (te pedimos un código de 6 cifras por correo para verificarla).`,
-      `  2. Entra en ${canje}, pega el código en «¿Compraste por Yape o transferencia?» y pulsa Canjear.`,
+      `Es de un solo uso.${caduca} Crea tu cuenta en ${registro} y pégalo en ${canje}, en «¿Compraste por Yape o transferencia?».`,
       '',
       conector
-        ? 'En cuanto lo canjees te llega otro correo con tu URL personal del conector, que es lo que se pega en Claude.'
-        : 'En cuanto lo canjees podrás preparar tus documentos desde la web. No hay nada que instalar.',
+        ? 'En cuanto lo actives verás tu URL personal del conector, que es lo que se pega en Claude, y te llega también por correo.'
+        : 'En cuanto lo actives podrás preparar tus documentos desde la web. No hay nada que instalar.',
       '',
       // La guía va ya con el código (24-oct, Benicio): quien paga quiere ver
       // cómo se instala sin esperar al segundo correo.
@@ -1207,38 +1222,46 @@ function activationCode({ codes, planName, expiresAt, conector = true }) {
     html: layout(
       titulo,
       `<p style="margin:0 0 20px;font-size:15px;line-height:1.6">Hola: recibimos tu pago de
-         <strong>${escapar(planName)}</strong>. ${varios ? 'Estos son tus códigos' : 'Este es tu código'}
-         de activación.</p>
+         <strong>${escapar(planName)}</strong>.
+         ${
+           varios
+             ? 'Abre el enlace de cada código para activar su acceso.'
+             : 'Pulsa el botón: solo te pedimos tu nombre y una contraseña, y tu acceso queda activo.'
+         }</p>
+${
+  varios
+    ? ''
+    : `
+       <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 26px">
+         <tr>
+           <td style="border-radius:10px;background:#1a56db">
+             <a href="${escapar(activar(codes[0]))}" style="display:inline-block;padding:14px 30px;
+                       font-size:16px;font-weight:650;color:#ffffff;text-decoration:none">Activar mi acceso</a>
+           </td>
+         </tr>
+       </table>
 
+       <p style="margin:0 0 8px;font-size:13px;color:#7b8794">¿El botón no funciona? Tu código es:</p>
+`
+}
        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
          ${bloques}
        </table>
 
-       <p style="margin:12px 0 24px;font-size:13.5px;line-height:1.65;color:#7b8794">
-         Guárda${varios ? 'los' : 'lo'}: ${varios ? 'son de un solo uso' : 'es de un solo uso'} y
-         no podemos volver a mostrár${varios ? 'telos' : 'telo'}.${caduca}
-       </p>
-
-       <p style="margin:0 0 10px;font-size:13px;font-weight:650;color:#52606d">
-         CÓMO ACTIVARLO, EN DOS PASOS
-       </p>
-       <p style="margin:0 0 10px;font-size:14.5px;line-height:1.65">
-         <strong>1.</strong> Crea tu cuenta en
-         <a href="${registro}" style="color:#1a56db">acostaresearch.com</a>. Te pedimos un código
-         de 6 cifras por correo para verificarla.
-       </p>
-       <p style="margin:0 0 22px;font-size:14.5px;line-height:1.65">
-         <strong>2.</strong> Entra en <a href="${canje}" style="color:#1a56db">la página de
-         precios</a>, pega el código en «¿Compraste por Yape o transferencia?», arriba a la
-         derecha, y pulsa Canjear.
+       <p style="margin:12px 0 22px;font-size:13.5px;line-height:1.65;color:#7b8794">
+         ${varios ? 'Son de un solo uso' : 'Es de un solo uso'}.${caduca} Si el
+         ${varios ? 'enlace' : 'botón'} no te funciona, crea tu cuenta en
+         <a href="${registro}" style="color:#7b8794">acostaresearch.com</a> y pega el código en
+         <a href="${canje}" style="color:#7b8794">la página de precios</a>, en «¿Compraste por Yape
+         o transferencia?».
        </p>
 
        <p style="margin:0 0 18px;font-size:14px;line-height:1.65;color:#52606d">
          ${
            conector
-             ? `En cuanto lo canjees te llega otro correo con tu URL personal del conector, que es
-                lo que se pega en Claude.`
-             : `En cuanto lo canjees podrás preparar tus documentos desde la web. No hay nada que
+             ? `En cuanto lo actives verás tu URL personal del conector, que es lo que se pega en
+                Claude, y te llega también por correo.`
+             : `En cuanto lo actives podrás preparar tus documentos desde la web. No hay nada que
                 instalar.`
          }
        </p>
@@ -1268,7 +1291,7 @@ ${
       {
         preheader: varios
           ? `${codes.length} códigos de activación de ${escapar(planName)}.`
-          : `Tu código es ${escapar(codes[0])}. Se canjea en la página de precios.`,
+          : `Tu código es ${escapar(codes[0])}. Actívalo con un solo botón.`,
       },
     ),
   };

@@ -88,7 +88,32 @@ const googleSchema = z.object({
     .regex(/^[\w-]+\.[\w-]+\.[\w-]+$/, 'El token de Google no tiene el formato esperado.'),
 });
 
+/**
+ * El código del botón «Activar mi acceso» del correo (26-oct). Va en el cuerpo y
+ * no en la dirección, para que no quede escrito en los registros del servidor.
+ */
+const codigoDeActivacion = z
+  .string({ required_error: 'Falta el código de activación.' })
+  .trim()
+  .min(6, 'El código no está completo.')
+  .max(40);
+
+const verActivacionSchema = z.object({ codigo: codigoDeActivacion });
+
+/**
+ * Activar con una cuenta nueva. El correo no llega aquí: es el del código, el
+ * mismo al que se mandó el botón, y lo pone el servidor.
+ */
+const activarSchema = z.object({
+  codigo: codigoDeActivacion,
+  firstName: name('El nombre'),
+  lastName: name('El apellido'),
+  password,
+});
+
 module.exports = {
+  verActivacionSchema,
+  activarSchema,
   googleSchema,
   registerSchema,
   loginSchema,

@@ -409,6 +409,34 @@ async function contratoDelProducto(productCode) {
 }
 
 /**
+ * El código, si todavía se puede canjear. Si no, el mismo error que da el canje.
+ *
+ * Lo usan el canje y la página «Activar mi acceso» del botón del correo, que
+ * tiene que decir lo mismo antes de pedir nada.
+ */
+async function buscarCanjeable(code) {
+  const normalizado = normalizarCodigo(code);
+  const registro = await licenseRepository.findCodeByHash(hashToken(normalizado));
+
+  if (!registro) throw codigoInvalido();
+
+  if (registro.status === 'REDEEMED') {
+    throw codigoInvalido(ERROR_CODES.LICENSE_CODE_USED);
+  }
+
+  if (registro.status === 'VOID') throw codigoInvalido();
+
+  if (registro.expiresAt && registro.expiresAt <= new Date()) {
+    throw new AppError('Ese código caducó. Escríbenos y te damos uno nuevo.', {
+      statusCode: 400,
+      code: ERROR_CODES.LICENSE_CODE_INVALID,
+    });
+  }
+
+  return registro;
+}
+
+/**
  * El plan de «Preparar documento» que vende un código, o null si no vende uno.
  *
  * Un código de activación guarda en `productCode` el código del grupo de
@@ -895,6 +923,23 @@ const licenseService = {
   },
 
   /**
+   * Lo que enseña la página «Activar mi acceso» antes de pedir nada (26-oct):
+   * a qué correo se mandó el código y qué entrega. Falla igual que el canje si
+   * el código no sirve.
+   */
+  async vistaDelCodigo(code) {
+    const registro = await buscarCanjeable(code);
+    const contrato = await contratoDelProducto(registro.productCode);
+    const membresia = contrato.planId ? null : await planDeMembresia(registro.productCode);
+
+    return {
+      email: registro.buyerEmail ?? null,
+      producto: membresia?.name ?? contrato.nombre,
+      conector: !membresia,
+    };
+  },
+
+  /**
    * Canjea un código y entrega la licencia con su URL de conector.
    *
    * La URL lleva el token dentro, así que el comprador puede verla y, si quiere,
@@ -902,23 +947,7 @@ const licenseService = {
    * (ver `license.detector.js`) y se corta revocando.
    */
   async redeemCode({ userId, code }) {
-    const normalizado = normalizarCodigo(code);
-    const registro = await licenseRepository.findCodeByHash(hashToken(normalizado));
-
-    if (!registro) throw codigoInvalido();
-
-    if (registro.status === 'REDEEMED') {
-      throw codigoInvalido(ERROR_CODES.LICENSE_CODE_USED);
-    }
-
-    if (registro.status === 'VOID') throw codigoInvalido();
-
-    if (registro.expiresAt && registro.expiresAt <= new Date()) {
-      throw new AppError('Ese código caducó. Escríbenos y te damos uno nuevo.', {
-        statusCode: 400,
-        code: ERROR_CODES.LICENSE_CODE_INVALID,
-      });
-    }
+    const registro = await buscarCanjeable(code);
 
     // Duración y topes salen del plan del producto, igual que en una compra,
     // salvo que la venta pactara otro plazo: entonces manda el del código.

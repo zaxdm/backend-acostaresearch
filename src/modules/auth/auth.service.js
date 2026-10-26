@@ -13,6 +13,7 @@ const tokenRepository = require('./token.repository');
 const pendingRepository = require('./pendingRegistration.repository');
 const googleVerifier = require('./google.verifier');
 const billingService = require('../billing/billing.service');
+const licenseService = require('../licensing/license.service');
 const { sendMail } = require('../../lib/mailer');
 const { emailVerificationCode, passwordResetCode } = require('../../lib/emailTemplates');
 const prisma = require('../../lib/prisma');
@@ -434,6 +435,99 @@ const authService = {
       user: publicUser,
       creada,
       accessToken: signAccessToken({ userId: user.id, role: user.role, email: user.email, sessionVersion: user.sessionVersion ?? 0 }),
+      refreshToken: token,
+      refreshExpiresAt: expiresAt,
+    };
+  },
+
+  /**
+   * La página del botón «Activar mi acceso» (26-oct): qué entrega el código, a
+   * qué correo se mandó y si ese correo ya tiene cuenta. Quien la consulta tiene
+   * el código, que solo viaja en ese correo; por eso puede saber si su propio
+   * correo está registrado.
+   */
+  async verActivacion(codigo) {
+    const vista = await licenseService.vistaDelCodigo(codigo);
+    const existente = vista.email ? await userRepository.findByEmail(vista.email) : null;
+    const porReclamar = existente ? await userRepository.findPorReclamar(vista.email) : null;
+
+    return { ...vista, tieneCuenta: Boolean(existente && !porReclamar) };
+  },
+
+  /**
+   * Activar desde el botón del correo con una cuenta nueva, en un solo paso.
+   *
+   * El botón llega al correo al que se mandó el código, y el código solo viaja
+   * en ese correo: tenerlo prueba lo mismo que el código de 6 cifras del alta.
+   * Por eso la cuenta nace ya verificada y con el correo del código, que aquí
+   * no se puede cambiar. Quien quiera otro correo va por el registro normal.
+   *
+   * Orden: comprobar el código, crear la cuenta, canjear y abrir la sesión. Si
+   * el canje falla después de crear la cuenta (otro lo canjeó un instante
+   * antes), la cuenta queda creada y se puede entrar con ella.
+   */
+  async activarConCodigo({ codigo, firstName, lastName, password }, context) {
+    const vista = await licenseService.vistaDelCodigo(codigo);
+
+    if (!vista.email) {
+      throw new AppError(
+        'Este código no lleva correo. Créate una cuenta y canjéalo en la página de precios.',
+        { statusCode: 400, code: ERROR_CODES.LICENSE_CODE_INVALID },
+      );
+    }
+
+    const existente = await userRepository.findByEmail(vista.email);
+    const porReclamar = existente ? await userRepository.findPorReclamar(vista.email) : null;
+    if (existente && !porReclamar) {
+      throw new ConflictError(
+        'Ya tienes una cuenta con este correo. Entra con ella para activar tu acceso.',
+        ERROR_CODES.EMAIL_ALREADY_REGISTERED,
+      );
+    }
+
+    const datosUsuario = {
+      firstName,
+      lastName,
+      passwordHash: await hashPassword(password),
+      emailVerifiedAt: new Date(),
+    };
+
+    // La cuenta que abrió una compra en Hotmart se completa en vez de crear otra.
+    const user = porReclamar
+      ? await userRepository.update(porReclamar.id, datosUsuario)
+      : await userRepository.create({ email: vista.email, ...datosUsuario });
+
+    // Un registro a medias con este correo ya no sirve: la cuenta existe.
+    await prisma.pendingRegistration.deleteMany({ where: { email: vista.email } });
+
+    try {
+      await billingService.grantTrial(user.id);
+    } catch (error) {
+      logger.error({ err: error, userId: user.id }, 'No se pudo activar la prueba gratuita');
+    }
+
+    logger.info({ userId: user.id, email: user.email }, 'Cuenta creada desde el botón del código');
+
+    const canje = await licenseService.redeemCode({ userId: user.id, code: codigo });
+
+    const { token, expiresAt, data } = await issueRefreshToken({
+      userId: user.id,
+      context,
+      sessionVersion: user.sessionVersion ?? 0,
+    });
+    await tokenRepository.createRefreshToken(data);
+
+    const publicUser = await userRepository.update(user.id, { lastLoginAt: new Date() });
+
+    return {
+      user: publicUser,
+      canje,
+      accessToken: signAccessToken({
+        userId: user.id,
+        role: user.role,
+        email: user.email,
+        sessionVersion: user.sessionVersion ?? 0,
+      }),
       refreshToken: token,
       refreshExpiresAt: expiresAt,
     };

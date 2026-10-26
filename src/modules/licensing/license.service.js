@@ -6,6 +6,7 @@ const logger = require('../../config/logger');
 const { ERROR_CODES } = require('../../config/constants');
 const { sendMail } = require('../../lib/mailer');
 const plantillas = require('../../lib/emailTemplates');
+const { guiaDeInstalacion } = require('../../lib/guiaAdjunta');
 const licenseRepository = require('./license.repository');
 const { revisarCorreos } = require('../../shared/utils/correo');
 const { analizar, NIVELES } = require('./license.detector');
@@ -479,15 +480,22 @@ function avisarDeLaMembresia({ userId, planName, docsPorMes, expiresAt, renovada
  * Por eso la promesa que devuelve nunca falla.
  */
 function avisarDelCodigo({ buyerEmail, codigos, planName, expiresAt, conector = true }) {
-  return sendMail({
-    to: buyerEmail,
-    ...plantillas.activationCode({ codes: codigos, planName, expiresAt, conector }),
-  }).catch((error) => {
-    logger.error(
-      { err: error, buyerEmail },
-      'No se pudo enviar el código de activación al comprador',
-    );
-  });
+  // Con el conector va también la guía de instalación en PDF (26-oct): quien
+  // recibe el código es un cliente nuevo y lo primero que necesita es instalarlo.
+  return (conector ? guiaDeInstalacion() : Promise.resolve([]))
+    .then((attachments) =>
+      sendMail({
+        to: buyerEmail,
+        ...plantillas.activationCode({ codes: codigos, planName, expiresAt, conector }),
+        attachments,
+      }),
+    )
+    .catch((error) => {
+      logger.error(
+        { err: error, buyerEmail },
+        'No se pudo enviar el código de activación al comprador',
+      );
+    });
 }
 
 /**

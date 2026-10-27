@@ -179,3 +179,38 @@ test('el motivo de las cifras dice solo lo que falta y lo que sobra', () => {
   assert.match(motivo, /se perdían las cifras 1, 2, 4, 5/);
   assert.doesNotMatch(motivo, /→|21/);
 });
+
+test('lo rehecho se mide contra lo limpio: si copia su plantilla, se vuelve a rehacer; lo limpio no se manda', async () => {
+  const limpio =
+    'Los operarios del almacén central reciben la mercancía por la mañana y la despachan por la tarde según el orden que fija el jefe de turno de cada semana.';
+  // Lo que devuelve el primer paso: casi el párrafo limpio, palabra por palabra.
+  const calcado = limpio.replace('el jefe de turno', 'el encargado de turno');
+  const nuevo =
+    'El personal operativo que recibe, ubica y despacha la mercancía dará los datos de cada trabajador, y ese grupo es la población que se estudia mientras dure la investigación.';
+  const mandados = [];
+  const aRomper = [];
+  const generar = async (peticion) => {
+    const { parrafos } = JSON.parse(peticion.mensajes[0].texto);
+    const salida = {};
+    for (const [clave, valor] of Object.entries(parrafos)) {
+      mandados.push(clave);
+      if (typeof valor === 'object' && valor.arquitectura) {
+        aRomper.push({ clave, parecidoA: valor.parecido_a });
+        salida[clave] = nuevo;
+      } else {
+        salida[clave] = typeof valor === 'object' ? nuevo : calcado;
+      }
+    }
+    return { texto: JSON.stringify(salida), uso: { promptTokenCount: 1, candidatesTokenCount: 1 } };
+  };
+  const { cambios } = await humanizador.humanizar({
+    parrafos: [parrafo('1', limpio), parrafo('2', MARCADO)],
+    generar,
+    modelos: ['falso'],
+    soloClaves: new Set(['2']),
+  });
+  assert.ok(mandados.every((clave) => clave === '2'), mandados.join(','));
+  assert.deepEqual(aRomper[0], { clave: '2', parecidoA: limpio });
+  assert.equal(cambios['2'].texto, nuevo);
+  assert.equal(cambios['1'], undefined);
+});

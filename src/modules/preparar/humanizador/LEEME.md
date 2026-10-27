@@ -208,3 +208,13 @@ las fundió (118 oraciones frente a 146; media 33,6 frente a 27,1). Con reporte 
 
 Resultado en local (v3): 138 oraciones, media 30,2, 10 de 31 sin cumplir. Dos párrafos marcados se quedaron
 en el original porque el modelo cambiaba una cifra en los tres intentos. Falta Turnitin.
+
+## Con reporte: lo rehecho se mide contra lo que no se toca (27-oct-2026)
+
+Hasta hoy, con reporte, las plantillas, las rondas contra la plantilla, las pasadas de moldes y `ya_usadas`
+solo veían los párrafos marcados. Turnitin, en cambio, lee lo rehecho junto a lo limpio: un párrafo rehecho
+que abre igual que tres limpios, o que copia la plantilla del limpio de al lado, vuelve a salir marcado y nada
+lo detectaba. Ahora `humanizar` separa `prosa` (lo que se reescribe) de `fijos` (lo limpio y los capítulos
+que no se tocan) y mide todo contra el documento entero, con los fijos primero para que el señalado sea
+siempre el rehecho. Lo limpio sigue sin mandarse al modelo. Sin reporte ni capítulos excluidos no cambia nada.
+Falta Turnitin.

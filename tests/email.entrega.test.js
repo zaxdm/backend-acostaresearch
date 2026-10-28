@@ -19,7 +19,7 @@ const URL_CONECTOR = 'https://api.acostaresearch.com/mcp/QujLi8QdMQ7wyB0q8d1r_LW
 const PLAN = 'Método de tesis · 9 capítulos';
 const VENCE = new Date('2026-12-04T05:00:00Z'); // 4 de diciembre a medianoche en Lima
 
-test('el correo de una licencia nueva lleva la URL en el texto y en el HTML', () => {
+test('el correo de una licencia nueva NO lleva la URL y dice dónde sacarla (28-oct)', () => {
   const mail = plantillas.licenseReady({
     firstName: 'María',
     planName: PLAN,
@@ -28,8 +28,11 @@ test('el correo de una licencia nueva lleva la URL en el texto y en el HTML', ()
     via: 'online',
   });
 
-  assert.ok(mail.text.includes(URL_CONECTOR), 'la versión de texto plano no trae la URL');
-  assert.ok(mail.html.includes(URL_CONECTOR), 'la versión HTML no trae la URL');
+  for (const cuerpo of [mail.text, mail.html]) {
+    assert.ok(!cuerpo.includes(URL_CONECTOR), 'el correo trae la URL del conector');
+    assert.ok(!/\/mcp\//.test(cuerpo), 'el correo insinúa una URL del conector');
+    assert.match(cuerpo, /Obtener mi URL/);
+  }
 
   // Quien lea esto en un mes tiene que poder buscarla por el asunto.
   assert.match(mail.subject, /acceso/i);
@@ -52,18 +55,32 @@ test('el correo del acceso lleva el video de inicio, además de la página de vi
   }
 });
 
-test('avisa de que la URL no se puede reenviar', () => {
-  const mail = plantillas.licenseReady({
-    firstName: 'María',
+test('el correo del código trae solo el código, sin botón, y cambia si ya tiene cuenta (28-oct)', () => {
+  const sin = plantillas.activationCode({ codes: ['ACR-AAAA-BBBB-CCCC'], planName: PLAN, expiresAt: null });
+  const con = plantillas.activationCode({
+    codes: ['ACR-AAAA-BBBB-CCCC'],
     planName: PLAN,
-    connectorUrl: URL_CONECTOR,
-    expiresAt: VENCE,
-    via: 'yape',
+    expiresAt: null,
+    tieneCuenta: true,
   });
 
-  // Sin este aviso, quien borre el correo se queda sin salida y no lo sabe.
-  assert.match(mail.text, /no podemos volver a enviártela/i);
-  assert.match(mail.html, /Guárdala/);
+  for (const mail of [sin, con]) {
+    // Sin botón ni enlace que active solo: el código se pega a mano en /planes.
+    assert.ok(!mail.html.includes('Activar mi acceso'), 'sigue el botón «Activar mi acceso»');
+    assert.ok(!/auth\/activar/.test(mail.html + mail.text), 'sigue el enlace a /auth/activar');
+    assert.ok(!/planes\?codigo=/.test(mail.html + mail.text), 'el enlace a precios lleva el código puesto');
+    assert.ok(mail.html.includes('ACR-AAAA-BBBB-CCCC'));
+    assert.match(mail.html, /Pagaste por Yape o transferencia/);
+    assert.match(mail.html, /Canjear/);
+    // Ninguno promete la URL por correo.
+    assert.ok(!/te llega también por correo/.test(mail.text));
+    // Sin configurar, el video de siempre; nunca uno vacío.
+    assert.ok(mail.html.includes('https://youtu.be/7L3FihV7seI'));
+  }
+
+  assert.match(sin.text, /Crea tu cuenta/);
+  assert.match(con.text, /Entra con tu cuenta/);
+  assert.ok(!con.text.includes('Crea tu cuenta'), 'a quien tiene cuenta le pide crearla');
 });
 
 test('una renovación no menciona ninguna URL', () => {

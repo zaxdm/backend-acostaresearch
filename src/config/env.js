@@ -381,6 +381,11 @@ const schema = z.object({
   GUIAS_DIR: z.string().default(path.resolve(__dirname, '../../storage/guias')),
   // Dirección pública de la guía. Vacía = se enlaza la copia de la web.
   GUIA_URL: vacioComoAusente(z.string().url()),
+  // Los videos del correo del código (28-oct): uno para quien aún no tiene
+  // cuenta (crearla y activar) y otro para quien ya la tiene (entrar y
+  // activar). Vacíos = el video de inicio de siempre.
+  VIDEO_CREAR_CUENTA_URL: vacioComoAusente(z.string().url()),
+  VIDEO_ACTIVAR_CON_CUENTA_URL: vacioComoAusente(z.string().url()),
   // Techo de la captura. Una foto de pantalla de móvil no pasa de 2-3 MB.
   PROOF_MAX_BYTES: z.coerce.number().int().positive().default(6 * 1024 * 1024),
 

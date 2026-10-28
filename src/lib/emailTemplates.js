@@ -516,9 +516,14 @@ function enMayuscula(frase) {
 }
 
 /**
- * Al comprador: su acceso al método está activo, con la URL del conector.
+ * Al comprador: su acceso al método está activo.
  *
- * La URL viaja por correo aun siendo la credencial completa del acceso, y es
+ * 28-oct-2026: YA NO LLEVA LA URL. El dueño eligió que la URL no se enseñe al
+ * canjear ni vaya por correo: el comprador la saca en su panel («Por dónde
+ * vas» → «Obtener mi URL») cuando va a conectar, y el video de conectar se lo
+ * enseña. Lo de abajo cuenta por qué antes sí la llevaba.
+ *
+ * La URL viajaba por correo aun siendo la credencial completa del acceso, y era
  * una decisión, no un descuido. La alternativa —mandarlo al panel a generarla
  * él— mete un paso justo en el momento en que acaba de pagar; y quien paga por
  * Yape ni siquiera está delante de la pantalla cuando aprobamos el
@@ -558,7 +563,24 @@ function enMayuscula(frase) {
  */
 const VIDEO_DE_INICIO = 'https://youtu.be/7L3FihV7seI';
 
-function licenseReady({ firstName, planName, connectorUrl, expiresAt, via }) {
+/**
+ * El video del correo del código, según quien lo recibe (28-oct): si ese correo
+ * ya tiene cuenta, el de «entrar y activar»; si no, el de «crear la cuenta y
+ * activar». Sin configurar, el de inicio de siempre.
+ */
+function videoDeActivar(tieneCuenta) {
+  const propio = tieneCuenta ? env.VIDEO_ACTIVAR_CON_CUENTA_URL : env.VIDEO_CREAR_CUENTA_URL;
+  return propio || VIDEO_DE_INICIO;
+}
+
+/** Dónde se saca la URL desde el 28-oct: ya no se enseña al canjear ni va por correo. */
+const DONDE_LA_URL =
+  'En tu panel, en «Por dónde vas», pulsa «Obtener mi URL» y pégala en Claude, ChatGPT o Grok.';
+
+// Desde el 28-oct este correo NO lleva la URL (pedido del dueño): se saca en el
+// panel con «Obtener mi URL». Se sigue recibiendo `connectorUrl` para no tocar a
+// quien lo llama, pero no se usa.
+function licenseReady({ firstName, planName, expiresAt, via }) {
   const panel = `${appUrl()}/perfil`;
   const guia = guiaUrl();
   // /tutoriales se retiró el 20-oct; los correos ya enviados redirigen aquí.
@@ -569,20 +591,14 @@ function licenseReady({ firstName, planName, connectorUrl, expiresAt, via }) {
 
   return {
     subject: 'Tu acceso al método está activo · Acosta Research',
-    // El preheader repite que la URL va dentro. Es lo que hace que este correo
-    // se reconozca dentro de un mes, buscando «url» en la bandeja.
     text: [
       `Hola ${firstName}:`,
       '',
       `${enMayuscula(confirmacion)} y tu acceso ya está activo. ${vigencia}`,
       '',
-      'Esta es tu URL personal del conector:',
-      '',
-      connectorUrl,
-      '',
       // Sin cortar la frase a mitad: el cliente de correo ya envuelve solo, y
       // una línea partida a mano no se encuentra al buscar en la bandeja.
-      'GUÁRDALA. Por seguridad no la almacenamos en claro, así que no podemos volver a enviártela. Si la pierdes, genera una nueva desde tu panel.',
+      `Para conectarlo: ${DONDE_LA_URL}`,
       '',
       'EMPIEZA POR AQUÍ — mira este video:',
       VIDEO_DE_INICIO,
@@ -591,8 +607,8 @@ function licenseReady({ firstName, planName, connectorUrl, expiresAt, via }) {
       `Todos los videos (tu primer capítulo, tus fuentes, qué hacer si algo falla): ${videos}`,
       '',
       'Si prefieres leerlo, son tres pasos:',
-      '  1. Abre Claude y entra en Configuración → Conectores.',
-      '  2. Pulsa «Añadir conector personalizado» y pega la URL de arriba.',
+      '  1. En tu panel, en «Por dónde vas», pulsa «Obtener mi URL» y cópiala.',
+      '  2. En Claude: Personalización → Conectores → Agregar → Agregar conector personalizado, y pégala.',
       '  3. Escríbele «trabajemos mi tesis» y pídele que use el conector.',
       '',
       `Guía de instalación con capturas (PDF): ${guia}`,
@@ -605,17 +621,9 @@ function licenseReady({ firstName, planName, connectorUrl, expiresAt, via }) {
       `<p style="margin:0 0 20px;font-size:15px;line-height:1.6">Hola ${escapar(firstName)}:
          ${confirmacionDePago(via, escapar(planName))} y tu acceso ya está activo. ${vigencia}</p>
 
-       <p style="margin:0 0 8px;font-size:13px;font-weight:650;color:#52606d">
-         TU URL PERSONAL DEL CONECTOR
-       </p>
-       <p style="margin:0 0 14px;padding:14px 16px;background:#101a2e;border-radius:10px;
-                 font-family:Consolas,'Courier New',monospace;font-size:13px;line-height:1.5;
-                 color:#dbe6ff;word-break:break-all">${escapar(connectorUrl)}</p>
-
-       <p style="margin:0 0 24px;padding:12px 16px;background:#fdf3e3;border-radius:10px;
-                 font-size:13.5px;line-height:1.6;color:#96590d">
-         <strong>Guárdala.</strong> Por seguridad no la almacenamos en claro, así que no podemos
-         volver a enviártela. Si la pierdes, generas una nueva desde tu panel en un segundo.
+       <p style="margin:0 0 24px;padding:12px 16px;background:#f2f6fe;border-radius:10px;
+                 font-size:14px;line-height:1.6;color:#1a3fa8">
+         <strong>Para conectarlo:</strong> ${DONDE_LA_URL}
        </p>
 
        <p style="margin:0 0 10px;font-size:15px;font-weight:650">Empieza por aquí</p>
@@ -647,11 +655,11 @@ function licenseReady({ firstName, planName, connectorUrl, expiresAt, via }) {
               style="margin:0 0 22px;font-size:14px;line-height:1.6;color:#52606d">
          <tr>
            <td style="padding:0 10px 8px 0;color:#1a56db;font-weight:700">1</td>
-           <td style="padding:0 0 8px">Abre Claude y entra en <strong>Configuración → Conectores</strong>.</td>
+           <td style="padding:0 0 8px">En tu panel, en <strong>Por dónde vas</strong>, pulsa <strong>Obtener mi URL</strong> y cópiala.</td>
          </tr>
          <tr>
            <td style="padding:0 10px 8px 0;color:#1a56db;font-weight:700">2</td>
-           <td style="padding:0 0 8px">Pulsa <strong>Añadir conector personalizado</strong> y pega la URL de arriba.</td>
+           <td style="padding:0 0 8px">En Claude: <strong>Personalización → Conectores → Agregar → Agregar conector personalizado</strong>, y pégala.</td>
          </tr>
          <tr>
            <td style="padding:0 10px 0 0;color:#1a56db;font-weight:700">3</td>
@@ -669,7 +677,7 @@ function licenseReady({ firstName, planName, connectorUrl, expiresAt, via }) {
        <p style="margin:0;font-size:13px;line-height:1.6;color:#8b95a6">
          Esta licencia es individual. Compartir la URL puede provocar que se desactive.
        </p>`,
-      { preheader: 'Dentro va tu URL personal del conector. Guárdala: no podemos reenviártela.' },
+      { preheader: 'Tu acceso está activo. Saca tu URL del conector en tu panel.' },
     ),
   };
 }
@@ -1145,19 +1153,27 @@ function manualPaymentRejected({ firstName, planName, motivo }) {
  * Prometerle un conector a quien compró documentos le deja esperando un correo
  * que no va a llegar.
  */
-function activationCode({ codes, planName, expiresAt, conector = true }) {
+/**
+ * `tieneCuenta` (28-oct): si el correo del comprador ya tiene cuenta, el primer
+ * paso es entrar con ella en vez de crear una, y el video es el de «entrar y
+ * activar». Lo decide quien envía (`avisarDelCodigo`), mirando la base.
+ *
+ * SIN BOTÓN (28-oct, pedido del dueño): el correo ya no trae «Activar mi
+ * acceso». Va el código y dos pasos: crear la cuenta (o entrar) y pegarlo en la
+ * página de precios, en «¿Pagaste por Yape o transferencia?». El enlace a la
+ * página va sin el código: se pega a mano, como enseña el video. La página
+ * /auth/activar sigue viva para los correos que ya salieron con el botón.
+ */
+function activationCode({ codes, planName, expiresAt, conector = true, tieneCuenta = false }) {
+  const video = videoDeActivar(tieneCuenta);
   const registro = `${appUrl()}/auth/registro`;
-  const canje =
-    codes.length === 1
-      ? `${appUrl()}/planes?codigo=${encodeURIComponent(codes[0])}`
-      : `${appUrl()}/planes`;
-  // El botón «Activar mi acceso» (26-oct). El código va detrás de «#», que el
-  // navegador no manda al servidor: así no queda escrito en ningún registro.
-  const activar = (codigo) => `${appUrl()}/auth/activar#${encodeURIComponent(codigo)}`;
+  const acceso = `${appUrl()}/auth/login`;
+  const canje = `${appUrl()}/planes`;
   const vence = fecha(expiresAt);
   const caduca = vence ? ` Tienes hasta el ${vence} para canjearlo.` : '';
   const varios = codes.length > 1;
   const titulo = varios ? 'Tus códigos de activación' : 'Tu código de activación';
+  const recuadro = '«¿Pagaste por Yape o transferencia?»';
 
   const bloques = codes
     .map(
@@ -1166,17 +1182,26 @@ function activationCode({ codes, planName, expiresAt, conector = true }) {
                      padding:22px 16px">
              <div style="font-family:Consolas,'Courier New',monospace;font-size:23px;font-weight:700;
                          letter-spacing:.06em;color:#1a3fa8;word-break:break-all">${escapar(codigo)}</div>
-             ${
-               varios
-                 ? `<div style="margin-top:10px;font-size:14px"><a href="${escapar(activar(codigo))}"
-                      style="color:#1a56db;font-weight:650">Activar este acceso</a></div>`
-                 : ''
-             }
            </td>
          </tr>
          <tr><td style="height:10px;line-height:10px">&nbsp;</td></tr>`,
     )
     .join('');
+
+  const paso1Texto = tieneCuenta
+    ? `Entra con tu cuenta en ${acceso}`
+    : `Crea tu cuenta en ${registro} (con este mismo correo)`;
+  const paso1Html = tieneCuenta
+    ? `Entra con tu cuenta en <a href="${acceso}" style="color:#1a56db">acostaresearch.com</a>.`
+    : `Crea tu cuenta en <a href="${registro}" style="color:#1a56db">acostaresearch.com</a>,
+       con este mismo correo.`;
+  const paso2Texto = `En la página de precios (${canje}), en ${recuadro}, pega ${varios ? 'cada código' : 'tu código'} y pulsa «Canjear».`;
+  const paso2Html = `En <a href="${canje}" style="color:#1a56db">la página de precios</a>, en
+       <strong>${recuadro}</strong>, pega ${varios ? 'cada código' : 'tu código'} y pulsa
+       <strong>«Canjear»</strong>.`;
+  const despues = conector
+    ? `En cuanto lo canjees entras a tu panel. Para conectarlo: ${DONDE_LA_URL}`
+    : 'En cuanto lo canjees podrás preparar tus documentos desde la web. No hay nada que instalar.';
 
   return {
     // Con un solo código —que es el caso normal— va en el asunto. Con varios no
@@ -1189,92 +1214,61 @@ function activationCode({ codes, planName, expiresAt, conector = true }) {
       '',
       `Recibimos tu pago de «${planName}».`,
       '',
-      ...(varios
-        ? [
-            'Para activar cada acceso, abre su enlace:',
-            ...codes.map((codigo) => `  ${codigo}: ${activar(codigo)}`),
-          ]
-        : [
-            'Activa tu acceso aquí (solo te pedimos tu nombre y una contraseña):',
-            activar(codes[0]),
-          ]),
-      '',
-      `¿El enlace no funciona? ${varios ? 'Tus códigos son' : 'Tu código es'}:`,
+      `${varios ? 'Tus códigos de activación son' : 'Tu código de activación es'}:`,
       ...codes.map((codigo) => `  ${codigo}`),
-      `Es de un solo uso.${caduca} Crea tu cuenta en ${registro} y pégalo en ${canje}, en «¿Compraste por Yape o transferencia?».`,
+      `${varios ? 'Son' : 'Es'} de un solo uso.${caduca}`,
       '',
-      conector
-        ? 'En cuanto lo actives verás tu URL personal del conector, que es lo que se pega en Claude, y te llega también por correo.'
-        : 'En cuanto lo actives podrás preparar tus documentos desde la web. No hay nada que instalar.',
+      'Cómo activarlo:',
+      `  1. ${paso1Texto}.`,
+      `  2. ${paso2Texto}`,
+      '',
+      despues,
       '',
       // La guía va ya con el código (24-oct, Benicio): quien paga quiere ver
       // cómo se instala sin esperar al segundo correo.
       ...(conector
-        ? [
-            'Cómo instalarlo, en video:',
-            VIDEO_DE_INICIO,
-            `Guía de instalación con capturas (PDF): ${guiaUrl()}`,
-            '',
-          ]
+        ? ['Cómo activarlo, en video:', video, `Guía de instalación con capturas (PDF): ${guiaUrl()}`, '']
         : []),
       'Si algo no te cuadra, respóndenos a este mensaje.',
     ].join('\n'),
     html: layout(
       titulo,
       `<p style="margin:0 0 20px;font-size:15px;line-height:1.6">Hola: recibimos tu pago de
-         <strong>${escapar(planName)}</strong>.
-         ${
-           varios
-             ? 'Abre el enlace de cada código para activar su acceso.'
-             : 'Pulsa el botón: solo te pedimos tu nombre y una contraseña, y tu acceso queda activo.'
-         }</p>
-${
-  varios
-    ? ''
-    : `
-       <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 26px">
-         <tr>
-           <td style="border-radius:10px;background:#1a56db">
-             <a href="${escapar(activar(codes[0]))}" style="display:inline-block;padding:14px 30px;
-                       font-size:16px;font-weight:650;color:#ffffff;text-decoration:none">Activar mi acceso</a>
-           </td>
-         </tr>
-       </table>
+         <strong>${escapar(planName)}</strong>. ${varios ? 'Estos son tus códigos' : 'Este es tu código'}
+         de activación:</p>
 
-       <p style="margin:0 0 8px;font-size:13px;color:#7b8794">¿El botón no funciona? Tu código es:</p>
-`
-}
        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
          ${bloques}
        </table>
 
-       <p style="margin:12px 0 22px;font-size:13.5px;line-height:1.65;color:#7b8794">
-         ${varios ? 'Son de un solo uso' : 'Es de un solo uso'}.${caduca} Si el
-         ${varios ? 'enlace' : 'botón'} no te funciona, crea tu cuenta en
-         <a href="${registro}" style="color:#7b8794">acostaresearch.com</a> y pega el código en
-         <a href="${canje}" style="color:#7b8794">la página de precios</a>, en «¿Compraste por Yape
-         o transferencia?».
+       <p style="margin:4px 0 22px;font-size:13.5px;line-height:1.65;color:#7b8794">
+         ${varios ? 'Son de un solo uso' : 'Es de un solo uso'}.${caduca}
        </p>
 
-       <p style="margin:0 0 18px;font-size:14px;line-height:1.65;color:#52606d">
-         ${
-           conector
-             ? `En cuanto lo actives verás tu URL personal del conector, que es lo que se pega en
-                Claude, y te llega también por correo.`
-             : `En cuanto lo actives podrás preparar tus documentos desde la web. No hay nada que
-                instalar.`
-         }
-       </p>
+       <p style="margin:0 0 10px;font-size:15px;font-weight:650">Cómo activarlo</p>
+       <table role="presentation" cellpadding="0" cellspacing="0" border="0"
+              style="margin:0 0 20px;font-size:14px;line-height:1.6;color:#52606d">
+         <tr>
+           <td style="padding:0 10px 8px 0;color:#1a56db;font-weight:700;vertical-align:top">1</td>
+           <td style="padding:0 0 8px">${paso1Html}</td>
+         </tr>
+         <tr>
+           <td style="padding:0 10px 0 0;color:#1a56db;font-weight:700;vertical-align:top">2</td>
+           <td>${paso2Html}</td>
+         </tr>
+       </table>
+
+       <p style="margin:0 0 18px;font-size:14px;line-height:1.65;color:#52606d">${despues}</p>
 ${
   conector
     ? `
        <p style="margin:0 0 10px;font-size:13px;font-weight:650;color:#52606d">
-         CÓMO INSTALARLO
+         CÓMO ACTIVARLO, EN VIDEO
        </p>
        <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 12px">
          <tr>
            <td style="border-radius:10px;background:#1a56db">
-             <a href="${VIDEO_DE_INICIO}" style="display:inline-block;padding:13px 26px;font-size:15px;
+             <a href="${video}" style="display:inline-block;padding:13px 26px;font-size:15px;
                        font-weight:650;color:#ffffff;text-decoration:none">▶ Ver el video</a>
            </td>
          </tr>
@@ -1291,7 +1285,7 @@ ${
       {
         preheader: varios
           ? `${codes.length} códigos de activación de ${escapar(planName)}.`
-          : `Tu código es ${escapar(codes[0])}. Actívalo con un solo botón.`,
+          : `Tu código es ${escapar(codes[0])}. Créalo o entra y canjéalo en la página de precios.`,
       },
     ),
   };

@@ -118,12 +118,13 @@ test('el formulario de activar no admite un correo: lo pone el servidor', () => 
   assert.equal('email' in r.data, false);
 });
 
-test('el correo del código lleva el botón con el código detrás de «#»', () => {
+// 28-oct: el correo ya no trae el botón (pedido del dueño); se canjea pegando el
+// código en /planes. La página /auth/activar sigue para los correos ya enviados.
+test('el correo del código ya no lleva el botón: solo el código, a la vista y en el asunto', () => {
   const mail = plantillas.activationCode({ codes: [CODIGO], planName: 'Método de tesis', expiresAt: null });
 
-  assert.match(mail.html, /href="[^"]*\/auth\/activar#ACR-AB12-CD34-EF56"[^>]*>Activar mi acceso</);
-  assert.match(mail.text, /\/auth\/activar#ACR-AB12-CD34-EF56/);
-  // El código sigue a la vista, por si el botón falla.
+  assert.ok(!/\/auth\/activar/.test(mail.html + mail.text), 'sigue el enlace a /auth/activar');
+  assert.ok(!mail.html.includes('Activar mi acceso'), 'sigue el botón');
   assert.match(mail.html, />ACR-AB12-CD34-EF56</);
   assert.match(mail.subject, /ACR-AB12-CD34-EF56/);
 });

@@ -20,6 +20,7 @@ const { traeHerramientas } = require('../productos/producto.perfil');
 const proofStorage = require('../payments/proof.storage');
 const { enlaceTerminado } = require('../trials/trial.plazo');
 const referidosService = require('../referidos/referidos.service');
+const userRepository = require('../users/user.repository');
 const {
   generateOpaqueToken,
   hashToken,
@@ -507,14 +508,36 @@ function avisarDeLaMembresia({ userId, planName, docsPorMes, expiresAt, renovada
  * administrador los tiene en pantalla para copiarlos. Se registra y se sigue.
  * Por eso la promesa que devuelve nunca falla.
  */
+/**
+ * ¿Ese correo ya tiene una cuenta con la que entrar? (28-oct) Decide qué video
+ * y qué texto lleva el correo del código. Mismo criterio que «Activar mi
+ * acceso» (`authService.activarConCodigo`): la cuenta a medias que abrió una
+ * compra de Hotmart no cuenta, porque esa se completa creando la contraseña.
+ * Si la consulta falla, se manda la versión de «crear cuenta»: la página del
+ * botón se adapta igual al abrirla.
+ */
+async function tieneCuentaYa(email) {
+  try {
+    const usuario = await userRepository.findByEmail(email);
+    if (!usuario) return false;
+    return !(await userRepository.findPorReclamar(email));
+  } catch (error) {
+    logger.error({ err: error }, 'No se pudo mirar si el comprador ya tiene cuenta');
+    return false;
+  }
+}
+
 function avisarDelCodigo({ buyerEmail, codigos, planName, expiresAt, conector = true }) {
   // Con el conector va también la guía de instalación en PDF (26-oct): quien
   // recibe el código es un cliente nuevo y lo primero que necesita es instalarlo.
-  return (conector ? guiaDeInstalacion() : Promise.resolve([]))
-    .then((attachments) =>
+  return Promise.all([
+    conector ? guiaDeInstalacion() : Promise.resolve([]),
+    tieneCuentaYa(buyerEmail),
+  ])
+    .then(([attachments, tieneCuenta]) =>
       sendMail({
         to: buyerEmail,
-        ...plantillas.activationCode({ codes: codigos, planName, expiresAt, conector }),
+        ...plantillas.activationCode({ codes: codigos, planName, expiresAt, conector, tieneCuenta }),
         attachments,
       }),
     )

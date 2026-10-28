@@ -18,6 +18,7 @@ const {
   autorSchema,
   asesorSchema,
   retomarSchema,
+  estadoFaseSchema,
 } = require('./project.schema');
 const descarga = require('./project.descarga');
 const { PlantillaNoValida, MAXIMO_BYTES } = require('./project.plantilla');
@@ -698,6 +699,41 @@ router.patch(
       message: datos.data.capitulo
         ? 'Listo: Claude retomará por ahí.'
         : 'Listo: vuelves a la fase que toca por orden.',
+    });
+  }),
+);
+
+/**
+ * Da una fase por terminada, o la reabre, desde «Por dónde vas». Antes solo
+ * podía hacerlo la IA, y quien subía su avance nunca la veía terminada.
+ */
+router.patch(
+  '/:productCode/fases/:capitulo/estado',
+  asyncHandler(async (req, res) => {
+    const datos = estadoFaseSchema.safeParse(req.body ?? {});
+    if (!datos.success) throw new ValidationError('Indica si la fase queda terminada o no.');
+
+    const resultado = await projectService.marcarFase({
+      userId: req.user.id,
+      productCode: req.params.productCode,
+      capitulo: req.params.capitulo,
+      terminada: datos.data.terminada,
+    });
+
+    if (resultado.error === 'sin-proyecto') {
+      return res.status(404).json({
+        success: false,
+        message: 'Todavía no hay ningún proyecto de este método.',
+      });
+    }
+    if (resultado.error === 'no-es-fase') {
+      throw new ValidationError('Esa fase no es de este método.');
+    }
+
+    return ok(res, null, {
+      message: datos.data.terminada
+        ? `Listo: «${resultado.nombre}» queda terminada.`
+        : `«${resultado.nombre}» vuelve a estar en curso.`,
     });
   }),
 );

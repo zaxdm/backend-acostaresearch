@@ -148,6 +148,11 @@ const retomarSchema = z.object({
   capitulo: z.string().trim().min(1).max(80).nullable(),
 });
 
+/** Dar una fase por terminada desde el panel, o reabrirla. */
+const estadoFaseSchema = z.object({
+  terminada: z.boolean(),
+});
+
 /** Abrir otra tesis desde el panel (solo administradores): basta con un nombre. */
 const nuevaTesisSchema = z.object({
   nombre: z
@@ -161,6 +166,7 @@ module.exports = {
   autorSchema,
   asesorSchema,
   retomarSchema,
+  estadoFaseSchema,
   nuevaTesisSchema,
   guardarAvanceSchema,
   guardarCapituloSchema,

@@ -45,6 +45,7 @@ const bloquesDeAnalisis = require('../projects/project.bloques');
 const rService = require('../r/r.service');
 const { perfilDe } = require('../productos/producto.perfil');
 const scopusService = require('../scopus/scopus.service');
+const { REGLAS_DE_CONVERSACION, INSTRUCCIONES_DEL_SERVIDOR } = require('./mcp.conversacion');
 
 /**
  * Cuántas veces puede ir a Scopus cada persona desde el conector.
@@ -297,7 +298,10 @@ function avisoDeCrossref(origen, filtrosSinAplicar = []) {
  * respondiendo con los datos de otro comprador.
  */
 function construirServidor(licencia, { cliente = 'otro' } = {}) {
-  const server = new McpServer({ name: NOMBRE_SERVIDOR, version: VERSION_SERVIDOR });
+  const server = new McpServer(
+    { name: NOMBRE_SERVIDOR, version: VERSION_SERVIDOR },
+    { instructions: INSTRUCCIONES_DEL_SERVIDOR },
+  );
 
   /**
    * Los enlaces, en la forma que entienda el asistente con el que se habla.
@@ -1822,7 +1826,9 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
             return null;
           });
 
-          const partes = [varias, queDocumento, falta,memoria, redaccionPrevia, contenido.texto, consejo].filter(Boolean);
+          // Las reglas de conversación van tras el método: botones con su
+          // explicación y la fase siguiente en el mismo chat (ver mcp.conversacion).
+          const partes = [varias, queDocumento, falta,memoria, redaccionPrevia, contenido.texto, REGLAS_DE_CONVERSACION, consejo].filter(Boolean);
           if (partes.length > 1) return texto(partes.join('\n\n───────────\n\n'));
         }
 

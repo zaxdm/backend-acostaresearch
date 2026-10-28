@@ -1571,6 +1571,32 @@ async function cambiarRetomar({ userId, productCode, capitulo }) {
   return { ok: true };
 }
 
+/**
+ * Da una fase por terminada desde el panel, o la reabre.
+ *
+ * Hasta el 27-oct solo la IA podía cerrar una fase, y solo si el tesista se lo
+ * decía en el chat. Quien subía su avance veía «En curso · 5995 palabras» y
+ * «0 de 9 terminadas» sin saber qué hacer. Reabrir la deja EN_CURSO, no
+ * PENDIENTE: el texto guardado sigue ahí. Solo fases del método, como retomar.
+ */
+async function marcarFase({ userId, productCode, capitulo, terminada }) {
+  const actual = await projectRepository.buscar(userId, productCode);
+  if (!actual) {
+    const conLicencia = await projectRepository.productosConLicencia(userId);
+    if (!conLicencia.includes(productCode)) return { error: 'sin-proyecto' };
+  }
+
+  const catalogo = await skillService.listCatalog(productCode);
+  const fase = catalogo.find((s) => s.code === capitulo && !esApoyo(s.displayName));
+  if (!fase) return { error: 'no-es-fase' };
+
+  const proyecto = actual ?? (await projectRepository.asegurar(userId, productCode));
+  await projectRepository.guardarEtapa(proyecto.id, capitulo, {
+    estado: terminada ? 'LISTO' : 'EN_CURSO',
+  });
+  return { ok: true, nombre: fase.displayName };
+}
+
 /** Cómo figura en el panel el formato hecho solo con indicaciones, sin plantilla subida. */
 const FORMATO_POR_INDICACIONES = 'Formato según sus indicaciones';
 
@@ -2474,6 +2500,7 @@ module.exports = {
   cambiarAutor,
   cambiarAsesor,
   cambiarRetomar,
+  marcarFase,
   quitarPortadaDePlantilla,
   auditar,
   siguientePaso,

@@ -289,4 +289,24 @@ function repartir(parrafos, { catalogo = [], esquema = null, tipo = 'tesis' } = 
   return { porFase, sinUbicar };
 }
 
-module.exports = { repartir, faseDelTitulo, esTituloDeCapitulo, normalizar };
+/**
+ * Todo el Word como texto de UNA fase (28-oct): «Reemplazar» un capítulo desde
+ * el panel. No hace falta que traiga su título; si lo trae al principio
+ * («CAPÍTULO III» y «METODOLOGÍA» en dos líneas, o en una), se quita, porque el
+ * Word del método ya lo pone. Las referencias y las tablas se quedan fuera,
+ * como al repartir.
+ */
+function comoUnCapitulo(parrafos) {
+  const lineas = [];
+  let alPrincipio = true;
+  for (const parrafo of parrafos) {
+    if (parrafo.referencias || parrafo.enTabla) continue;
+    if (!parrafo.texto.trim()) continue;
+    if (alPrincipio && esTituloDeCapitulo(parrafo)) continue;
+    alPrincipio = false;
+    lineas.push(comoMarkdown(parrafo));
+  }
+  return lineas.join('\n\n');
+}
+
+module.exports = { repartir, comoUnCapitulo, faseDelTitulo, esTituloDeCapitulo, normalizar };

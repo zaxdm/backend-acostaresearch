@@ -32,7 +32,7 @@
 const projectRepository = require('./project.repository');
 const almacen = require('./project.storage');
 const documento = require('./project.documento');
-const { repartir } = require('./project.avance');
+const { repartir, comoUnCapitulo } = require('./project.avance');
 const skillService = require('../skills/skill.service');
 const { perfilDe } = require('../productos/producto.perfil');
 const { enSerie } = require('../../shared/utils/enSerie');
@@ -169,6 +169,65 @@ async function tambienComoAvance(argumentos) {
   }
 }
 
+/** Las fases que admiten texto: las del catálogo y las secciones aparte del informe. */
+async function fasesConTexto(productCode) {
+  const apartes = perfilDe(productCode).seccionesAparte.map((s) => ({ code: s.clave, displayName: s.titulo }));
+  return [...apartes, ...(await skillService.listCatalog(productCode))];
+}
+
+/**
+ * Reemplaza UN capítulo con un Word entero (28-oct). Todo su texto va a esa
+ * fase, aunque no traiga el título y aunque sea más corto: lo eligió él, en esa
+ * fila. Devuelve `{ nombre, palabras }`, null sin licencia, o `{ error }`.
+ */
+function reemplazarCapitulo(argumentos) {
+  return enSerie(claveDeProyecto(argumentos.userId, argumentos.productCode), () => reemplazarCapituloEnSuTurno(argumentos));
+}
+
+async function reemplazarCapituloEnSuTurno({ userId, productCode, capitulo, buffer }) {
+  const proyecto = await proyectoConLicencia(userId, productCode);
+  if (!proyecto) return null;
+  const fase = (await fasesConTexto(productCode)).find((s) => s.code === capitulo);
+  if (!fase) return { error: 'no-es-fase' };
+
+  const texto = comoUnCapitulo(documento.leer(buffer));
+  if (!texto.trim()) throw new documento.DocumentoNoValido('Ese documento no tiene texto.');
+
+  const previa = (proyecto.stages ?? []).find((e) => e.skillCode === capitulo);
+  const guardado = await almacen.guardar(proyecto.id, capitulo, texto);
+  await projectRepository.guardarEtapa(proyecto.id, capitulo, {
+    estado: previa?.estado === 'LISTO' ? undefined : 'EN_CURSO',
+    palabras: guardado.palabras,
+    textoAt: new Date(),
+  });
+  return { nombre: fase.displayName, palabras: guardado.palabras };
+}
+
+/**
+ * Vacía UN capítulo (28-oct): para los restos que entraron mal, como un título
+ * suelto que dejó «4 palabras» en Resultados. Terminada sigue terminada; si no,
+ * vuelve a sin empezar. Devuelve `{ nombre }`, null sin licencia, o `{ error }`.
+ */
+function quitarCapitulo(argumentos) {
+  return enSerie(claveDeProyecto(argumentos.userId, argumentos.productCode), () => quitarCapituloEnSuTurno(argumentos));
+}
+
+async function quitarCapituloEnSuTurno({ userId, productCode, capitulo }) {
+  const proyecto = await proyectoConLicencia(userId, productCode);
+  if (!proyecto) return null;
+  const fase = (await fasesConTexto(productCode)).find((s) => s.code === capitulo);
+  if (!fase) return { error: 'no-es-fase' };
+
+  const previa = (proyecto.stages ?? []).find((e) => e.skillCode === capitulo);
+  await almacen.borrar(proyecto.id, capitulo);
+  await projectRepository.guardarEtapa(proyecto.id, capitulo, {
+    estado: previa?.estado === 'LISTO' ? undefined : 'PENDIENTE',
+    palabras: 0,
+    textoAt: new Date(),
+  });
+  return { nombre: fase.displayName };
+}
+
 /** La frase para quien lo subió por el enlace de la conversación, o '' si no pasó nada a las fases. */
 function mensajeDeFasesDesdeElDocumento(ficha) {
   const guardadas = (ficha?.fases ?? []).filter((f) => !f.conservada);
@@ -220,6 +279,8 @@ async function quitar(userId, productCode) {
 module.exports = {
   subir,
   quitar,
+  reemplazarCapitulo,
+  quitarCapitulo,
   fichaDelPanel,
   mensajeDeSubida,
   tambienComoAvance,

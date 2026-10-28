@@ -380,3 +380,65 @@ test('reemplazar: el archivo nuevo pisa aunque sea más corto y vacía lo que no
   assert.equal(deFase('tema-y-delimitacion'), undefined);
   assert.match(servicio.mensajeDeSubida(hecho), /quedaron vacías «metodologia», «discusion»/);
 });
+
+test('reemplazar un capítulo: todo el Word va a esa fase, sin su título y aunque sea más corto (28-oct)', async () => {
+  proyecto = {
+    id: 'p1',
+    productCode: 'METODO',
+    esquema: null,
+    stages: [{ skillCode: 'metodologia', palabras: 5000, estado: 'LISTO' }],
+  };
+  etapas.length = 0;
+  textos.clear();
+
+  const hecho = await servicio.reemplazarCapitulo({
+    userId: 'u1',
+    productCode: 'METODO',
+    capitulo: 'metodologia',
+    buffer: docx(['CAPÍTULO III', 'METODOLOGÍA', 'Enfoque cuantitativo.', 'Diseño correlacional.']),
+  });
+
+  assert.equal(hecho.nombre, 'metodologia');
+  assert.equal(textos.get('metodologia'), 'Enfoque cuantitativo.\n\nDiseño correlacional.');
+  // Terminada sigue terminada.
+  assert.deepEqual(etapas.map((e) => [e.code, e.estado]), [['metodologia', undefined]]);
+});
+
+test('reemplazar un capítulo rechaza claves ajenas sin escribir nada', async () => {
+  proyecto = { id: 'p1', productCode: 'METODO', esquema: null, stages: [] };
+  etapas.length = 0;
+  textos.clear();
+  const hecho = await servicio.reemplazarCapitulo({
+    userId: 'u1', productCode: 'METODO', capitulo: 'otra-cosa', buffer: docx(['Texto.']),
+  });
+  assert.equal(hecho.error, 'no-es-fase');
+  assert.equal(etapas.length, 0);
+  assert.equal(textos.size, 0);
+});
+
+test('quitar un capítulo lo vacía y lo deja sin empezar; uno terminado sigue terminado', async () => {
+  proyecto = {
+    id: 'p1',
+    productCode: 'METODO',
+    esquema: null,
+    stages: [
+      { skillCode: 'analisis-datos-rstudio', palabras: 4, estado: 'EN_CURSO' },
+      { skillCode: 'discusion', palabras: 900, estado: 'LISTO' },
+    ],
+  };
+  etapas.length = 0;
+  textos.clear();
+  textos.set('analisis-datos-rstudio', 'RESULTADOS de la tesis');
+
+  await servicio.quitarCapitulo({ userId: 'u1', productCode: 'METODO', capitulo: 'analisis-datos-rstudio' });
+  await servicio.quitarCapitulo({ userId: 'u1', productCode: 'METODO', capitulo: 'discusion' });
+
+  assert.equal(textos.has('analisis-datos-rstudio'), false);
+  assert.deepEqual(
+    etapas.map((e) => [e.code, e.estado, e.palabras]),
+    [
+      ['analisis-datos-rstudio', 'PENDIENTE', 0],
+      ['discusion', undefined, 0],
+    ],
+  );
+});

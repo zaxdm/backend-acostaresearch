@@ -1077,6 +1077,55 @@ router.delete(
   }),
 );
 
+/**
+ * Reemplaza UN capítulo con un Word (28-oct): todo su texto va a esa fase,
+ * aunque no traiga el título. Ver `avanceService.reemplazarCapitulo`.
+ */
+router.post(
+  '/:productCode/avance/capitulo/:capitulo',
+  express.raw({ type: [TIPO_DOCX, 'application/octet-stream'], limit: MAXIMO_DOCUMENTO }),
+  asyncHandler(async (req, res) => {
+    let hecho;
+    try {
+      hecho = await avanceService.reemplazarCapitulo({
+        userId: req.user.id,
+        productCode: req.params.productCode,
+        capitulo: req.params.capitulo,
+        buffer: req.body,
+      });
+    } catch (error) {
+      if (error instanceof DocumentoNoValido) throw new ValidationError(error.message);
+      throw error;
+    }
+    if (!hecho) {
+      throw new ForbiddenError('Necesitas una licencia vigente de este método para subir tu avance.');
+    }
+    if (hecho.error) throw new ValidationError('Ese capítulo no es de este método.');
+
+    return ok(res, hecho, {
+      message: `Listo: «${hecho.nombre}» quedó con tu archivo (${hecho.palabras} palabras). El resto no cambió.`,
+    });
+  }),
+);
+
+/** Vacía UN capítulo del avance (28-oct). Ver `avanceService.quitarCapitulo`. */
+router.delete(
+  '/:productCode/avance/capitulo/:capitulo',
+  asyncHandler(async (req, res) => {
+    const hecho = await avanceService.quitarCapitulo({
+      userId: req.user.id,
+      productCode: req.params.productCode,
+      capitulo: req.params.capitulo,
+    });
+    if (!hecho) {
+      throw new ForbiddenError('Necesitas una licencia vigente de este método.');
+    }
+    if (hecho.error) throw new ValidationError('Ese capítulo no es de este método.');
+
+    return ok(res, hecho, { message: `Listo: quitamos el texto de «${hecho.nombre}».` });
+  }),
+);
+
 /** Su documento con las citas y la lista de referencias, en la norma del proyecto. */
 router.get(
   '/:productCode/documento',

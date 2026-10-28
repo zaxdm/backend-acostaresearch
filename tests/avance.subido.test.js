@@ -241,6 +241,9 @@ sustituir('../src/modules/projects/project.storage', {
     textos.set(code, texto);
     return { palabras: texto.trim().split(/\s+/).length };
   },
+  borrar: async (id, code) => {
+    textos.delete(code);
+  },
   guardarFichaDeAvance: async (id, f) => {
     ficha = f;
   },
@@ -338,4 +341,42 @@ test('desde el enlace del chat, un Word sin capítulos no estropea la subida: no
   assert.equal(hecho, null);
   assert.equal(etapas.length, 0);
   assert.equal(servicio.mensajeDeFasesDesdeElDocumento(hecho), '');
+});
+
+test('reemplazar: el archivo nuevo pisa aunque sea más corto y vacía lo que no trae (28-oct)', async () => {
+  proyecto = {
+    id: 'p1',
+    productCode: 'METODO',
+    esquema: null,
+    stages: [
+      { skillCode: 'marco-teorico', palabras: 5000, estado: 'EN_CURSO' },
+      { skillCode: 'metodologia', palabras: 800, estado: 'EN_CURSO' },
+      { skillCode: 'discusion', palabras: 600, estado: 'LISTO' },
+      { skillCode: 'tema-y-delimitacion', palabras: 0, estado: 'EN_CURSO' },
+    ],
+  };
+  etapas.length = 0;
+  textos.clear();
+  textos.set('metodologia', 'texto viejo');
+  textos.set('discusion', 'texto viejo');
+
+  const hecho = await servicio.subir({
+    userId: 'u1',
+    productCode: 'METODO',
+    reemplazar: true,
+    buffer: docx(['CAPÍTULO II: MARCO TEÓRICO', 'Breve.']),
+  });
+
+  // Más corto, pero se guarda igual.
+  assert.deepEqual(hecho.fases.map((f) => [f.code, f.conservada]), [['marco-teorico', false]]);
+  assert.equal(textos.get('marco-teorico'), 'Breve.');
+  // Lo que no trae se vacía; la terminada sigue terminada; la que no tenía texto no se toca.
+  assert.equal(textos.has('metodologia'), false);
+  assert.equal(textos.has('discusion'), false);
+  assert.deepEqual(hecho.vaciadas.map((f) => f.code), ['metodologia', 'discusion']);
+  const deFase = (code) => etapas.find((e) => e.code === code);
+  assert.equal(deFase('metodologia').estado, 'PENDIENTE');
+  assert.equal(deFase('discusion').estado, undefined);
+  assert.equal(deFase('tema-y-delimitacion'), undefined);
+  assert.match(servicio.mensajeDeSubida(hecho), /quedaron vacías «metodologia», «discusion»/);
 });

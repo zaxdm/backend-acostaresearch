@@ -15,8 +15,18 @@
  * más probable es que sea el capítulo trabajado con Claude y el Word una versión
  * anterior. Se le dice cuál se conservó, para que no crea que se perdió.
  *
- * Tampoco cierra fases. «Terminada» la sigue dando Claude cuando el tesista
- * aprueba el capítulo; un capítulo escrito no es un capítulo revisado.
+ * Tampoco cierra fases. «Terminada» la da Claude cuando el tesista aprueba el
+ * capítulo, o él mismo desde «Por dónde vas»; un capítulo escrito no es un
+ * capítulo revisado.
+ *
+ * REEMPLAZAR (28-oct)
+ * -------------------
+ * Con `reemplazar`, el archivo nuevo pasa a ser su avance: cada capítulo que
+ * trae sustituye al guardado aunque sea más corto, y las fases con texto que no
+ * vienen en él se vacían. Lo pidió un tesista que subió el archivo equivocado y
+ * temía que «se cruzara la información»; antes solo podía «empezar de cero», que
+ * borra todo y gasta una de sus tres veces. Se conservan sus datos (tema,
+ * universidad), sus fuentes, sus análisis y las fases que dio por terminadas.
  */
 
 const projectRepository = require('./project.repository');
@@ -53,7 +63,7 @@ function subir(argumentos) {
   return enSerie(claveDeProyecto(argumentos.userId, argumentos.productCode), () => subirEnSuTurno(argumentos));
 }
 
-async function subirEnSuTurno({ userId, productCode, buffer, nombre }) {
+async function subirEnSuTurno({ userId, productCode, buffer, nombre, reemplazar = false }) {
   const parrafos = documento.leer(buffer);
   if (parrafos.length === 0) {
     throw new documento.DocumentoNoValido('Ese documento no tiene texto.');
@@ -83,17 +93,32 @@ async function subirEnSuTurno({ userId, productCode, buffer, nombre }) {
   const nombres = new Map(catalogo.map((s) => [s.code, s.displayName]));
   const previas = new Map((proyecto.stages ?? []).map((e) => [e.skillCode, e]));
   const fases = [];
+  const vaciadas = [];
 
   // En el orden del método, no en el del Word: así se leen en el panel.
   for (const skill of catalogo) {
     const texto = porFase.get(skill.code);
-    if (!texto) continue;
+    const previa = previas.get(skill.code);
+
+    if (!texto) {
+      // Reemplazar: lo que el archivo nuevo no trae se vacía, para que no se
+      // mezcle con el anterior. Las terminadas siguen terminadas.
+      if (reemplazar && (previa?.palabras ?? 0) > 0) {
+        await almacen.borrar(proyecto.id, skill.code);
+        await projectRepository.guardarEtapa(proyecto.id, skill.code, {
+          estado: previa.estado === 'LISTO' ? undefined : 'PENDIENTE',
+          palabras: 0,
+          textoAt: new Date(),
+        });
+        vaciadas.push({ code: skill.code, displayName: nombres.get(skill.code) });
+      }
+      continue;
+    }
 
     const palabras = almacen.palabrasDe(texto);
-    const previa = previas.get(skill.code);
     const fase = { code: skill.code, displayName: nombres.get(skill.code), palabras };
 
-    if ((previa?.palabras ?? 0) > palabras) {
+    if (!reemplazar && (previa?.palabras ?? 0) > palabras) {
       fases.push({ ...fase, conservada: true, palabrasGuardadas: previa.palabras });
       continue;
     }
@@ -113,6 +138,8 @@ async function subirEnSuTurno({ userId, productCode, buffer, nombre }) {
     palabras: parrafos.reduce((suma, p) => suma + p.texto.trim().split(/\s+/).length, 0),
     sinUbicar,
     fases,
+    reemplazo: reemplazar,
+    vaciadas,
   };
   await almacen.guardarFichaDeAvance(proyecto.id, ficha);
   // Lo que escribió por su cuenta es la mejor muestra de su voz mientras no
@@ -161,6 +188,9 @@ function mensajeDeSubida(ficha) {
       : 'Listo.',
     conservadas.length > 0
       ? `Se conservó lo que ya tenías con Claude en ${lista(conservadas)}, que era más largo que tu Word.`
+      : '',
+    (ficha.vaciadas ?? []).length > 0
+      ? `Como reemplazaste tu avance, quedaron vacías ${lista(ficha.vaciadas)}, que no venían en este archivo.`
       : '',
     'Abre Claude y dile «sigamos»: seguirá desde lo que ya escribiste.',
   ]

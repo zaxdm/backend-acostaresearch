@@ -1037,6 +1037,8 @@ router.post(
         productCode: req.params.productCode,
         buffer: req.body,
         nombre: decodificar(req.get('X-Nombre-Archivo')),
+        // El cuerpo es el Word en crudo: la elección va en la dirección.
+        reemplazar: req.query.reemplazar === '1',
       });
     } catch (error) {
       if (error instanceof DocumentoNoValido || error instanceof avanceService.AvanceSinCapitulos) {

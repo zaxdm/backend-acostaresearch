@@ -574,6 +574,45 @@ function videoDeActivar(tieneCuenta) {
 }
 
 /** Dónde se saca la URL desde el 28-oct: ya no se enseña al canjear ni va por correo. */
+/**
+ * «¿Qué IA usas?» (28-oct): un botón por IA a su página de /conectar, con los
+ * pasos, el video y la guía de cada una. Antes solo se explicaba Claude y los
+ * clientes de ChatGPT preguntaban por WhatsApp. Gemini no deja conectores
+ * propios fuera de EE. UU.: se dice para que no lo intenten.
+ */
+const IAS_DEL_CONECTOR = [
+  ['Claude', 'claude'],
+  ['ChatGPT', 'chatgpt'],
+  ['Grok', 'grok'],
+];
+const NOTA_GEMINI = 'Gemini todavía no permite conectores en Perú: usa Claude, ChatGPT o Grok.';
+
+function conectarPorIaTexto() {
+  return [
+    '¿Qué IA usas? Pasos y video para conectarlo en cada una:',
+    ...IAS_DEL_CONECTOR.map(([nombre, ruta]) => `  ${nombre}: ${appUrl()}/conectar/${ruta}`),
+    NOTA_GEMINI,
+  ];
+}
+
+function conectarPorIaHtml() {
+  const botones = IAS_DEL_CONECTOR.map(
+    ([nombre, ruta]) => `<td style="padding:0 8px 8px 0">
+             <a href="${appUrl()}/conectar/${ruta}" style="display:inline-block;padding:10px 18px;
+                       font-size:14px;font-weight:650;color:#1a56db;text-decoration:none;
+                       border:1px solid #c9d7f7;border-radius:999px;background:#ffffff">Uso ${nombre}</a>
+           </td>`,
+  ).join('');
+  return `
+       <p style="margin:0 0 10px;font-size:13px;font-weight:650;color:#52606d">
+         ¿QUÉ IA USAS? PASOS Y VIDEO PARA CONECTARLO
+       </p>
+       <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 4px">
+         <tr>${botones}</tr>
+       </table>
+       <p style="margin:0 0 22px;font-size:12.5px;line-height:1.6;color:#8b95a6">${NOTA_GEMINI}</p>`;
+}
+
 const DONDE_LA_URL =
   'En tu panel, en «Por dónde vas», pulsa «Obtener mi URL» y pégala en Claude, ChatGPT o Grok.';
 
@@ -610,6 +649,8 @@ function licenseReady({ firstName, planName, expiresAt, via }) {
       '  1. En tu panel, en «Por dónde vas», pulsa «Obtener mi URL» y cópiala.',
       '  2. En Claude: Personalización → Conectores → Agregar → Agregar conector personalizado, y pégala.',
       '  3. Escríbele «trabajemos mi tesis» y pídele que use el conector.',
+      '',
+      ...conectarPorIaTexto(),
       '',
       `Guía de instalación con capturas (PDF): ${guia}`,
       `Tu panel: ${panel}`,
@@ -666,6 +707,7 @@ function licenseReady({ firstName, planName, expiresAt, via }) {
            <td>Escríbele «trabajemos mi tesis» y pídele que use el conector.</td>
          </tr>
        </table>
+${conectarPorIaHtml()}
 
        <p style="margin:0 0 10px;font-size:13.5px">
          <a href="${guia}" style="color:#8b95a6">Guía de instalación en PDF, con capturas</a>
@@ -1227,7 +1269,7 @@ function activationCode({ codes, planName, expiresAt, conector = true, tieneCuen
       // La guía va ya con el código (24-oct, Benicio): quien paga quiere ver
       // cómo se instala sin esperar al segundo correo.
       ...(conector
-        ? ['Cómo activarlo, en video:', video, `Guía de instalación con capturas (PDF): ${guiaUrl()}`, '']
+        ? ['Cómo activarlo, en video:', video, `Guía de instalación con capturas (PDF): ${guiaUrl()}`, '', ...conectarPorIaTexto(), '']
         : []),
       'Si algo no te cuadra, respóndenos a este mensaje.',
     ].join('\n'),
@@ -1276,6 +1318,7 @@ ${
        <p style="margin:0 0 22px;font-size:13.5px">
          <a href="${guiaUrl()}" style="color:#1a56db">Guía de instalación en PDF, con capturas</a>
        </p>
+${conectarPorIaHtml()}
 `
     : ''
 }

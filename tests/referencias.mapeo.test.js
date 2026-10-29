@@ -121,11 +121,11 @@ test('las notas y los adjuntos no son fuentes', () => {
 });
 
 test('la etiqueta de producto decide quién ve la fuente, y sin etiqueta la ve todo el mundo', () => {
-  assert.deepEqual(gruposDeEtiquetas(['tesis']), ['METODO_9_SKILLS']);
+  assert.deepEqual(gruposDeEtiquetas(['tesis']), ['METODO_DE_TESIS_HUMANIZADOR']);
   assert.deepEqual(gruposDeEtiquetas(['articulo']), ['ARTICULO_SCIENTIFICOS']);
   assert.deepEqual(gruposDeEtiquetas(['Tesis', 'ARTICULO']).sort(), [
     'ARTICULO_SCIENTIFICOS',
-    'METODO_9_SKILLS',
+    'METODO_DE_TESIS_HUMANIZADOR',
   ]);
   // Es el caso normal, no el raro: la metodología sirve a las dos rutas.
   assert.deepEqual(gruposDeEtiquetas(['Informe']), ['INFORME_ESTUDIANTIL']);

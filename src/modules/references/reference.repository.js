@@ -6,7 +6,7 @@ const { normalizar } = require('./zotero.mapper');
 
 /** Etiquetas de Zotero que significan «esta fuente es de este producto». */
 const ETIQUETAS_DE_PRODUCTO = {
-  tesis: 'METODO_9_SKILLS',
+  tesis: 'METODO_DE_TESIS_HUMANIZADOR',
   articulo: 'ARTICULO_SCIENTIFICOS',
   articulos: 'ARTICULO_SCIENTIFICOS',
   // Una fuente solo con esta etiqueta desaparece de tesis y artículo; si sirve a

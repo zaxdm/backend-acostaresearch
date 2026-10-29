@@ -8,12 +8,13 @@ const asyncHandler = require('../../shared/http/asyncHandler');
 const { ok } = require('../../shared/http/apiResponse');
 const { z } = require('zod');
 const validate = require('../../middlewares/validate');
-const { scieloLimiter } = require('../../middlewares/rateLimit');
+const { scieloLimiter, openalexLimiter, externasLimiter } = require('../../middlewares/rateLimit');
 const { AppError } = require('../../shared/errors/AppError');
 const { ERROR_CODES } = require('../../config/constants');
 const openalex = require('./openalex.client');
 const { busquedaDeConceptos } = require('../scopus/scopus.cuentas');
 const propiasService = require('./propias.service');
+const externas = require('../externas');
 
 const router = Router();
 
@@ -168,18 +169,19 @@ const buscarEnScieloSchema = z
   })
   .refine((cuerpo) => cuerpo.tema || cuerpo.conceptos, { message: 'Escribe qué quieres buscar.' });
 
-router.post(
-  '/scielo/buscar',
-  scieloLimiter,
-  validate({ body: buscarEnScieloSchema }),
-  asyncHandler(async (req, res) => {
+/**
+ * Buscar en un catálogo de OpenAlex: SciELO o el resto (ver
+ * `openalex.buscarEnElResto`). Las dos partes abiertas de la lista mezclada.
+ */
+function buscarEnCatalogo(buscar, nombre) {
+  return asyncHandler(async (req, res) => {
     const { conceptos, ...resto } = req.body;
     const consulta = conceptos ? busquedaDeConceptos(conceptos) : null;
     if (conceptos && !consulta) return ok(res, { resultados: [], total: 0, porPagina: 0 });
 
-    const resultado = await openalex.buscarEnScielo({ ...resto, consulta });
+    const resultado = await buscar({ ...resto, consulta });
     if (resultado.caida) {
-      throw new AppError('El catálogo de SciELO no responde ahora. Prueba en unos minutos.', {
+      throw new AppError(`El catálogo de ${nombre} no responde ahora. Prueba en unos minutos.`, {
         statusCode: 502,
         code: ERROR_CODES.CATALOG_UNAVAILABLE,
       });
@@ -192,10 +194,103 @@ router.post(
       {
         message:
           resultado.total === 0
-            ? 'SciELO no tiene nada con esas palabras. Prueba con menos, o en otro idioma.'
+            ? `${nombre} no tiene nada con esas palabras. Prueba con menos, o en otro idioma.`
             : undefined,
       },
     );
+  });
+}
+
+router.post(
+  '/scielo/buscar',
+  scieloLimiter,
+  validate({ body: buscarEnScieloSchema }),
+  buscarEnCatalogo((opciones) => openalex.buscarEnScielo(opciones), 'SciELO'),
+);
+
+/** El resto de OpenAlex, sin SciELO y con tesis. Lo que se guarda va por `/scielo`. */
+router.post(
+  '/openalex/buscar',
+  openalexLimiter,
+  validate({ body: buscarEnScieloSchema }),
+  buscarEnCatalogo((opciones) => openalex.buscarEnElResto(opciones), 'OpenAlex'),
+);
+
+/**
+ * Las bases externas del menú «Ver»: Semantic Scholar, PubMed, ERIC, CORE…
+ * Ver `modules/externas/index.js`. Una sola base por búsqueda.
+ */
+router.get(
+  '/externas',
+  asyncHandler(async (_req, res) => ok(res, { bases: externas.lista() })),
+);
+
+router.post(
+  '/externas/:base/buscar',
+  externasLimiter,
+  validate({ body: buscarEnScieloSchema }),
+  asyncHandler(async (req, res) => {
+    const base = externas.base(req.params.base);
+    if (!base || !base.activa()) {
+      throw new AppError('Esa base no está disponible ahora.', {
+        statusCode: 404,
+        code: ERROR_CODES.CATALOG_UNAVAILABLE,
+      });
+    }
+    const { conceptos, tema, pagina = 1, porPagina = 25, desdeAnio = null, hastaAnio = null } = req.body;
+    const consulta = conceptos ? busquedaDeConceptos(conceptos) : String(tema ?? '').replace(/,/g, ' ');
+    if (!consulta) return ok(res, { resultados: [], total: 0, porPagina: 0 });
+    // Las mismas ideas en palabras sueltas, para las bases que no entienden AND/OR.
+    const palabras = conceptos
+      ? conceptos.map((c) => c.nombre).join(' ')
+      : String(tema ?? '').replace(/,/g, ' ');
+
+    const resultado = await base.buscar({
+      consulta,
+      palabras,
+      pagina,
+      porPagina,
+      desde: desdeAnio,
+      hasta: hastaAnio,
+    });
+    if (resultado.caida) {
+      throw new AppError(`${base.nombre} no responde ahora. Prueba en unos minutos.`, {
+        statusCode: 502,
+        code: ERROR_CODES.CATALOG_UNAVAILABLE,
+      });
+    }
+
+    const resultados = await propiasService.marcarLasQueTieneDe(req.user.id, base.clave, resultado.resultados);
+    return ok(
+      res,
+      { resultados, total: resultado.total, porPagina },
+      {
+        message:
+          resultado.total === 0
+            ? `${base.nombre} no tiene nada con esas palabras. Prueba con menos, o en inglés.`
+            : undefined,
+      },
+    );
+  }),
+);
+
+router.post(
+  '/externas',
+  externasLimiter,
+  validate({
+    body: z.object({
+      ids: z
+        .array(z.string().trim().max(240))
+        .min(1, 'No marcaste ningún artículo.')
+        .max(25, 'Puedes guardar hasta 25 de una vez.'),
+    }),
+  }),
+  asyncHandler(async (req, res) => {
+    const resultado = await propiasService.importarDeExternas({ userId: req.user.id, ids: req.body.ids });
+    const partes = [`Guardamos ${resultado.guardadas} fuentes nuevas`];
+    if (resultado.repetidas > 0) partes.push(`${resultado.repetidas} ya las tenías`);
+    if (resultado.noEncontradas > 0) partes.push(`${resultado.noEncontradas} ya no aparecen en su base`);
+    return ok(res, resultado, { message: `${partes.join(', ')}.` });
   }),
 );
 

@@ -344,6 +344,11 @@ const ORDENES_SCIELO = {
  * Solo en título y resumen, como la búsqueda precisa de `buscar`: el texto
  * completo de los artículos en español trae «Perú» o «universidad» en casi
  * todos, y la lista se llenaba de ruido.
+ *
+ * Con `catalogo: 'resto'` es la tercera parte de la lista mezclada: todo lo de
+ * OpenAlex que NO está en SciELO (Redalyc, Latindex, DOAJ, repositorios) y,
+ * además de artículos, las tesis. Mismo filtro de revista, negado, para que lo
+ * de SciELO no salga dos veces. Ver `buscarEnElResto`.
  */
 async function buscarEnScielo({
   tema = null,
@@ -354,14 +359,19 @@ async function buscarEnScielo({
   idioma = null,
   desdeAnio = null,
   hastaAnio = null,
+  catalogo = 'scielo',
 }) {
+  const esResto = catalogo === 'resto';
+  const nombre = esResto ? 'OpenAlex' : 'SciELO';
   const url = new URL(BASE);
   url.searchParams.set('per_page', String(Math.min(Math.max(porPagina, 1), 25)));
   url.searchParams.set('page', String(pagina));
   url.searchParams.set('sort', ORDENES_SCIELO[orden] ?? ORDENES_SCIELO.relevancia);
   firmar(url);
 
-  const filtros = ['primary_location.source.listed_in:scielo', 'type:article|review'];
+  const filtros = esResto
+    ? ['primary_location.source.listed_in:!scielo', 'type:article|review|dissertation']
+    : ['primary_location.source.listed_in:scielo', 'type:article|review'];
   if (idioma) filtros.push(`language:${idioma}`);
   if (desdeAnio) filtros.push(`from_publication_date:${desdeAnio}-01-01`);
   if (hastaAnio) filtros.push(`to_publication_date:${hastaAnio}-12-31`);
@@ -372,7 +382,7 @@ async function buscarEnScielo({
   url.searchParams.set('filter', filtros.join(','));
 
   const res = await pedirConReintento(url).catch((error) => {
-    logger.warn({ err: error, tema }, 'OpenAlex no respondió a la búsqueda en SciELO');
+    logger.warn({ err: error, tema }, `OpenAlex no respondió a la búsqueda en ${nombre}`);
     return null;
   });
 
@@ -380,7 +390,7 @@ async function buscarEnScielo({
 
   if (!res.ok) {
     const detalle = await res.text().catch(() => '');
-    avisarRechazo(res, { detalle: detalle.slice(0, 160) }, 'OpenAlex rechazó la búsqueda en SciELO');
+    avisarRechazo(res, { detalle: detalle.slice(0, 160) }, `OpenAlex rechazó la búsqueda en ${nombre}`);
     return { resultados: [], total: 0, caida: true };
   }
 
@@ -401,9 +411,16 @@ async function buscarEnScielo({
     enlace: w.primary_location?.landing_page_url ?? w.doi ?? null,
     pdfLibre: w.best_oa_location?.pdf_url ?? null,
     resumen: resumenDelIndice(w.abstract_inverted_index),
+    /** «article», «review» o «dissertation» (tesis). */
+    tipo: w.type ?? null,
   }));
 
   return { resultados, total: datos.meta?.count ?? resultados.length, caida: false };
+}
+
+/** El resto de OpenAlex, sin SciELO y con tesis. Ver `buscarEnScielo`. */
+function buscarEnElResto(opciones) {
+  return buscarEnScielo({ ...opciones, catalogo: 'resto' });
 }
 
 /**
@@ -985,6 +1002,7 @@ const soloElId = (id) => String(id).replace(/^https?:\/\/openalex\.org\//i, '');
 module.exports = {
   buscar,
   buscarEnScielo,
+  buscarEnElResto,
   POR_PAGINA_SCIELO,
   palabrasSinUso,
   pedirConReintento,

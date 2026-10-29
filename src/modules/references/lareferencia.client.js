@@ -60,6 +60,12 @@ const FILTROS_FIJOS = [
   ['filter[]', '-format:"report"'],
 ];
 
+/**
+ * Toda la red, de todos los países: las «Tesis de Latinoamérica» del menú
+ * «Ver» (28-oct-2026). Ver `externas/latinoamerica.js`. Sin los sílabos, igual.
+ */
+const FILTROS_DE_LA_RED = [['filter[]', '-format:"report"']];
+
 const CAMPOS = [
   ['field[]', 'rawData'],
   ['field[]', 'summary'],
@@ -115,8 +121,16 @@ function fichas(json) {
  * `pregrado` entre los tipos se ignora: quien llama decide qué hacer si era
  * lo único que se pedía.
  */
-async function buscar({ consulta, pagina = 1, tipos = [], desde = null, hasta = null }) {
-  const filtros = [...FILTROS_FIJOS];
+async function buscar({
+  consulta,
+  pagina = 1,
+  tipos = [],
+  desde = null,
+  hasta = null,
+  toda = false,
+  porPagina = POR_PAGINA,
+}) {
+  const filtros = [...(toda ? FILTROS_DE_LA_RED : FILTROS_FIJOS)];
   for (const tipo of tipos) {
     if (TIPOS[tipo]) filtros.push(['filter[]', `~format:"${TIPOS[tipo]}"`]);
   }
@@ -127,7 +141,7 @@ async function buscar({ consulta, pagina = 1, tipos = [], desde = null, hasta = 
   const params = (tipo) => [
     ['lookfor', consulta],
     ['type', tipo],
-    ['limit', String(POR_PAGINA)],
+    ['limit', String(porPagina)],
     ['page', String(Math.max(1, pagina))],
     ['sort', 'relevance'],
     ...filtros,
@@ -163,4 +177,15 @@ async function porIds(ids) {
   return fichas(json);
 }
 
-module.exports = { buscar, porIds, esId, TIPOS, PREFIJO };
+/**
+ * Fichas de cualquier país por su identificador SIN prefijo («CL_<hash>»).
+ * Las de la red entera; `porIds` sigue siendo solo del Perú.
+ */
+async function porIdsDeLaRed(ids) {
+  const validos = ids.filter((id) => /^[A-Z]{2,5}_[a-f0-9]{32}$/.test(String(id ?? '')));
+  if (validos.length === 0) return [];
+  const json = await pedir('/record', [...validos.map((id) => ['id[]', id]), ...CAMPOS]);
+  return (json.records ?? []).map(comoFicha).filter((f) => f.id && f.title);
+}
+
+module.exports = { buscar, porIds, porIdsDeLaRed, esId, TIPOS, PREFIJO };

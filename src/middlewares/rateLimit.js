@@ -210,6 +210,29 @@ const scieloLimiter = build({
 });
 
 /**
+ * El resto de OpenAlex en la lista mezclada del buscador de Scopus. Aparte del
+ * de SciELO porque cada búsqueda de la lista pide las dos a la vez: con un solo
+ * contador, el tesista llegaría al tope a la mitad de búsquedas que antes.
+ */
+const openalexLimiter = build({
+  windowMs: 10 * 60 * 1000,
+  max: 40,
+  message: 'Has buscado en OpenAlex muchas veces seguidas. Espera unos minutos.',
+  keyGenerator: porUsuario,
+});
+
+/**
+ * Las bases externas del menú «Ver» (Semantic Scholar, PubMed, ERIC…): buscar
+ * y guardar. Una sola base por búsqueda, así que el tope es el de OpenAlex.
+ */
+const externasLimiter = build({
+  windowMs: 10 * 60 * 1000,
+  max: 40,
+  message: 'Has buscado en las otras bases muchas veces seguidas. Espera unos minutos.',
+  keyGenerator: porUsuario,
+});
+
+/**
  * La IA del buscador de Scopus: el generador de consultas y el resumen con
  * citas, con sus preguntas de seguimiento.
  *
@@ -483,6 +506,8 @@ module.exports = {
   mendeleyConectarLimiter,
   scopusBuscarLimiter,
   scieloLimiter,
+  openalexLimiter,
+  externasLimiter,
   scopusConectarLimiter,
   scopusIaLimiter,
   scopusCuentasLimiter,

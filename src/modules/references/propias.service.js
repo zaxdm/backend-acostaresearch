@@ -625,6 +625,95 @@ const propiasService = {
     };
   },
 
+  /**
+   * Los resultados de una base externa con `tuya` puesto. Igual que
+   * `marcarLasQueTiene`, pero lo que no tiene DOI se reconoce por
+   * «<base>:<id>», que es como lo guarda `importarDeExternas`.
+   */
+  async marcarLasQueTieneDe(userId, base, resultados) {
+    const ref = (r) => (r.doi ? `doi:${r.doi.toLowerCase()}` : `${base}:${r.id}`).slice(0, 200);
+    const tiene = new Set(await propiasRepository.cualesTiene(userId, resultados.map(ref)));
+    return resultados.map((r) => ({ ...r, tuya: tiene.has(ref(r)) }));
+  },
+
+  /**
+   * Lo que marcó de las bases externas (Semantic Scholar, PubMed, ERIC…).
+   *
+   * Llegan «<base>:<id>». Como con SciELO, la ficha se vuelve a pedir a la base
+   * y no se cree al navegador. Con DOI se completa con OpenAlex y Crossref, para
+   * que quede igual que lo que entra por DOI; sin DOI, con lo que da la base, y
+   * se reconoce después por «<base>:<id>».
+   */
+  async importarDeExternas({ userId, ids }) {
+    const externas = require('../externas');
+    const porBase = new Map();
+    for (const crudo of new Set((ids ?? []).map((i) => String(i).trim()))) {
+      const corte = crudo.indexOf(':');
+      const base = externas.base(crudo.slice(0, corte));
+      const id = crudo.slice(corte + 1);
+      if (corte < 1 || !base || !id || id.length > 200) continue;
+      if (!porBase.has(base)) porBase.set(base, []);
+      porBase.get(base).push(id);
+    }
+    const pedidas = [...porBase.values()].reduce((n, l) => n + l.length, 0);
+
+    if (pedidas === 0) throw new ValidationError('No marcaste ningún artículo.');
+    if (pedidas > MAXIMO_SCIELO) {
+      throw new ValidationError(`Puedes guardar hasta ${MAXIMO_SCIELO} de una vez.`);
+    }
+
+    const tiene = await propiasRepository.contar(userId);
+    if (tiene + pedidas > propiasRepository.TOPE_POR_USUARIO) {
+      throw new AppError(
+        `Tu biblioteca admite ${propiasRepository.TOPE_POR_USUARIO} fuentes y con esas pasarías ` +
+          `de ahí (tienes ${tiene}).`,
+        { statusCode: 409, code: ERROR_CODES.VALIDATION_ERROR },
+      );
+    }
+
+    const filas = [];
+    for (const [base, lista] of porBase) {
+      const fichas = await base.porIds(lista).catch((error) => {
+        logger.warn({ err: error, base: base.clave }, 'Una base externa no devolvió las fichas');
+        return [];
+      });
+      for (const ficha of fichas) {
+        let completa = ficha;
+        if (ficha.doi) {
+          const deOpenAlex = await openalex.porDoi(ficha.doi).catch(() => null);
+          const deCrossref = await crossref.porDoi(ficha.doi).catch(() => null);
+          // Lo de OpenAlex manda, pero un campo vacío suyo no borra el de la base.
+          const mezcla = { ...ficha };
+          for (const [campo, valor] of Object.entries(deOpenAlex ?? {})) {
+            if (valor !== null && valor !== undefined && valor !== '') mezcla[campo] = valor;
+          }
+          mezcla.doi = ficha.doi;
+          completa = crossref.unir(mezcla, deCrossref, { preferirSusAutores: true });
+        }
+        const fila = comoFila(completa);
+        if (!fila.doi) fila.sourceRef = `${base.clave}:${ficha.id}`.slice(0, 200);
+        filas.push(fila);
+      }
+    }
+
+    if (filas.length === 0) {
+      throw new ValidationError('La base no devolvió esos artículos. Vuelve a buscar y márcalos otra vez.');
+    }
+
+    const { guardadas, repetidas } = await propiasRepository.guardarLote(userId, filas);
+    logger.info({ userId, pedidas, guardadas, repetidas }, 'Fuentes importadas desde bases externas');
+
+    return {
+      pedidas,
+      guardadas,
+      repetidas,
+      noEncontradas: pedidas - filas.length,
+      sinResumen: filas.filter((fila) => !fila.abstract).length,
+      total: tiene + guardadas,
+      sinResumenEnTotal: await propiasRepository.contarSinResumen(userId),
+    };
+  },
+
   /** Todas menos las que cita en sus capítulos. Ver `citadas`. */
   async vaciar(userId) {
     return propiasRepository.vaciar(userId, await clavesCitadas(userId));

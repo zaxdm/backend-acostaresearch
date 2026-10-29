@@ -71,6 +71,19 @@ test('busca solo en revistas de SciELO, en título y resumen, con los filtros pe
   assert.equal(resultados[0].autores, 'Tecocha Portocarrero, R.');
 });
 
+test('el resto de OpenAlex deja fuera SciELO, trae tesis y dice el tipo de cada una', async (t) => {
+  const pedidas = fetchFalso(t, { results: [obra('W9', { type: 'dissertation' })], meta: { count: 12969 } });
+
+  const { resultados, total } = await openalex.buscarEnElResto({ tema: 'inteligencia artificial', porPagina: 15 });
+
+  assert.equal(total, 12969);
+  const filtro = pedidas[0].searchParams.get('filter');
+  assert.match(filtro, /^primary_location\.source\.listed_in:!scielo,/);
+  assert.match(filtro, /type:article\|review\|dissertation/);
+  assert.equal(pedidas[0].searchParams.get('per_page'), '15');
+  assert.equal(resultados[0].tipo, 'dissertation');
+});
+
 test('si OpenAlex no contesta, se dice caída y no una lista vacía', async (t) => {
   fetchFalso(t, null);
   const resultado = await openalex.buscarEnScielo({ tema: 'lo que sea' });

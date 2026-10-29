@@ -442,7 +442,7 @@ async function resumen(userId, productCode) {
   // panorama empiece por los capítulos.
   const deEmpresa = perfilDe(productCode).tipo === 'informe' && esDeEmpresa(proyecto.fichaInforme);
   loSuyo.push(lineaDeNorma(proyecto, { empresa: deEmpresa }));
-  loSuyo.push(lineaDeFormato(proyecto, { empresa: deEmpresa }));
+  loSuyo.push(lineaDeFormato(proyecto, { empresa: deEmpresa, conBiblioteca: perfilDe(productCode).tipo === 'tesis' }));
   // En el informe, lo que subió del docente: sin esta línea Claude no sabe que existe.
   if (perfilDe(productCode).tipo === 'informe') {
     loSuyo.push(
@@ -2115,7 +2115,7 @@ function lineaDeNorma(proyecto, { empresa = false } = {}) {
  * existe, así que si Claude no lo pregunta, nadie lo sube y la tesis sale en el
  * formato por defecto sin que el tesista sepa que podía ser otro.
  */
-function lineaDeFormato(proyecto, { empresa = false } = {}) {
+function lineaDeFormato(proyecto, { empresa = false, conBiblioteca = false } = {}) {
   if (proyecto?.plantillaAt && esFormatoDeSuWord(proyecto.plantillaNombre)) {
     return (
       `Formato ${empresa ? 'de la empresa' : 'de la universidad'}: tomado del Word que subió ` +
@@ -2133,6 +2133,16 @@ function lineaDeFormato(proyecto, { empresa = false } = {}) {
       'Formato de la empresa: sin subir; el Word sale en el formato por defecto. PREGÚNTALE UNA ' +
       'VEZ si la empresa tiene una plantilla de informes en Word y, si la tiene, dale el enlace ' +
       'para subirla con "formato_de_la_universidad".'
+    );
+  }
+  // En tesis y TSP, primero la biblioteca de formatos (ver `modules/formatos`).
+  if (conBiblioteca) {
+    return (
+      'Formato de la universidad: sin poner; el Word sale en el formato por defecto. ' +
+      (proyecto?.universidad
+        ? `Llama a "formato_de_la_universidad" con universidad «${proyecto.universidad}»: `
+        : 'PREGÚNTALE UNA VEZ de qué universidad es y llama a "formato_de_la_universidad" con ella: ') +
+      'si su formato está en la biblioteca se le pone solo; si no, dale el enlace para subir el suyo.'
     );
   }
   return (

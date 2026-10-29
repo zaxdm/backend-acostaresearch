@@ -15,6 +15,7 @@ const referenceRoutes = require('./modules/references/reference.routes');
 const propiasRoutes = require('./modules/references/propias.routes');
 const tutorialRoutes = require('./modules/tutorials/tutorial.routes');
 const guiaRoutes = require('./modules/guias/guia.routes');
+const formatoRoutes = require('./modules/formatos/formato.routes');
 const projectRoutes = require('./modules/projects/project.routes');
 const trialRoutes = require('./modules/trials/trial.routes');
 const grupoRoutes = require('./modules/grupos/grupos.routes');
@@ -78,6 +79,8 @@ router.use('/mis-fuentes', propiasRoutes);
 router.use('/referencias', referenceRoutes);
 router.use('/tutoriales', tutorialRoutes);
 router.use('/guias', guiaRoutes);
+// La biblioteca de formatos de universidad (solo ADMIN). Ver `modules/formatos`.
+router.use('/formatos-universidad', formatoRoutes);
 router.use('/proyectos', projectRoutes);
 router.use('/pruebas', trialRoutes);
 // Cupos vendidos a una universidad o a un asesor: el alumno se une con su

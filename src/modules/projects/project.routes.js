@@ -32,6 +32,7 @@ const {
 } = require('./project.documento');
 
 const subidaFormato = require('./project.subida-formato');
+const formatoService = require('../formatos/formato.service');
 
 const TIPO_DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
@@ -233,6 +234,13 @@ router.post(
 
     try {
       const { estilos, mensaje } = await projectService.guardarPlantilla({
+        userId,
+        productCode,
+        buffer: req.body,
+        nombre: decodificar(req.get('X-Nombre-Archivo')),
+      });
+      // Y a la biblioteca, por aprobar, para los siguientes de su universidad.
+      await formatoService.proponerDesdeTesista({
         userId,
         productCode,
         buffer: req.body,
@@ -895,6 +903,12 @@ router.post(
       if (!guardada) {
         throw new ForbiddenError('Necesitas una licencia vigente de este método para subir tu plantilla.');
       }
+      await formatoService.proponerDesdeTesista({
+        userId: req.user.id,
+        productCode: req.params.productCode,
+        buffer: req.body,
+        nombre,
+      });
       const { estilos, mensaje } = guardada;
 
       return ok(

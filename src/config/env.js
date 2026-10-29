@@ -778,6 +778,9 @@ const env = Object.freeze({
     raw.CAPITULOS_DIR ?? path.join(path.dirname(raw.PROOFS_DIR), 'capitulos'),
   // Por lo mismo que los capítulos: colgado de donde vivan los comprobantes.
   pedidosDir: raw.PEDIDOS_DIR ?? path.join(path.dirname(raw.PROOFS_DIR), 'pedidos'),
+  // La biblioteca de formatos de universidad: los .docx de cada plantilla.
+  // Mismo criterio, dentro del respaldo diario y fuera del despliegue.
+  formatosDir: path.join(path.dirname(raw.PROOFS_DIR), 'formatos-universidad'),
   // Los videos de los testimonios. Mismo criterio: colgados de donde estén los
   // comprobantes, sin pedir otra variable que alguien tenga que recordar.
   resenasDir: raw.RESENAS_DIR ?? path.join(path.dirname(raw.PROOFS_DIR), 'resenas'),

@@ -150,9 +150,14 @@ function redactar(
           ? `Ya tiene texto escrito y no ha subido un formato, así que ${obra} sale con el formato ` +
             'por defecto. PREGÚNTALE si su docente o su instituto le dio una plantilla y, si la tiene, ' +
             'dale el enlace para subirla con "formato_de_la_universidad".'
-          : `Ya tiene texto escrito y no ha subido el formato de su universidad, así que ${obra} sale ` +
-            'con el formato por defecto. PREGÚNTALE si su facultad le dio un formato o plantilla y, si ' +
-            'lo tiene, dale el enlace para subirlo con "formato_de_la_universidad".'
+          : tipo === 'tesis'
+            ? `Ya tiene texto escrito y no ha subido el formato de su universidad, así que ${obra} sale ` +
+              'con el formato por defecto. Llama a "formato_de_la_universidad" con su universidad ' +
+              '(pregúntasela si no la sabes): si está en la biblioteca se le pone sola; si no, dale el ' +
+              'enlace para subir el formato de su facultad.'
+            : `Ya tiene texto escrito y no ha subido el formato de su universidad, así que ${obra} sale ` +
+              'con el formato por defecto. PREGÚNTALE si su facultad le dio un formato o plantilla y, si ' +
+              'lo tiene, dale el enlace para subirlo con "formato_de_la_universidad".'
       );
     default:
       return null;

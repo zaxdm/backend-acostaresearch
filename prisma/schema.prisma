@@ -1584,6 +1584,51 @@ model Guia {
   @@map("guias")
 }
 
+/// La biblioteca de formatos de universidad (28-oct).
+///
+/// El .docx de la plantilla de cada universidad, para que el tesista que dice
+/// de dónde es reciba su formato sin subirlo. El archivo va a disco
+/// (`env.formatosDir`, por el id); aquí solo su ficha. Ver `modules/formatos`.
+model FormatoUniversidad {
+  id String @id @default(uuid()) @db.Char(36)
+
+  /// Como se ve en las opciones: «Universidad César Vallejo».
+  universidad String @default("") @db.VarChar(160)
+  /// Otros nombres con que la nombran, con comas: «UCV, César Vallejo».
+  alias       String @default("") @db.VarChar(500)
+  /// Opcional: cuando una facultad o escuela tiene su propio formato.
+  facultad    String @default("") @db.VarChar(160)
+  /// «pregrado», «posgrado» o «cualquiera».
+  grado       String @default("cualquiera") @db.VarChar(20)
+  /// Para quien revisa: de dónde salió, qué año, qué le falta.
+  notas       String @default("") @db.VarChar(600)
+
+  archivoNombre String @default("") @db.VarChar(200)
+  bytes         Int    @default(0)
+  /// Para no encolar dos veces el mismo archivo.
+  sha256        String @default("") @db.Char(64)
+
+  /// Los capítulos de su guía, como `Project.esquema`: { capitulos: [...] }.
+  /// Las fases que nombra son de un método, `esquemaProducto`, y solo se
+  /// copian a los proyectos de ese método.
+  esquema         Json?
+  esquemaProducto String? @db.VarChar(40)
+
+  /// Falso = lo subió un tesista y espera revisión: no se ofrece a nadie.
+  aprobado        Boolean @default(true)
+  /// El proyecto del tesista que lo subió. Nulo = lo subió el administrador.
+  origenProjectId String? @db.Char(36)
+  /// A cuántos proyectos se aplicó.
+  usos            Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([aprobado])
+  @@index([sha256])
+  @@map("formatos_universidad")
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // El proyecto del tesista
 // ─────────────────────────────────────────────────────────────────────────────

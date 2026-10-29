@@ -373,7 +373,23 @@ test('formato_de_la_universidad: Claude lo pregunta una vez y da el enlace, no l
   assert.match(d, /no le armes un Word/);
   const e = esquema('formato_de_la_universidad');
   assert.equal(e.required, undefined, 'sin argumentos da el estado y el enlace');
-  assert.deepEqual(Object.keys(e.properties).sort(), ['ajustes', 'quitar', 'usarNuestraPortada']);
+  // `universidad`, `grado` y `formatoBiblioteca`: la biblioteca de formatos (28-oct).
+  assert.deepEqual(Object.keys(e.properties).sort(), [
+    'ajustes', 'formatoBiblioteca', 'grado', 'quitar', 'universidad', 'usarNuestraPortada',
+  ]);
+});
+
+/**
+ * La biblioteca de formatos (28-oct): con la universidad, el servidor busca el
+ * suyo antes de pedirle que lo suba.
+ */
+test('formato_de_la_universidad: en tesis busca primero en la biblioteca por su universidad', () => {
+  const d = descripcion('formato_de_la_universidad');
+  assert.match(d, /LA BIBLIOTECA/);
+  assert.match(d, /llama con "universidad"/);
+  assert.match(d, /PREGÚNTASELO primero/);
+  assert.match(d, /"formatoBiblioteca"/);
+  assert.deepEqual(esquema('formato_de_la_universidad').properties.grado.enum, ['pregrado', 'posgrado']);
 });
 
 /**

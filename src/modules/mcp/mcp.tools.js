@@ -15,6 +15,8 @@ const projectService = require('../projects/project.service');
 const documentoService = require('../projects/documento.service');
 const redaccion = require('../projects/redaccion.service');
 const subidaFormato = require('../projects/project.subida-formato');
+const formatoService = require('../formatos/formato.service');
+const { NotFoundError } = require('../../shared/errors/AppError');
 const { AjusteNoValido } = require('../projects/project.plantilla-ajustes');
 const subidaMaterial = require('../projects/project.subida-material');
 const subidaDocumento = require('../projects/project.subida-documento');
@@ -3564,6 +3566,36 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
     'un archivo hecho aquí no llega a su Word. Si sube un formato nuevo por el enlace, los ' +
     'ajustes anteriores se pierden: vuelve a llamar con ellos.';
 
+  /** Lo que se le dice tras ponerle un formato de la biblioteca. */
+  async function mensajeDeLaBiblioteca({ formato, mensaje, esquema }) {
+    const { url, minutos } = subidaFormato.enlace({ userId: licencia.user.id, productCode: licencia.productCode });
+    const capitulos =
+      esquema === 'puesto'
+        ? ' Y con él, los capítulos de la guía de su universidad: su Word ya sale con esa estructura ' +
+          '(enséñasela con "estructura_de_la_tesis").'
+        : esquema === 'ya-tenia'
+          ? ' Los capítulos no se tocaron: ya tenía su propia estructura.'
+          : '';
+    return (
+      `Formato de la biblioteca puesto: «${formato.etiqueta}». ${mensaje}${capitulos}${N}${N}` +
+      'Díselo así, con el nombre del formato. Si no es el de su facultad o su grado, puede subir el ' +
+      'suyo con este enlace, que reemplaza al de la biblioteca:' +
+      `${N}${await darEnlace({ texto: 'Haz clic aquí para subir tu formato', url, minutos })}`
+    );
+  }
+
+  // La biblioteca de formatos (28-oct, ver `modules/formatos`): solo en tesis y
+  // TSP. En informe y artículo la plantilla es del curso, la empresa o la
+  // revista, y su herramienta sigue exactamente igual.
+  const conBiblioteca = perfil.tipo === 'tesis';
+  const BIBLIOTECA =
+    ' LA BIBLIOTECA: el servidor ya tiene el formato de muchas universidades. Si todavía no tiene ' +
+    'formato y sabes de qué universidad es, llama con "universidad" (como él la dijo: «UCV», «César ' +
+    'Vallejo») y, si lo sabes, "grado"; si no lo sabes, PREGÚNTASELO primero. Con uno solo, el servidor ' +
+    'se lo pone directamente; con varios te da las opciones: pregúntale con opciones cuál es el suyo y ' +
+    'llama con "formatoBiblioteca" y el id elegido. Si no está en la biblioteca, dale el enlace para ' +
+    'subir el suyo.';
+
   server.registerTool(
     'formato_de_la_universidad',
     {
@@ -3617,7 +3649,8 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
             'NO le pidas que te pegue ni te adjunte el formato en el chat, no lo copies tú a mano y no ' +
             'le armes un Word con ese formato: lo aplica el servidor. Si no tiene formato, no insistas.') +
         CAMBIAR_O_QUITAR +
-        AJUSTAR,
+        AJUSTAR +
+        (conBiblioteca ? BIBLIOTECA : ''),
       inputSchema: fromJsonSchema({
         type: 'object',
         properties: {
@@ -3687,15 +3720,51 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
               'siempre que lo pida —«quítalo», «bórralo», «ya no lo quiero», «que salga con el ' +
               'formato por defecto»—, antes de decirle que está hecho.',
           },
+          ...(conBiblioteca
+            ? {
+                universidad: {
+                  type: 'string',
+                  description:
+                    'Su universidad, como él la dijo, para buscar su formato en la biblioteca.',
+                },
+                grado: {
+                  type: 'string',
+                  enum: ['pregrado', 'posgrado'],
+                  description: 'Pregrado (bachiller, licenciatura, título) o posgrado (maestría, doctorado).',
+                },
+                formatoBiblioteca: {
+                  type: 'string',
+                  description: 'El id del formato de la biblioteca que eligió entre las opciones.',
+                },
+              }
+            : {}),
         },
         additionalProperties: false,
       }),
     },
-    async ({ usarNuestraPortada, quitar, ajustes }) => {
+    async ({ usarNuestraPortada, quitar, ajustes, universidad, grado, formatoBiblioteca }) => {
       await licenseService.recordUsage({ licenseId: licencia.id, tool: 'formato_de_la_universidad' });
 
       const userId = licencia.user.id;
       const { productCode } = licencia;
+
+      // El que eligió de la biblioteca: reemplaza al que tuviera, porque lo eligió él.
+      if (conBiblioteca && formatoBiblioteca && !quitar) {
+        let r;
+        try {
+          r = await formatoService.aplicar({ userId, productCode, formatoId: formatoBiblioteca });
+        } catch (error) {
+          if (error instanceof NotFoundError) {
+            return texto(
+              'Ese id no es de ningún formato de la biblioteca. Llama con "universidad" para ver las ' +
+                'opciones que hay, sin inventar el id.',
+            );
+          }
+          throw error;
+        }
+        if (!r) return texto('No tiene una licencia vigente de este método: no se pudo poner el formato.');
+        return texto(await mensajeDeLaBiblioteca(r));
+      }
 
       if (ajustes && !quitar) {
         let r;
@@ -3746,6 +3815,33 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
       const { url, minutos } = subidaFormato.enlace({ userId, productCode });
       const deEmpresa = await projectService.esInformeDeEmpresa(userId, productCode);
 
+      /**
+       * La biblioteca, si no tiene formato o solo el tomado de su avance (el
+       * oficial manda sobre ese). La universidad, la que dijo ahora o la que ya
+       * tenía guardada su proyecto.
+       */
+      const sinOficial = !formato || projectService.esFormatoDeSuWord(formato.nombre);
+      if (conBiblioteca && universidad) await formatoService.recordarUniversidad(userId, productCode, universidad);
+      const cual = conBiblioteca
+        ? universidad || (sinOficial ? await formatoService.universidadDelProyecto(userId, productCode) : null)
+        : null;
+      const hallados = cual ? await formatoService.buscar({ universidad: cual, grado }) : [];
+
+      if (sinOficial && hallados.length === 1) {
+        const r = await formatoService.aplicar({ userId, productCode, formatoId: hallados[0].id });
+        if (r) return texto(await mensajeDeLaBiblioteca(r));
+      }
+      if (sinOficial && hallados.length > 1) {
+        return texto(
+          `En la biblioteca hay ${hallados.length} formatos de «${cual}»:${N}` +
+            hallados.map((f, i) => `${i + 1}. ${f.etiqueta} — formatoBiblioteca: "${f.id}"`).join(N) +
+            `${N}${N}Pregúntale con opciones cuál es el suyo (por su facultad o su grado), sin enseñarle ` +
+            'los id, y llama con "formatoBiblioteca" y el id del elegido. Añade la opción «Ninguno: ' +
+            'tengo el formato de mi facultad»; si la elige, dale este enlace para subirlo:' +
+            `${N}${await darEnlace({ texto: 'Haz clic aquí para subir tu formato', url, minutos })}`,
+        );
+      }
+
       if (!formato) {
         const dioElFormato = deEmpresa
           ? 'la empresa'
@@ -3754,7 +3850,14 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
             : perfil.tipo === 'articulo'
               ? 'la revista o su universidad'
               : 'su facultad';
+        const deLaBiblioteca = !conBiblioteca
+          ? ''
+          : cual
+            ? `En la biblioteca no hay ningún formato de «${cual}». `
+            : 'Si sabes de qué universidad es, llama con "universidad": puede que su formato ya esté ' +
+              'en la biblioteca. Si no lo sabes, pregúntaselo antes. ';
         return texto(
+          deLaBiblioteca +
           `Todavía no ha subido ningún formato: su Word sale con el formato por defecto.${N}${N}` +
             `Si ${dioElFormato} le dio un formato o plantilla, dale este enlace para subirlo:${N}` +
             `${await darEnlace({ texto: 'Haz clic aquí para subir tu formato', url, minutos })}${N}${N}` +
@@ -3807,7 +3910,13 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
           `${N}${N}Si prefiere que lo quites tú, llama con "quitar" y su Word vuelve al formato por ` +
           'defecto; no se lo des por hecho sin llamar. Si la portada salió mal, llama con ' +
           '"usarNuestraPortada". Si quiere cambiar la letra, el interlineado, los márgenes o los ' +
-          'títulos, llama con "ajustes". Para ver cómo quedó, dale su Word con "enlace_del_word".',
+          'títulos, llama con "ajustes". Para ver cómo quedó, dale su Word con "enlace_del_word".' +
+          // Si el que tiene ya es de la biblioteca, no se le ofrece otra vez.
+          (!sinOficial && hallados.length > 0 && !String(formato.nombre ?? '').startsWith(formatoService.DE_LA_BIBLIOTECA)
+            ? `${N}${N}En la biblioteca también hay formato de «${cual}»: ` +
+              hallados.map((f) => `${f.etiqueta} (formatoBiblioteca: "${f.id}")`).join('; ') +
+              '. Solo si él prefiere ese al que ya tiene, llama con "formatoBiblioteca": reemplaza al suyo.'
+            : ''),
       );
     },
   );

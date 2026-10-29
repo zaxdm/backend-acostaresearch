@@ -54,7 +54,7 @@ sustituir('../src/lib/prisma', {
       return { count: 1 };
     },
   },
-  plan: { findFirst: async () => ({ name: 'Método de tesis', durationDays: 90 }) },
+  plan: { findFirst: async () => ({ name: 'Método de tesis', durationDays: 360 }) },
   sorteo: {
     create: async ({ data }) => {
       const fila = {
@@ -145,7 +145,7 @@ test('un correo se apunta una sola vez, sin importar mayúsculas', async () => {
 
   const publico = await sorteoService.verPublico(sorteo.slug);
   assert.equal(publico.inscritos, 1);
-  assert.equal(publico.duracionDias, 90);
+  assert.equal(publico.duracionDias, 120);
   assert.equal(publico.abierto, true);
 });
 
@@ -224,12 +224,14 @@ test('el ganador recibe su código por correo y no se sortea dos veces', async (
   assert.equal(estado.codigos[0].revisarBuzon, false);
   assert.equal(estado.codigos[0].avisar, false);
   assert.equal(estado.codigos[0].paymentMethod, 'CORTESIA');
+  // El premio dura cuatro meses aunque el plan se venda por un año.
+  assert.equal(estado.codigos[0].durationDays, 120);
   assert.equal(estado.codigos[0].buyerEmail, r.ganador.email);
 
   assert.equal(estado.correos.length, 1);
   assert.equal(estado.correos[0].to, r.ganador.email);
   assert.match(estado.correos[0].text, /ACR-AAAA-BBBB-CCCC/);
-  assert.match(estado.correos[0].text, /90 días/);
+  assert.match(estado.correos[0].text, /120 días/);
 
   assert.equal(r.sorteo.ganador.email, r.ganador.email);
   assert.equal(r.sorteo.abierto, false);

@@ -21,7 +21,7 @@ const { ConflictError, NotFoundError } = require('../../shared/errors/AppError')
  * forma de amañarlo desde el navegador.
  *
  * El premio es un código de cortesía del producto del sorteo (por defecto el
- * método de tesis, cuyo plan dura tres meses), que se le manda por correo. El
+ * método de tesis), por DIAS_DEL_PREMIO días, que se le manda por correo. El
  * código entero solo lo ve el ganador: ni se guarda en claro ni llega al panel,
  * que lo enseña con los cuatro últimos caracteres tapados. Si el correo no le
  * llegó, «reenviar» anula ese código y le manda uno nuevo.
@@ -54,16 +54,20 @@ function generarSlug() {
 
 const urlDe = (slug) => `${env.APP_URL.replace(/\/+$/, '')}/sorteo/${slug}`;
 
+/**
+ * Lo que dura el premio: cuatro meses, sea cual sea el plan (29-oct, Benicio).
+ * No se toma del plan porque el método se vende por 360 días y el sorteo no
+ * regala un año.
+ */
+const DIAS_DEL_PREMIO = 120;
+
 /** El plan que da el premio: su nombre y cuántos días dura. */
 async function premioDe(productCode) {
   const plan = await prisma.plan.findFirst({
     where: { kind: 'LICENSE', productCode },
-    select: { name: true, durationDays: true },
+    select: { name: true },
   });
-  return {
-    premio: plan?.name ?? 'Método de tesis',
-    duracionDias: plan?.durationDays ?? env.LICENSE_DURATION_DAYS ?? 0,
-  };
+  return { premio: plan?.name ?? 'Método de tesis', duracionDias: DIAS_DEL_PREMIO };
 }
 
 const participanteSelect = {
@@ -368,6 +372,7 @@ async function generarPremio(sorteo, ganador, adminId) {
   const generados = await licenseService.generateCodes({
     cantidad: 1,
     productCode: sorteo.productCode,
+    durationDays: DIAS_DEL_PREMIO,
     buyerEmail: ganador.email,
     note: notaDe(sorteo),
     createdById: adminId,

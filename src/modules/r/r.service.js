@@ -229,7 +229,7 @@ function guionConSintaxis(guion, sintaxis) {
  * La rama de `spss` de `trabajar_en_r`: ejecuta sintaxis de SPSS en PSPP.
  * Devuelve `{ contenido, bloqueo }`, como `trabajar`.
  */
-async function trabajarSpss({ m, userId, productCode, sintaxis }) {
+async function trabajarSpss({ m, userId, productCode, sintaxis, darEnlace }) {
   const bloqueo = spss.revisar(sintaxis);
   if (bloqueo) {
     logger.warn({ userId, regla: bloqueo.regla, fragmento: bloqueo.fragmento }, 'Sintaxis de SPSS bloqueada');
@@ -265,7 +265,7 @@ async function trabajarSpss({ m, userId, productCode, sintaxis }) {
   }
 
   if (hecho.sinDatos) {
-    return { contenido: texto(`Todavía no hay datos en la sesión.${N}${N}${avisoDeSubida({ userId, productCode })}`) };
+    return { contenido: texto(`Todavía no hay datos en la sesión.${N}${N}${await avisoDeSubida({ userId, productCode, darEnlace })}`) };
   }
   if (hecho.bibliografica) {
     return {
@@ -348,14 +348,22 @@ async function guardarEnElProyecto({ userId, productCode, guion, consola, biblio
   }
 }
 
-function avisoDeSubida({ userId, productCode }) {
+/**
+ * Sin el conector delante (las pruebas), el enlace tal cual. El conector pasa el
+ * suyo (`darEnlace` de `mcp.tools`), que lo acorta y lo escribe como entiende
+ * cada asistente: el enlace largo, ChatGPT lo reescribía con un carácter
+ * cambiado y el tesista leía «llegó incompleto o alterado».
+ */
+const enlaceSinAcortar = async (args) => enlaceClic(args);
+
+async function avisoDeSubida({ userId, productCode, darEnlace = enlaceSinAcortar }) {
   const { url, minutos } = enlaces.enlaceDeSubida({ userId, productCode });
   return (
     `TODAVÍA NO HAY DATOS. Dale al tesista este enlace para que suba su matriz, en Excel, CSV o ` +
     'SPSS. Si NO tiene matriz sino un PDF por caso (informes de laboratorio, de un equipo, de ' +
     'análisis de suelo o agua…), al mismo enlace sube la carpeta entera o todos los PDF a la vez, y ' +
     `el servidor arma la matriz: no le pidas que la pase a mano ni que te pegue los PDF.${N}` +
-    `${enlaceClic({ texto: 'Haz clic aquí para subir tu matriz de datos', url, minutos })}${N}${N}` +
+    `${await darEnlace({ texto: 'Haz clic aquí para subir tu matriz de datos', url, minutos })}${N}${N}` +
     'Dile que vuelva aquí cuando la haya subido. Entonces llama otra vez a ' +
     'trabajar_en_r sin código y verás sus columnas.'
   );
@@ -368,14 +376,14 @@ function avisoDeSubida({ userId, productCode }) {
  * el exporte de un mapeo bibliométrico: el enlace solo salía con la sesión
  * vacía.
  */
-function avisoDeResubida({ userId, productCode }) {
+async function avisoDeResubida({ userId, productCode, darEnlace = enlaceSinAcortar }) {
   const { url, minutos } = enlaces.enlaceDeSubida({ userId, productCode });
   return (
     `ENLACE PARA SUBIR OTRO ARCHIVO. Lo que suba REEMPLAZA los datos de la sesión y empieza una ` +
     'sesión nueva: díselo antes si no lo sabe. Si es un exporte bibliográfico, su análisis de ' +
     'resultados guardado no se toca; si es otra matriz, el análisis guardado pasa a ser el de la ' +
     `sesión nueva.${N}` +
-    `${enlaceClic({ texto: 'Haz clic aquí para subir tu archivo', url, minutos })}${N}${N}` +
+    `${await darEnlace({ texto: 'Haz clic aquí para subir tu archivo', url, minutos })}${N}${N}` +
     'Dile que vuelva aquí cuando lo haya subido.'
   );
 }
@@ -389,7 +397,16 @@ function avisoDeResubida({ userId, productCode }) {
  * el bloqueo —si el filtro paró el código— es para que la herramienta lo anote
  * en el uso de la licencia.
  */
-async function trabajar({ userId, productCode, codigo, spss: sintaxis, reiniciar = false, descargar, subir = false }) {
+async function trabajar({
+  userId,
+  productCode,
+  codigo,
+  spss: sintaxis,
+  reiniciar = false,
+  descargar,
+  subir = false,
+  darEnlace = enlaceSinAcortar,
+}) {
   const m = motorActual();
   if (!m || !(await m.listo())) return { contenido: texto(NO_DISPONIBLE) };
 
@@ -405,7 +422,7 @@ async function trabajar({ userId, productCode, codigo, spss: sintaxis, reiniciar
         ),
       };
     }
-    return trabajarSpss({ m, userId, productCode, sintaxis: deSpss });
+    return trabajarSpss({ m, userId, productCode, sintaxis: deSpss, darEnlace });
   }
 
   if (orden) {
@@ -538,7 +555,7 @@ async function trabajar({ userId, productCode, codigo, spss: sintaxis, reiniciar
       const { url, minutos } = enlaces.enlaceDeDescarga({ userId, productCode, archivo: nombre });
       partes.push(
         `Enlace para bajar «${nombre}»:${N}` +
-          enlaceClic({ texto: `Haz clic aquí para descargar ${nombre}`, url, minutos }),
+          (await darEnlace({ texto: `Haz clic aquí para descargar ${nombre}`, url, minutos })),
       );
     } else {
       const hay = actual.archivos.map((a) => a.nombre);
@@ -549,8 +566,8 @@ async function trabajar({ userId, productCode, codigo, spss: sintaxis, reiniciar
     }
   }
 
-  if (!actual.hayDatos) partes.push(avisoDeSubida({ userId, productCode }));
-  else if (subir) partes.push(avisoDeResubida({ userId, productCode }));
+  if (!actual.hayDatos) partes.push(await avisoDeSubida({ userId, productCode, darEnlace }));
+  else if (subir) partes.push(await avisoDeResubida({ userId, productCode, darEnlace }));
 
   return {
     contenido: { content: [{ type: 'text', text: partes.join(`${N}${N}`) }, ...imagenes] },
@@ -687,7 +704,7 @@ async function armarWord({ userId, proyecto, titulo, texto: cuerpo, norma, figur
  *
  * Devuelve el contenido MCP tal cual.
  */
-async function informe({ userId, productCode, titulo, texto: contenido, norma }) {
+async function informe({ userId, productCode, titulo, texto: contenido, norma, darEnlace = enlaceSinAcortar }) {
   const m = motorActual();
   if (!m || !(await m.listo())) return texto(NO_DISPONIBLE);
 
@@ -726,7 +743,7 @@ async function informe({ userId, productCode, titulo, texto: contenido, norma })
   const partes = [
     `Informe listo: ${informeWord.cuantasTablas(cuerpo)} tablas, ${figuras.size} figuras y ` +
       `${referencias} referencias, con las citas en ${resuelto.norma.nombre}.`,
-    `Enlace para bajarlo:${N}${enlaceClic({ texto: 'Haz clic aquí para descargar tu informe en Word', url, minutos })}`,
+    `Enlace para bajarlo:${N}${await darEnlace({ texto: 'Haz clic aquí para descargar tu informe en Word', url, minutos })}`,
   ];
 
   if (resuelto.perdidas.length > 0) {

@@ -115,6 +115,20 @@ test('con datos ya subidos, el enlace solo sale si se pide con subir, y avisa de
   assert.match(pedido, /REEMPLAZA los datos de la sesión/);
 });
 
+test('el enlace de subida pasa por el darEnlace del conector (acortado), no sale largo', async () => {
+  rService.usarMotor(motorFalso({ hayDatos: false }));
+  const pedidos = [];
+  const darEnlace = async (args) => {
+    pedidos.push(args);
+    return `${args.texto}: https://acostaresearch.com/s/abcd1234`;
+  };
+  const texto = textoDe((await rService.trabajar({ ...USO, darEnlace })).contenido);
+  assert.equal(pedidos.length, 1);
+  assert.match(pedidos[0].url, /\/subir-datos\//);
+  assert.match(texto, /\/s\/abcd1234/);
+  assert.doesNotMatch(texto, /\/subir-datos\//);
+});
+
 test('si los datos llegaron desde la web, al mirar la sesión se dice de dónde salieron', async () => {
   rService.usarMotor(motorFalso({ origen: 'Búsqueda en Scopus hecha desde el buscador de acostaresearch.com' }));
   const texto = textoDe((await rService.trabajar(USO)).contenido);

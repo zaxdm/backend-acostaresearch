@@ -2931,6 +2931,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
             titulo: informe.titulo,
             texto: informe.texto,
             norma: informe.norma,
+            darEnlace,
           });
         } catch (error) {
           logger.error({ err: error, licenseId: licencia.id }, 'Falló el informe de R');
@@ -2957,6 +2958,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
           reiniciar,
           descargar,
           subir,
+          darEnlace,
         });
 
         // El intento queda en el uso de la licencia, donde lo ve la vigilancia.

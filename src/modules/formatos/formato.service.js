@@ -140,6 +140,14 @@ async function metodos() {
   return lista;
 }
 
+/** Las de la biblioteca, menos esa: de dónde se copia el nombre de una universidad que ya está. */
+async function aprobadas(sinId) {
+  return prisma.formatoUniversidad.findMany({
+    where: { aprobado: true, ...(sinId ? { id: { not: sinId } } : {}) },
+    select: { universidad: true, alias: true },
+  });
+}
+
 const formatoService = {
   /** Todos, los por aprobar primero. */
   async listar() {
@@ -206,6 +214,21 @@ const formatoService = {
     await prisma.formatoUniversidad.delete({ where: { id } });
     await fs.rm(rutaDe(id), { force: true });
     return { id };
+  },
+
+  /**
+   * La ficha que se lee de la portada y del nombre del archivo, para llenar la
+   * ventana (ver `formato.sugerir`). Del que ya está subido, o de uno nuevo.
+   */
+  async sugerencia(id) {
+    const fila = await buscarFila(id);
+    const archivo = await fs.readFile(rutaDe(id)).catch(() => null);
+    return sugerir(archivo, fila.archivoNombre, await aprobadas(id));
+  },
+
+  async sugerenciaDeArchivo(archivo, nombre) {
+    comprobarDocx(archivo);
+    return sugerir(archivo, nombreLimpio(nombre), await aprobadas(null));
   },
 
   /** Para revisarlo en Word antes de aprobarlo. */

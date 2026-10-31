@@ -55,6 +55,22 @@ router.post(
   }),
 );
 
+// La ficha leída de la portada de un .docx nuevo, antes de subirlo.
+router.post(
+  '/sugerencia',
+  docx,
+  asyncHandler(async (req, res) =>
+    ok(res, { ficha: await formatoService.sugerenciaDeArchivo(req.body, nombreSubido(req)) }),
+  ),
+);
+
+// La de uno ya subido (los que mandan los tesistas llegan sin ficha).
+router.get(
+  '/:id/sugerencia',
+  validate({ params: idParamSchema }),
+  asyncHandler(async (req, res) => ok(res, { ficha: await formatoService.sugerencia(req.params.id) })),
+);
+
 router.patch(
   '/:id',
   validate({ params: idParamSchema, body: formatoPatchSchema }),

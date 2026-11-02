@@ -144,3 +144,14 @@ test('«diversos autores señalan» sigue saltando por el verbo', () => {
 
   assert.equal(r.sinRespaldo.length, 1);
 });
+
+test('los ítems de un cuestionario, los rótulos de tabla y las preguntas no se marcan', () => {
+  const texto = [
+    '**Tabla 8**',
+    '*Ítems según el 75 % de los expertos consultados en la validación*',
+    '| 13 | Según mi experiencia, el asistente me indica fuentes que existen | | | | | |',
+    '¿Cómo se relaciona la utilidad percibida, según los tesistas, con sus competencias?',
+  ].join('\n');
+  const r = evidencia.revisarCapitulo({ titulo: 'Instrumento', texto });
+  assert.equal(r.sinRespaldo.length, 0);
+});

@@ -476,6 +476,7 @@ module.exports = {
   tieneEsquema,
   capitulosDelDocumento,
   FASES_DE_TRABAJO,
+  NUNCA_EN_EL_DOCUMENTO,
   SOLO_DEL_PROYECTO,
   yaEsInformeFinal,
   ANEXOS_POR_DEFECTO,

@@ -100,6 +100,23 @@ test('narrativa: si el nombre ya está antes de la marca, no se repite', () => {
   assert.equal(cita(r, 1), '(2006)');
 });
 
+test('sin «:n», si los autores ya van justo antes, se cita como narrativa y no se repiten', () => {
+  const r = aplicar('apa', 'Se adaptaron las escalas de Braun y Clarke [AR22222222] al contexto.');
+
+  assert.equal(texto(r.citas.get(1).antes), '');
+  assert.equal(cita(r, 1), '(2006)');
+});
+
+test('sin «:n», un apellido que solo termina igual no la vuelve narrativa', () => {
+  const r = aplicar('apa', 'Lo midió McClarke [AR22222222].');
+  assert.equal(cita(r, 1), '(Braun & Clarke, 2006)');
+});
+
+test('en IEEE «Braun y Clarke [1]» sigue siendo la forma correcta', () => {
+  const r = aplicar('ieee', 'Según Braun y Clarke [AR22222222] hay seis fases.');
+  assert.equal(cita(r, 1), '[1]');
+});
+
 test('la página se pone donde la pide la norma', () => {
   const r = aplicar('apa', 'Lo dicen así [AR22222222:p. 79].');
   assert.match(cita(r, 1), /2006, p\. 79\)$/);

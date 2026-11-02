@@ -40,6 +40,7 @@ const memosCualitativos = require('../cualitativo/cualitativo.memos');
 const rEnlaces = require('../r/r.enlaces');
 const consejos = require('../projects/project.consejos');
 const normas = require('../projects/project.normas');
+const { NUNCA_EN_EL_DOCUMENTO } = require('../projects/project.esquema');
 const paises = require('../projects/project.pais');
 const etapas = require('../projects/project.etapas');
 const esquemaDeCapitulos = require('../projects/project.esquema');
@@ -882,6 +883,18 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
               'Léelo con "ver_capitulo" ("texto": true, "numerado": true), corrige esos párrafos con ' +
               `"reescribir_parrafos" y después dale el Word.${N}${N}`
             : '';
+
+        // La propuesta de tema (y las fichas de trabajo) no van al Word: mandar a
+        // pedir el enlace aquí contradecía a la propia skill.
+        if (NUNCA_EN_EL_DOCUMENTO.has(entrada.capitulo)) {
+          return texto(
+            `Guardado. «${skill.displayName}» lleva ${palabras} palabras.\n\n` +
+              revision +
+              'Esto NO va en el Word de la tesis: es la ficha de trabajo que el tesista lleva a su ' +
+              'asesor y que leen las fases siguientes. No llames a "enlace_del_word" por esto; ' +
+              'la ficha está en el chat, de donde la puede copiar.',
+          );
+        }
 
         return texto(
           `Guardado. «${skill.displayName}» lleva ${palabras} palabras.\n\n` +

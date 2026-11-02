@@ -69,6 +69,14 @@ const PIDE_FUENTE = [
 /** Encabezados y líneas sueltas: no son afirmaciones. */
 function esProsa(frase) {
   if (/^\s*#{1,6}\s/.test(frase)) return false;
+  // Filas de tabla: los ítems de un cuestionario y las celdas de una matriz
+  // no son afirmaciones del tesista. La prueba de Fase 5 marcaba tres ítems
+  // del instrumento como «sin fuente».
+  if (/^\s*\|/.test(frase)) return false;
+  // «**Tabla 4**», «*Título de la tabla*»: rótulos, no prosa.
+  if (/^\s*\*{1,2}[^*]+\*{1,2}\s*$/.test(frase)) return false;
+  // Una pregunta no afirma nada.
+  if (/\?\s*$/.test(frase)) return false;
   // Menos de cuarenta caracteres no da para afirmar nada con datos; es un
   // título, un pie o una entrada de lista.
   return frase.trim().length >= 40;

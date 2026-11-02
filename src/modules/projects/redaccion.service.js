@@ -433,6 +433,17 @@ async function avisosDeRedaccion(userId, productCode, capitulo) {
   if (!este) return [];
 
   const avisos = controles.avisosDeCapitulo(prosa(este.texto).map((b) => quitarMarcas(b.texto).trim()));
+  // El método es nuestro, no del tesista: «se define en la Skill de Instrumento»
+  // salió en una matriz y en una nota de tabla del Word (prueba del 2-nov). Se
+  // mira el texto entero, tablas incluidas, que es donde se colaba.
+  const jerga = [...new Set(String(este.texto).match(/\b(?:la |en la )?skills?\b[^.|\n]{0,40}/gi) ?? [])];
+  if (jerga.length > 0) {
+    avisos.unshift(
+      `El texto nombra el método («${jerga[0].trim()}»${jerga.length > 1 ? ` y ${jerga.length - 1} más` : ''}). ` +
+        'La tesis no habla de «skills» ni de fases del método: di lo que pasa en la investigación ' +
+        '(«se detalla en el instrumento, Anexo 3», «se confirma al validar el instrumento»).',
+    );
+  }
   const todas = capitulos.flatMap((c) => prosa(c.texto).map((b) => quitarMarcas(b.texto)));
   const muletillas = controles.muletillas(todas).slice(0, 5);
   if (muletillas.length > 0) {

@@ -304,6 +304,15 @@ function terminaCon(texto, autores) {
   return quienes !== '' && sinAdornos(texto).endsWith(quienes);
 }
 
+/** Como `terminaCon`, pero sin cortar una palabra: «Davis» no vale al final de «Mcdavis». */
+function terminaConPalabra(texto, autores) {
+  const quienes = sinAdornos(autores);
+  const final = sinAdornos(texto);
+  if (quienes === '' || !final.endsWith(quienes)) return false;
+  const previo = final.slice(0, final.length - quienes.length);
+  return previo === '' || /[^a-z0-9]$/.test(previo);
+}
+
 // ── El documento ───────────────────────────────────────────────────────────
 
 /** La URI que no se confunde con ningún ítem de nadie, para lo que no está en su Zotero. */
@@ -369,7 +378,17 @@ function renderizar({ norma: idNorma, idioma: idIdioma, capitulos, porClave, uri
 
       // Narrativa solo con una fuente: «Braun y Clarke; Warshaw y Davis (2006;
       // 1985) proponen» no lo escribe nadie.
-      const narrativa = conocidas.length === 1 && conocidas[0].narrativa;
+      let narrativa = conocidas.length === 1 && conocidas[0].narrativa;
+
+      // «adaptados de las escalas de Davis [AR…]» sin «:n»: el modelo escribió el
+      // nombre y olvidó marcarla narrativa. Saldría «Davis (Davis, 1989)». Si el
+      // texto ya acaba con sus autores, es narrativa. Solo en autor-fecha: en una
+      // norma numérica «Davis [1]» es la forma correcta.
+      if (!narrativa && conocidas.length === 1 && norma.familia === 'autor-fecha') {
+        const fuente = porClave.get(conocidas[0].clave);
+        const autores = autoresNarrativos(motor, conocidas[0].clave, fuente, idioma, norma.familia);
+        if (terminaConPalabra(resultado, autores)) narrativa = true;
+      }
 
       const citationItems = conocidas.map((item) => ({
         id: item.clave,

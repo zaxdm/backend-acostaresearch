@@ -1454,6 +1454,29 @@ async function armar({
       ),
   ];
 
+  // Resumen y abstract: solo en la tesis, delante del Capítulo I (ver
+  // `sacarPreliminaresDelTexto`). Si la plantilla numera los Título 1, van con
+  // el estilo del título del índice para no salir como «Capítulo VII».
+  if (paginasDeTesis) {
+    const preliminares = [];
+    for (let i = 0; i < delCuerpo.length; i += 1) {
+      const { texto, secciones } = sacarPreliminaresDelTexto(delCuerpo[i].texto);
+      if (secciones.length > 0) {
+        delCuerpo[i] = { ...delCuerpo[i], texto };
+        preliminares.push(...secciones);
+      }
+    }
+    preliminares.sort((a, b) => (a.titulo === 'Resumen' ? -1 : b.titulo === 'Resumen' ? 1 : 0));
+    for (const seccion of preliminares) {
+      cuerpo.push(
+        partes?.numeracion
+          ? new Paragraph({ text: seccion.titulo, style: 'TOCHeading', pageBreakBefore: true })
+          : tituloDeSeccion(seccion.titulo),
+        ...comoParrafos(seccion.texto, contexto),
+      );
+    }
+  }
+
   for (const capitulo of delCuerpo) {
     cuerpo.push(
       tituloDeSeccion(tituloDelCapitulo(capitulo.titulo, { sinCapitulo: numeraCapitulos })),
@@ -1790,6 +1813,43 @@ function sacarAnexosDelTexto(texto) {
       anexo,
       delTexto,
     })),
+  };
+}
+
+/**
+ * El resumen y el abstract, fuera del capítulo donde se escribieron.
+ *
+ * La skill de Conclusiones los guarda como «## Resumen» y «## Abstract» al
+ * final de su texto, y el Word los imprimía dentro del último capítulo, detrás
+ * de las recomendaciones (prueba del 2-nov). En una tesis van en las páginas
+ * preliminares, antes del Capítulo I. Misma idea que `sacarAnexosDelTexto`.
+ */
+const ES_PRELIMINAR = /^(resumen|abstract)\s*$/i;
+function sacarPreliminaresDelTexto(texto) {
+  const lineas = String(texto ?? '').split('\n');
+  const cuerpo = [];
+  const secciones = [];
+  let actual = null;
+  let enCodigo = false;
+  for (const linea of lineas) {
+    if (/^\s*```/.test(linea)) enCodigo = !enCodigo;
+    const encabezado = enCodigo ? null : linea.match(/^(#{1,4})\s+(.*)$/);
+    if (encabezado) {
+      const nivel = encabezado[1].length;
+      const titulo = encabezado[2].replace(/\*\*|__/g, '').replace(/^[\d.]+\s+/, '').trim();
+      if (ES_PRELIMINAR.test(titulo)) {
+        actual = { titulo: titulo[0].toUpperCase() + titulo.slice(1).toLowerCase(), nivel, lineas: [] };
+        secciones.push(actual);
+        continue;
+      }
+      if (actual && nivel <= actual.nivel) actual = null;
+    }
+    (actual ? actual.lineas : cuerpo).push(linea);
+  }
+  if (secciones.length === 0) return { texto, secciones };
+  return {
+    texto: cuerpo.join('\n').trim(),
+    secciones: secciones.map((s) => ({ titulo: s.titulo, texto: s.lineas.join('\n').trim() })),
   };
 }
 

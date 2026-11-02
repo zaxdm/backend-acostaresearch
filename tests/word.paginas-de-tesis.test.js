@@ -60,3 +60,23 @@ test('sin la marca de tesis —artículo, informe— no sale nada de eso', async
     assert.ok(!textos.includes(t), `sin «${t}»`);
   }
 });
+
+test('el resumen y el abstract salen delante del Capítulo I, no dentro de las conclusiones', async () => {
+  const xml = new AdmZip(
+    await armar({
+      ...DATOS,
+      paginasDeTesis: true,
+      capitulos: [
+        { titulo: 'Capítulo I · Problema', texto: '## 1.1 Intro\n\nTexto uno.' },
+        { titulo: 'Capítulo VI · Conclusiones', texto: '## 6.1 Conclusiones\n\nConcluye.\n\n## Resumen\n\nEl estudio resume.\n\n## Abstract\n\nThe study.' },
+      ],
+    }),
+  ).readAsText('word/document.xml');
+  const texto = xml.replace(/<[^>]+>/g, '');
+  const desdeIndice = texto.slice(texto.indexOf('Índice'));
+  const resumen = desdeIndice.indexOf('El estudio resume.');
+  const abstract = desdeIndice.indexOf('The study.');
+  const capI = desdeIndice.indexOf('Texto uno.');
+  const conclusiones = desdeIndice.indexOf('Concluye.');
+  assert.ok(resumen > -1 && resumen < abstract && abstract < capI && capI < conclusiones);
+});

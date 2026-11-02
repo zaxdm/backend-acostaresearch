@@ -368,15 +368,100 @@ async function generarEnClaudeDeBedrock({
 }
 
 /**
+ * Claude por la API de Anthropic (2-nov-2026), con los créditos del plan y la
+ * clave `ANTHROPIC_API_KEY_HUMANIZADOR`. Con el SDK oficial, que ya está en el
+ * proyecto por el reescritor.
+ *
+ * Mismas entradas, misma salida y el mismo GeminiError que los demás:
+ * - Sin reintentos del SDK (`maxRetries: 0`): ya reintenta `generarConRespaldo`,
+ *   y reintentar en dos sitios es lo que el 22-sep gastó el triple.
+ * - Esfuerzo bajo y margen para pensar: en estos modelos el razonamiento no se
+ *   apaga del todo y cuenta dentro de `max_tokens`. Ver `margenParaPensar`.
+ * - Sin modo JSON, igual que en Bedrock: se pide en las instrucciones y se le
+ *   quita el envoltorio ```json si lo pone.
+ */
+async function generarEnAnthropic({
+  sistema,
+  mensajes,
+  modelo,
+  maxTokens = 900,
+  timeoutMs = 20_000,
+  json = false,
+  fetchImpl = fetch,
+}) {
+  const clave = env.ANTHROPIC_API_KEY_HUMANIZADOR;
+  // Sin clave no se pregunta: que la carrera pase al siguiente.
+  if (!clave) throw new GeminiError('ANTHROPIC_API_KEY_HUMANIZADOR sin configurar', { status: 401 });
+
+  // Se carga aquí y no arriba: solo lo necesita quien pide `anthropic:`.
+  const Anthropic = require('@anthropic-ai/sdk');
+  const cliente = new Anthropic({ apiKey: clave, maxRetries: 0, timeout: timeoutMs, fetch: fetchImpl });
+
+  let cuerpo;
+  try {
+    cuerpo = await cliente.messages.create({
+      model: modelo,
+      max_tokens: maxTokens + margenParaPensar(maxTokens),
+      output_config: { effort: 'low' },
+      system: sistema,
+      messages: mensajes.map((m) => ({ role: m.rol === 'asistente' ? 'assistant' : 'user', content: m.texto })),
+    });
+  } catch (error) {
+    if (error instanceof Anthropic.APIConnectionTimeoutError) {
+      // Con este nombre lo reconoce `esTiempoAgotado` y el modelo va a reposo.
+      const agotado = new Error(`Claude: aborted due to timeout (${timeoutMs} ms)`);
+      agotado.name = 'TimeoutError';
+      throw agotado;
+    }
+    if (error instanceof Anthropic.APIError) {
+      const segundos = Number.parseFloat(error.headers?.get?.('retry-after') ?? '');
+      throw new GeminiError(error.message, {
+        status: error.status,
+        esperarMs: Number.isFinite(segundos) && segundos > 0 ? Math.round(segundos * 1000) : null,
+      });
+    }
+    throw error;
+  }
+
+  const finishReason = PARADA_ANTHROPIC[cuerpo?.stop_reason] ?? cuerpo?.stop_reason ?? 'desconocido';
+  let texto = (cuerpo?.content ?? [])
+    .filter((bloque) => bloque.type === 'text')
+    .map((bloque) => bloque.text)
+    .join('')
+    .trim();
+  if (json) texto = texto.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+  if (!texto) {
+    throw new GeminiError(`Claude no devolvió texto (${finishReason})`, { bloqueado: finishReason === 'SAFETY' });
+  }
+
+  const uso = cuerpo.usage;
+  return {
+    texto,
+    finishReason,
+    uso: uso
+      ? {
+          promptTokenCount: uso.input_tokens,
+          candidatesTokenCount: uso.output_tokens,
+          totalTokenCount: (uso.input_tokens ?? 0) + (uso.output_tokens ?? 0),
+        }
+      : null,
+  };
+}
+
+/**
  * Pide a quien toque: `<proveedor>:<modelo>` va a ese proveedor, lo demás a
  * Gemini. Un prefijo que no conocemos NO se parte: se le pasa entero a Gemini,
  * que dirá que ese modelo no existe, en vez de irse a un sitio equivocado.
  * `bedrock:anthropic.…` va por la API de mensajes. Ver `generarEnClaudeDeBedrock`.
+ * `anthropic:claude-…` va a la API de Anthropic. Ver `generarEnAnthropic`.
  */
 const generarCon = (modelo, opciones) => {
   const corte = modelo.indexOf(':');
   const prefijo = corte > 0 ? modelo.slice(0, corte) : null;
   const resto = modelo.slice(corte + 1);
+  if (prefijo === 'anthropic') {
+    return generarEnAnthropic({ ...opciones, modelo: resto });
+  }
   if (prefijo === 'bedrock' && resto.startsWith('anthropic.')) {
     return generarEnClaudeDeBedrock({ ...opciones, modelo: resto });
   }
@@ -756,4 +841,4 @@ async function embeber(
 /** Vaciar lo recordado. Para las pruebas: cada una empieza sin memoria. */
 const olvidarVectores = () => memoria.clear();
 
-module.exports = { generar, generarEnCompatible, generarEnClaudeDeBedrock, generarConRespaldo, modelosDeTexto, olvidarReposos, embeber, olvidarVectores, esperaPedida, esPicoPasajero, esCupoAgotado, GeminiError };
+module.exports = { generar, generarEnCompatible, generarEnClaudeDeBedrock, generarEnAnthropic, generarConRespaldo, modelosDeTexto, olvidarReposos, embeber, olvidarVectores, esperaPedida, esPicoPasajero, esCupoAgotado, GeminiError };

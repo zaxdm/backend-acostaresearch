@@ -155,6 +155,11 @@ const schema = z.object({
   // con la API de Anthropic, no con la de OpenAI). Puesto el 8-oct-2026.
   BEDROCK_API_KEY: vacioComoAusente(z.string()),
   BEDROCK_REGION: z.string().default('us-east-1'),
+  // Claude por la API de Anthropic, con los créditos del plan (2-nov-2026). Se
+  // pide con el prefijo `anthropic:` —en `HUMANIZAR_MODELO`, por ejemplo— y no
+  // entra en el chat. Clave aparte de `ANTHROPIC_API_KEY` a propósito: esa
+  // enciende el reescritor y las skills, que gastarían el mismo crédito.
+  ANTHROPIC_API_KEY_HUMANIZADOR: vacioComoAusente(z.string()),
   // El de los vectores con los que la búsqueda semántica de Scopus ordena por
   // significado. Probado en el servidor el 19-sep-2026: los 002 y
   // text-embedding-004 ya dan 404.

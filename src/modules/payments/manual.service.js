@@ -156,14 +156,34 @@ function generarReferencia(prefijo) {
  */
 async function exigirComprobante(buffer, { amountCents, metodo, operationCode }) {
   proofStorage.comprobarImagen(buffer);
-  // La lectura automática está hecha para las pantallas de Yape y de Western
-  // Union. La de una billetera de país no se lee: la mira quien la aprueba.
-  if (metodo === billeteraService.PROVEEDOR) return { veredicto: 'SIN_LEER' };
-  const titular = await titularEsperado(metodo);
-  const revision = await revisarCaptura(buffer, { amountCents, metodo, operationCode, titular });
   const rechazar = (mensaje) => {
     throw new AppError(mensaje, { statusCode: 422, code: ERROR_CODES.VALIDATION_ERROR });
   };
+  const frenarPorFecha = (revision) => {
+    if (revision.fechaFutura === true) {
+      rechazar(
+        `La fecha de la captura (${fechaLegible(revision.fechaLeida)}) es posterior a hoy. Ese comprobante no es válido: sube la pantalla real de tu pago.`,
+      );
+    }
+    if (revision.fechaReciente === false) {
+      rechazar(
+        'La fecha de la captura no es de hoy ni de ayer. Sube el comprobante del pago que acabas de hacer; si pagaste antes, escríbenos por WhatsApp.',
+      );
+    }
+  };
+
+  // La lectura automática está hecha para las pantallas de Yape y de Western
+  // Union. La de una billetera de país (Deuna, Nequi…) no trae nuestras
+  // palabras, así que de ella solo se mira la FECHA: el 2-nov se aprobó una de
+  // Deuna fechada dos días después del envío. Lo demás lo mira quien la aprueba.
+  if (metodo === billeteraService.PROVEEDOR) {
+    const leida = await revisarCaptura(buffer, { amountCents });
+    if (leida.veredicto !== 'SIN_LEER') frenarPorFecha(leida);
+    return { veredicto: 'SIN_LEER', fechaLeida: leida.fechaLeida ?? null };
+  }
+
+  const titular = await titularEsperado(metodo);
+  const revision = await revisarCaptura(buffer, { amountCents, metodo, operationCode, titular });
   if (revision.veredicto === 'NO_PARECE') {
     rechazar(
       'Esa imagen no parece un comprobante de pago. Sube la pantalla que te muestra Yape (o tu recibo de Western Union) con el monto, la fecha y el número de operación.',
@@ -176,17 +196,19 @@ async function exigirComprobante(buffer, { amountCents, metodo, operationCode })
       'El número de operación que escribiste no aparece en la captura. Escribe el que sale en esta misma pantalla.',
     );
   }
-  if (revision.fechaReciente === false) {
-    rechazar(
-      'La fecha de la captura no es de hoy ni de ayer. Sube el comprobante del pago que acabas de hacer; si pagaste antes, escríbenos por WhatsApp.',
-    );
-  }
+  frenarPorFecha(revision);
   if (revision.destinatarioVisto === false) {
     rechazar(
       'En la captura no aparece a quién pagaste. Sube la pantalla completa del comprobante, donde se ve el nombre del destinatario.',
     );
   }
   return revision;
+}
+
+/** «2026-11-04» → «04/11/2026», como la ve el comprador en su captura. */
+function fechaLegible(fecha) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(fecha ?? '');
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : 'la que se lee';
 }
 
 /**
@@ -289,8 +311,8 @@ async function exigirSinPendiente(userId, planes) {
 /** Apunta el veredicto en las filas. Si falla, la bandeja no lo enseña y ya. */
 function apuntarRevision(ids, revision) {
   // Solo lo que enseña la bandeja: la columna corta a 255 caracteres.
-  const { veredicto, operacionLeida, montoVisto, operacionCoincide } = revision;
-  const guardar = { veredicto, operacionLeida, montoVisto, operacionCoincide };
+  const { veredicto, operacionLeida, montoVisto, operacionCoincide, fechaLeida } = revision;
+  const guardar = { veredicto, operacionLeida, montoVisto, operacionCoincide, fechaLeida: fechaLeida ?? null };
   paymentRepository.saveProofCheck(ids, guardar).catch((error) => {
     logger.warn({ err: error, ids }, 'No se pudo apuntar la revisión automática de la captura');
   });

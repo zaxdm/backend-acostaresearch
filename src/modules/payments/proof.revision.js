@@ -108,6 +108,18 @@ function fechaReciente(texto, hoy = new Date()) {
 }
 
 /**
+ * Si alguna fecha de la captura es posterior a hoy (hora de Lima). Una captura
+ * del 4 de noviembre enviada el 2 está editada (2-nov: llegó una de Deuna y se
+ * aprobó). Null si no se leyó ninguna fecha.
+ */
+function fechaFutura(texto, hoy = new Date()) {
+  const fechas = fechasEn(texto, hoy);
+  if (fechas.length === 0) return null;
+  const hoyEnLima = diaEnLima(hoy);
+  return fechas.some((fecha) => fecha > hoyEnLima);
+}
+
+/**
  * Si aparece a quién se pagó: alguna palabra del titular (de cuatro letras o
  * más, para no casar «de» o «la»). Null si no sabemos el titular.
  */
@@ -143,6 +155,8 @@ function analizarTexto(texto, { amountCents, metodo = 'YAPE', operationCode, tit
     operacionCoincide,
     // Estas dos solo las usa el envío para frenar; no se guardan en el pago.
     fechaReciente: fechaReciente(limpio, hoy),
+    fechaFutura: fechaFutura(limpio, hoy),
+    fechaLeida: fechasEn(limpio, hoy ?? new Date())[0] ?? null,
     destinatarioVisto: titular ? destinatarioEn(limpio, titular) : null,
   };
 }
@@ -172,4 +186,4 @@ async function revisarCaptura(buffer, opciones = {}) {
   }
 }
 
-module.exports = { analizarTexto, revisarCaptura, fechaReciente, destinatarioEn };
+module.exports = { analizarTexto, revisarCaptura, fechaReciente, fechaFutura, destinatarioEn };

@@ -114,3 +114,17 @@ test('los correos temporales se reconocen, los de siempre no', () => {
   }
   assert.equal(esCorreoDesechable(''), false);
 });
+
+// 2-nov-2026: llegó por Deuna una captura fechada el 4 de noviembre y se aprobó.
+test('una captura con fecha posterior a hoy se marca como futura', () => {
+  const { fechaFutura } = require('../src/modules/payments/proof.revision');
+  const HOY_2NOV = new Date('2026-11-02T17:00:00Z');
+  const DEUNA = '¡Pago exitoso con Deuna! $ 17,50 A Jonathan Alexander Ruiz El 04 de noviembre de 2026 N° de comprobante 127652052';
+  assert.equal(fechaFutura(DEUNA, HOY_2NOV), true);
+  assert.equal(fechaFutura('El 02 de noviembre de 2026', HOY_2NOV), false);
+  assert.equal(fechaFutura('sin fecha', HOY_2NOV), null);
+  const r = analizarTexto(DEUNA, { amountCents: 1750, hoy: HOY_2NOV });
+  assert.equal(r.fechaFutura, true);
+  assert.equal(r.fechaReciente, false);
+  assert.equal(r.fechaLeida, '2026-11-04');
+});

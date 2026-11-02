@@ -40,6 +40,9 @@ const controles = require('../src/modules/projects/project.humanizado-controles'
 /** USD por millón de tokens (entrada, salida). Orientativo. */
 const TARIFAS = [
   ['nemotron-super', 0.15, 0.65],
+  // Los de la API de Anthropic (2-nov-2026), antes que los genéricos.
+  ['claude-sonnet-5-5', 2, 10],
+  ['claude-opus-5-5', 4, 20],
   ['claude-sonnet', 3, 15],
   ['claude-haiku', 1, 5],
 ];

@@ -155,3 +155,10 @@ test('los ítems de un cuestionario, los rótulos de tabla y las preguntas no se
   const r = evidencia.revisarCapitulo({ titulo: 'Instrumento', texto });
   assert.equal(r.sinRespaldo.length, 0);
 });
+
+test('en Resultados las cifras de sus propios datos no piden fuente, pero la cita a mano sí salta', () => {
+  const texto = 'El 54,2 % de los tesistas presenta un nivel alto de uso del asistente, según la Tabla 14.\nEsto coincide con lo que reportan otros estudios (García, 2024) sobre el uso de la IA.';
+  const r = evidencia.revisarCapitulo({ titulo: 'Resultados', texto, datosPropios: true });
+  assert.equal(r.sinRespaldo.length, 0);
+  assert.equal(r.citasAMano.length, 1);
+});

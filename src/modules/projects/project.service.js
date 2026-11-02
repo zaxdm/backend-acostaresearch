@@ -1151,7 +1151,10 @@ async function revisarEvidencia(userId, productCode, { capitulo = null } = {}) {
     if (capitulo && skill.code !== capitulo) continue;
 
     const texto = await almacen.leer(proyecto.id, skill.code);
-    if (texto && texto.trim() !== '') capitulos.push({ titulo: skill.displayName, texto });
+    if (texto && texto.trim() !== '') {
+      // En Resultados las cifras salen de sus datos, no de una fuente.
+      capitulos.push({ titulo: skill.displayName, texto, datosPropios: CAPITULOS_DE_RESULTADOS.includes(skill.code) });
+    }
   }
 
   if (capitulos.length === 0) return null;

@@ -113,7 +113,7 @@ function recortar(frase, largo = 200) {
  * `porClave` trae las fuentes ya buscadas, para poder decir CUÁL respalda cada
  * afirmación y no solo que hay una.
  */
-function revisarCapitulo({ titulo, texto }, porClave = new Map()) {
+function revisarCapitulo({ titulo, texto, datosPropios = false }, porClave = new Map()) {
   const conRespaldo = [];
   const sinRespaldo = [];
   const citasAMano = [];
@@ -141,7 +141,10 @@ function revisarCapitulo({ titulo, texto }, porClave = new Map()) {
       continue;
     }
 
-    if (pideFuente(frase)) sinRespaldo.push({ frase: recortar(frase) });
+    // En Resultados «el 54,2 % tiene un nivel alto» describe sus propios datos:
+    // pedirle fuente marcaba cada párrafo del capítulo (prueba del 2-nov).
+    // Las citas a mano sí se siguen señalando, arriba.
+    if (!datosPropios && pideFuente(frase)) sinRespaldo.push({ frase: recortar(frase) });
   }
 
   return { titulo, conRespaldo, sinRespaldo, citasAMano };

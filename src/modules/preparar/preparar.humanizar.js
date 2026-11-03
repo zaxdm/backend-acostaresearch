@@ -184,6 +184,24 @@ function porCapitulos(parrafos) {
 }
 
 /**
+ * Lo marcado por el reporte de IA más el párrafo de prosa de antes y el de
+ * después de cada marcado, si están en el mismo apartado. Al rehacer solo lo
+ * marcado, Turnitin pasa la marca a los vecinos y el documento se queda en
+ * «*%» (Ana y Luzmilenia, 3-nov-2026); lo que dio 0 % fue rehacer la zona.
+ */
+function conVecinos(marcados, parrafos) {
+  const prosa = porCapitulos(parrafos);
+  const zona = new Set(marcados);
+  prosa.forEach((parrafo, i) => {
+    if (!marcados.has(parrafo.clave)) return;
+    for (const vecino of [prosa[i - 1], prosa[i + 1]]) {
+      if (vecino && vecino.titulo === parrafo.titulo) zona.add(vecino.clave);
+    }
+  });
+  return zona;
+}
+
+/**
  * Los capítulos del Word, para que el cliente elija cuáles no se tocan
  * (24-oct-2026). Un capítulo es un título del nivel más alto que use el Word;
  * sin estilos de título, una línea corta en mayúsculas o que empieza por
@@ -826,6 +844,7 @@ async function humanizar({
 module.exports = {
   humanizar,
   porCapitulos,
+  conVecinos,
   capitulosDe,
   rutaDelTitulo,
   moldesDe,

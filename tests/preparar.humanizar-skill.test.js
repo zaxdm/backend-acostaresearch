@@ -283,3 +283,27 @@ test('en el paso 1 se avisa qué párrafos comparten plantilla', async () => {
   const [primera, segunda] = Object.values(comparten);
   assert.notEqual(primera, segunda);
 });
+
+test('conVecinos suma el párrafo de antes y el de después de cada marcado, sin salir del apartado', () => {
+  const t1 = parrafo('Antecedentes', 2);
+  const a = parrafo(METODO);
+  const b = parrafo(RESULTADO);
+  const c = parrafo(DISCUSION);
+  const d = parrafo(METODO_NUEVO);
+  const t2 = parrafo('Bases teóricas', 2);
+  const e = parrafo(RESULTADO_NUEVO);
+  const parrafos = [t1, a, b, c, d, t2, e];
+
+  const zona = humanizador.conVecinos(new Set([b.clave]), parrafos);
+  assert.deepEqual([...zona].sort(), [a.clave, b.clave, c.clave].sort());
+
+  // El último del apartado no arrastra al primero del siguiente.
+  const borde = humanizador.conVecinos(new Set([d.clave]), parrafos);
+  assert.deepEqual([...borde].sort(), [c.clave, d.clave].sort());
+  assert.equal(borde.has(e.clave), false);
+});
+
+test('conVecinos sin marcados no añade nada', () => {
+  const parrafos = [parrafo(METODO), parrafo(RESULTADO)];
+  assert.equal(humanizador.conVecinos(new Set(), parrafos).size, 0);
+});

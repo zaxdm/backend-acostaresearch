@@ -315,7 +315,8 @@ async function producir({ preparacion, buffer, parrafos }) {
   // pasadas sobre el documento entero. Necesita los títulos para saber en qué
   // capítulo está; no los manda. Ver `preparar.humanizar` (21-oct-2026).
   // Con el reporte de IA de Turnitin, solo se rehace lo marcado y lo limpio se
-  // queda como estaba (ver `preparar.reporte`, 24-oct-2026).
+  // queda como estaba (ver `preparar.reporte`, 24-oct-2026). Desde el 3-nov-2026
+  // entran también los párrafos vecinos de cada marcado (`conVecinos`).
   // Con `solo` (rehacer un párrafo) se rehace ese y nada más; con `excluir`, los
   // capítulos que el cliente pidió no tocar se quedan como están.
   const humanizando = preparacion.servicio === 'HUMANIZAR';
@@ -324,7 +325,7 @@ async function producir({ preparacion, buffer, parrafos }) {
   const soloClaves = Array.isArray(opciones.solo)
     ? new Set(opciones.solo.map(String))
     : reporte
-      ? informeDeReporte.marcadosDe(reporte, parrafos)
+      ? humanizador.conVecinos(informeDeReporte.marcadosDe(reporte, parrafos), parrafos)
       : null;
   const excluir = Array.isArray(opciones.excluir) ? new Set(opciones.excluir.map(String)) : null;
   const { cambios: propuestos, malos, uso } =

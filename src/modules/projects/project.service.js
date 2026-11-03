@@ -40,6 +40,8 @@ const claveDeProyecto = ({ userId, productCode }) => `proyecto:${userId}:${produ
 const bloques = require('./project.bloques');
 const { cuantasLineas, resumenDeAnalisis, bloqueDeAnalisis, tramoDeAnalisis } = require('./project.analisis-presentacion');
 const evidencia = require('./project.evidencia');
+const verificacion = require('./project.verificacion');
+const cifras = require('./project.cifras');
 const plantilla = require('./project.plantilla');
 const partesDePlantilla = require('./project.plantilla-partes');
 const plantillaAjustes = require('./project.plantilla-ajustes');
@@ -51,7 +53,7 @@ const skillService = require('../skills/skill.service');
 const referenceService = require('../references/reference.service');
 const { guardarAvanceSchema, guardarCapituloSchema } = require('./project.schema');
 const { fusionarFicha, lineasDeFicha, esDeEmpresa, NOMBRE_DE_TIPO } = require('./project.ficha-informe');
-const { perfilDe, esTesisDelMetodo } = require('../productos/producto.perfil');
+const { perfilDe, esTesisDelMetodo, verificaCitas } = require('../productos/producto.perfil');
 const { lineaDeMaterial } = require('./project.material');
 const esquemaDeCapitulos = require('./project.esquema');
 
@@ -1170,6 +1172,140 @@ async function revisarEvidencia(userId, productCode, { capitulo = null } = {}) {
 }
 
 /**
+ * Los capítulos escritos del proyecto, con su texto: `[{ code, titulo, texto }]`.
+ * `capitulo` acota a uno.
+ */
+async function capitulosConTexto(proyecto, productCode, catalogo, capitulo = null) {
+  const conTexto = new Set(
+    proyecto.stages.filter((e) => (e.palabras ?? 0) > 0).map((e) => e.skillCode),
+  );
+  const capitulos = [];
+  for (const skill of conSeccionesAparte(productCode, catalogo, { esquema: proyecto.esquema, conTexto })) {
+    if (!conTexto.has(skill.code)) continue;
+    if (capitulo && skill.code !== capitulo) continue;
+    const texto = await almacen.leer(proyecto.id, skill.code);
+    if (texto && texto.trim() !== '') capitulos.push({ code: skill.code, titulo: skill.displayName, texto });
+  }
+  return capitulos;
+}
+
+/**
+ * El autor lee lo que cita. Ver `project.verificacion`.
+ *
+ * Sin `confirmar`, devuelve cada fuente citada con su estado. Con `confirmar`
+ * —lo que el autor respondió tras leerlas— lo guarda primero. Null si no hay
+ * proyecto o no hay nada escrito.
+ */
+async function verificarCitas(userId, productCode, { capitulo = null, confirmar = [] } = {}) {
+  const [proyecto, catalogo] = await Promise.all([
+    projectRepository.buscar(userId, productCode),
+    skillService.listCatalog(productCode),
+  ]);
+  if (!proyecto) return null;
+
+  const capitulos = await capitulosConTexto(proyecto, productCode, catalogo, capitulo);
+  if (capitulos.length === 0) return null;
+
+  const claves = [...new Set(capitulos.flatMap((c) => citas.clavesDe(c.texto)))];
+  const fuentes = claves.length > 0 ? await referenceService.porClaves(claves, userId) : [];
+  const porClave = new Map(fuentes.map((f) => [f.ref, f]));
+
+  // Leer, aplicar y escribir en serie: dos confirmaciones seguidas no se pisan.
+  return enSerie(`verificacion:${proyecto.id}`, async () => {
+    let registro = await almacen.leerVerificacion(proyecto.id);
+    let aplicadas = [];
+    let rechazadas = [];
+
+    if (confirmar.length > 0) {
+      const antes = verificacion.inventario(capitulos, porClave, registro);
+      ({ registro, aplicadas, rechazadas } = verificacion.aplicar(registro, confirmar, antes));
+      if (aplicadas.length > 0) await almacen.guardarVerificacion(proyecto.id, registro);
+    }
+
+    const items = verificacion.inventario(capitulos, porClave, registro);
+    return { items, recuento: verificacion.recuento(items), aplicadas, rechazadas };
+  });
+}
+
+/**
+ * Cero citas inventadas y cifras de datos reales: lo que se le dice a Claude
+ * nada más guardar un capítulo, para que lo arregle en ese momento y no el día
+ * de entregar. Devuelve líneas de aviso; vacío si no hay nada.
+ */
+async function controlAlGuardar(userId, productCode, capitulo) {
+  // Solo el artículo empírico (ver `verificaCitas`): la tesis se queda como estaba.
+  if (!verificaCitas(productCode)) return [];
+  const proyecto = await projectRepository.buscar(userId, productCode);
+  if (!proyecto) return [];
+  const texto = await almacen.leer(proyecto.id, capitulo);
+  if (!texto || texto.trim() === '') return [];
+
+  const avisos = [];
+  const claves = citas.clavesDe(texto);
+  const fuentes = claves.length > 0 ? await referenceService.porClaves(claves, userId) : [];
+  const porClave = new Map(fuentes.map((f) => [f.ref, f]));
+
+  const rotas = claves.filter((clave) => !porClave.has(clave));
+  if (rotas.length > 0) {
+    avisos.push(
+      `CLAVES QUE NO CORRESPONDEN A NINGUNA FUENTE (${rotas.length}): ${rotas.join(', ')}. En el Word ` +
+        'salen como «CITA SIN LOCALIZAR». Cámbialas por una fuente de "buscar_fuentes" o quítalas.',
+    );
+  }
+
+  const esResultados = CAPITULOS_DE_RESULTADOS.includes(capitulo);
+  const revisado = evidencia.revisarCapitulo({ titulo: capitulo, texto, datosPropios: esResultados }, porClave);
+  if (revisado.citasAMano.length > 0) {
+    avisos.push(
+      `CITAS ESCRITAS A MANO (${revisado.citasAMano.length}), sin clave: nadie ha comprobado que existan. ` +
+        'Busca cada una con "buscar_fuentes" y cámbiala por su clave; si no aparece, díselo al autor y ' +
+        'quítala. Primeras: ' +
+        revisado.citasAMano.slice(0, 3).map((a) => `«${a.frase}»`).join(' · '),
+    );
+  }
+
+  if (esResultados) {
+    const etapa = proyecto.stages.find((e) => e.skillCode === capitulo);
+    const guardadas = etapa?.datos?.resultados ?? [];
+    const consola = (await almacen.leerAnalisis(proyecto.id, capitulo, 'salida')) ?? '';
+    const estadisticas = cifras.cifrasDe(texto).filter((c) => !c.esUmbral);
+
+    if (estadisticas.length > 0 && guardadas.length === 0 && consola.trim() === '') {
+      avisos.push(
+        `ESTE CAPÍTULO REPORTA ${estadisticas.length} CIFRAS Y NO HAY NINGÚN ANÁLISIS GUARDADO. Nada ` +
+          'prueba que salgan de sus datos. Corre el análisis con "trabajar_en_r" o guarda lo que le ' +
+          'devolvió su programa con "guardar_analisis", y escribe solo esas cifras.',
+      );
+    } else {
+      const sueltas = cifras.sinRespaldo(texto, guardadas, consola);
+      if (sueltas.length > 0) {
+        avisos.push(
+          `CIFRAS QUE NO SALEN DEL ANÁLISIS (${sueltas.length}): ` +
+            sueltas.slice(0, 8).map((x) => `${x.bruto} («…${x.contexto}…»)`).join(' · ') +
+            '. Compruébalas con "ver_analisis": o falta anotarlas, o ese número no lo devolvió ninguna ' +
+            'prueba y hay que corregirlo.',
+        );
+      }
+    }
+  }
+
+  if (claves.length > rotas.length) {
+    const registro = await almacen.leerVerificacion(proyecto.id);
+    const items = verificacion.inventario([{ code: capitulo, titulo: capitulo, texto }], porClave, registro);
+    const c = verificacion.recuento(items);
+    const faltan = c.porLeer + c.no_lo_dice;
+    if (faltan > 0) {
+      avisos.push(
+        `${faltan} de las ${c.total} fuentes citadas aquí no las ha verificado el autor. Cuando dé el ` +
+          'capítulo por bueno, ábrele "verificar_citas" con este capítulo para que las lea.',
+      );
+    }
+  }
+
+  return avisos;
+}
+
+/**
  * Guarda la plantilla de la facultad del tesista.
  *
  * Del .docx solo se queda el formato. Ver `project.plantilla` para el
@@ -2048,6 +2184,13 @@ async function auditar(userId, productCode) {
     ? (await almacen.leerAnalisis(proyecto.id, claveResultados, 'salida')) ?? ''
     : '';
 
+  // Lo que el autor ya leyó y confirmó (ver `project.verificacion`). Solo en el
+  // artículo empírico, que además exige el análisis guardado (ver `verificaCitas`).
+  const conVerificacion = verificaCitas(productCode);
+  const verificadas = conVerificacion
+    ? verificacion.inventario(capitulos, porClave, await almacen.leerVerificacion(proyecto.id))
+    : [];
+
   return auditoria.auditar({
     proyecto,
     catalogo,
@@ -2056,6 +2199,8 @@ async function auditar(userId, productCode) {
     evidencia: informe,
     citasRotas,
     consola,
+    verificadas,
+    exigirAnalisis: conVerificacion,
   });
 }
 
@@ -2491,6 +2636,8 @@ module.exports = {
   armarWord,
   armarBibtex,
   revisarEvidencia,
+  verificarCitas,
+  controlAlGuardar,
   guardarAnalisis,
   normaDelProyecto,
   normasDisponibles,

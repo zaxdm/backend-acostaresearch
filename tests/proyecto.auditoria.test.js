@@ -326,3 +326,53 @@ test('una variable que de verdad falta se sigue señalando aunque lleve parénte
 
   assert.match(mensajes(r), /Rendimiento académico.*no aparece en ningún objetivo/);
 });
+
+// ── Datos reales y citas leídas por el autor (2-nov-2026) ───────────────────
+
+const RESULTADOS_ARTICULO = {
+  code: 'articulo-fase5-resultados',
+  titulo: '5 · Resultados',
+  texto: 'La correlación fue positiva, r = .62, p = .001.',
+};
+
+test('artículo: las cifras de Resultados se cotejan con su propio análisis', () => {
+  const r = auditar({
+    catalogo: [...CATALOGO, { code: 'articulo-fase5-resultados', displayName: '5 · Resultados' }],
+    etapas: [{ skillCode: 'articulo-fase5-resultados', estado: 'EN_CURSO', palabras: 9, datos: { resultados: ['r = 0.618', 'p = 0.001'] } }],
+    capitulos: [{ ...RESULTADOS_ARTICULO, texto: 'La correlación fue r = .62, p = .001, y el alfa fue .93.' }],
+    exigirAnalisis: true,
+  });
+  assert.match(mensajes(r), /aparece \.93 y no sale/);
+  assert.doesNotMatch(mensajes(r), /\.62 y no sale/);
+});
+
+test('resultados con cifras y ningún análisis guardado es grave', () => {
+  const r = auditar({
+    catalogo: [...CATALOGO, { code: 'articulo-fase5-resultados', displayName: '5 · Resultados' }],
+    capitulos: [RESULTADOS_ARTICULO],
+    exigirAnalisis: true,
+  });
+  assert.match(mensajes(r), /reporta \d+ cifras y no hay ningún análisis/);
+});
+
+test('la tesis no cambia: sin cifras guardadas no se exige análisis ni se coteja la consola', () => {
+  const capitulos = [
+    { code: 'analisis-datos-rstudio', titulo: 'Resultados', texto: 'La correlación fue r = .62, p = .001, y el alfa fue .93.' },
+  ];
+  const sinNada = auditar({ capitulos });
+  assert.doesNotMatch(mensajes(sinNada), /no hay ningún análisis|no sale/);
+  const soloConsola = auditar({ capitulos, consola: ['r = 0.618', 'p = 0.001'].join('\n') });
+  assert.doesNotMatch(mensajes(soloConsola), /no sale/);
+});
+
+test('una cita que el autor leyó y no dice eso es grave; las no leídas, aviso', () => {
+  const r = auditar({
+    verificadas: [
+      { capitulo: 'marco-teorico', clave: 'AR11112222', estado: 'no_lo_dice', nota: 'dice 42 %, no 45 %' },
+      { capitulo: 'marco-teorico', clave: 'AR33334444', estado: 'pendiente' },
+      { capitulo: 'marco-teorico', clave: 'AR55556666', estado: 'lo_dice' },
+    ],
+  });
+  assert.match(mensajes(r), /AR11112222.*NO dice.*42 %/);
+  assert.match(mensajes(r), /1 de las 3 citas/);
+});

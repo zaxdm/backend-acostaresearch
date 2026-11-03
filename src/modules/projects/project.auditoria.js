@@ -54,6 +54,12 @@ const REPORTAN_CIFRAS = new Set([
 ]);
 
 /**
+ * Resultados que, con cifras y sin ningún análisis guardado, son graves. Solo el
+ * artículo empírico por ahora (ver `exigirAnalisis`).
+ */
+const RESULTADOS = new Set(['articulo-fase5-resultados']);
+
+/**
  * Palabras que no distinguen un objetivo de otro.
  *
  * Los verbos con los que empieza todo objetivo y los conectores que lleva
@@ -109,7 +115,7 @@ const aviso = (mensaje) => ({ nivel: 'aviso', mensaje });
  * se calcula aparte y no se repite aquí; `consola` es lo que imprimió R, que se
  * usa como segunda fuente de respaldo para las cifras del texto.
  */
-function auditar({ proyecto, catalogo, etapas, capitulos, evidencia, citasRotas = [], consola = '' }) {
+function auditar({ proyecto, catalogo, etapas, capitulos, evidencia, citasRotas = [], consola = '', verificadas = [], exigirAnalisis = false }) {
   const hallazgos = [];
 
   const porCodigo = new Map(catalogo.map((s) => [s.code, s]));
@@ -186,7 +192,13 @@ function auditar({ proyecto, catalogo, etapas, capitulos, evidencia, citasRotas 
   // sorprendente, porque cada capítulo se escribe semanas después del anterior.
   const metodo = datos.get('metodologia') ?? {};
   const instrumento = datos.get('instrumento-investigacion') ?? {};
-  const analisis = datos.get('analisis-datos-rstudio') ?? {};
+  // El análisis de la tesis. En el artículo empírico (`exigirAnalisis`, ver
+  // `producto.perfil.verificaCitas`) se lee el suyo: antes ahí el repaso de
+  // cifras no comprobaba nada. La TSP y el informe siguen como estaban.
+  const analisis =
+    datos.get('analisis-datos-rstudio') ??
+    (exigirAnalisis ? datos.get('articulo-fase5-resultados') : undefined) ??
+    {};
 
   if (metodo.instrumento && instrumento.nombre && !apareceEn(metodo.instrumento, instrumento.nombre)) {
     hallazgos.push(
@@ -247,7 +259,11 @@ function auditar({ proyecto, catalogo, etapas, capitulos, evidencia, citasRotas 
   // su RStudio. El cálculo lo sigue haciendo él; lo que aporta esto es que
   // nadie pueda escribir un número que no esté ahí.
   const guardadas = analisis.resultados ?? [];
-  if (guardadas.length > 0) {
+  // En el artículo cuenta también la consola de R; en la tesis, como siempre,
+  // solo las cifras guardadas.
+  const hayAnalisis =
+    guardadas.length > 0 || (exigirAnalisis && String(consola ?? '').trim() !== '');
+  if (hayAnalisis) {
     for (const capitulo of capitulos) {
       // Solo donde se reportan resultados. Un porcentaje en el planteamiento
       // del problema viene de una fuente, no de las pruebas de este estudio.
@@ -262,6 +278,24 @@ function auditar({ proyecto, catalogo, etapas, capitulos, evidencia, citasRotas 
           ),
         );
       }
+    }
+  }
+
+  // Resultados con cifras y ningún análisis guardado: nada prueba que esos
+  // números salgan de datos reales. Es justo lo que no puede pasar.
+  if (exigirAnalisis && !hayAnalisis) {
+    for (const capitulo of capitulos) {
+      if (!RESULTADOS.has(capitulo.code)) continue;
+      const estadisticas = cifras.cifrasDe(capitulo.texto).filter((c) => !c.esUmbral);
+      if (estadisticas.length === 0) continue;
+      hallazgos.push(
+        grave(
+          `«${nombre(capitulo.code)}» reporta ${estadisticas.length} cifras y no hay ningún análisis ` +
+            'guardado (ni la sesión de R ni las cifras del suyo). Nada prueba que salgan de sus ' +
+            'datos: corre el análisis con "trabajar_en_r", o guarda lo que le devolvió su programa, ' +
+            'y vuelve a revisar.',
+        ),
+      );
     }
   }
 
@@ -310,6 +344,25 @@ function auditar({ proyecto, catalogo, etapas, capitulos, evidencia, citasRotas 
       aviso(
         `Hay ${evidencia.total.sinRespaldo} afirmaciones que piden fuente y no citan ninguna. ` +
           'Las tienes una a una en "revisar_evidencia".',
+      ),
+    );
+  }
+
+  // ── 5b. Lo que el autor leyó de lo que cita ────────────────────────────
+  for (const item of verificadas.filter((i) => i.estado === 'no_lo_dice')) {
+    hallazgos.push(
+      grave(
+        `En «${nombre(item.capitulo)}» se cita ${item.clave} y el autor la leyó: NO dice lo que la ` +
+          `frase le atribuye${item.nota ? ` («${item.nota}»)` : ''}. Reescribe la frase o cambia la fuente.`,
+      ),
+    );
+  }
+  const sinLeer = verificadas.filter((i) => ['pendiente', 'cambio', 'no_pude_leer'].includes(i.estado));
+  if (sinLeer.length > 0) {
+    hallazgos.push(
+      aviso(
+        `${sinLeer.length} de las ${verificadas.length} citas (fuente por capítulo) no las ha verificado ` +
+          'el autor leyendo la fuente. Ábrele "verificar_citas" antes de entregar.',
       ),
     );
   }

@@ -162,3 +162,14 @@ test('en Resultados las cifras de sus propios datos no piden fuente, pero la cit
   assert.equal(r.sinRespaldo.length, 0);
   assert.equal(r.citasAMano.length, 1);
 });
+
+test('una cita a mano se señala aunque la frase sea corta (3-nov)', () => {
+  const r = evidencia.revisarCapitulo({
+    titulo: 'x',
+    texto:
+      'La adopción tecnológica depende de la utilidad percibida [AR1A2B3C4D]. Otros lo confirman (Quispe, 2022).\n' +
+      '## Antecedentes (Pérez, 2020)\n' +
+      '| Hair et al. | (Hair, 2019) |',
+  });
+  assert.deepEqual(r.citasAMano.map((c) => c.frase), ['Otros lo confirman (Quispe, 2022).']);
+});

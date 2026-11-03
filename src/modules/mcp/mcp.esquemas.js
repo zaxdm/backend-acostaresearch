@@ -774,4 +774,54 @@ const ESQUEMA_REDACTAR = fromJsonSchema({
 });
 
 
-module.exports = { ESQUEMA_FUENTES, ESQUEMA_ANADIR, ESQUEMA_MIS_FUENTES, ESQUEMA_BOLA, ESQUEMA_LITERATURA, ESQUEMA_SCOPUS, ESQUEMA_GUARDAR_SCOPUS, GUARDAR_AVANCE, ESQUEMA_GUARDAR_AVANCE, ESQUEMA_GUARDAR_AVANCE_TSP, ESQUEMA_GUARDAR_AVANCE_INFORME, GUARDAR_CAPITULO, ESQUEMA_GUARDAR_CAPITULO, ESQUEMA_GUARDAR_CAPITULO_INFORME, ESQUEMA_GUARDAR_ANALISIS, ESQUEMA_VER_ANALISIS, ESQUEMA_TRABAJAR_EN_R, ESQUEMA_VER_CAPITULO, ESQUEMA_REVISAR_EVIDENCIA, ESQUEMA_REDACTAR };
+const ESQUEMA_VERIFICAR_CITAS = fromJsonSchema({
+  type: 'object',
+  properties: {
+    capitulo: {
+      type: 'string',
+      description: 'Clave del capítulo. Si lo omites, todas las citas de lo escrito.',
+    },
+    cuantas: {
+      type: 'integer',
+      minimum: 1,
+      maximum: 10,
+      description:
+        'Cuántas citas por revisar enseñar de una vez. Por omisión, 3: el autor tiene que abrir ' +
+        'y leer cada una, y más de tres a la vez no se leen.',
+    },
+    confirmar: {
+      type: 'array',
+      maxItems: 20,
+      description:
+        'Lo que el AUTOR respondió después de leer cada fuente. Solo con su respuesta: nunca lo ' +
+        'rellenes tú por haber leído el resumen.',
+      items: {
+        type: 'object',
+        properties: {
+          clave: { type: 'string', description: 'La clave de la fuente: «AR1A2B3C4D».' },
+          capitulo: {
+            type: 'string',
+            description: 'Clave del capítulo donde se cita, tal como sale en la lista.',
+          },
+          estado: {
+            type: 'string',
+            enum: ['lo_dice', 'no_lo_dice', 'no_pude_leer'],
+            description:
+              '«lo_dice»: la leyó y dice eso. «no_lo_dice»: la leyó y no lo dice, o dice otra ' +
+              'cosa. «no_pude_leer»: no pudo abrirla (de pago, enlace roto).',
+          },
+          nota: {
+            type: 'string',
+            maxLength: 400,
+            description: 'Lo que el autor quiera anotar: «dice 42 %, no 45 %», «en la p. 12».',
+          },
+        },
+        required: ['clave', 'capitulo', 'estado'],
+        additionalProperties: false,
+      },
+    },
+  },
+  additionalProperties: false,
+});
+
+module.exports = { ESQUEMA_FUENTES, ESQUEMA_ANADIR, ESQUEMA_MIS_FUENTES, ESQUEMA_BOLA, ESQUEMA_LITERATURA, ESQUEMA_SCOPUS, ESQUEMA_GUARDAR_SCOPUS, GUARDAR_AVANCE, ESQUEMA_GUARDAR_AVANCE, ESQUEMA_GUARDAR_AVANCE_TSP, ESQUEMA_GUARDAR_AVANCE_INFORME, GUARDAR_CAPITULO, ESQUEMA_GUARDAR_CAPITULO, ESQUEMA_GUARDAR_CAPITULO_INFORME, ESQUEMA_GUARDAR_ANALISIS, ESQUEMA_VER_ANALISIS, ESQUEMA_TRABAJAR_EN_R, ESQUEMA_VER_CAPITULO, ESQUEMA_REVISAR_EVIDENCIA, ESQUEMA_VERIFICAR_CITAS, ESQUEMA_REDACTAR };

@@ -240,7 +240,6 @@ function saleDeLaConsola(valor, bruto, numeros) {
  */
 function sinRespaldo(texto, resultados = [], salida = '') {
   const guardados = valoresGuardados(resultados);
-  if (guardados.length === 0) return [];
 
   // La consola de R es la prueba de origen: un número que R imprimió no se lo
   // inventó nadie, esté o no en la lista curada de `guardar_analisis`. Antes
@@ -248,6 +247,9 @@ function sinRespaldo(texto, resultados = [], salida = '') {
   // tabla de descriptivos y los grados de libertad de las t, que estaban en la
   // consola desde el principio.
   const consola = numerosDe(salida);
+  // Sin nada contra lo que comparar no se marca nada: de eso avisa el repaso
+  // aparte («no hay ningún análisis guardado»), no cifra por cifra.
+  if (guardados.length === 0 && consola.length === 0) return [];
 
   const vistas = new Set();
   const sueltas = [];

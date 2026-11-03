@@ -119,9 +119,17 @@ function revisarCapitulo({ titulo, texto, datosPropios = false }, porClave = new
   const citasAMano = [];
 
   for (const frase of frasesDe(texto)) {
-    if (!esProsa(frase)) continue;
-
     const claves = [...frase.matchAll(MARCA)].map((m) => m[1]);
+
+    // Una cita a mano se señala aunque la frase sea corta: «Otros lo confirman
+    // (Quispe, 2022).» tiene 35 caracteres y se escapaba (prueba del 3-nov).
+    // Los encabezados y las filas de tabla siguen fuera.
+    if (!esProsa(frase)) {
+      if (claves.length === 0 && !/^\s*(#{1,6}\s|\|)/.test(frase) && CITA_A_MANO.test(frase)) {
+        citasAMano.push({ frase: recortar(frase) });
+      }
+      continue;
+    }
 
     if (claves.length > 0) {
       conRespaldo.push({

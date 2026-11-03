@@ -560,7 +560,26 @@ const guardarCualitativo = (projectId, que, valor) => escribirJson(rutaCualitati
 
 const leerCualitativo = (projectId, que) => leerJson(rutaCualitativa(projectId, que));
 
+// ── Las citas que el autor verificó ─────────────────────────────────────────
+
+/**
+ * Lo que el autor respondió al leer cada fuente que cita (ver
+ * `project.verificacion`): `{ "capitulo:clave": { estado, huella, fecha, nota } }`.
+ */
+function rutaDeVerificacion(projectId) {
+  if (!SEGURO.test(projectId)) throw new Error('Identificador de proyecto no válido');
+  return path.join(env.capitulosDir, projectId, 'citas-verificadas.json');
+}
+
+async function leerVerificacion(projectId) {
+  return (await leerJson(rutaDeVerificacion(projectId))) ?? {};
+}
+
+const guardarVerificacion = (projectId, registro) => escribirJson(rutaDeVerificacion(projectId), registro);
+
 module.exports = {
+  leerVerificacion,
+  guardarVerificacion,
   guardarCualitativo,
   leerCualitativo,
   guardarMaterial,

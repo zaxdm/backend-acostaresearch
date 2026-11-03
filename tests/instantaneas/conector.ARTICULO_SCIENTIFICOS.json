@@ -380,6 +380,65 @@
     }
   },
   {
+    "nombre": "verificar_citas",
+    "titulo": "El autor verifica lo que cita",
+    "descripcion": "Pone al autor a leer, una por una, las fuentes que cita el artículo: le enseña la frase donde la cita, el enlace para abrirla, la página si la cita la lleva y el resumen, y guarda lo que él responde («lo_dice», «no_lo_dice», «no_pude_leer»). ÚSALA AL CERRAR CADA CAPÍTULO QUE CITA, después de guardarlo, y antes de entregar: es la garantía de que ninguna fuente se cita por algo que no dice. Si una frase cambia, su cita vuelve a pedir lectura. Sin \"confirmar\" enseña las que faltan; con \"confirmar\" guarda las respuestas del autor. NUNCA confirmes tú por él: tú no has leído la fuente, solo su resumen.",
+    "esquema": {
+      "type": "object",
+      "properties": {
+        "capitulo": {
+          "type": "string",
+          "description": "Clave del capítulo. Si lo omites, todas las citas de lo escrito."
+        },
+        "cuantas": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "description": "Cuántas citas por revisar enseñar de una vez. Por omisión, 3: el autor tiene que abrir y leer cada una, y más de tres a la vez no se leen."
+        },
+        "confirmar": {
+          "type": "array",
+          "maxItems": 20,
+          "description": "Lo que el AUTOR respondió después de leer cada fuente. Solo con su respuesta: nunca lo rellenes tú por haber leído el resumen.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "clave": {
+                "type": "string",
+                "description": "La clave de la fuente: «AR1A2B3C4D»."
+              },
+              "capitulo": {
+                "type": "string",
+                "description": "Clave del capítulo donde se cita, tal como sale en la lista."
+              },
+              "estado": {
+                "type": "string",
+                "enum": [
+                  "lo_dice",
+                  "no_lo_dice",
+                  "no_pude_leer"
+                ],
+                "description": "«lo_dice»: la leyó y dice eso. «no_lo_dice»: la leyó y no lo dice, o dice otra cosa. «no_pude_leer»: no pudo abrirla (de pago, enlace roto)."
+              },
+              "nota": {
+                "type": "string",
+                "maxLength": 400,
+                "description": "Lo que el autor quiera anotar: «dice 42 %, no 45 %», «en la p. 12»."
+              }
+            },
+            "required": [
+              "clave",
+              "capitulo",
+              "estado"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
     "nombre": "revisar_el_articulo",
     "titulo": "Repaso antes de entregar",
     "descripcion": "Coteja el artículo consigo mismo y devuelve lo que no cuadra: capítulos dados por buenos sin texto, variables que no aparecen en ningún objetivo, objetivos sin conclusión, citas rotas y afirmaciones sin fuente. ÚSALA CUANDO EL TESISTA VAYA A ENTREGAR, y ofrécesela tú si ves que está cerrando capítulos: nadie sabe que esto existe y es lo último que se revisa a mano.",

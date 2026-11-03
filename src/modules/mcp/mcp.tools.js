@@ -12,6 +12,7 @@ const prisma = require('../../lib/prisma');
 const referenceService = require('../references/reference.service');
 const propiasService = require('../references/propias.service');
 const projectService = require('../projects/project.service');
+const verificacion = require('../projects/project.verificacion');
 const documentoService = require('../projects/documento.service');
 const redaccion = require('../projects/redaccion.service');
 const subidaFormato = require('../projects/project.subida-formato');
@@ -46,7 +47,7 @@ const etapas = require('../projects/project.etapas');
 const esquemaDeCapitulos = require('../projects/project.esquema');
 const bloquesDeAnalisis = require('../projects/project.bloques');
 const rService = require('../r/r.service');
-const { perfilDe } = require('../productos/producto.perfil');
+const { perfilDe, verificaCitas } = require('../productos/producto.perfil');
 const scopusService = require('../scopus/scopus.service');
 const { REGLAS_DE_CONVERSACION, INSTRUCCIONES_DEL_SERVIDOR } = require('./mcp.conversacion');
 
@@ -231,7 +232,7 @@ const fechaCorta = (iso) =>
     ? new Date(iso).toLocaleDateString('es-PE', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Lima' })
     : 'fecha desconocida';
 
-const { ESQUEMA_FUENTES, ESQUEMA_ANADIR, ESQUEMA_MIS_FUENTES, ESQUEMA_BOLA, ESQUEMA_LITERATURA, ESQUEMA_SCOPUS, ESQUEMA_GUARDAR_SCOPUS, GUARDAR_AVANCE, ESQUEMA_GUARDAR_AVANCE, ESQUEMA_GUARDAR_AVANCE_TSP, ESQUEMA_GUARDAR_AVANCE_INFORME, GUARDAR_CAPITULO, ESQUEMA_GUARDAR_CAPITULO, ESQUEMA_GUARDAR_CAPITULO_INFORME, ESQUEMA_GUARDAR_ANALISIS, ESQUEMA_VER_ANALISIS, ESQUEMA_TRABAJAR_EN_R, ESQUEMA_VER_CAPITULO, ESQUEMA_REVISAR_EVIDENCIA, ESQUEMA_REDACTAR } = require('./mcp.esquemas');
+const { ESQUEMA_FUENTES, ESQUEMA_ANADIR, ESQUEMA_MIS_FUENTES, ESQUEMA_BOLA, ESQUEMA_LITERATURA, ESQUEMA_SCOPUS, ESQUEMA_GUARDAR_SCOPUS, GUARDAR_AVANCE, ESQUEMA_GUARDAR_AVANCE, ESQUEMA_GUARDAR_AVANCE_TSP, ESQUEMA_GUARDAR_AVANCE_INFORME, GUARDAR_CAPITULO, ESQUEMA_GUARDAR_CAPITULO, ESQUEMA_GUARDAR_CAPITULO_INFORME, ESQUEMA_GUARDAR_ANALISIS, ESQUEMA_VER_ANALISIS, ESQUEMA_TRABAJAR_EN_R, ESQUEMA_VER_CAPITULO, ESQUEMA_REVISAR_EVIDENCIA, ESQUEMA_VERIFICAR_CITAS, ESQUEMA_REDACTAR } = require('./mcp.esquemas');
 
 const NOMBRE_SERVIDOR = 'acosta-research-tesis';
 const VERSION_SERVIDOR = '1.0.0';
@@ -349,6 +350,8 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
    * frase.
    */
   const perfil = perfilDe(licencia.productCode);
+  // Solo el artículo empírico verifica citas (ver `verificaCitas`).
+  const conVerificacion = verificaCitas(licencia.productCode);
   const SU_OBRA = perfil.obra;
 
   /**
@@ -896,9 +899,23 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
           );
         }
 
+        // Cero citas inventadas y cifras de datos reales, en el momento de guardar.
+        const control = await projectService
+          .controlAlGuardar(licencia.user.id, licencia.productCode, entrada.capitulo)
+          .catch((error) => {
+            logger.error({ err: error, licenseId: licencia.id }, 'No se pudo revisar citas y cifras');
+            return [];
+          });
+        const controlTexto =
+          control.length > 0
+            ? 'CITAS Y DATOS (arréglalo antes de seguir: ninguna cita inventada, ninguna cifra que no ' +
+              `salga de sus datos):${N}${control.map((a) => `- ${a}`).join(N)}${N}${N}`
+            : '';
+
         return texto(
           `Guardado. «${skill.displayName}» lleva ${palabras} palabras.\n\n` +
             revision +
+            controlTexto +
             'DALE AQUÍ MISMO EL WORD con "enlace_del_word": sale con todos los capítulos que ' +
             'llevéis, en orden, con su portada y con las referencias en la norma del proyecto. ' +
             `En su perfil de la web NO hay ninguna descarga de ${SU_OBRA}: no lo mandes allí a ` +
@@ -1575,6 +1592,107 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
     },
   );
 
+  // ── El autor lee lo que cita ─────────────────────────────────────────────
+  //
+  // revisar_evidencia dice si una frase tiene fuente; esto pone al AUTOR a leer
+  // si la fuente dice lo que la frase le atribuye, y guarda lo que responde.
+  // Ver `projects/project.verificacion`.
+  if (conVerificacion) {
+    server.registerTool(
+      'verificar_citas',
+      {
+        title: 'El autor verifica lo que cita',
+        description:
+          `Pone al autor a leer, una por una, las fuentes que cita ${perfil.laObra}: le enseña la frase ` +
+          'donde la cita, el enlace para abrirla, la página si la cita la lleva y el resumen, y guarda ' +
+          'lo que él responde («lo_dice», «no_lo_dice», «no_pude_leer»). ÚSALA AL CERRAR CADA CAPÍTULO ' +
+          'QUE CITA, después de guardarlo, y antes de entregar: es la garantía de que ninguna fuente se ' +
+          'cita por algo que no dice. Si una frase cambia, su cita vuelve a pedir lectura. Sin ' +
+          '"confirmar" enseña las que faltan; con "confirmar" guarda las respuestas del autor. ' +
+          'NUNCA confirmes tú por él: tú no has leído la fuente, solo su resumen.',
+        inputSchema: ESQUEMA_VERIFICAR_CITAS,
+      },
+      async ({ capitulo, cuantas, confirmar }) => {
+        const cupo = await cupoDePrueba('verificar_citas');
+        if (cupo.bloqueo) return cupo.bloqueo;
+        await licenseService.recordUsage({ licenseId: licencia.id, tool: 'verificar_citas' });
+
+        const r = await projectService.verificarCitas(licencia.user.id, licencia.productCode, {
+          capitulo: capitulo || null,
+          confirmar: confirmar ?? [],
+        });
+
+        if (!r) {
+          return texto(
+            'Todavía no hay ningún capítulo escrito. Guarda lo redactado con "guardar_capitulo" y ' +
+              'vuelve a llamarla.',
+          );
+        }
+
+        const partes = [];
+
+        if (r.aplicadas.length > 0) {
+          partes.push(
+            `Guardado lo que respondió el autor (${r.aplicadas.length}): ` +
+              r.aplicadas.map((a) => `[${a.clave}] en ${a.capitulo} → ${a.estado}`).join('; ') + '.',
+          );
+        }
+        if (r.rechazadas.length > 0) {
+          partes.push(
+            `NO SE GUARDARON (${r.rechazadas.length}): ` +
+              r.rechazadas.map((x) => `[${x.clave}] ${x.capitulo ?? ''}: ${x.motivo}`).join(' | '),
+          );
+        }
+
+        const c = r.recuento;
+        if (c.total === 0) {
+          partes.push('Lo escrito no cita ninguna fuente con clave: no hay nada que verificar.');
+          return texto(partes.join(N + N));
+        }
+
+        partes.push(
+          `Citas (fuente por capítulo): ${c.total} · verificadas por el autor: ${c.lo_dice} · ` +
+            `por leer: ${c.pendiente} · cambiaron desde que las leyó: ${c.cambio} · no pudo leerlas: ` +
+            `${c.no_pude_leer} · NO dicen eso: ${c.no_lo_dice} · claves sin fuente: ${c.sin_ficha}.`,
+        );
+
+        const lista = verificacion.porRevisar(r.items);
+        const tanda = lista.slice(0, cuantas ?? 3);
+
+        if (tanda.length === 0) {
+          partes.push(
+            'TODAS LAS CITAS ESTÁN VERIFICADAS POR EL AUTOR. Díselo: cada fuente que cita la ha leído ' +
+              'él y dice lo que el texto le atribuye.',
+          );
+          return texto(partes.join(N + N));
+        }
+
+        partes.push(tanda.map((item, i) => verificacion.ficha(item, i + 1)).join(N + N));
+        if (lista.length > tanda.length) {
+          partes.push(`Quedan ${lista.length - tanda.length} más después de estas.`);
+        }
+
+        partes.push(
+          'CÓMO SEGUIR (díselo al autor con sus palabras, no le pegues esto):' + N +
+            '1. Que abra el enlace de cada una y lea al menos la parte que sostiene la frase (la página ' +
+            'si la cita la lleva; si no, el resumen y la sección de resultados o conclusiones). El ' +
+            'resumen de aquí ORIENTA, no sustituye la lectura.' + N +
+            '2. Pregúntale por cada una, con opciones: «Sí, dice eso» · «No lo dice / dice otra cosa» · ' +
+            '«No pude abrirla». Si el resumen de aquí contradice la frase, díselo tú antes de preguntar.' + N +
+            '3. Guarda sus respuestas con "confirmar" (clave + capitulo + estado, y su nota si la da). ' +
+            'NUNCA las rellenes tú: tú no has leído la fuente.' + N +
+            '4. «No lo dice»: reescribe la frase para que diga lo que la fuente dice de verdad, o quita ' +
+            'esa cita y busca otra con "buscar_fuentes"; guarda con "reescribir_parrafos" o ' +
+            '"guardar_capitulo" y vuelve a verificar. «No pude abrirla»: pídele el PDF por su biblioteca ' +
+            'o cámbiala por una de acceso abierto. «Clave sin fuente»: esa cita no se puede sostener; ' +
+            'quítala o sustitúyela por una de "buscar_fuentes".',
+        );
+
+        return texto(partes.join(N + N));
+      },
+    );
+  }
+
   server.registerTool(
     perfil.revision,
     {
@@ -1632,9 +1750,13 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
 
       return texto(
         `Repaso de ${perfil.tuObra}:\n\n${partes.join('\n')}\n\n` +
-          'LO QUE ESTE REPASO NO MIRA, y hay que mirar aparte: si los números del texto ' +
-          'cuadran con los de las tablas, y si cada fuente dice de verdad lo que la frase le ' +
-          'atribuye. Ninguna de las dos cosas se puede comprobar sin leer. ' +
+          (conVerificacion
+            ? 'LO QUE ESTE REPASO NO PUEDE DECIDIR SOLO: si cada fuente dice de verdad lo que la frase ' +
+              'le atribuye. Eso lo confirma el autor leyéndola, con "verificar_citas"; aquí solo se ' +
+              'cuenta lo que ya confirmó. '
+            : 'LO QUE ESTE REPASO NO MIRA, y hay que mirar aparte: si los números del texto ' +
+              'cuadran con los de las tablas, y si cada fuente dice de verdad lo que la frase le ' +
+              'atribuye. Ninguna de las dos cosas se puede comprobar sin leer. ') +
           'Y nada de lo de arriba es una sentencia: puede haber buenas razones para todo. ' +
           'Repásalo con el tesista en vez de cambiarlo por tu cuenta.',
       );

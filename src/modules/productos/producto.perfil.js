@@ -141,4 +141,18 @@ function traeHerramientas(productCode) {
   return !SIN_HERRAMIENTAS.test(String(productCode ?? '').trim());
 }
 
-module.exports = { perfilDe, esTesisDelMetodo, traeHerramientas, TESIS, ARTICULO, INFORME, TSP };
+/**
+ * ¿El autor verifica sus citas y el servidor exige el análisis? (3-nov-2026)
+ *
+ * Solo el artículo empírico: la herramienta `verificar_citas`, el bloque
+ * «CITAS Y DATOS» al guardar y lo que suma al repaso. Sus skills son las únicas
+ * que lo explican. La revisión (`ARTICULOS_REVIEW`, también empieza por
+ * ARTICULO), la tesis, la TSP y el informe se quedan como estaban hasta que sus
+ * skills lo cuenten; decisión del usuario.
+ */
+function verificaCitas(productCode) {
+  const codigo = String(productCode ?? '');
+  return perfilDe(codigo) === ARTICULO && !/REVIEW/i.test(codigo);
+}
+
+module.exports = { perfilDe, esTesisDelMetodo, traeHerramientas, verificaCitas, TESIS, ARTICULO, INFORME, TSP };

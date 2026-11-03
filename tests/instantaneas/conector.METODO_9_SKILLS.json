@@ -652,7 +652,7 @@
   {
     "nombre": "mis_fuentes",
     "titulo": "Su biblioteca, su Zotero y su Mendeley incluidos",
-    "descripcion": "Enseña la biblioteca PROPIA del tesista: la colección de SU ZOTERO y la carpeta de SU MENDELEY que conectó desde su perfil en la web, lo que subió de Scopus, Web of Science o SciELO, y lo que guardó por DOI. Dice cuántas tiene, de dónde vienen y cuándo se actualizaron, y las lista por páginas con la clave de cada una para citarla. ÚSALA cuando pregunte por SU ZOTERO, SU MENDELEY, su colección o su carpeta, o por «mis fuentes», «mi biblioteca», «qué tengo». SÍ TIENES ACCESO a lo que trajo de Zotero y de Mendeley: es por aquí, no por otro conector. Para las de un tema concreto no pases páginas: usa \"buscar_fuentes\", que busca dentro de estas. Si tiene muchas, enséñale el resumen y la primera página, y pregúntale qué necesita antes de pedir las demás.",
+    "descripcion": "Enseña la biblioteca PROPIA del tesista: la colección de SU ZOTERO y la carpeta de SU MENDELEY que conectó desde su perfil en la web, lo que subió de Scopus, Web of Science o SciELO, y lo que guardó por DOI. Dice cuántas tiene, de dónde vienen y cuándo se actualizaron, y las lista por páginas con la clave de cada una para citarla. ÚSALA cuando pregunte por SU ZOTERO, SU MENDELEY, su colección o su carpeta, o por «mis fuentes», «mi biblioteca», «qué tengo». SÍ TIENES ACCESO a lo que trajo de Zotero y de Mendeley: es por aquí, no por otro conector. Para las de un tema concreto no pases páginas: usa \"buscar_fuentes\", que busca dentro de estas. Si tiene muchas, enséñale el resumen y la primera página, y pregúntale qué necesita antes de pedir las demás. SI ADJUNTA UNA MATRIZ de análisis de artículos que le dio su asesor (autor, año, objetivo, metodología, resultados…), llámala con \"detalle\": true para tener la ficha entera de cada fuente y llénala con eso.",
     "esquema": {
       "type": "object",
       "properties": {
@@ -670,6 +670,10 @@
             "subidas"
           ],
           "description": "«zotero» para ver solo lo que trajo de su Zotero; «mendeley», lo de su Mendeley; «subidas», lo que subió de un export o guardó por DOI. Por omisión, todas."
+        },
+        "detalle": {
+          "type": "boolean",
+          "description": "true para la ficha ENTERA de cada fuente (revista, DOI, resumen y notas), de 10 en 10. Úsalo para llenar la MATRIZ de artículos que le dio su asesor. Por omisión, solo autor, año y título."
         }
       },
       "additionalProperties": false

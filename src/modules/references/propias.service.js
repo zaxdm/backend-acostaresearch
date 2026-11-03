@@ -264,6 +264,9 @@ async function boladeNieve(userId, { desdeAnio = null, cuantas = 8 } = {}) {
 /** Cuántas fuentes se enseñan por página en la conversación. */
 const POR_PAGINA = 40;
 
+/** Con la ficha entera (para la matriz del asesor) caben menos por página. */
+const POR_PAGINA_DETALLE = 10;
+
 /**
  * Su biblioteca por páginas, con de dónde viene cada parte.
  *
@@ -275,8 +278,9 @@ const POR_PAGINA = 40;
  * Va con el estado de la conexión porque es lo que explica una lista vacía o
  * corta: que no eligió colección, que se está trayendo, que Zotero la revocó.
  */
-async function biblioteca(userId, { pagina = 1, origen = 'todas' } = {}) {
+async function biblioteca(userId, { pagina = 1, origen = 'todas', detalle = false } = {}) {
   const numero = Math.max(Math.trunc(Number(pagina)) || 1, 1);
+  const porPagina = detalle ? POR_PAGINA_DETALLE : POR_PAGINA;
 
   const [total, deZotero, deMendeley, cuenta, cuentaMendeley] = await Promise.all([
     propiasRepository.contar(userId),
@@ -287,9 +291,10 @@ async function biblioteca(userId, { pagina = 1, origen = 'todas' } = {}) {
   ]);
 
   const listado = await propiasRepository.pagina(userId, {
-    saltar: (numero - 1) * POR_PAGINA,
-    tomar: POR_PAGINA,
+    saltar: (numero - 1) * porPagina,
+    tomar: porPagina,
     origen,
+    detalle,
   });
 
   return {
@@ -317,9 +322,9 @@ async function biblioteca(userId, { pagina = 1, origen = 'todas' } = {}) {
       : null,
     origen,
     pagina: numero,
-    paginas: Math.max(Math.ceil(listado.total / POR_PAGINA), 1),
+    paginas: Math.max(Math.ceil(listado.total / porPagina), 1),
     enElFiltro: listado.total,
-    desde: (numero - 1) * POR_PAGINA + 1,
+    desde: (numero - 1) * porPagina + 1,
     fuentes: listado.fuentes,
   };
 }

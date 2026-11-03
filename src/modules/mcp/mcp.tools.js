@@ -2601,13 +2601,16 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
             'dentro de estas. '
           : '') +
         'Si tiene muchas, enséñale el resumen y la primera página, y pregúntale qué necesita ' +
-        'antes de pedir las demás.',
+        'antes de pedir las demás. ' +
+        'SI ADJUNTA UNA MATRIZ de análisis de artículos que le dio su asesor (autor, año, ' +
+        'objetivo, metodología, resultados…), llámala con "detalle": true para tener la ficha ' +
+        'entera de cada fuente y llénala con eso.',
       inputSchema: ESQUEMA_MIS_FUENTES,
     },
-    async ({ pagina, origen }) => {
+    async ({ pagina, origen, detalle = false }) => {
       await licenseService.recordUsage({ licenseId: licencia.id, tool: 'mis_fuentes' });
 
-      const b = await propiasService.biblioteca(licencia.userId, { pagina, origen });
+      const b = await propiasService.biblioteca(licencia.userId, { pagina, origen, detalle });
       const zotero = b.zotero;
       const mendeley = b.mendeley;
       const fecha = (valor) =>
@@ -2756,18 +2759,44 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         const autores = recortar(f.authors, 90) || '(Autor no consignado)';
         const marca = mezcladas ? (MARCAS[f.origin] ?? '   · subida') : '';
         const titulo = recortar(f.title, 180);
-        return `${b.desde + i}. [${f.ref}]  ${autores} (${f.year ?? 's. f.'}). ${titulo}${marca}`;
+        const linea = `${b.desde + i}. [${f.ref}]  ${autores} (${f.year ?? 's. f.'}). ${titulo}${marca}`;
+        if (!detalle) return linea;
+        // La ficha entera, para la matriz del asesor. Lo que no hay se dice:
+        // si no, el asistente rellena el hueco con lo que recuerda.
+        const extra = [
+          `   Revista o fuente: ${recortar(f.source, 200) || '(no consta)'}`,
+          `   DOI: ${f.doi || '(no consta)'}`,
+          `   Resumen: ${recortar(f.abstract, 1500) || '(NO HAY RESUMEN: para esta, hace falta el PDF)'}`,
+        ];
+        if (f.notes) extra.push(`   Notas: ${recortar(f.notes, 600)}`);
+        return [linea, ...extra].join(N);
       });
 
       const siguiente =
         b.pagina < b.paginas
-          ? `${N}${N}Hay más: para seguir, pide "pagina": ${b.pagina + 1}.`
+          ? `${N}${N}Hay más: para seguir, pide "pagina": ${b.pagina + 1}${detalle ? ' con "detalle": true' : ''}.`
           : '';
+
+      // Cómo se llena la matriz del asesor. Va solo con la ficha entera: es la
+      // única vez que el asistente tiene los resúmenes delante para hacerlo.
+      const matriz = detalle
+        ? 'SI ES PARA LA MATRIZ DE SU ASESOR (el Excel o Word que adjuntó en el chat): usa SUS ' +
+          'columnas, en su orden y con sus nombres, sin añadir ni quitar ninguna, y una fila por ' +
+          'fuente. Autor, año, título, revista y DOI salen de estas fichas. Objetivo, metodología, ' +
+          'muestra, resultados o conclusiones solo de lo que diga el resumen o el PDF que haya ' +
+          'adjuntado: NUNCA de lo que recuerdes del artículo. Si para una celda no está el dato, ' +
+          'escribe «Falta el PDF» y, al terminar, dile en una frase de cuáles le hace falta ' +
+          'adjuntar el PDF para completarla. Devuélvele la matriz llena en el mismo formato que ' +
+          'la subió (Excel o Word), lista para descargar.' +
+          N +
+          N
+        : '';
 
       return texto(
         `${resumen.join(N)}${avisos.length > 0 ? N + N + avisos.join(N) : ''}${N}${N}` +
           `Página ${b.pagina} de ${b.paginas}${filtro}, por autor:${N}${N}` +
           `${lista.join(N)}${siguiente}${N}${N}` +
+          matriz +
           'ESTAS LAS ELIGIÓ EL TESISTA y NO están revisadas por Acosta: no se las presentes como ' +
           'si lo estuvieran. ' +
           'CÓMO SE CITAN: con la clave entre corchetes en el texto que guardes —«…afecta al ' +

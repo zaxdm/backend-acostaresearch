@@ -41,8 +41,8 @@ sustituir('../src/modules/references/propias.repository', {
   contar: async () => mia.total,
   contarDeZotero: async () => mia.deZotero,
   contarDeMendeley: async () => mia.deMendeley,
-  pagina: async (userId, { saltar, tomar, origen }) => {
-    mia.pedidos.push({ userId, saltar, tomar, origen });
+  pagina: async (userId, { saltar, tomar, origen, detalle }) => {
+    mia.pedidos.push({ userId, saltar, tomar, origen, detalle });
     const lista = mia.filas.filter((f) =>
       origen === 'zotero'
         ? f.origin === 'ZOTERO'
@@ -231,6 +231,36 @@ test('la segunda página sigue la numeración y ya no ofrece más', async () => 
 
 test('una página que no existe se dice, no se devuelve vacía', async () => {
   assert.match(await llamar('mis_fuentes', { pagina: 9 }), /La página 9 no existe.*hay 2/);
+});
+
+test('mis_fuentes con detalle da la ficha entera, de 10 en 10, para la matriz del asesor', async () => {
+  mia.total = 12;
+  mia.deZotero = 12;
+  mia.filas = coleccion(12).map((f, i) =>
+    i === 0 ? { ...f, doi: '10.1/abc', abstract: 'Objetivo: medir X en 120 docentes.', notes: 'Clave para H1' } : f,
+  );
+  mia.pedidos = [];
+
+  const texto = await llamar('mis_fuentes', { detalle: true });
+
+  assert.equal(mia.pedidos[0].tomar, 10, 'con la ficha entera caben menos por página');
+  assert.equal(mia.pedidos[0].detalle, true);
+  assert.match(texto, /Revista o fuente: Revista/);
+  assert.match(texto, /DOI: 10\.1\/abc/);
+  assert.match(texto, /Resumen: Objetivo: medir X en 120 docentes\./);
+  assert.match(texto, /Notas: Clave para H1/);
+  assert.match(texto, /NO HAY RESUMEN: para esta, hace falta el PDF/, 'lo que no hay se dice');
+  assert.match(texto, /MATRIZ DE SU ASESOR/);
+  assert.match(texto, /NUNCA de lo que recuerdes/);
+  assert.match(texto, /«Falta el PDF»/);
+  assert.match(texto, /"pagina": 2 con "detalle": true/);
+});
+
+test('mis_fuentes sin detalle sigue igual: solo autor, año y título, sin la guía de la matriz', async () => {
+  mia.pedidos = [];
+  const texto = await llamar('mis_fuentes');
+  assert.equal(mia.pedidos[0].tomar, 40);
+  assert.doesNotMatch(texto, /Resumen:|MATRIZ DE SU ASESOR/);
 });
 
 test('con fuentes de las dos procedencias, cada una lleva su marca', async () => {

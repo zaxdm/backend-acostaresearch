@@ -307,15 +307,20 @@ function filtroDeOrigen(origen) {
  * Es lo que pide quien dice «entra a mi Zotero»: ver lo que hay, sin tema. Solo
  * los campos que hacen falta para reconocer y citar una fuente —el resumen de
  * seiscientas fichas no cabe en una conversación—.
+ *
+ * Con `detalle`, la ficha entera (revista, DOI, resumen y notas): es para llenar
+ * la matriz de artículos que pide el asesor, y por eso se piden menos por página.
  */
-async function pagina(userId, { saltar = 0, tomar = 40, origen = 'todas' } = {}) {
+async function pagina(userId, { saltar = 0, tomar = 40, origen = 'todas', detalle = false } = {}) {
   const where = { ownerUserId: userId, ...filtroDeOrigen(origen) };
+  const select = { ref: true, title: true, authors: true, year: true, origin: true };
+  if (detalle) Object.assign(select, { source: true, doi: true, abstract: true, notes: true });
 
   const [total, fuentes] = await Promise.all([
     prisma.reference.count({ where }),
     prisma.reference.findMany({
       where,
-      select: { ref: true, title: true, authors: true, year: true, origin: true },
+      select,
       orderBy: [{ authors: 'asc' }, { year: 'desc' }, { title: 'asc' }],
       skip: saltar,
       take: tomar,

@@ -95,6 +95,12 @@ const ESQUEMA_MIS_FUENTES = fromJsonSchema({
         '«zotero» para ver solo lo que trajo de su Zotero; «mendeley», lo de su Mendeley; ' +
         '«subidas», lo que subió de un export o guardó por DOI. Por omisión, todas.',
     },
+    detalle: {
+      type: 'boolean',
+      description:
+        'true para la ficha ENTERA de cada fuente (revista, DOI, resumen y notas), de 10 en 10. ' +
+        'Úsalo para llenar la MATRIZ de artículos que le dio su asesor. Por omisión, solo autor, año y título.',
+    },
   },
   additionalProperties: false,
 });

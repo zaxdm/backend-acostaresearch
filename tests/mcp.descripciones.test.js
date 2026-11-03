@@ -149,7 +149,11 @@ test('mis_fuentes responde a quien pregunta por su Zotero', () => {
 test('mis_fuentes no pide nada obligatorio: «entra a mi Zotero» no trae tema', () => {
   const e = esquema('mis_fuentes');
   assert.equal(e.required, undefined);
-  assert.deepEqual(Object.keys(e.properties).sort(), ['origen', 'pagina']);
+  assert.deepEqual(Object.keys(e.properties).sort(), ['detalle', 'origen', 'pagina']);
+});
+
+test('mis_fuentes sabe recibir la matriz de artículos del asesor', () => {
+  assert.match(descripcion('mis_fuentes'), /MATRIZ[\s\S]*"detalle": true/);
 });
 
 test('ampliar_desde_mis_fuentes cuenta su Zotero entre las semillas', () => {

@@ -104,18 +104,19 @@ solo… sino», «más allá de», rayas (—) ni palabras de la lista QUITA.
 
 /**
  * Con el reporte de IA de Turnitin delante, cada párrafo que llega está
- * marcado. Lo que separó el 0 % del «*%» en la misma tesis (24-oct-2026): la
- * versión que dio 0 % cambió el armado de cada frase marcada y partió oraciones;
- * la que no, las maquilló cambiando dos palabras y las fundió. Ver
- * `motor.comprobarMarcado`, que lo exige.
+ * marcado. Hasta el 3-nov-2026 aquí se pedía partir las oraciones (un caso del
+ * 24-oct); en la tesis del 3-nov partir en frases cortas subió la zona marcada
+ * de 20 a 36 % y reescribir el párrafo entero fundiendo la llevó a 0 %, como en
+ * los trabajos de octubre. Lo que sigue valiendo: maquillar no basta, y
+ * `motor.comprobarMarcado` rechaza lo que vuelve casi copiado.
  */
 const MARCADO = `
 ESTOS PÁRRAFOS LOS MARCÓ TURNITIN COMO IA. Maquillarlos no basta: cambiar un conector, «todavía» por «seguía» o quitar un «sin embargo» deja la misma frase y vuelve a salir marcada.
-- Cada frase se arma de nuevo: otro sujeto, otro verbo, otro orden. De una oración del original no quedan más de tres o cuatro palabras seguidas, salvo nombres, citas, términos técnicos y cifras.
+- Se reescribe el párrafo entero, desde la idea y en otro orden: otro sujeto, otro verbo, otra entrada. De una oración del original no quedan más de tres o cuatro palabras seguidas, salvo nombres, citas, términos técnicos y cifras.
 - Verbos corrientes y concretos: «vieron», «obtuvieron», «le ganaban al papel», «se quedó en», en vez de «evidenció», «se constató», «superaban».
-- No fundas: en lo marcado sale el mismo número de oraciones que en el original, o más. Parte las largas; ninguna pasa de 45 palabras.
+- Funde las oraciones con enlaces que digan una relación real, de modo que queden largas y de largo desigual (media de 30 a 37 palabras). No partas en frases cortas y rematadas: en lo marcado es lo que más sube la IA.
+- Sin series de tres o cuatro acciones o ejemplos en fila, sin «Por ejemplo» ni «Es decir» al comenzar una oración.
 - Las frases de cierre o de balance («La realidad mostró, entonces, una escuela que… y una literatura que…») son las que más marca: dilas de otra forma, más llana, o únelas al dato del que salen.
-- Esto manda sobre lo que el núcleo dice de fundir y de las medias de 30 a 40 palabras: en un párrafo marcado no se funde.
 - Si un párrafo trae "fallo_anterior", es por qué se rechazó tu versión anterior: corrígelo.
 `.trim();
 
@@ -141,8 +142,8 @@ function leerSkill(carpeta = CARPETA) {
   return skill;
 }
 
-// MARCADO va al final: el modelo obedece lo último, y tiene que mandar sobre
-// lo que el núcleo dice de fundir (24-oct-2026: delante, se fundía igual).
+// MARCADO va al final: el modelo obedece lo último (24-oct-2026: delante, se
+// perdía). Desde el 3-nov dice lo mismo que el núcleo sobre fundir.
 const sistemaDe = (skill, ruta, insistir, extras, estricto = false) =>
   [skill.nucleo, skill.rutas[ruta], extras, FORMATO, insistir ? INSISTIR : null, estricto ? MARCADO : null]
     .filter(Boolean)

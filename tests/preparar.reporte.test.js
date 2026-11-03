@@ -93,10 +93,20 @@ test('con reporte, un párrafo marcado y solo maquillado se rechaza por ser lo m
   assert.match(motor.comprobarHumanizado(ORIGINAL_MARCADO, maquillado, { estricto: true }), /marcado por Turnitin/);
 });
 
-test('con reporte, fundir lo marcado en menos oraciones se rechaza', () => {
+// 3-nov-2026: fundir lo marcado ya no se rechaza (partir en frases cortas subió
+// la IA de 20 a 36 % y fundir la llevó a 0 %); solo la oración desmesurada.
+test('con reporte, fundir lo marcado en menos oraciones ya no se rechaza', () => {
   const fundido =
     'Los resultados de la investigación salieron menos parejos que el entusiasmo inicial, ya que Savva y Pérez (2021) obtuvieron para el libro electrónico un efecto global pequeño a su favor y ninguna diferencia cuando se medía comprender historias, de modo que la escuela ya usaba relatos en pantalla mientras los estudios seguían sin acuerdo sobre cuándo servían.';
-  assert.match(motor.comprobarHumanizado(ORIGINAL_MARCADO, fundido, { estricto: true }), /menos oraciones/);
+  assert.equal(motor.comprobarHumanizado(ORIGINAL_MARCADO, fundido, { estricto: true }), null);
+});
+
+test('con reporte, una oración desmesurada se rechaza sin pedir frases cortas', () => {
+  const desmesurada =
+    'Los resultados de la investigación salieron menos parejos que el entusiasmo inicial que despertaron los libros electrónicos en las escuelas que los adoptaron durante esos años, ya que Savva y Pérez (2021) obtuvieron para el libro electrónico un efecto global pequeño a su favor y ninguna diferencia cuando lo que se medía era la capacidad de los niños para comprender las historias que leían, de modo que la escuela ya usaba relatos en pantalla en sus aulas mientras los estudios seguían sin ponerse de acuerdo sobre cuándo servían.';
+  const motivo = motor.comprobarHumanizado(ORIGINAL_MARCADO, desmesurada, { estricto: true });
+  assert.match(motivo, /oración de \d+ palabras/);
+  assert.match(motivo, /sin partirla en frases cortas/);
 });
 
 test('con reporte, una reescritura de verdad pasa', () => {
@@ -105,11 +115,11 @@ test('con reporte, una reescritura de verdad pasa', () => {
   assert.equal(motor.comprobarHumanizado(ORIGINAL_MARCADO, rehecho, { estricto: true }), null);
 });
 
-test('con reporte, lo fundido va a otro intento con su motivo y se entrega lo que cumple', async () => {
+test('con reporte, lo maquillado va a otro intento con su motivo y se entrega lo que cumple', async () => {
   const fundido =
-    'Los resultados de la investigación salieron menos parejos que el entusiasmo inicial, ya que Savva y Pérez (2021) obtuvieron para el libro electrónico un efecto global pequeño a su favor y ninguna diferencia cuando se medía comprender historias, de modo que la escuela ya usaba relatos en pantalla mientras los estudios seguían sin acuerdo sobre cuándo servían.';
+    'Pero la evidencia acumulada no fue tan uniforme como el entusiasmo. Savva y Pérez (2021) hallaron un efecto global pequeño a favor de los libros electrónicos, aunque sin diferencias en la comprensión de historias. La realidad mostró entonces una escuela que adoptaba narraciones digitales y una literatura que seguía discutiendo en qué condiciones ayudaban a comprender.';
   const rehecho =
-    'La investigación encontró resultados menos parejos que el entusiasmo. Savva y Pérez (2021) obtuvieron para el libro electrónico un efecto global pequeño a su favor. Cuando lo medido era comprender historias, no hubo ninguna diferencia. La escuela, así, ya usaba relatos en pantalla mientras los estudios seguían sin ponerse de acuerdo sobre cuándo servían para entender.';
+    'Los resultados de la investigación salieron menos parejos que el entusiasmo inicial, ya que Savva y Pérez (2021) obtuvieron para el libro electrónico un efecto global pequeño a su favor y ninguna diferencia cuando se medía comprender historias, de modo que la escuela ya usaba relatos en pantalla mientras los estudios seguían sin acuerdo sobre cuándo servían.';
   const vistos = [];
   const generar = async (peticion) => {
     const entrada = JSON.parse(peticion.mensajes[0].texto);
@@ -126,7 +136,7 @@ test('con reporte, lo fundido va a otro intento con su motivo y se entrega lo qu
     soloClaves: new Set(['9']),
   });
   assert.equal(cambios['9'].texto, rehecho);
-  assert.match(JSON.stringify(vistos.filter(Boolean)[0]), /menos oraciones/);
+  assert.match(JSON.stringify(vistos.filter(Boolean)[0]), /marcado por Turnitin/);
 });
 
 test('con soloClaves, el humanizador solo manda los marcados', async () => {

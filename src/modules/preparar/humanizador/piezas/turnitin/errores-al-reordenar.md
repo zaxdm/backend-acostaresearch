@@ -4,6 +4,6 @@ Errores que las revisiones automáticas no vieron y que sí contaron como patró
 - Referente roto: un «Sus», «Su», «Esto» o «Ese» que tras reordenar apunta a otro sujeto. Nombra el sujeto otra vez.
 - Dato repetido: una cifra o una idea que ya dijiste en otra oración del mismo párrafo o en el anterior. Dila una vez.
 - Sentido cambiado por un verbo parecido («se ubicó» por «se situó» cuando hablaba de un puesto en un ranking). Si dudas, deja el verbo del autor.
-- Fusión demasiado larga: si una oración fundida pasa de 45 palabras, pártela por el segundo «y» o «que», no por la mitad.
+- Fusión demasiado larga: si una oración fundida pasa de 55 palabras, reordénala o pasa una parte a la oración vecina; no la partas en frases cortas y rematadas (3-nov-2026: partir subió la IA de 20 a 36 %).
 - Arranque igual al del párrafo vecino («Las respuestas sobre…» dos veces; «En Ecuador, X…» seguido de «En el Perú, X…»): cambia uno.
 - Al quitar un relleno o un conector, no dejes un verbo sin sujeto ni una oración que solo se entienda con la quitada.

@@ -338,9 +338,15 @@ function copiaDelOriginal(original, nuevo, n = 4) {
  * 26 %) y las fundió (150 oraciones frente a 175). De sus 31 párrafos marcados,
  * con copia > 35 %: a mano 6, servicio 13; con menos oraciones que el original:
  * 4 y 13; con una oración de más de 50 palabras: 4 y 9.
+ *
+ * 3-nov-2026: ya no se rechaza fundir. En la tesis de ese día, partir lo marcado
+ * en frases más cortas subió la zona de 20 a 36 % y reescribir el párrafo entero
+ * fundiendo (oraciones de 30 a 37 palabras de media) la llevó a 0 %, como en los
+ * trabajos de octubre. Se sigue rechazando lo copiado y solo la oración que se
+ * va de largo de verdad.
  */
 const COPIA_MARCADO = 0.35;
-const ORACION_MAXIMA_MARCADO = 50;
+const ORACION_MAXIMA_MARCADO = 65;
 const oracionesDe = (texto) =>
   String(texto)
     .replace(/\bet al\./g, 'et al')
@@ -353,12 +359,9 @@ function comprobarMarcado(original, nuevo) {
   }
   const antes = oracionesDe(original);
   const despues = oracionesDe(nuevo);
-  if (despues.length < antes.length) {
-    return `el texto nuevo metió menos oraciones (${despues.length}) que el original (${antes.length}): en lo marcado no se funde, se parte`;
-  }
   const larga = Math.max(0, ...despues.map(palabrasDe));
   if (larga > ORACION_MAXIMA_MARCADO && larga > Math.max(0, ...antes.map(palabrasDe))) {
-    return `el texto nuevo metió una oración de ${larga} palabras: pártela`;
+    return `el texto nuevo metió una oración de ${larga} palabras: reordénala o pasa una parte a la oración vecina, sin partirla en frases cortas`;
   }
   return null;
 }

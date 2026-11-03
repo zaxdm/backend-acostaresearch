@@ -14,6 +14,9 @@ LO QUE DIO 0 % EN TESIS REALES (y lo que no)
 - Lo que más pesa en un documento entero (22-oct): que sus párrafos no se parezcan entre sí.
   Un texto de 5 000 palabras con la misma plantilla en cada sección siguió en 96 % porque cada
   párrafo se reescribió parecido a sus hermanos. Copiar alguna frase del original pesa poco.
+- Confirmado el 3-nov en una tesis de 24 600 palabras: la zona marcada subió de 20 a 36 % cada vez
+  que se partió en frases más cortas, y bajó a 0 % al reescribir los párrafos enteros fundiendo,
+  con oraciones de 30 a 37 palabras de media y sin series de tres o cuatro acciones.
 
 CÓMO SE REESCRIBE CADA PÁRRAFO
 1. Lee el párrafo y quédate con lo que afirma: hechos, cifras, citas y relaciones.
@@ -24,8 +27,9 @@ CÓMO SE REESCRIBE CADA PÁRRAFO
 4. Funde. Dos o tres oraciones del original pasan a una, unidas por el enlace que corresponde:
    «ya que», «porque» (causa); «pero», «aunque», «aun así» (contraste); «de modo que», «así que»,
    «por eso» (consecuencia); «para que» + verbo (finalidad); «y», «además», «también» (suma);
-   «es decir» (aclaración); «ahora bien» (cambio de tema); «por ejemplo»; «cuando», «donde».
-   Usa el enlace solo si la relación existe entre esas dos ideas.
+   «ahora bien» (cambio de tema); «cuando», «donde».
+   Usa el enlace solo si la relación existe entre esas dos ideas. «Por ejemplo» y «es decir» no
+   abren oración: el ejemplo se mete en la oración que lo necesita («si el docente deja un video…»).
 5. Verbos y no sustantivos: «cómo se reciben las muestras» y no «la recepción de las muestras»;
    «para que los errores se reduzcan» y no «con la finalidad de la reducción de errores».
 6. Sujetos concretos: el estudio, los autores, el personal, los niños, el hospital. No «la
@@ -47,8 +51,15 @@ CÓMO SE REESCRIBE CADA PÁRRAFO
     Nombrarla no es quitar la idea.
 12. Las rayas (—) y los dos puntos en medio de la oración que traiga el original también se
     quitan: coma, punto, paréntesis o un verbo.
-13. Fundir no es encadenar sin fin: ninguna oración pasa de 45 palabras, y la media va de 25 a
-    35. Si una oración pide un tercer «y», un tercer «que» o otro «de modo que», pártela ahí.
+13. Fundir no es encadenar sin fin: la media va de 30 a 37 palabras, con oraciones de largo
+    desigual, y alguna puede llegar a 55 si la idea lo pide. Si una oración pide un tercer «y» o un
+    tercer «que», reordénala o pásala a una subordinada; no la partas en frases cortas y rematadas,
+    que es lo que más subió la IA. No repitas el mismo enlace («de modo que») en párrafos vecinos.
+14. Series de tres o cuatro acciones o ejemplos en fila («consultar información, organizar
+    materiales y elaborar producciones», «orientar las tareas, aclarar dudas y seguir los
+    compromisos»): déjalas en dos o dilas en prosa. Fue lo que siguió marcado en la tesis del
+    3-nov. Quedan enteras las listas de datos (dimensiones, variables, elementos de un modelo que el
+    autor cita) y los enunciados del estudio.
 
 EL RELLENO SE BORRA, AUNQUE ESTÉ EN EL ORIGINAL
 Quitarlo no es perder una idea: no la tiene. Fuera, sin sustituto:

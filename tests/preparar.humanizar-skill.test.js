@@ -184,6 +184,38 @@ test('«Esa brecha… / Eso repercute… / Ese uso…» cuentan como un solo mol
   assert.ok(!notas.has('0') && !notas.has('1'));
 });
 
+// 3-nov-2026: «Para ordenar… / Para analizar… / Para interpretar…» seguidos.
+const RELLENO_25 = ' con el detalle de cada estudio revisado, su país, su diseño, sus participantes, sus instrumentos y sus resultados principales.';
+const seguidos = [
+  { clave: 'a', texto: 'Para ordenar la información se construyó una matriz bibliográfica' + RELLENO_25 },
+  { clave: 'b', texto: 'Para analizar los documentos se usó el análisis de contenido temático' + RELLENO_25 },
+  { clave: 't', texto: 'Resultados' },
+  { clave: 'c', texto: 'Para interpretar los resultados se tuvo en cuenta lo que aportaba cada diseño' + RELLENO_25 },
+  { clave: 'd', texto: 'La revisión tomó artículos con revisión por pares publicados entre 2021 y 2026' + RELLENO_25 },
+  { clave: 'e', texto: 'La matriz facilitó la comparación entre publicaciones y la búsqueda de patrones' + RELLENO_25 },
+];
+
+test('dos párrafos seguidos que empiezan con la misma palabra se señalan; un título corta la racha', () => {
+  const textos = seguidos.filter((p) => p.clave !== 't');
+  const notas = humanizador.moldesDe(textos, 3, { orden: seguidos.map((p) => p.clave) });
+  assert.match(notas.get('b').join(' '), /empieza con «Para…», igual que el párrafo de al lado/);
+  // El primero se queda; tras el título, «Para interpretar…» no tiene vecino igual.
+  assert.ok(!notas.has('a') && !notas.has('c'));
+  // Dos «La…» seguidos no son un molde.
+  assert.ok(!notas.has('e'));
+});
+
+test('si el segundo no se puede reescribir, se señala el primero', () => {
+  const textos = seguidos.filter((p) => p.clave !== 't');
+  const notas = humanizador.moldesDe(textos, 3, { orden: seguidos.map((p) => p.clave), editables: new Set(['a']) });
+  assert.ok(notas.has('a') && !notas.has('b'));
+});
+
+test('sin el orden del documento, moldesDe no mira los párrafos seguidos', () => {
+  const notas = humanizador.moldesDe(seguidos.filter((p) => p.clave !== 't'));
+  assert.ok(![...notas.values()].flat().some((nota) => /párrafo de al lado/.test(nota)));
+});
+
 // ── Párrafos que se parecen entre sí (v3, 22-oct-2026) ────────────────────
 
 const PLANTILLA_A =

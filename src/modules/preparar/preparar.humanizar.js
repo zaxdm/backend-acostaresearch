@@ -67,7 +67,9 @@ const FORMATO = `
 ENTRADA: un objeto JSON con
 - "seccion": el capítulo al que pertenecen los párrafos;
 - "ya_usadas": cómo abren otros párrafos del documento, los ya humanizados y los que se quedan como están. No abras ninguno igual;
-- "parrafos": cada clave es el número de un párrafo y cada valor su texto;
+- "parrafos": cada clave es el número de un párrafo y cada valor su texto. Van en el orden del documento: dos
+  párrafos seguidos no empiezan con la misma palabra («Para ordenar…» y luego «Para analizar…» es el mismo
+  comienzo), salvo que ambos abran con un artículo («La…», «Los…»);
 - "comparten_plantilla" (si viene): los párrafos de esta tanda que en el original siguen la misma
   plantilla que otros del documento, cada uno con la arquitectura que le toca. Úsala: es lo que
   evita que los hermanos vuelvan a salir parecidos.
@@ -218,6 +220,8 @@ function capitulosDe(parrafos) {
 // ── Los moldes entre párrafos (lo de repeticiones.py de /turnitin) ─────────
 
 const ART = new Set(['el', 'la', 'los', 'las', 'un', 'una', 'en', 'con', 'por', 'para', 'de', 'del', 'al', 'a', 'se', 'lo']);
+// Solo los artículos: dos párrafos seguidos que abren con «La…» no son un molde.
+const ARTICULOS = new Set(['el', 'la', 'los', 'las', 'un', 'una', 'lo']);
 
 // «esa/ese/esta/este» desde el 21-oct: GLM partió cinco párrafos seguidos en
 // «Dato. Esa brecha / Ese uso / Eso repercute…» y Turnitin los marcó todos.
@@ -279,7 +283,7 @@ function oraciones(texto) {
  * investigación…»); lo que no puede quedar es el mismo arranque en cinco
  * párrafos.
  */
-function moldesDe(textos, minimo = 3) {
+function moldesDe(textos, minimo = 3, { orden = null, editables = null } = {}) {
   const notas = new Map();
   const anotar = (clave, nota) => notas.set(clave, [...(notas.get(clave) ?? []), nota]);
   const largos = textos.filter(({ texto }) => cuerpo.palabrasDe(texto) >= 25);
@@ -293,6 +297,35 @@ function moldesDe(textos, minimo = 3) {
     if (claves.length < minimo) continue;
     for (const clave of claves.slice(2)) {
       anotar(clave, `abre con «${k}…», igual que otros ${claves.length - 1} párrafos del documento`);
+    }
+  }
+
+  // Dos párrafos SEGUIDOS que empiezan con la misma palabra (3-nov-2026: en una
+  // metodología que siguió en «*%», «Para ordenar…», «Para analizar…» y «Para
+  // interpretar…»; por dos palabras parecían tres aperturas distintas). Va con
+  // el orden del documento; un párrafo corto o un título en medio corta la
+  // racha. Los artículos no cuentan: «La…» seguido de «La…» es normal. Se señala
+  // el que se puede reescribir, el segundo si se puede.
+  if (orden) {
+    const porClave = new Map(textos.map(({ clave, texto }) => [clave, texto]));
+    let anterior = null;
+    for (const clave of orden) {
+      const texto = porClave.get(clave);
+      // Un título o un párrafo que no se mide (no está en `textos`) también corta.
+      if (texto === undefined || cuerpo.palabrasDe(texto) < 25) {
+        anterior = null;
+        continue;
+      }
+      const primera = palabras(texto)[0] ?? '';
+      if (anterior && primera && primera === anterior.primera && !ARTICULOS.has(primera)) {
+        const puede = (k) => !editables || editables.has(k);
+        const elegido = puede(clave) ? clave : puede(anterior.clave) ? anterior.clave : null;
+        if (elegido) {
+          const original = String(texto).trim().split(/\s+/)[0];
+          anotar(elegido, `empieza con «${original}…», igual que el párrafo de al lado: entra por otro lado`);
+        }
+      }
+      anterior = { clave, primera };
     }
   }
 
@@ -669,9 +702,9 @@ async function romperPlantillas({ prosa, fijos = [], skill, generar, modelos, ac
 }
 
 /** Paso 3: una pasada sobre el documento entero. Devuelve cuántos párrafos cambió. */
-async function pasada({ prosa, fijos = [], skill, generar, modelos, actual, uso, porTanda, diario, estricto = false }) {
+async function pasada({ prosa, fijos = [], skill, generar, modelos, actual, uso, porTanda, diario, estricto = false, orden = null }) {
   const textos = conFijos(fijos, prosa, actual);
-  const notas = moldesDe(textos);
+  const notas = moldesDe(textos, 3, { orden, editables: new Set(prosa.map((p) => p.clave)) });
   if (![...notas.keys()].some((clave) => prosa.some((p) => p.clave === clave))) return 0;
 
   const usadas = [...new Set(textosDe(prosa, actual).map(({ texto }) => palabras(texto).slice(0, 3).join(' ')))];
@@ -771,9 +804,11 @@ async function humanizar({
       await romperPlantillas({ prosa, fijos, skill, generar, modelos, actual, uso, porTanda, diario: rondas, ronda, estricto });
       avance.marcar(tandas + ronda);
     }
-    await pasada({ prosa, fijos, skill, generar, modelos, actual, uso, porTanda, diario: rondas, estricto });
+    // El orden del Word, con títulos: dice qué párrafos van seguidos (moldesDe).
+    const orden = parrafos.map((p) => p.clave);
+    await pasada({ prosa, fijos, skill, generar, modelos, actual, uso, porTanda, diario: rondas, estricto, orden });
     avance.marcar(tandas + RONDAS_CONTRA_PLANTILLA + 1);
-    await pasada({ prosa, fijos, skill, generar, modelos, actual, uso, porTanda, diario: rondas, estricto });
+    await pasada({ prosa, fijos, skill, generar, modelos, actual, uso, porTanda, diario: rondas, estricto, orden });
     avance.marcar(tandas + RONDAS_CONTRA_PLANTILLA + 2);
   }
 

@@ -38,6 +38,7 @@ const prepararRoutes = require('./modules/preparar/preparar.routes');
 const { panel: whatsappPanel } = require('./modules/whatsapp/whatsapp.routes');
 const correoRoutes = require('./modules/correo/rebotes.routes');
 const sorteoRoutes = require('./modules/sorteos/sorteo.routes');
+const acostaiaRoutes = require('./modules/acostaia/acostaia.routes');
 
 const comprobarBase = require('./lib/comprobarBase');
 
@@ -142,5 +143,8 @@ router.use('/correo', correoRoutes);
 // Sorteos de una matrícula: apuntarse es público (con el enlace), girar la
 // ruleta es del administrador. Ver `modules/sorteos`.
 router.use('/sorteos', sorteoRoutes);
+// AcostaIA, el chat propio: su servidor crea y revoca aquí las licencias de
+// sus usuarios, con una clave compartida. Ver `modules/acostaia`.
+router.use('/acostaia', acostaiaRoutes);
 
 module.exports = router;

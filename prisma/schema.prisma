@@ -143,6 +143,15 @@ model User {
   trialLinkId String?    @db.Char(36)
   trialLink   TrialLink? @relation(fields: [trialLinkId], references: [id], onDelete: Cascade)
 
+  /// Id del usuario en AcostaIA (el chat propio, sistema aparte). Nulo en toda
+  /// cuenta de la web.
+  ///
+  /// Con valor, es un titular espejo, como el de un conector de prueba: sin
+  /// contraseña ni Google y con un correo .invalid, al que no sale ningún
+  /// correo. Existe porque la licencia y el proyecto cuelgan de un usuario. Lo
+  /// crea el servidor de AcostaIA por la ruta interna; ver `modules/acostaia`.
+  acostaiaId String? @unique @db.VarChar(64)
+
   @@index([trialLinkId])
   @@index([pais])
   @@map("users")
@@ -1142,8 +1151,9 @@ model LicenseEvent {
   license   License @relation(fields: [licenseId], references: [id], onDelete: Cascade)
 
   tipo   LicenseEventKind
-  /// Quién lo hizo: ADMIN, DETECTOR, CUENTA_BORRADA (la borró su dueño) o
-  /// CATALOGO (el producto se retiró; solo licencias del administrador).
+  /// Quién lo hizo: ADMIN, DETECTOR, CUENTA_BORRADA (la borró su dueño),
+  /// CATALOGO (el producto se retiró; solo licencias del administrador) o
+  /// ACOSTAIA (la cortó o reemplazó el chat propio; ver `modules/acostaia`).
   origen String           @db.VarChar(20)
   motivo String?          @db.VarChar(255)
   /// El administrador que pulsó el botón, si fue él.

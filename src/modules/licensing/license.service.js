@@ -1646,10 +1646,17 @@ const licenseService = {
 
     const desde = addDays(new Date(), -VENTANA_ANALISIS_DIAS);
     const usos = await licenseRepository.usagesSince(id, desde);
+    const titular = await prisma.user.findUnique({
+      where: { id: licencia.userId },
+      select: { acostaiaId: true },
+    });
 
     return {
       license: licencia,
-      diagnostico: analizar(usos, { variasTesis: licencia.variasTesis }),
+      diagnostico: analizar(usos, {
+        variasTesis: licencia.variasTesis,
+        deAcostaIA: Boolean(titular?.acostaiaId),
+      }),
       usosRecientes: await licenseRepository.recentUsages(id),
       historial: await historialDe(id),
     };
@@ -1670,7 +1677,10 @@ const licenseService = {
 
     for (const licencia of licencias) {
       const usos = await licenseRepository.usagesSince(licencia.id, desde);
-      const diagnostico = analizar(usos, { variasTesis: licencia.variasTesis });
+      const diagnostico = analizar(usos, {
+        variasTesis: licencia.variasTesis,
+        deAcostaIA: Boolean(licencia.user?.acostaiaId),
+      });
 
       if (diagnostico.nivel !== NIVELES.NORMAL) {
         hallazgos.push({ license: licencia, diagnostico });

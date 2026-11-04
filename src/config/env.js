@@ -84,6 +84,10 @@ const schema = z.object({
   // Secreto del webhook de rebotes de Brevo (`modules/correo`). Va en la URL
   // como `?token=`. Vacío = el webhook no acepta nada.
   BREVO_WEBHOOK_TOKEN: vacioComoAusente(z.string().min(24)),
+  // Clave que comparte el servidor de AcostaIA (el chat propio) para crear y
+  // revocar las licencias de sus usuarios (`modules/acostaia`). Va en la
+  // cabecera `Authorization: Bearer`. Vacía = la ruta no acepta nada.
+  ACOSTAIA_CLAVE_INTERNA: vacioComoAusente(z.string().min(32)),
 
   // ── Reescritor académico (Claude) ───────────────────────────────────────
   ANTHROPIC_API_KEY: vacioComoAusente(z.string()),

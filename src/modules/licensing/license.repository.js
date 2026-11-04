@@ -354,7 +354,16 @@ const licenseRepository = {
       },
       select: {
         ...licenseSelect,
-        user: { select: { id: true, email: true, firstName: true, lastName: true, pais: true } },
+        user: {
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            pais: true,
+            acostaiaId: true,
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
       take: limit,

@@ -29,7 +29,27 @@ const transporter = env.smtpEnabled
  * `List-Unsubscribe`, que es lo que pone el botón «Anular suscripción» de
  * Gmail y evita que el que no los quiere los marque como spam.
  */
+/**
+ * Si todos los destinatarios son de un dominio .invalid.
+ *
+ * Esos correos no existen a propósito: los titulares de un conector de prueba,
+ * las cuentas borradas y los titulares espejo de AcostaIA. El dominio está
+ * reservado y nunca entrega, así que mandarles algo solo produce un rebote en
+ * Brevo, que es lo que baja la reputación del remitente.
+ */
+function soloDireccionesInvalidas(to) {
+  const lista = (Array.isArray(to) ? to : String(to ?? '').split(','))
+    .map((d) => String(d).trim().toLowerCase().replace(/>$/, ''))
+    .filter(Boolean);
+  return lista.length > 0 && lista.every((d) => d.endsWith('.invalid'));
+}
+
 async function sendMail({ to, subject, html, text, attachments, headers }) {
+  if (soloDireccionesInvalidas(to)) {
+    logger.info({ to, subject }, 'Correo omitido: destinatario .invalid');
+    return { messageId: null, omitido: true };
+  }
+
   const info = await transporter.sendMail({
     from: env.MAIL_FROM,
     // A dónde va la respuesta si el tesista le da a «Responder».
@@ -80,4 +100,4 @@ async function verifyTransport() {
   }
 }
 
-module.exports = { sendMail, verifyTransport, transporter };
+module.exports = { sendMail, verifyTransport, transporter, soloDireccionesInvalidas };

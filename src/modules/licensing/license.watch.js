@@ -232,7 +232,14 @@ async function evaluar(licenseId, { forzar = false } = {}) {
       where: { id: licenseId },
       include: {
         user: {
-          select: { email: true, firstName: true, lastName: true, role: true, trialLinkId: true },
+          select: {
+            email: true,
+            firstName: true,
+            lastName: true,
+            role: true,
+            trialLinkId: true,
+            acostaiaId: true,
+          },
         },
       },
     });
@@ -270,7 +277,10 @@ async function evaluar(licenseId, { forzar = false } = {}) {
       orderBy: { createdAt: 'asc' },
     });
 
-    const diagnostico = analizar(usos, { variasTesis: licencia.variasTesis });
+    const diagnostico = analizar(usos, {
+      variasTesis: licencia.variasTesis,
+      deAcostaIA: Boolean(licencia.user?.acostaiaId),
+    });
     const señales = [...diagnostico.senales];
 
     // Los intentos de extracción no los ve el detector: se suman aquí.

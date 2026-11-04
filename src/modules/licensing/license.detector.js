@@ -187,8 +187,14 @@ function contarSolapes(usos) {
  * lleva dos tesis abre varios chats, los alterna y pregunta por temas que no
  * tienen nada que ver, que es exactamente lo que esas señales buscan. Queda el
  * volumen, que nunca corta el acceso por sí solo.
+ *
+ * Con `deAcostaIA` (licencias que emite el chat propio AcostaIA para sus
+ * usuarios) pasa lo mismo, por otro motivo: allí cada chat nuevo es una
+ * conversación distinta, y quien entra es siempre el dueño de la cuenta de
+ * AcostaIA, que no puede pasarle la URL a nadie porque nunca la ve.
  */
-function analizar(usos, { ahora = new Date(), variasTesis = false } = {}) {
+function analizar(usos, { ahora = new Date(), variasTesis = false, deAcostaIA = false } = {}) {
+  const callarConversaciones = variasTesis || deAcostaIA;
   // Se ordena aquí y no se da por supuesto: comparar llamadas consecutivas sin
   // orden cronológico da separaciones negativas y cuenta como solapadas cosas
   // que ocurrieron con horas de diferencia.
@@ -229,8 +235,9 @@ function analizar(usos, { ahora = new Date(), variasTesis = false } = {}) {
     }
   }
 
-  if (variasTesis) {
-    // Nada de lo que sigue distingue a dos personas de una con dos tesis.
+  if (callarConversaciones) {
+    // Nada de lo que sigue distingue a dos personas de una con dos tesis, ni
+    // a los chats de un mismo usuario de AcostaIA.
   } else if (sesiones24.size >= SESIONES_SOSPECHA) {
     senales.push({
       codigo: 'MUCHAS_SESIONES',
@@ -245,7 +252,7 @@ function analizar(usos, { ahora = new Date(), variasTesis = false } = {}) {
     });
   }
 
-  if (!variasTesis && solapes >= SOLAPES_SOSPECHA) {
+  if (!callarConversaciones && solapes >= SOLAPES_SOSPECHA) {
     senales.push({
       codigo: 'SESIONES_SOLAPADAS',
       detalle: `${solapes} llamadas de sesiones distintas separadas por menos de ${SOLAPE_SEGUNDOS} s.`,
@@ -253,7 +260,7 @@ function analizar(usos, { ahora = new Date(), variasTesis = false } = {}) {
     });
   }
 
-  if (!variasTesis && incoherentes >= INCOHERENTES_SOSPECHA) {
+  if (!callarConversaciones && incoherentes >= INCOHERENTES_SOSPECHA) {
     senales.push({
       codigo: 'CONSULTAS_INCOHERENTES',
       detalle: `${incoherentes} pares de consultas en el mismo minuto sobre temas distintos.`,
@@ -281,6 +288,7 @@ function analizar(usos, { ahora = new Date(), variasTesis = false } = {}) {
       // volumen, en lugar de dejar pensar que el comprador es intachable.
       hayConQueComparar,
       variasTesis,
+      deAcostaIA,
       sesionesDistintas24: sesiones24.size,
       solapes,
       incoherentes,

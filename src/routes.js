@@ -7,6 +7,7 @@ const rewriteRoutes = require('./modules/rewrite/rewrite.routes');
 const billingRoutes = require('./modules/billing/billing.routes');
 const paymentRoutes = require('./modules/payments/payment.routes');
 const ventasRoutes = require('./modules/ventas/ventas.routes');
+const cajaRoutes = require('./modules/caja/caja.routes');
 const sunatRoutes = require('./modules/sunat/sunat.routes');
 const tributosRoutes = require('./modules/tributos/tributos.routes');
 const licenseRoutes = require('./modules/licensing/license.routes');
@@ -67,6 +68,8 @@ router.use('/billing', billingRoutes);
 router.use('/payments', paymentRoutes);
 // Cierres de ventas mensuales en PDF (solo ADMIN).
 router.use('/ventas', ventasRoutes);
+// Flujo de caja día por día (solo ADMIN, ver `modules/caja`).
+router.use('/caja', cajaRoutes);
 // Boletas y notas de crédito: las del cliente y el panel (ver `modules/sunat`).
 router.use('/sunat', sunatRoutes);
 // La declaración mensual del 621 (solo ADMIN, ver `modules/tributos`).

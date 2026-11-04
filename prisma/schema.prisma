@@ -748,6 +748,34 @@ model CierreMensual {
   @@map("cierres_mensuales")
 }
 
+/// Un movimiento de la caja apuntado a mano en /admin → Accesos → «Flujo de
+/// caja»: un gasto, una entrada que no pasó por la web, o el saldo con el que
+/// arrancó la caja. Las ventas de la web y los servicios con boleta entran
+/// solos (se leen de sus tablas); aquí va solo lo que no está en ninguna.
+model MovimientoCaja {
+  id         String   @id @default(uuid()) @db.Char(36)
+  /// El día de Lima en que entró o salió el dinero.
+  fecha      DateTime @db.Date
+  /// ENTRADA, SALIDA o SALDO_INICIAL (solo uno: el día en que empieza la caja).
+  tipo       String   @db.VarChar(14)
+  /// Siempre positivo; el tipo dice si suma o resta.
+  montoCents Int
+  /// PEN o USD.
+  moneda     String   @default("PEN") @db.VarChar(3)
+  /// El monto en céntimos de sol (los dólares, al tipo de referencia de la web).
+  solesCents Int
+  concepto   String   @db.VarChar(200)
+  categoria  String?  @db.VarChar(40)
+  /// Por dónde: Yape, BCP, efectivo…
+  medio      String?  @db.VarChar(40)
+  creadoPorId   String?  @db.Char(36)
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  @@index([fecha])
+  @@map("movimientos_caja")
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Licencias del conector MCP
 // ─────────────────────────────────────────────────────────────────────────────

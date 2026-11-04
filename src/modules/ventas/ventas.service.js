@@ -18,12 +18,12 @@ const ventasRepository = require('./ventas.repository');
  * SUNAT cuando llegue; hoy no se envía nada a ningún sitio.
  */
 
-/** Las ventas de un mes, ya normalizadas y ordenadas. */
-async function ventasDe(periodo) {
-  const desde = datos.inicioDelMes(periodo.anio, periodo.mes);
-  const siguiente = datos.siguiente(periodo);
-  const hasta = datos.inicioDelMes(siguiente.anio, siguiente.mes);
-
+/**
+ * Las ventas entre dos instantes (`hasta` excluido), normalizadas y ordenadas,
+ * sin boleta. Las usa también el flujo de caja (`modules/caja`), para que la
+ * caja y estos reportes cuenten las mismas ventas.
+ */
+async function ventasEntre(desde, hasta) {
   const [pagos, codigos] = await Promise.all([
     ventasRepository.pagosCobrados(desde, hasta),
     ventasRepository.codigosVendidos(desde, hasta),
@@ -33,7 +33,16 @@ async function ventasDe(periodo) {
     ventasRepository.nombresDeProducto([...new Set(codigos.map((c) => c.productCode))]),
   ]);
 
-  const ventas = datos.ventasDelMes({ pagos, codigos, idsDeCodigos, nombresDeProducto });
+  return datos.ventasDelMes({ pagos, codigos, idsDeCodigos, nombresDeProducto });
+}
+
+/** Las ventas de un mes, ya normalizadas y ordenadas. */
+async function ventasDe(periodo) {
+  const desde = datos.inicioDelMes(periodo.anio, periodo.mes);
+  const siguiente = datos.siguiente(periodo);
+  const hasta = datos.inicioDelMes(siguiente.anio, siguiente.mes);
+
+  const ventas = await ventasEntre(desde, hasta);
   // El número de boleta de cada una (SUNAT, desde el 19-oct-2026).
   const boletas = await ventasRepository.boletasPorClave([...new Set(ventas.flatMap(datos.clavesDeBoleta))]);
   return datos.conBoletas(ventas, boletas);
@@ -79,6 +88,8 @@ async function cerrarMes(periodo) {
 }
 
 const ventasService = {
+  ventasEntre,
+
   /**
    * Cierra todos los meses terminados que aún no tienen cierre, desde el de la
    * primera venta. Devuelve cuántos cerró.

@@ -1677,8 +1677,11 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
             '1. Que abra el enlace de cada una y lea al menos la parte que sostiene la frase (la página ' +
             'si la cita la lleva; si no, el resumen y la sección de resultados o conclusiones). El ' +
             'resumen de aquí ORIENTA, no sustituye la lectura.' + N +
-            '2. Pregúntale por cada una, con opciones: «Sí, dice eso» · «No lo dice / dice otra cosa» · ' +
-            '«No pude abrirla». Si el resumen de aquí contradice la frase, díselo tú antes de preguntar.' + N +
+            '2. Pregúntale CON LA HERRAMIENTA DE PREGUNTAS CON OPCIONES que tengas en esta plataforma ' +
+            '(una pregunta por fuente, hasta 3 en el mismo turno; nada de «contéstame 1 sí / no»), con ' +
+            'estas opciones: «Sí, dice eso» · «No lo dice / dice otra cosa» · «No pude abrirla». Si no ' +
+            'tienes ninguna, una lista numerada corta. Si el resumen de aquí contradice la frase, díselo ' +
+            'tú antes de preguntar.' + N +
             '3. Guarda sus respuestas con "confirmar" (clave + capitulo + estado, y su nota si la da). ' +
             'NUNCA las rellenes tú: tú no has leído la fuente.' + N +
             '4. «No lo dice»: reescribe la frase para que diga lo que la fuente dice de verdad, o quita ' +

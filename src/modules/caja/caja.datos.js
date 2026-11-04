@@ -7,9 +7,9 @@
  * cerró el anterior, suma lo que entró, resta lo que salió y cierra. El mes es
  * la suma de sus días.
  *
- * Empieza el día de su saldo inicial (`SALDO_INICIAL`, uno solo). Lo anterior
- * no cuenta: antes de esa fecha nadie apuntaba los gastos, y sumar solo las
- * ventas daría un saldo inflado.
+ * Empieza el día de su saldo inicial (`SALDO_INICIAL`, uno solo, opcional) y lo
+ * anterior no cuenta. Sin saldo inicial empieza en 0 el día de la primera venta
+ * (lo decide `caja.service`), para que se vea desde el primer momento.
  *
  * Nada se congela: si se corrige un gasto de hace dos semanas, todos los días
  * siguientes se recalculan solos.

@@ -2,6 +2,7 @@
 
 const { NotFoundError, ValidationError } = require('../../shared/errors/AppError');
 const ventasService = require('../ventas/ventas.service');
+const ventasRepository = require('../ventas/ventas.repository');
 const sunatRepository = require('../sunat/sunat.repository');
 const datos = require('./caja.datos');
 const cajaRepository = require('./caja.repository');
@@ -35,11 +36,41 @@ function comprobarDia(dia, hoy) {
   if (dia > hoy) throw new ValidationError('No se puede apuntar en un día que todavía no llega.');
 }
 
-async function exigirInicio(dia) {
+/**
+ * Desde cuándo se lleva la caja. Si se puso un saldo inicial, desde ese día y con
+ * ese saldo. Si no, desde la primera venta (o el primer movimiento apuntado) y
+ * con saldo 0: la caja se ve desde el primer momento, sin pedir nada antes.
+ */
+async function inicioDeLaCaja(hoy) {
+  const fila = await cajaRepository.saldoInicial();
+  if (fila) return formatoInicio(fila);
+
+  const [venta, manual] = await Promise.all([
+    ventasRepository.primeraVenta(),
+    cajaRepository.primerMovimiento(),
+  ]);
+  const dias = [venta ? datos.diaDeLima(venta) : null, manual ? datos.diaDeColumna(manual.fecha) : null, hoy];
+  return {
+    id: 'inicio',
+    automatico: true,
+    origen: 'INICIO',
+    dia: dias.filter(Boolean).sort()[0],
+    hora: null,
+    tipo: 'SALDO_INICIAL',
+    concepto: 'Inicio de la caja',
+    detalle: null,
+    categoria: null,
+    medio: null,
+    moneda: 'PEN',
+    montoCents: 0,
+    solesCents: 0,
+  };
+}
+
+/** Con saldo inicial puesto, no se apunta antes de su día (no contaría). */
+async function comprobarInicio(dia) {
   const inicio = await cajaRepository.saldoInicial();
-  if (!inicio) {
-    throw new ValidationError('Primero pon el saldo con el que empieza la caja.');
-  }
+  if (!inicio) return;
   const desde = datos.diaDeColumna(inicio.fecha);
   if (dia < desde) {
     throw new ValidationError(
@@ -55,8 +86,7 @@ const cajaService = {
     const actual = { anio: Number(hoy.slice(0, 4)), mes: Number(hoy.slice(5, 7)) };
     const periodo = anio && mes ? { anio, mes } : actual;
 
-    const inicio = formatoInicio(await cajaRepository.saldoInicial());
-    if (!inicio) return datos.armarCaja({ inicio: null, movimientos: [], ...periodo, hoy });
+    const inicio = await inicioDeLaCaja(hoy);
 
     const { ultimo } = datos.diasDelMes(periodo.anio, periodo.mes);
     let movimientos = [];
@@ -101,7 +131,7 @@ const cajaService = {
 
   async crear(entrada, adminId, ahora = new Date()) {
     comprobarDia(entrada.fecha, datos.diaDeLima(ahora));
-    await exigirInicio(entrada.fecha);
+    await comprobarInicio(entrada.fecha);
     const fila = await cajaRepository.crear({
       ...datosDeMovimiento(entrada),
       fecha: cajaRepository.comoFecha(entrada.fecha),
@@ -114,7 +144,7 @@ const cajaService = {
     const actual = await cajaRepository.buscar(id);
     if (!actual || actual.tipo === 'SALDO_INICIAL') throw new NotFoundError('Ese movimiento no existe.');
     comprobarDia(entrada.fecha, datos.diaDeLima(ahora));
-    await exigirInicio(entrada.fecha);
+    await comprobarInicio(entrada.fecha);
     const fila = await cajaRepository.actualizar(id, {
       ...datosDeMovimiento(entrada),
       fecha: cajaRepository.comoFecha(entrada.fecha),

@@ -28,6 +28,15 @@ const cajaRepository = {
     });
   },
 
+  /** El movimiento apuntado más antiguo (sin contar el saldo inicial). */
+  primerMovimiento() {
+    return prisma.movimientoCaja.findFirst({
+      where: { tipo: { in: ['ENTRADA', 'SALIDA'] } },
+      orderBy: { fecha: 'asc' },
+      select: { fecha: true },
+    });
+  },
+
   contarAntesDe(dia) {
     return prisma.movimientoCaja.count({
       where: { tipo: { in: ['ENTRADA', 'SALIDA'] }, fecha: { lt: comoFecha(dia) } },

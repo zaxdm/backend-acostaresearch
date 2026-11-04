@@ -96,12 +96,32 @@ const TSP = Object.freeze({
   archivo: 'suficiencia-profesional',
 });
 
+/**
+ * El Taller Investigador PRO (4-nov-2026), códigos TALLER*.
+ *
+ * Forma a docentes y egresados de posgrado para publicar un artículo con rigor:
+ * diagnóstico, plan de publicación, vacío y aporte, comité de ética,
+ * recolección y auditoría de integridad (`taller-fase*`). Lo que el docente
+ * acaba escribiendo es un artículo, así que su `tipo` es 'articulo': sin
+ * portada ni páginas de tesis, y con la plantilla de la revista como formato.
+ * Lo que lo distingue va en `modalidad`, la cabecera y el nombre del Word.
+ *
+ * NO es el artículo empírico: `verificaCitas` sigue siendo solo de ARTICULO.
+ */
+const TALLER = Object.freeze({
+  ...ARTICULO,
+  modalidad: 'taller',
+  ruta: 'Taller Investigador PRO',
+  archivo: 'taller-investigador',
+});
+
 /** El perfil de un producto por su código. Sin código o desconocido: tesis. */
 function perfilDe(productCode) {
   const codigo = String(productCode ?? '');
   if (codigo.startsWith('ARTICULO')) return ARTICULO;
   if (codigo.startsWith('INFORME')) return INFORME;
   if (codigo.startsWith('TSP')) return TSP;
+  if (codigo.startsWith('TALLER')) return TALLER;
   return TESIS;
 }
 
@@ -155,4 +175,4 @@ function verificaCitas(productCode) {
   return perfilDe(codigo) === ARTICULO && !/REVIEW/i.test(codigo);
 }
 
-module.exports = { perfilDe, esTesisDelMetodo, traeHerramientas, verificaCitas, TESIS, ARTICULO, INFORME, TSP };
+module.exports = { perfilDe, esTesisDelMetodo, traeHerramientas, verificaCitas, TESIS, ARTICULO, INFORME, TSP, TALLER };

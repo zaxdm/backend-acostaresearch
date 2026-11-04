@@ -2878,7 +2878,9 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
       };
 
       const lista = b.fuentes.map((f, i) => {
-        const autores = recortar(f.authors, 90) || '(Autor no consignado)';
+        // Con detalle, los autores enteros (500 es lo que se guarda): la matriz
+        // del asesor los pide todos y cortados obligan a buscarlos en el PDF.
+        const autores = recortar(f.authors, detalle ? 500 : 90) || '(Autor no consignado)';
         const marca = mezcladas ? (MARCAS[f.origin] ?? '   · subida') : '';
         const titulo = recortar(f.title, 180);
         const linea = `${b.desde + i}. [${f.ref}]  ${autores} (${f.year ?? 's. f.'}). ${titulo}${marca}`;

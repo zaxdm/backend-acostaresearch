@@ -256,6 +256,17 @@ test('mis_fuentes con detalle da la ficha entera, de 10 en 10, para la matriz de
   assert.match(texto, /"pagina": 2 con "detalle": true/);
 });
 
+test('mis_fuentes con detalle no corta la lista de autores; sin detalle, sí', async () => {
+  const largos =
+    'Arroyo Uriarte, D.; Collazos Antón, H.; Campos Cuba, M.; Reyes Jimenez, E.; Vega Sandoval, R.; Último Autor, Z.';
+  mia.total = 1;
+  mia.deZotero = 1;
+  mia.filas = [{ ...coleccion(1)[0], authors: largos }];
+
+  assert.ok((await llamar('mis_fuentes', { detalle: true })).includes(largos));
+  assert.doesNotMatch(await llamar('mis_fuentes'), /Último Autor/);
+});
+
 test('mis_fuentes sin detalle sigue igual: solo autor, año y título, sin la guía de la matriz', async () => {
   mia.pedidos = [];
   const texto = await llamar('mis_fuentes');

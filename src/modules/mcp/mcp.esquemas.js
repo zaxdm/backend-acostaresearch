@@ -160,6 +160,18 @@ const ESQUEMA_LITERATURA = fromJsonSchema({
       maximum: 15,
       description: 'Cuántas fuentes quieres. Por omisión, seis.',
     },
+    base: {
+      type: 'string',
+      enum: ['openalex', 'pubmed', 'europepmc', 'semanticscholar', 'core'],
+      description:
+        'Dónde buscar. Por omisión «openalex» (todas las áreas, con lo latinoamericano). ' +
+        '«pubmed»: salud y medicina (enfermería, nutrición, psicología clínica, odontología). ' +
+        '«europepmc»: biomedicina y ciencias de la vida, también preprints. ' +
+        '«semanticscholar»: todas las áreas, con resumen y PDF abierto. ' +
+        '«core»: repositorios de universidades, tesis y artículos con PDF. ' +
+        'Con pubmed, europepmc, semanticscholar y core escribe el tema EN INGLÉS, y no ' +
+        'filtran por país ni por idioma.',
+    },
   },
   required: ['tema'],
   additionalProperties: false,

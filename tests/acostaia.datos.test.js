@@ -123,3 +123,14 @@ test('el enlace de descarga solo se da para un producto suyo y activo', async ()
   assert.equal(await datos.enlace({ acostaiaId: 'usr_12345678', productCode: 'VIEJO', que: 'word' }), null);
   assert.equal(await datos.enlace({ acostaiaId: 'usr_12345678', productCode: 'TESIS', que: 'documento' }), null);
 });
+
+test('el permiso de subida es el token del enlace de subir_mi_documento, solo para un producto suyo y activo', async () => {
+  const subidaDocumento = require('../src/modules/projects/project.subida-documento');
+  const permiso = await datos.subida({ acostaiaId: 'usr_12345678', productCode: 'TESIS' });
+  assert.equal(permiso.minutos, subidaDocumento.MINUTOS);
+  const deQuien = subidaDocumento.verificar(permiso.token);
+  assert.equal(deQuien.userId, 'espejo-1');
+  assert.equal(deQuien.productCode, 'TESIS');
+  assert.equal(await datos.subida({ acostaiaId: 'usr_12345678', productCode: 'VIEJO' }), null);
+  assert.equal(await datos.subida({ acostaiaId: 'usr_nadie000', productCode: 'TESIS' }), null);
+});

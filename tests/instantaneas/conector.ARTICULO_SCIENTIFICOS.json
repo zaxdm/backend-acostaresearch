@@ -521,7 +521,7 @@
   {
     "nombre": "buscar_en_la_literatura",
     "titulo": "Buscar en la literatura publicada",
-    "descripcion": "Busca en OpenAlex, el catálogo abierto de 327 millones de trabajos publicados. EN VIVO, no en una biblioteca guardada. ÚSALA cuando \"buscar_fuentes\" no encuentre nada, cuando el tesista pida ANTECEDENTES DE SU PAÍS, o cuando quiera fuentes en español: aquí sí valen, porque esta base indexa Scielo, Redalyc y repositorios latinoamericanos. Devuelve autor, año, revista, DOI real, cuántas veces se ha citado y si hay PDF gratis. NO cites de memoria ni completes datos que no vengan de aquí. NO BUSQUES FUENTES EN LA WEB ni en el buscador del chat: lo que sale de ahí no tiene clave y no se puede citar en su documento. Busca solo con las herramientas de este conector. Un libro o un material sin DOI (un manual, una guía como la de ITIL, el PPT de su clase) lo añade el tesista en la web, en el recuadro «Subir tus fuentes» → «+ Añadir una fuente sin DOI a mano»; después sale aquí con su clave. NUNCA le ofrezcas una fuente que no puedas citar. ESTAS FUENTES NO ESTÁN REVISADAS POR ACOSTA: el catálogo es abierto y entra de todo, incluidos repositorios y preprints. Dilo al presentarlas, y recuerda que las de \"buscar_fuentes\" sí llevan ese criterio.",
+    "descripcion": "Busca en OpenAlex, el catálogo abierto de 327 millones de trabajos publicados. EN VIVO, no en una biblioteca guardada. Con \"base\" busca en vez de eso en PubMed (salud y medicina), Europe PMC, Semantic Scholar o CORE: úsalo cuando el tema sea de salud o cuando OpenAlex se quede corto. ÚSALA cuando \"buscar_fuentes\" no encuentre nada, cuando el tesista pida ANTECEDENTES DE SU PAÍS, o cuando quiera fuentes en español: aquí sí valen, porque esta base indexa Scielo, Redalyc y repositorios latinoamericanos. Devuelve autor, año, revista, DOI real, cuántas veces se ha citado y si hay PDF gratis. NO cites de memoria ni completes datos que no vengan de aquí. NO BUSQUES FUENTES EN LA WEB ni en el buscador del chat: lo que sale de ahí no tiene clave y no se puede citar en su documento. Busca solo con las herramientas de este conector. Un libro o un material sin DOI (un manual, una guía como la de ITIL, el PPT de su clase) lo añade el tesista en la web, en el recuadro «Subir tus fuentes» → «+ Añadir una fuente sin DOI a mano»; después sale aquí con su clave. NUNCA le ofrezcas una fuente que no puedas citar. ESTAS FUENTES NO ESTÁN REVISADAS POR ACOSTA: el catálogo es abierto y entra de todo, incluidos repositorios y preprints. Dilo al presentarlas, y recuerda que las de \"buscar_fuentes\" sí llevan ese criterio.",
     "esquema": {
       "type": "object",
       "properties": {
@@ -553,6 +553,17 @@
           "minimum": 1,
           "maximum": 15,
           "description": "Cuántas fuentes quieres. Por omisión, seis."
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "openalex",
+            "pubmed",
+            "europepmc",
+            "semanticscholar",
+            "core"
+          ],
+          "description": "Dónde buscar. Por omisión «openalex» (todas las áreas, con lo latinoamericano). «pubmed»: salud y medicina (enfermería, nutrición, psicología clínica, odontología). «europepmc»: biomedicina y ciencias de la vida, también preprints. «semanticscholar»: todas las áreas, con resumen y PDF abierto. «core»: repositorios de universidades, tesis y artículos con PDF. Con pubmed, europepmc, semanticscholar y core escribe el tema EN INGLÉS, y no filtran por país ni por idioma."
         }
       },
       "required": [

@@ -2386,6 +2386,8 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
       description:
         'Busca en OpenAlex, el catálogo abierto de 327 millones de trabajos publicados. ' +
         'EN VIVO, no en una biblioteca guardada. ' +
+        'Con "base" busca en vez de eso en PubMed (salud y medicina), Europe PMC, Semantic ' +
+        'Scholar o CORE: úsalo cuando el tema sea de salud o cuando OpenAlex se quede corto. ' +
         'ÚSALA cuando "buscar_fuentes" no encuentre nada, cuando el tesista pida ' +
         'ANTECEDENTES DE SU PAÍS, o cuando quiera fuentes en español: aquí sí valen, porque ' +
         'esta base indexa Scielo, Redalyc y repositorios latinoamericanos. ' +
@@ -2397,7 +2399,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         '"buscar_fuentes" sí llevan ese criterio.',
       inputSchema: ESQUEMA_LITERATURA,
     },
-    async ({ tema, idioma, pais, desdeAnio, cuantas }) => {
+    async ({ tema, idioma, pais, desdeAnio, cuantas, base }) => {
       const cupo = await cupoDePrueba('buscar_en_la_literatura', tema);
       if (cupo.bloqueo) return cupo.bloqueo;
       await licenseService.recordUsage({
@@ -2406,13 +2408,14 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         prompt: tema,
       });
 
-      const { fuentes, total, caida, origen, filtrosSinAplicar } =
+      const { fuentes, total, caida, origen, filtrosSinAplicar, nombreDeLaBase, baseSinRespuesta } =
         await referenceService.buscarEnLaLiteratura({
           tema,
           idioma,
           pais,
           desdeAnio,
           cuantas,
+          base,
         });
 
       // La búsqueda abierta de OpenAlex se pausa a veces mientras su servidor se
@@ -2432,7 +2435,18 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
       // Vinieron del respaldo: se dice, y sobre todo se dice qué filtro NO se
       // aplicó. Sin esto el asistente presentaría como «antecedentes en el Perú»
       // una lista que no se acotó por país.
-      const avisoDeRespaldo = avisoDeCrossref(origen, filtrosSinAplicar);
+      let avisoDeRespaldo = avisoDeCrossref(origen, filtrosSinAplicar);
+      // Pidió otra base y no estaba o no respondió: lo de abajo es de OpenAlex.
+      if (baseSinRespuesta) {
+        avisoDeRespaldo =
+          `«${baseSinRespuesta}» no está disponible ahora: estas fuentes son de OpenAlex. ` +
+          'Dilo así al presentarlas.\n\n' + avisoDeRespaldo;
+      }
+      // Vinieron de otra base: no filtra por país ni idioma, y se dice.
+      if (nombreDeLaBase) {
+        const sin = filtrosSinAplicar.length ? ` No se aplicó: ${filtrosSinAplicar.join(' ni ')}.` : '';
+        avisoDeRespaldo = `Fuentes de ${nombreDeLaBase}.${sin}\n\n`;
+      }
 
       if (fuentes.length === 0) {
         const acotado = [idioma ? 'idioma ' + idioma : null, pais ? 'país ' + pais : null]

@@ -47,6 +47,9 @@ const enlaceSchema = z.object({
   que: z.enum(['word', 'documento']).default('word'),
 });
 
+/** El permiso para subir su avance. */
+const subidaSchema = z.object({ acostaiaId, productCode });
+
 /** Conectores (Zotero y Mendeley). */
 const cual = z.enum(['zotero', 'mendeley']);
 const conectoresSchema = z.object({ acostaiaId });
@@ -60,6 +63,7 @@ module.exports = {
   fuentesSchema,
   documentosSchema,
   enlaceSchema,
+  subidaSchema,
   conectoresSchema,
   conectorSchema,
   elegirColeccionSchema,

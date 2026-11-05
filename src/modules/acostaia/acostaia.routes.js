@@ -12,6 +12,7 @@ const {
   fuentesSchema,
   documentosSchema,
   enlaceSchema,
+  subidaSchema,
   conectoresSchema,
   conectorSchema,
   elegirColeccionSchema,
@@ -108,6 +109,13 @@ router.post(
   '/documentos/enlace',
   validate({ body: enlaceSchema }),
   asyncHandler(async (req, res) => ok(res, await acostaiaDatos.enlace(req.body))),
+);
+
+/** POST /acostaia/documentos/subida — el permiso (token de media hora) para subir su avance. */
+router.post(
+  '/documentos/subida',
+  validate({ body: subidaSchema }),
+  asyncHandler(async (req, res) => ok(res, await acostaiaDatos.subida(req.body))),
 );
 
 /** GET /acostaia/conectores — cómo están su Zotero y su Mendeley. */

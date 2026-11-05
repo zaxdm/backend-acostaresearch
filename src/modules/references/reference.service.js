@@ -427,7 +427,41 @@ const porClaves = (claves, ownerUserId) => referenceRepository.porClaves(claves,
  * preprints. Por eso la respuesta dice siempre de dónde viene cada cosa: si esa
  * diferencia se difumina, el diferencial del producto se difumina con ella.
  */
-async function buscarEnLaLiteratura({ tema, idioma, pais, desdeAnio, cuantas }) {
+/**
+ * Otra base del buscador de la web (PubMed, Europe PMC, Semantic Scholar,
+ * CORE; ver `modules/externas`), con las fuentes en la forma de OpenAlex. Null
+ * si no está activa (falta su clave) o no respondió: entonces va OpenAlex.
+ */
+async function buscarEnOtraBase(clave, { tema, desdeAnio, cuantas }) {
+  const base = require('../externas').base(clave);
+  if (!base || !base.activa()) return null;
+  const r = await base.buscar({
+    consulta: tema,
+    palabras: tema,
+    pagina: 1,
+    porPagina: cuantas,
+    desde: desdeAnio || null,
+    hasta: null,
+  });
+  if (r.caida) return null;
+  return {
+    nombre: base.nombre,
+    total: r.total,
+    fuentes: r.resultados.slice(0, cuantas).map((x) => ({
+      titulo: x.titulo,
+      autores: x.autores || '(Autor no consignado)',
+      anio: x.anio ?? null,
+      revista: x.revista ?? null,
+      doi: x.doi ?? null,
+      citas: x.citas ?? 0,
+      idioma: x.idioma ?? null,
+      pdfLibre: x.pdfLibre ?? null,
+      resumen: x.resumen ?? null,
+    })),
+  };
+}
+
+async function buscarEnLaLiteratura({ tema, idioma, pais, desdeAnio, cuantas, base = 'openalex' }) {
   if (!tema || String(tema).trim().length < 3) {
     throw new ValidationError('Dime sobre qué buscar, con al menos una palabra.');
   }
@@ -441,6 +475,27 @@ async function buscarEnLaLiteratura({ tema, idioma, pais, desdeAnio, cuantas }) 
     desdeAnio: desdeAnio || null,
     cuantas: limite,
   };
+
+  // Pidió otra base: se busca allí. Si no está o no responde, sigue con
+  // OpenAlex y se dice (`baseSinRespuesta`), para que no la presente como de PubMed.
+  let baseSinRespuesta = null;
+  if (base && base !== 'openalex') {
+    const otra = await buscarEnOtraBase(base, consulta);
+    if (otra) {
+      return {
+        caida: false,
+        origen: base,
+        nombreDeLaBase: otra.nombre,
+        filtrosSinAplicar: [consulta.pais ? `país ${consulta.pais}` : null, consulta.idioma ? `idioma ${consulta.idioma}` : null].filter(Boolean),
+        total: otra.total,
+        fuentes: otra.fuentes.map((f) => ({
+          ...f,
+          cita: cita({ authors: f.autores, year: f.anio, title: f.titulo, source: f.revista, doi: f.doi, url: f.pdfLibre }),
+        })),
+      };
+    }
+    baseSinRespuesta = base;
+  }
 
   let origen = 'openalex';
   let { fuentes, total, caida } = await openalex.buscar(consulta);
@@ -464,6 +519,7 @@ async function buscarEnLaLiteratura({ tema, idioma, pais, desdeAnio, cuantas }) 
   return {
     caida,
     origen,
+    baseSinRespuesta,
     filtrosSinAplicar,
     total,
     fuentes: fuentes.map((f) => ({

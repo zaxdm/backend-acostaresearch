@@ -120,6 +120,22 @@ const acostaiaDatos = {
    * armado con sus capítulos (`word`) o el documento que subió (`documento`).
    * Null si no hay nada que descargar.
    */
+  /**
+   * El permiso para subir su avance desde AcostaIA (de su PC, de Google Drive o
+   * de OneDrive): el MISMO token del enlace de `subir_mi_documento`, que vale
+   * media hora. El servidor de AcostaIA manda el archivo a
+   * `POST /proyectos/documento-enlace/:token`, la subida de siempre (citas,
+   * formato de su Word y capítulos a sus fases). Null si no tiene ese producto.
+   */
+  async subida({ acostaiaId, productCode }) {
+    const titular = await titularDe(acostaiaId);
+    if (!titular) return null;
+    if (!(await productosActivos(titular.id)).has(productCode)) return null;
+    const subidaDocumento = require('../projects/project.subida-documento');
+    const { url, minutos } = subidaDocumento.enlace({ userId: titular.id, productCode });
+    return { token: url.split('/').pop(), minutos };
+  },
+
   async enlace({ acostaiaId, productCode, que }) {
     const titular = await titularDe(acostaiaId);
     if (!titular) return null;

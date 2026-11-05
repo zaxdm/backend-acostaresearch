@@ -115,6 +115,31 @@ const TALLER = Object.freeze({
   archivo: 'taller-investigador',
 });
 
+/**
+ * Sesiones de aprendizaje para educación superior (4-nov-2026), códigos SESIONES*.
+ *
+ * Quien compra es un docente, no un tesista: sube su sílabo y planifica las
+ * sesiones de su curso (`sesiones-fase*`). No investiga, así que no lleva
+ * fuentes, ni análisis, ni norma de citas, ni asesor, ni páginas de tesis. Su
+ * `tipo` es propio porque nada de lo que el código hace con una tesis, un
+ * artículo o un informe le sirve tal cual: lo que necesita se decide por
+ * `tipo === 'docente'` en cada sitio (ver `skills/sesiones-superior/LEEME.md`).
+ */
+const DOCENTE = Object.freeze({
+  tipo: 'docente',
+  modalidad: 'sesiones',
+  obra: 'sus sesiones de aprendizaje',
+  laObra: 'las sesiones',
+  tuObra: 'tus sesiones de aprendizaje',
+  entregarla: 'entregarlas',
+  // No hay repaso propio todavía: `continuar` no lo ofrece y la herramienta no se registra.
+  revision: null,
+  seccionesAparte: Object.freeze([]),
+  mapeoBibliometrico: false,
+  ruta: 'Sesiones de aprendizaje · educación superior',
+  archivo: 'sesiones-de-aprendizaje',
+});
+
 /** El perfil de un producto por su código. Sin código o desconocido: tesis. */
 function perfilDe(productCode) {
   const codigo = String(productCode ?? '');
@@ -122,6 +147,7 @@ function perfilDe(productCode) {
   if (codigo.startsWith('INFORME')) return INFORME;
   if (codigo.startsWith('TSP')) return TSP;
   if (codigo.startsWith('TALLER')) return TALLER;
+  if (codigo.startsWith('SESIONES')) return DOCENTE;
   return TESIS;
 }
 
@@ -175,4 +201,4 @@ function verificaCitas(productCode) {
   return perfilDe(codigo) === ARTICULO && !/REVIEW/i.test(codigo);
 }
 
-module.exports = { perfilDe, esTesisDelMetodo, traeHerramientas, verificaCitas, TESIS, ARTICULO, INFORME, TSP, TALLER };
+module.exports = { perfilDe, esTesisDelMetodo, traeHerramientas, verificaCitas, TESIS, ARTICULO, INFORME, TSP, TALLER, DOCENTE };

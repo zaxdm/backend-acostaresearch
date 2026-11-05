@@ -901,6 +901,9 @@ function comoParrafos(texto, contexto = {}) {
           indent: { firstLine: 0 },
           // El espaciado lo pone el estilo: el de su plantilla o el nuestro,
           // que es el de APA 7 (ver `ESTILOS_POR_DEFECTO`).
+          // Sesiones de aprendizaje: cada sesión en su página. La primera no,
+          // porque el título del capítulo ya abrió una.
+          ...(contexto.seccionPorPagina && nivel === 1 && parrafos.length > 0 ? { pageBreakBefore: true } : {}),
         }),
       );
       continue;
@@ -979,7 +982,7 @@ function comoParrafos(texto, contexto = {}) {
  * «Autor:» y «Asesor:» delante de cada nombre, y el año al pie. Lo que no se
  * sabe —el grado, la mención, la ciudad— no se pone: se inventaría.
  */
-function portada({ tema, carrera, universidad, nombre, asesor, hoy = new Date(), conLogo = false }) {
+function portada({ tema, carrera, universidad, nombre, asesor, hoy = new Date(), conLogo = false, rotuloAutor = 'Autor: ' }) {
   const centrado = (texto, opciones = {}, rotulo = null) =>
     new Paragraph({
       // El rótulo en su propia corrida: el nombre queda entero y solo, como
@@ -1001,7 +1004,7 @@ function portada({ tema, carrera, universidad, nombre, asesor, hoy = new Date(),
   }
   hojas.push(centrado(tema ?? 'Tesis', { bold: true }));
   hojas.push(hueco(4));
-  if (nombre) hojas.push(centrado(nombre, {}, 'Autor: '));
+  if (nombre) hojas.push(centrado(nombre, {}, rotuloAutor));
   if (asesor) hojas.push(centrado(`Asesor: ${asesor}`));
   hojas.push(hueco(4));
   hojas.push(centrado(String(hoy.getFullYear())));
@@ -1321,6 +1324,11 @@ async function armar({
   // Solo la tesis: el sitio del logo en la portada y, antes del índice, el
   // jurado, la dedicatoria y los agradecimientos (ver `paginasPreliminares`).
   paginasDeTesis = false,
+  // Solo las sesiones de aprendizaje: «Docente:» en la portada, y cada sesión,
+  // instrumento o material (sus `##`) en su propia página, porque la jefatura
+  // las pide sueltas.
+  rotuloAutor = 'Autor: ',
+  seccionPorPagina = false,
 }) {
   const notas = {};
   /** Los pendientes del texto, que van al margen (ver `comoComentario`). */
@@ -1344,6 +1352,7 @@ async function armar({
     // Lo que mide una línea de texto: de ahí salen los anchos de las columnas
     // de las tablas (ver `anchosDeColumna`).
     anchoUtil: anchoDelCuerpo(pagina),
+    seccionPorPagina,
   };
   /**
    * El aspecto del título de capítulo: lo que la plantilla no diga, lo ponemos.
@@ -1379,7 +1388,7 @@ async function armar({
         ? portadaInforme.ambito === 'empresa'
           ? portadaDeEmpresa(portadaInforme)
           : portadaDeInforme(portadaInforme)
-        : portada({ tema, carrera, universidad, nombre, asesor, hoy, conLogo: paginasDeTesis })),
+        : portada({ tema, carrera, universidad, nombre, asesor, hoy, conLogo: paginasDeTesis, rotuloAutor })),
     ...(paginasDeTesis ? paginasPreliminares() : []),
     new Paragraph({ text: '', pageBreakBefore: true }),
     // «TOC Heading» y no Título 1: se ve como un Título 1 pero no entra en el

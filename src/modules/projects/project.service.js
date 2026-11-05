@@ -16,6 +16,7 @@
 const logger = require('../../config/logger');
 const projectRepository = require('./project.repository');
 const almacen = require('./project.storage');
+const secciones = require('./project.secciones');
 const documento = require('./project.docx');
 const env = require('../../config/env');
 const normas = require('./project.normas');
@@ -181,13 +182,17 @@ async function contexto(userId, productCode) {
   const cabecera = [];
   // Solo las tesis que se abrieron aparte llevan nombre: así quien tiene varias
   // ve con cuál está trabajando Claude, y al comprador no le sale nada nuevo.
-  if (proyecto.nombre) cabecera.push(`Tesis activa: ${proyecto.nombre} (se cambia en el panel)`);
-  if (proyecto.tema) cabecera.push(`Tema: ${proyecto.tema}`);
+  const esDocente = perfilDe(productCode).tipo === 'docente';
+  if (proyecto.nombre) {
+    cabecera.push(`${esDocente ? 'Curso activo' : 'Tesis activa'}: ${proyecto.nombre} (se cambia en el panel)`);
+  }
+  if (proyecto.tema) cabecera.push(`${esDocente ? 'Curso' : 'Tema'}: ${proyecto.tema}`);
   // La modalidad, para que Claude no le hable de hipótesis ni de muestra a
   // quien se titula por su experiencia en una empresa.
   if (perfilDe(productCode).modalidad === 'tsp') {
     cabecera.push('Modalidad: Trabajo de Suficiencia Profesional (sin hipótesis, sin instrumento ni muestra)');
   }
+  if (esDocente) cabecera.push(MODALIDAD_DOCENTE);
   const donde = [proyecto.carrera, proyecto.universidad, paises.nombreDe(proyecto.pais)]
     .filter(Boolean)
     .join(' · ');
@@ -195,16 +200,22 @@ async function contexto(userId, productCode) {
   if (perfilDe(productCode).tipo === 'informe') {
     // El informe no tiene asesor: tiene curso, docente, integrantes y entrega.
     cabecera.push(...lineasDeFicha(proyecto.fichaInforme ?? {}, { conRubrica: true }));
+  } else if (esDocente) {
+    // El docente no tiene asesor ni norma de citas: sus referencias son las del sílabo.
+    cabecera.push(lineaDeDocente(proyecto));
+    cabecera.push(lineaDeMaterialDocente(await almacen.leerMaterial(proyecto.id).catch(() => null)));
   } else {
     cabecera.push(lineaDeAutor(proyecto));
     const asesor = lineaDeAsesor(proyecto);
     if (asesor) cabecera.push(asesor);
   }
-  cabecera.push(
-    lineaDeNorma(proyecto, {
-      empresa: perfilDe(productCode).tipo === 'informe' && esDeEmpresa(proyecto.fichaInforme),
-    }),
-  );
+  if (!esDocente) {
+    cabecera.push(
+      lineaDeNorma(proyecto, {
+        empresa: perfilDe(productCode).tipo === 'informe' && esDeEmpresa(proyecto.fichaInforme),
+      }),
+    );
+  }
 
   // Se recorre el catálogo y no las etapas guardadas, para que los capítulos
   // que aún no ha tocado también salgan. Saber lo que falta es la mitad de
@@ -259,6 +270,34 @@ async function contexto(userId, productCode) {
  * en este bloque, y consultarlo sería una consulta más en cada respuesta—, así
  * que se le pide que lo confirme UNA vez antes de la primera descarga.
  */
+/** Quién es y qué hace un comprador de sesiones, para que Claude no le hable de tesis. */
+const MODALIDAD_DOCENTE =
+  'Modalidad: Sesiones de aprendizaje de educación superior. Es un DOCENTE que planifica su curso ' +
+  'desde su sílabo: no investiga, no tiene asesor, ni fuentes, ni norma de citas.';
+
+/** El docente que firma la portada, en lo que lee el asistente. */
+function lineaDeDocente(proyecto) {
+  if (proyecto.autor) return `Docente (portada): ${proyecto.autor}`;
+  return (
+    'Docente (portada): sin dato. La portada del Word saldrá con el nombre de la CUENTA. ' +
+    'Confírmaselo UNA vez antes de que descargue —«¿las sesiones salen a tu nombre?»— y, si el ' +
+    'nombre es otro, guárdalo con "guardar_avance" (autor). No vuelvas a preguntarlo después.'
+  );
+}
+
+/** Lo que subió el docente: el sílabo, su formato de sesión, sus guías. */
+function lineaDeMaterialDocente(lista) {
+  if (!lista || lista.length === 0) {
+    return (
+      'Material del curso: nada subido. Para el sílabo, su formato de sesión o sus guías en Word, ' +
+      'PDF, Excel o texto, dale el enlace con "material_del_curso"; si son fotos o un PDF escaneado, ' +
+      'que los adjunte en el chat.'
+    );
+  }
+  const nombres = lista.map((m, i) => `${i + 1}. ${m.nombre}`).join('; ');
+  return `Material del curso, léelo con "material_del_curso" y su número: ${nombres}.`;
+}
+
 function lineaDeAutor(proyecto) {
   if (proyecto.autor) return `Autor (portada): ${proyecto.autor}`;
   return (
@@ -380,8 +419,11 @@ async function resumen(userId, productCode) {
     .filter(Boolean)
     .join(' · ');
   if (donde) cabecera.push(donde);
+  const esDocente = perfilDe(productCode).tipo === 'docente';
   if (perfilDe(productCode).tipo === 'informe') {
     cabecera.push(...lineasDeFicha(proyecto.fichaInforme ?? {}));
+  } else if (esDocente) {
+    cabecera.push(MODALIDAD_DOCENTE, lineaDeDocente(proyecto));
   } else {
     cabecera.push(lineaDeAutor(proyecto));
     const asesor = lineaDeAsesor(proyecto);
@@ -443,13 +485,17 @@ async function resumen(userId, productCode) {
   // de la tesis, y sin tema ni carrera tiene que quedar vacía para que el
   // panorama empiece por los capítulos.
   const deEmpresa = perfilDe(productCode).tipo === 'informe' && esDeEmpresa(proyecto.fichaInforme);
-  loSuyo.push(lineaDeNorma(proyecto, { empresa: deEmpresa }));
+  if (!esDocente) loSuyo.push(lineaDeNorma(proyecto, { empresa: deEmpresa }));
   loSuyo.push(lineaDeFormato(proyecto, { empresa: deEmpresa, conBiblioteca: perfilDe(productCode).tipo === 'tesis' }));
   // En el informe, lo que subió del docente: sin esta línea Claude no sabe que existe.
   if (perfilDe(productCode).tipo === 'informe') {
     loSuyo.push(
       lineaDeMaterial(await almacen.leerMaterial(proyecto.id).catch(() => null), { empresa: deEmpresa }),
     );
+  }
+  // Y en las sesiones, su sílabo y su formato.
+  if (esDocente) {
+    loSuyo.push(lineaDeMaterialDocente(await almacen.leerMaterial(proyecto.id).catch(() => null)));
   }
 
   // Por bloques y filtrando los vacíos: un proyecto sin tema todavía, o un
@@ -712,8 +758,18 @@ async function guardarCapituloEnSuTurno({ userId, productCode, ...entrada }) {
   const datos = guardarCapituloSchema.parse(entrada);
 
   const proyecto = await projectRepository.asegurar(userId, productCode);
-  const { palabras } = await almacen.guardar(proyecto.id, datos.capitulo, datos.texto, {
-    anadir: datos.anadir === true,
+
+  // Una sola sección: se lee el capítulo, se cambia esa y se guarda entero. Va
+  // dentro del turno del proyecto (`enSerie`), así que dos cambios a la vez no
+  // se pisan.
+  let texto = datos.texto;
+  if (datos.seccion || datos.despuesDe) {
+    const anterior = (await almacen.leer(proyecto.id, datos.capitulo)) ?? '';
+    texto = secciones.cambiar(anterior, datos.texto, { seccion: datos.seccion, despuesDe: datos.despuesDe });
+  }
+
+  const { palabras } = await almacen.guardar(proyecto.id, datos.capitulo, texto, {
+    anadir: datos.anadir === true && !datos.seccion && !datos.despuesDe,
   });
 
   // El capítulo pasa a EN_CURSO por escribir en él, pero nunca a LISTO: darlo
@@ -915,6 +971,8 @@ async function armarWord(userId, productCode) {
     ...(perfil.tipo === 'informe' ? { portadaInforme: datosDePortadaInforme(proyecto, autor) } : {}),
     // El logo y las hojas de jurado, dedicatoria y agradecimientos son de tesis.
     ...(perfil.tipo === 'tesis' ? { paginasDeTesis: true } : {}),
+    // Las sesiones: «Docente:» en la portada, sin asesor, y una sesión por página.
+    ...(perfil.tipo === 'docente' ? { rotuloAutor: 'Docente: ', asesor: null, seccionPorPagina: true } : {}),
     ...armado.documento,
   });
 
@@ -2586,7 +2644,7 @@ function seccionAparte(productCode, clave) {
   return seccion ? { code: seccion.clave, displayName: seccion.titulo, productCodes: [] } : null;
 }
 
-async function textoDeCapitulo(userId, productCode, skillCode, { parte = 1 } = {}) {
+async function textoDeCapitulo(userId, productCode, skillCode, { parte = 1, seccion = null } = {}) {
   const aparte = seccionAparte(productCode, skillCode);
   const [proyecto, delCatalogo] = await Promise.all([
     projectRepository.buscar(userId, productCode),
@@ -2602,6 +2660,18 @@ async function textoDeCapitulo(userId, productCode, skillCode, { parte = 1 } = {
 
   const texto = proyecto ? await almacen.leer(proyecto.id, skillCode) : null;
   if (!texto || texto.trim() === '') return { skill, vacio: true };
+
+  // Una sola sección («Sesión 11»), con la lista de las que hay para poder
+  // pedir otra. Ver `project.secciones`.
+  if (seccion) {
+    return {
+      skill,
+      vacio: false,
+      seccion: secciones.leer(texto, seccion),
+      titulos: secciones.titulos(texto),
+      palabras: almacen.palabrasDe(texto),
+    };
+  }
 
   const partes = enPartes(texto);
   const numero = Math.min(Math.max(1, Number(parte) || 1), partes.length);

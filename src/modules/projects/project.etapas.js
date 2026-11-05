@@ -376,6 +376,137 @@ const ETAPAS = {
       { etapa: 'tsp-fase3-experiencia', campos: ['actividades'] },
     ],
   },
+
+  // ── Sesiones de aprendizaje para educación superior ──────────────────────
+  //
+  // El docente planifica su curso desde el sílabo. La Fase 0 es la ficha del
+  // curso: lo que las demás necesitan para no inventar (tipo de institución,
+  // escala, duración, formato propio). Las listas de sesiones llevan un máximo
+  // alto: un ciclo tiene de 16 a 54 sesiones, y con el de siempre (8) se
+  // perdían en silencio las demás.
+
+  'sesiones-fase0-silabo': {
+    campos: {
+      alcance: { titulo: 'Qué quiere al final', pista: 'Solo el mapa; mapa y sesiones; o todo (con instrumentos).' },
+      desdeSemana: { titulo: 'Desde qué semana', pista: 'La semana desde la que se planifica, si ya empezó el ciclo.' },
+      tipoInstitucion: {
+        titulo: 'Tipo de institución',
+        pista: '«eesp», «iest», «universidad» u «otra» (fuera del Perú, CEPRE, escuela artística).',
+      },
+      pais: { titulo: 'País', pista: 'Solo si no es el Perú.' },
+      gestion: { titulo: 'Gestión', pista: '«publica» o «privada».' },
+      componente: { titulo: 'Componente (EESP)', pista: 'Formación general, específica o práctica e investigación.' },
+      cursoOModulo: { titulo: 'Curso o módulo (EESP)', pista: '«curso» o «modulo».' },
+      programa: { titulo: 'Programa o carrera', pista: 'Como sale en el sílabo.' },
+      curso: { titulo: 'Curso', pista: 'Curso, unidad didáctica, módulo o experiencia curricular, como en el sílabo.' },
+      ciclo: { titulo: 'Ciclo', pista: '«III», «V», «2026-I».' },
+      creditos: { titulo: 'Créditos', pista: 'Los del sílabo.' },
+      horas: { titulo: 'Horas', pista: 'Semanales de teoría y de práctica, y las asíncronas si las declara.' },
+      semanas: { titulo: 'Semanas del periodo', pista: '16, 18…' },
+      modalidad: { titulo: 'Modalidad', pista: 'Presencial, semipresencial o a distancia.' },
+      competencias: {
+        titulo: 'Competencias a las que contribuye',
+        lista: true,
+        maximo: 12,
+        pista: 'Tal cual del sílabo, una por línea.',
+      },
+      resultadoDelCurso: {
+        titulo: 'Resultado del curso',
+        pista: 'Logro de la asignatura, capacidad con sus indicadores o desempeños específicos, tal cual.',
+      },
+      evaluacion: { titulo: 'Evaluación', pista: 'Instrumentos, pesos y fórmula, tal cual del sílabo.' },
+      escala: { titulo: 'Escala', pista: '«niveles» (EESP), «0-20», o la de su sílabo fuera del Perú.' },
+      notaMinima: { titulo: 'Nota mínima', pista: 'La del sílabo o su reglamento; «por confirmar» si no se sabe.' },
+      enfoques: { titulo: 'Enfoques transversales', lista: true, pista: 'Los que prioriza el curso, uno por línea.' },
+      areaSensible: {
+        titulo: 'Área sensible',
+        pista: '«sí» si trabaja con pacientes, medicamentos, máquinas o químicos: lo técnico sale de sus guías.',
+      },
+      unidadDePlanificacion: {
+        titulo: 'Cómo se organiza el trabajo',
+        lista: true,
+        pista: 'Clase, semana de aula virtual, bloque largo, taller o laboratorio, simulación, práctica por rotación, inmersión.',
+      },
+      duracionSesion: { titulo: 'Duración de la sesión', pista: 'En minutos; si cambia por día, «180 min lunes, 90 min jueves».' },
+      sesionesPorSemana: { titulo: 'Sesiones por semana', pista: '1, 2, 3…' },
+      semanasDeInmersion: { titulo: 'Inmersión (EESP)', pista: 'Semanas o días en la institución educativa.' },
+      formatoPropio: { titulo: 'Formato propio de sesión', pista: '«sí» o «no». La correspondencia va en la ficha.' },
+      secciones: { titulo: 'Secciones', lista: true, pista: 'Una por línea, con día, horario y turno.' },
+      recursos: { titulo: 'Recursos', pista: 'Proyector, internet, laboratorio, aula virtual (cuál).' },
+      lenguas: { titulo: 'Lenguas', pista: 'En EIB: lengua originaria y su variedad, y castellano.' },
+      guiasTecnicas: {
+        titulo: 'Guías técnicas de su sede',
+        lista: true,
+        pista: 'Las guías, manuales o normas de las que salen los valores técnicos, con su año.',
+      },
+      competenciasCalificadas: {
+        titulo: 'Competencias calificadas (módulo EESP)',
+        lista: true,
+        maximo: 3,
+        pista: 'Las tres que califica el módulo.',
+      },
+    },
+    necesita: [],
+  },
+
+  'sesiones-fase1-mapa': {
+    campos: {
+      totalSesiones: { titulo: 'Total de sesiones', pista: 'Cuántas filas tiene el mapa.' },
+      sesiones: {
+        titulo: 'Sesiones del mapa',
+        lista: true,
+        maximo: 60,
+        pista: 'Una por línea: «S1 · Calculamos el punto de equilibrio».',
+      },
+      semanasDeEvaluacion: {
+        titulo: 'Semanas de evaluación',
+        lista: true,
+        maximo: 10,
+        pista: 'Una por línea: «Semana 8 · Evaluación parcial».',
+      },
+      evidenciaFinal: { titulo: 'Evidencia final', pista: 'El producto final del curso.' },
+    },
+    necesita: [{ etapa: 'sesiones-fase0-silabo', campos: ['tipoInstitucion'] }],
+  },
+
+  'sesiones-fase2-sesiones': {
+    campos: {
+      procesos: { titulo: 'Procesos pedagógicos que usa', lista: true, maximo: 12, pista: 'Uno por línea.' },
+      estrategias: { titulo: 'Estrategias', lista: true, maximo: 12, pista: 'Una por línea: «aula invertida».' },
+      grupo: { titulo: 'Su grupo', pista: 'Cuántos estudiantes, si trabajan, lo que hay que tener en cuenta.' },
+      hechas: {
+        titulo: 'Sesiones guardadas',
+        lista: true,
+        maximo: 60,
+        pista: 'La lista completa cada vez: «S1», «S2», «12-A»…',
+      },
+    },
+    necesita: [{ etapa: 'sesiones-fase0-silabo', campos: ['tipoInstitucion'] }],
+  },
+
+  'sesiones-fase3-instrumentos': {
+    campos: {
+      instrumentos: {
+        titulo: 'Instrumentos guardados',
+        lista: true,
+        maximo: 40,
+        pista: 'La lista completa cada vez: «Rúbrica · Informe U2».',
+      },
+    },
+    necesita: [{ etapa: 'sesiones-fase0-silabo', campos: ['escala'] }],
+  },
+
+  'sesiones-fase4-materiales': {
+    campos: {
+      materiales: {
+        titulo: 'Materiales guardados',
+        lista: true,
+        maximo: 40,
+        pista: 'La lista completa cada vez: «Guía de práctica · S6».',
+      },
+    },
+    necesita: [],
+  },
 };
 
 /** Los campos que admite una etapa, o null si esa etapa no está registrada. */

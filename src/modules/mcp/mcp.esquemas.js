@@ -531,6 +531,108 @@ const ESQUEMA_GUARDAR_CAPITULO_INFORME = fromJsonSchema({
   },
 });
 
+/**
+ * Guardar lo acordado, para las sesiones de aprendizaje.
+ *
+ * Sin asesor, sin norma de citas y sin país de tesis: un docente que planifica
+ * su curso no tiene nada de eso, y lo que Claude ve lo acaba rellenando. Los
+ * campos de `datos` son los de `project.etapas` (`sesiones-fase*`).
+ */
+const {
+  asesor: _asesor,
+  estiloCitas: _estiloCitas,
+  idiomaCitas: _idiomaCitas,
+  ...AVANCE_SIN_TESIS
+} = GUARDAR_AVANCE.properties;
+
+const ESQUEMA_GUARDAR_AVANCE_DOCENTE = fromJsonSchema({
+  ...GUARDAR_AVANCE,
+  properties: {
+    ...AVANCE_SIN_TESIS,
+    estado: {
+      ...GUARDAR_AVANCE.properties.estado,
+      description:
+        'Cómo queda esa fase. Marca LISTO SOLO si el docente ha dicho que la da por buena. No lo ' +
+        'decidas tú porque hayáis escrito mucho.',
+    },
+    resumen: {
+      ...GUARDAR_AVANCE.properties.resumen,
+      description:
+        'Qué quedó decidido, en dos o tres frases y en concreto: el tipo de institución, la escala, ' +
+        'cuántas sesiones, qué se cambió. NO el texto de la fase: lo leerá el asistente que atienda ' +
+        'al docente la próxima vez, que no habrá visto esta conversación.',
+    },
+    tema: { type: 'string', description: 'El nombre del curso, como sale en su sílabo.' },
+    carrera: { type: 'string', description: 'El programa o la carrera, como sale en su sílabo.' },
+    universidad: { type: 'string', description: 'La institución: universidad, instituto o escuela.' },
+    autor: {
+      type: 'string',
+      description:
+        'El docente, como debe salir en la portada del Word («Mg. Ana Quispe Flores»). Sin esto la ' +
+        'portada sale con el nombre de la CUENTA: guárdalo en cuanto sepas que es otro.',
+    },
+    datos: {
+      ...GUARDAR_AVANCE.properties.datos,
+      description:
+        'Lo mismo que el resumen pero por campos. Mándalo SIEMPRE que se fije uno de estos, además ' +
+        'del resumen: el resumen se lee, los campos se usan. Las listas, enteras cada vez.\n\n' +
+        'sesiones-fase0-silabo: alcance, desdeSemana, tipoInstitucion (eesp, iest, universidad u ' +
+        'otra), pais, gestion, componente, cursoOModulo, programa, curso, ciclo, creditos, horas, ' +
+        'semanas, modalidad, competencias (lista), resultadoDelCurso, evaluacion, escala, ' +
+        'notaMinima, enfoques (lista), areaSensible, unidadDePlanificacion (lista), duracionSesion, ' +
+        'sesionesPorSemana, semanasDeInmersion, formatoPropio, secciones (lista), recursos, ' +
+        'lenguas, guiasTecnicas (lista), competenciasCalificadas (lista).\n' +
+        'sesiones-fase1-mapa: totalSesiones, sesiones (lista), semanasDeEvaluacion (lista), ' +
+        'evidenciaFinal.\n' +
+        'sesiones-fase2-sesiones: procesos (lista), estrategias (lista), grupo, hechas (lista).\n' +
+        'sesiones-fase3-instrumentos: instrumentos (lista).\n' +
+        'sesiones-fase4-materiales: materiales (lista).\n\n' +
+        'Manda solo lo que se haya fijado; lo que no mandes se queda como estaba.',
+    },
+  },
+});
+
+/**
+ * Guardar el texto, para las sesiones de aprendizaje: con tablas sin rótulo y
+ * con la opción de guardar UNA sesión sin reenviar el capítulo entero (ver
+ * `project.secciones`).
+ */
+const ESQUEMA_GUARDAR_CAPITULO_DOCENTE = fromJsonSchema({
+  ...GUARDAR_CAPITULO,
+  properties: {
+    ...GUARDAR_CAPITULO.properties,
+    texto: {
+      ...GUARDAR_CAPITULO.properties.texto,
+      description:
+        'El texto tal y como va al Word del docente, en Markdown: ## para el título de cada sesión, ' +
+        'instrumento o material (cada uno sale en su página), ### para sus apartados, y párrafos ' +
+        'separados por una línea en blanco. NADA de comentarios tuyos ni notas entre corchetes: lo ' +
+        'que falte, «por completar». LAS TABLAS van en Markdown, SIN rótulo «Tabla N» ni título en ' +
+        'cursiva: una línea en blanco antes y la cabecera «| Col A | Col B |», la fila «|---|---|» y ' +
+        'las filas. Si pasa de 30.000 caracteres, mándalo por partes.',
+    },
+    anadir: {
+      ...GUARDAR_CAPITULO.properties.anadir,
+      description:
+        'Verdadero para pegarlo detrás de lo que ya había: la sesión siguiente, o la parte siguiente ' +
+        'de un texto largo.',
+    },
+    seccion: {
+      type: 'string',
+      description:
+        'Para CORREGIR una sesión, un instrumento o un material ya guardado: el principio de su título ' +
+        '(«Sesión 11»). El texto es esa sección entera, empezando por su «## …», y sustituye solo a esa: ' +
+        'las demás no se tocan. No hace falta reenviar el capítulo.',
+    },
+    despuesDe: {
+      type: 'string',
+      description:
+        'Para METER una sesión nueva en su sitio (la que faltó entre la 12 y la 13): el principio del ' +
+        'título de la que va delante («Sesión 12»). El texto empieza por su «## …». No va con «seccion».',
+    },
+  },
+});
+
 const ESQUEMA_GUARDAR_ANALISIS = fromJsonSchema({
   type: 'object',
   properties: {
@@ -685,7 +787,7 @@ const ESQUEMA_TRABAJAR_EN_R = fromJsonSchema({
   additionalProperties: false,
 });
 
-const ESQUEMA_VER_CAPITULO = fromJsonSchema({
+const VER_CAPITULO = {
   type: 'object',
   properties: {
     capitulo: {
@@ -720,6 +822,34 @@ const ESQUEMA_VER_CAPITULO = fromJsonSchema({
   },
   required: ['capitulo'],
   additionalProperties: false,
+};
+
+const ESQUEMA_VER_CAPITULO = fromJsonSchema(VER_CAPITULO);
+
+/**
+ * El mismo esquema para las sesiones de aprendizaje: además, leer UNA sesión.
+ *
+ * Un capítulo de 32 sesiones son diez partes; para corregir la 11 basta leer la
+ * 11. Aparte y no en el de siempre: una propiedad que Claude ve la acaba usando,
+ * y en una tesis no hay secciones que pedir así.
+ */
+const ESQUEMA_VER_CAPITULO_DOCENTE = fromJsonSchema({
+  ...VER_CAPITULO,
+  properties: {
+    ...VER_CAPITULO.properties,
+    texto: {
+      ...VER_CAPITULO.properties.texto,
+      description:
+        'Verdadero para leer el TEXTO GUARDADO del capítulo en vez de lo acordado: la ficha del ' +
+        'curso, el mapa, las sesiones ya guardadas.',
+    },
+    seccion: {
+      type: 'string',
+      description:
+        'Con "texto": solo esa sesión, instrumento o material, por el principio de su título ' +
+        '(«Sesión 11», «Rúbrica · Informe U2»). La respuesta trae también la lista de las que hay.',
+    },
+  },
 });
 
 const ESQUEMA_REVISAR_EVIDENCIA = fromJsonSchema({
@@ -824,4 +954,4 @@ const ESQUEMA_VERIFICAR_CITAS = fromJsonSchema({
   additionalProperties: false,
 });
 
-module.exports = { ESQUEMA_FUENTES, ESQUEMA_ANADIR, ESQUEMA_MIS_FUENTES, ESQUEMA_BOLA, ESQUEMA_LITERATURA, ESQUEMA_SCOPUS, ESQUEMA_GUARDAR_SCOPUS, GUARDAR_AVANCE, ESQUEMA_GUARDAR_AVANCE, ESQUEMA_GUARDAR_AVANCE_TSP, ESQUEMA_GUARDAR_AVANCE_INFORME, GUARDAR_CAPITULO, ESQUEMA_GUARDAR_CAPITULO, ESQUEMA_GUARDAR_CAPITULO_INFORME, ESQUEMA_GUARDAR_ANALISIS, ESQUEMA_VER_ANALISIS, ESQUEMA_TRABAJAR_EN_R, ESQUEMA_VER_CAPITULO, ESQUEMA_REVISAR_EVIDENCIA, ESQUEMA_VERIFICAR_CITAS, ESQUEMA_REDACTAR };
+module.exports = { ESQUEMA_FUENTES, ESQUEMA_ANADIR, ESQUEMA_MIS_FUENTES, ESQUEMA_BOLA, ESQUEMA_LITERATURA, ESQUEMA_SCOPUS, ESQUEMA_GUARDAR_SCOPUS, GUARDAR_AVANCE, ESQUEMA_GUARDAR_AVANCE, ESQUEMA_GUARDAR_AVANCE_TSP, ESQUEMA_GUARDAR_AVANCE_INFORME, GUARDAR_CAPITULO, ESQUEMA_GUARDAR_CAPITULO, ESQUEMA_GUARDAR_CAPITULO_INFORME, ESQUEMA_GUARDAR_ANALISIS, ESQUEMA_VER_ANALISIS, ESQUEMA_TRABAJAR_EN_R, ESQUEMA_VER_CAPITULO, ESQUEMA_REVISAR_EVIDENCIA, ESQUEMA_VERIFICAR_CITAS, ESQUEMA_REDACTAR, ESQUEMA_GUARDAR_AVANCE_DOCENTE, ESQUEMA_GUARDAR_CAPITULO_DOCENTE, ESQUEMA_VER_CAPITULO_DOCENTE };

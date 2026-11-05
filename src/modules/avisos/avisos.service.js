@@ -147,10 +147,11 @@ function avisosDe(licencia, proyecto, ahora = new Date()) {
     });
   }
 
-  // El formato es de tesis e informe: un artículo va al formato de la revista.
+  // El formato es de tesis e informe: un artículo va al formato de la revista,
+  // y las sesiones de un docente no tienen formato de universidad que subir.
   if (
     conFases &&
-    perfilDe(licencia.productCode).tipo !== 'articulo' &&
+    !['articulo', 'docente'].includes(perfilDe(licencia.productCode).tipo) &&
     proyecto &&
     !proyecto.plantillaAt &&
     proyecto.avanza &&

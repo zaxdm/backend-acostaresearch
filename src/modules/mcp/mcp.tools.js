@@ -49,7 +49,12 @@ const bloquesDeAnalisis = require('../projects/project.bloques');
 const rService = require('../r/r.service');
 const { perfilDe, verificaCitas } = require('../productos/producto.perfil');
 const scopusService = require('../scopus/scopus.service');
-const { REGLAS_DE_CONVERSACION, INSTRUCCIONES_DEL_SERVIDOR } = require('./mcp.conversacion');
+const {
+  REGLAS_DE_CONVERSACION,
+  INSTRUCCIONES_DEL_SERVIDOR,
+  REGLAS_DE_CONVERSACION_DOCENTE,
+  INSTRUCCIONES_DEL_SERVIDOR_DOCENTE,
+} = require('./mcp.conversacion');
 
 /**
  * Cuántas veces puede ir a Scopus cada persona desde el conector.
@@ -232,7 +237,7 @@ const fechaCorta = (iso) =>
     ? new Date(iso).toLocaleDateString('es-PE', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Lima' })
     : 'fecha desconocida';
 
-const { ESQUEMA_FUENTES, ESQUEMA_ANADIR, ESQUEMA_MIS_FUENTES, ESQUEMA_BOLA, ESQUEMA_LITERATURA, ESQUEMA_SCOPUS, ESQUEMA_GUARDAR_SCOPUS, GUARDAR_AVANCE, ESQUEMA_GUARDAR_AVANCE, ESQUEMA_GUARDAR_AVANCE_TSP, ESQUEMA_GUARDAR_AVANCE_INFORME, GUARDAR_CAPITULO, ESQUEMA_GUARDAR_CAPITULO, ESQUEMA_GUARDAR_CAPITULO_INFORME, ESQUEMA_GUARDAR_ANALISIS, ESQUEMA_VER_ANALISIS, ESQUEMA_TRABAJAR_EN_R, ESQUEMA_VER_CAPITULO, ESQUEMA_REVISAR_EVIDENCIA, ESQUEMA_VERIFICAR_CITAS, ESQUEMA_REDACTAR } = require('./mcp.esquemas');
+const { ESQUEMA_FUENTES, ESQUEMA_ANADIR, ESQUEMA_MIS_FUENTES, ESQUEMA_BOLA, ESQUEMA_LITERATURA, ESQUEMA_SCOPUS, ESQUEMA_GUARDAR_SCOPUS, GUARDAR_AVANCE, ESQUEMA_GUARDAR_AVANCE, ESQUEMA_GUARDAR_AVANCE_TSP, ESQUEMA_GUARDAR_AVANCE_INFORME, GUARDAR_CAPITULO, ESQUEMA_GUARDAR_CAPITULO, ESQUEMA_GUARDAR_CAPITULO_INFORME, ESQUEMA_GUARDAR_ANALISIS, ESQUEMA_VER_ANALISIS, ESQUEMA_TRABAJAR_EN_R, ESQUEMA_VER_CAPITULO, ESQUEMA_REVISAR_EVIDENCIA, ESQUEMA_VERIFICAR_CITAS, ESQUEMA_REDACTAR, ESQUEMA_GUARDAR_AVANCE_DOCENTE, ESQUEMA_GUARDAR_CAPITULO_DOCENTE, ESQUEMA_VER_CAPITULO_DOCENTE } = require('./mcp.esquemas');
 
 const NOMBRE_SERVIDOR = 'acosta-research-tesis';
 const VERSION_SERVIDOR = '1.0.0';
@@ -301,11 +306,44 @@ function avisoDeCrossref(origen, filtrosSinAplicar = []) {
  * dentro de las herramientas y no hay forma de que una petición acabe
  * respondiendo con los datos de otro comprador.
  */
+/**
+ * Las herramientas de un docente que planifica sus sesiones (perfil DOCENTE).
+ *
+ * Las de investigación —fuentes, literatura, Scopus, Zotero, R, cualitativo,
+ * Turnitin, humanizar, el repaso de tesis— no le sirven, y una herramienta que
+ * Claude ve la acaba usando: buscaría literatura para una sesión de clase. Se
+ * filtra al registrar, en un solo sitio, y así ninguna de las herramientas de
+ * los demás productos se toca. Son las que nombran las skills de
+ * `skills/sesiones-superior/`.
+ */
+const HERRAMIENTAS_DOCENTE = new Set([
+  'listar_capitulos',
+  'estado_licencia',
+  'mi_proyecto',
+  'elegir_proyecto',
+  'ver_capitulo',
+  'guardar_avance',
+  'guardar_capitulo',
+  'reescribir_parrafos',
+  'continuar',
+  'redactar',
+  'formato_de_la_universidad',
+  'material_del_curso',
+  'enlace_del_word',
+]);
+
 function construirServidor(licencia, { cliente = 'otro' } = {}) {
+  const esDocente = perfilDe(licencia.productCode).tipo === 'docente';
   const server = new McpServer(
     { name: NOMBRE_SERVIDOR, version: VERSION_SERVIDOR },
-    { instructions: INSTRUCCIONES_DEL_SERVIDOR },
+    { instructions: esDocente ? INSTRUCCIONES_DEL_SERVIDOR_DOCENTE : INSTRUCCIONES_DEL_SERVIDOR },
   );
+  if (esDocente) {
+    // El servidor es de esta licencia y de esta llamada: el filtro no alcanza a nadie más.
+    const registrar = server.registerTool.bind(server);
+    server.registerTool = (nombre, ...resto) =>
+      HERRAMIENTAS_DOCENTE.has(nombre) ? registrar(nombre, ...resto) : undefined;
+  }
 
   /**
    * Los enlaces, en la forma que entienda el asistente con el que se habla.
@@ -560,7 +598,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
   const CON_VARIAS = Boolean(licencia.variasTesis);
   const OTRA_OBRA = /^HUMANIZ/i.test(licencia.productCode ?? '')
     ? 'otro documento'
-    : { articulo: 'otro artículo', informe: 'otro informe' }[perfil.tipo] ?? 'otra tesis';
+    : { articulo: 'otro artículo', informe: 'otro informe', docente: 'otro curso' }[perfil.tipo] ?? 'otra tesis';
 
   const lineaDeTesis = (t, i) =>
     `${i + 1}. «${t.nombre ?? 'Principal'}» — ${t.tema ?? 'sin tema todavía'}` +
@@ -652,9 +690,9 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         'TAMBIÉN PARA HUMANIZAR O CORREGIR lo ya escrito con vosotros: se reescribe, se vuelve a ' +
         'guardar con "guardar_capitulo" y se le da el Word con "enlace_del_word", sin que tenga ' +
         'que descargar ni subir nada.',
-      inputSchema: ESQUEMA_VER_CAPITULO,
+      inputSchema: perfil.tipo === 'docente' ? ESQUEMA_VER_CAPITULO_DOCENTE : ESQUEMA_VER_CAPITULO,
     },
-    async ({ capitulo, texto: conTexto, parte, numerado, desde }) => {
+    async ({ capitulo, texto: conTexto, parte, numerado, desde, seccion }) => {
       await licenseService.recordUsage({ licenseId: licencia.id, tool: 'ver_capitulo' });
 
       // Mismo filtro que en guardar_capitulo: leer el acuerdo de un capítulo
@@ -686,6 +724,28 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
             `${N}${N}Lo que va entre corchetes al principio NO es del texto: [titulo], [tabla], [figura], ` +
             '[lista] y [rotulo] no se reescriben. Para cambiar párrafos sueltos usa "reescribir_parrafos" ' +
             'con su número; NO vuelvas a guardar el capítulo entero para eso.',
+        );
+      }
+
+      // Una sola sesión, instrumento o material (solo el perfil docente tiene «seccion»).
+      if (conTexto && seccion && !aparte) {
+        const leido = await projectService.textoDeCapitulo(licencia.user.id, licencia.productCode, capitulo, {
+          seccion,
+        });
+        if (!leido) {
+          return texto(
+            `Ya no se puede consultar «${skill.displayName}» con esta licencia. ` +
+              'Usa mi_proyecto para ver los capítulos disponibles.',
+          );
+        }
+        if (leido.vacio) return texto(`«${skill.displayName}» todavía no tiene texto guardado.`);
+        const hay = leido.titulos.length > 0 ? leido.titulos.map((t) => `«${t}»`).join(', ') : 'ninguna';
+        return texto(
+          leido.seccion
+            ? `«${seccion}» en «${skill.displayName}»:${N}${N}${leido.seccion}${N}${N}` +
+                `Secciones guardadas: ${hay}. Para corregirla, "guardar_capitulo" con "seccion": ` +
+                `"${seccion}" y el texto entero de esa sección; las demás no se tocan.`
+            : `No hay ninguna sección «${seccion}» en «${skill.displayName}». Las guardadas son: ${hay}.`,
         );
       }
 
@@ -765,7 +825,9 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
           ? ESQUEMA_GUARDAR_AVANCE_INFORME
           : perfil.modalidad === 'tsp'
             ? ESQUEMA_GUARDAR_AVANCE_TSP
-            : ESQUEMA_GUARDAR_AVANCE,
+            : perfil.tipo === 'docente'
+              ? ESQUEMA_GUARDAR_AVANCE_DOCENTE
+              : ESQUEMA_GUARDAR_AVANCE,
     },
     async (entrada) => {
       await licenseService.recordUsage({ licenseId: licencia.id, tool: 'guardar_avance' });
@@ -843,7 +905,12 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         'GUÁRDALO EN CUANTO el tesista dé por bueno lo redactado, sin que te lo pida: no ' +
         'sabe que esto existe, y lo que no se guarde aquí lo tendrá que copiar y pegar él. ' +
         'Manda el texto limpio, sin comentarios tuyos.',
-      inputSchema: perfil.tipo === 'informe' ? ESQUEMA_GUARDAR_CAPITULO_INFORME : ESQUEMA_GUARDAR_CAPITULO,
+      inputSchema:
+        perfil.tipo === 'informe'
+          ? ESQUEMA_GUARDAR_CAPITULO_INFORME
+          : perfil.tipo === 'docente'
+            ? ESQUEMA_GUARDAR_CAPITULO_DOCENTE
+            : ESQUEMA_GUARDAR_CAPITULO,
     },
     async (entrada) => {
       await licenseService.recordUsage({ licenseId: licencia.id, tool: 'guardar_capitulo' });
@@ -870,8 +937,10 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         });
 
         // La revisión de redacción que antes imprimía cada skill en el chat. Si
-        // falla, el capítulo ya está guardado y eso es lo que importa.
-        const avisos = aparte
+        // falla, el capítulo ya está guardado y eso es lo que importa. No en las
+        // sesiones: es de prosa académica, y una sesión es casi toda tabla con
+        // la misma estructura repetida, que saldría entera como «muletilla».
+        const avisos = aparte || perfil.tipo === 'docente'
           ? []
           : await redaccion
               .avisosDeRedaccion(licencia.user.id, licencia.productCode, entrada.capitulo)
@@ -1345,6 +1414,13 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
       );
 
       if (!siguiente) {
+        // Las sesiones no tienen repaso propio: lo que queda es darle su Word.
+        if (!perfil.revision) {
+          return texto(
+            `Tiene todas las fases dadas por buenas. Dale su Word con "enlace_del_word": ${SU_OBRA}, ` +
+              'en orden y cada una en su página.',
+          );
+        }
         return texto(
           `Tiene todos los capítulos dados por buenos. Si quiere revisar ${SU_OBRA} antes de ` +
             `${perfil.entregarla}, usa "${perfil.revision}".`,
@@ -1948,10 +2024,15 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
 
           // Cómo escribe él y si esta fase ya trae texto de su avance: lo que la
           // skill no puede saber y hace que no empiece de cero ni escriba con moldes.
-          const redaccionPrevia = await bloqueDeRedaccion(skill.code).catch((error) => {
-            logger.error({ err: error, licenseId: licencia.id }, 'No se pudo preparar la redacción');
-            return null;
-          });
+          // Las reglas de redacción son de prosa de tesis (antecedentes, voz del
+          // tesista, avisos al guardar): una sesión de clase no lleva nada de eso.
+          const redaccionPrevia =
+            perfil.tipo === 'docente'
+              ? null
+              : await bloqueDeRedaccion(skill.code).catch((error) => {
+                  logger.error({ err: error, licenseId: licencia.id }, 'No se pudo preparar la redacción');
+                  return null;
+                });
 
           // Va delante de todo, como `falta`: es lo primero que tiene que preguntar.
           const queDocumento = /humaniz/i.test(skill.displayName ?? '')
@@ -1968,7 +2049,8 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
 
           // Las reglas de conversación van tras el método: botones con su
           // explicación y la fase siguiente en el mismo chat (ver mcp.conversacion).
-          const partes = [varias, queDocumento, falta,memoria, redaccionPrevia, contenido.texto, REGLAS_DE_CONVERSACION, consejo].filter(Boolean);
+          const reglas = perfil.tipo === 'docente' ? REGLAS_DE_CONVERSACION_DOCENTE : REGLAS_DE_CONVERSACION;
+          const partes = [varias, queDocumento, falta,memoria, redaccionPrevia, contenido.texto, reglas, consejo].filter(Boolean);
           if (partes.length > 1) return texto(partes.join('\n\n───────────\n\n'));
         }
 
@@ -4096,14 +4178,31 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
   //
   // La consigna, la rúbrica o el índice que dio el docente, subidos por un
   // enlace para que Claude los lea en esta conversación y en las siguientes.
-  // Solo en el informe: tesis y artículo conservan sus herramientas de siempre.
-  if (perfil.tipo === 'informe') {
+  // Solo en el informe y en las sesiones de aprendizaje, donde es el sílabo:
+  // tesis y artículo conservan sus herramientas de siempre.
+  if (perfil.tipo === 'informe' || perfil.tipo === 'docente') {
     server.registerTool(
       'material_del_curso',
       {
-        title: 'El material del encargo: del docente o de la empresa',
-        description:
-          'En un informe de curso, la consigna, la rúbrica o el índice (la estructura numerada) que ' +
+        title:
+          perfil.tipo === 'docente'
+            ? 'El sílabo y lo demás que suba el docente'
+            : 'El material del encargo: del docente o de la empresa',
+        description: perfil.tipo === 'docente'
+          ? 'El SÍLABO del curso y lo que el docente suba para planificar: el formato de sesión de su ' +
+            'institución, su formato de rúbrica, sus apuntes o las guías técnicas de su sede. Subidos ' +
+            'para que los leas, en esta conversación y en las siguientes. ' +
+            'Sin argumentos lista lo que ya subió y da un ENLACE para subir más: dáselo como enlace que ' +
+            'se pulsa y dile que vuelva cuando lo haya subido. Acepta Word (.docx), PDF, Excel (.xlsx) ' +
+            'y texto, hasta cinco archivos; si está lleno, pregúntale cuál quitar (nunca el sílabo ni su ' +
+            'formato de sesión). ' +
+            'Con "ver" (el número de la lista) devuelve su texto, por partes con "parte"; las líneas ' +
+            '[Título N] e [Índice] son los títulos del documento, y en un Word las tablas llegan celda ' +
+            'por celda: la tabla de semanas del sílabo y los campos de su formato se COPIAN, no se ' +
+            'inventan. ' +
+            'Lo único que el enlace no lee es una foto o un PDF escaneado: eso que lo adjunte en este ' +
+            'chat con el clip y lo lees tú. NO inventes nada que no esté en el material.'
+          : 'En un informe de curso, la consigna, la rúbrica o el índice (la estructura numerada) que ' +
           'dio el docente; en uno de empresa, los términos de referencia, el correo del pedido, la ' +
           'plantilla de informes o los documentos que entregó la empresa. Subidos para que los leas. ' +
           'Sin argumentos lista lo que ya subió y da un ENLACE para subir más: dáselo como enlace que se pulsa y dile ' +

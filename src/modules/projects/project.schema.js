@@ -104,6 +104,13 @@ const guardarCapituloSchema = z.object({
     ),
   /** Verdadero = va detrás de lo que ya había. Falso o ausente = lo reemplaza. */
   anadir: z.boolean().optional(),
+  /**
+   * Solo una sección («## Sesión 11 · …»): `seccion` la sustituye y `despuesDe`
+   * mete la nueva detrás de esa. El resto del capítulo no se toca. Ver
+   * `project.secciones`.
+   */
+  seccion: z.string().trim().min(1).max(120).optional(),
+  despuesDe: z.string().trim().min(1).max(120).optional(),
 });
 
 /** Lo que manda el panel al cambiar la norma. El idioma puede no venir: se queda el que había. */

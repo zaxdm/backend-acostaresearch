@@ -187,6 +187,10 @@ function envolver(texto) {
  * catch: un consejo que falla no puede dejar a nadie sin su capítulo.
  */
 async function consejoPara({ userId, productCode, capitulo = null, ahora = new Date() }) {
+  // Los consejos son de quien investiga (Zotero, fuentes, R, norma de citas,
+  // formato de su facultad). Un docente que planifica su curso no usa ninguno.
+  if (perfilDe(productCode).tipo === 'docente') return null;
+
   const proyecto = await projectRepository.buscar(userId, productCode);
   // Sin proyecto no hay dónde anotar qué se dijo, y se repetiría en cada
   // conversación. Además, quien no ha empezado necesita el método, no consejos.

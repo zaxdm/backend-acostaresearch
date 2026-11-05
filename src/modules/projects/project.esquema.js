@@ -84,6 +84,9 @@ const FASES_DE_TRABAJO = new Set([
   // La ficha de la experiencia del TSP: empresa, cargo y periodo para las
   // fases siguientes. Es su «tema y delimitación»: no es capítulo de nadie.
   'tsp-fase0-experiencia',
+  // La ficha del curso de las sesiones de aprendizaje: lo que dice el sílabo,
+  // copiado para las fases siguientes. El docente no la entrega a nadie.
+  'sesiones-fase0-silabo',
   // La Ficha de Orientación y la Matriz de Estrategia del artículo (empírico y
   // de revisión). Por el conector se guardan para que las fases siguientes las
   // lean con `ver_capitulo`, pero son documentos de trabajo: el manuscrito
@@ -100,6 +103,7 @@ const FASES_DE_TRABAJO = new Set([
 const NUNCA_EN_EL_DOCUMENTO = new Set([
   'tema-y-delimitacion',
   'tsp-fase0-experiencia',
+  'sesiones-fase0-silabo',
   ...FICHAS_DEL_ARTICULO,
 ]);
 

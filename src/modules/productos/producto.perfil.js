@@ -106,7 +106,8 @@ const TSP = Object.freeze({
  * portada ni páginas de tesis, y con la plantilla de la revista como formato.
  * Lo que lo distingue va en `modalidad`, la cabecera y el nombre del Word.
  *
- * NO es el artículo empírico: `verificaCitas` sigue siendo solo de ARTICULO.
+ * Desde el 4-nov-2026 verifica citas como el artículo empírico (`verificaCitas`):
+ * su redacción usa las skills `articulo-fase*`, que llaman a `verificar_citas`.
  */
 const TALLER = Object.freeze({
   ...ARTICULO,
@@ -194,11 +195,13 @@ function traeHerramientas(productCode) {
  * «CITAS Y DATOS» al guardar y lo que suma al repaso. Sus skills son las únicas
  * que lo explican. La revisión (`ARTICULOS_REVIEW`, también empieza por
  * ARTICULO), la tesis, la TSP y el informe se quedan como estaban hasta que sus
- * skills lo cuenten; decisión del usuario.
+ * skills lo cuenten; decisión del usuario. El Taller (TALLER*) también, desde el
+ * 4-nov-2026: redacta su artículo con las mismas skills del artículo empírico.
  */
 function verificaCitas(productCode) {
   const codigo = String(productCode ?? '');
-  return perfilDe(codigo) === ARTICULO && !/REVIEW/i.test(codigo);
+  const perfil = perfilDe(codigo);
+  return (perfil === ARTICULO && !/REVIEW/i.test(codigo)) || perfil === TALLER;
 }
 
 module.exports = { perfilDe, esTesisDelMetodo, traeHerramientas, verificaCitas, TESIS, ARTICULO, INFORME, TSP, TALLER, DOCENTE };

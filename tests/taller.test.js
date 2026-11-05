@@ -30,9 +30,9 @@ test('lo que empieza por TALLER es el taller, con el tipo de un artículo', () =
   assert.ok(Object.isFrozen(taller));
 });
 
-test('no es tesis del método ni verifica citas, pero trae las herramientas', () => {
+test('no es tesis del método, verifica citas (4-nov) y trae las herramientas', () => {
   assert.equal(esTesisDelMetodo('TALLER_INVESTIGADOR'), false);
-  assert.equal(verificaCitas('TALLER_INVESTIGADOR'), false);
+  assert.equal(verificaCitas('TALLER_INVESTIGADOR'), true);
   assert.equal(traeHerramientas('TALLER_INVESTIGADOR'), true);
 });
 

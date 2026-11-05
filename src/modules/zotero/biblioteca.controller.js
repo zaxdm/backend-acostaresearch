@@ -5,6 +5,7 @@ const { ok } = require('../../shared/http/apiResponse');
 const env = require('../../config/env');
 const logger = require('../../config/logger');
 const servicio = require('./biblioteca.service');
+const acostaiaConectores = require('../acostaia/acostaia.conectores');
 
 /**
  * La cookie que ata el intercambio con Zotero al navegador que lo empezó.
@@ -50,9 +51,13 @@ const bibliotecaController = {
   vuelta: asyncHandler(async (req, res) => {
     const token = req.query.oauth_token;
     const verificador = req.query.oauth_verifier;
+    // Si el intercambio salió de AcostaIA, se vuelve allí y no al perfil.
+    const deAcostaIA = acostaiaConectores.esDeAcostaIA('zotero', token);
+    const destino = (resultado) =>
+      deAcostaIA ? acostaiaConectores.urlDeVuelta('zotero', resultado) : servicio.urlDelPanel(resultado);
 
     if (!token || !verificador) {
-      return res.redirect(servicio.urlDelPanel('cancelado'));
+      return res.redirect(destino('cancelado'));
     }
 
     const tokenDelNavegador = req.cookies?.[COOKIE_ZOTERO];
@@ -60,10 +65,10 @@ const bibliotecaController = {
 
     try {
       await servicio.terminar({ token, verificador, tokenDelNavegador });
-      return res.redirect(servicio.urlDelPanel('ok'));
+      return res.redirect(destino('ok'));
     } catch (fallo) {
       logger.error({ err: fallo }, 'Falló la vuelta del OAuth de Zotero');
-      return res.redirect(servicio.urlDelPanel('error'));
+      return res.redirect(destino('error'));
     }
   }),
 
@@ -108,3 +113,5 @@ const bibliotecaController = {
 };
 
 module.exports = bibliotecaController;
+/** La cookie del intercambio, para que AcostaIA la deje igual (ver acostaia.routes). */
+module.exports.cookieDelIntercambio = () => ({ nombre: COOKIE_ZOTERO, opciones: opcionesDeCookie() });

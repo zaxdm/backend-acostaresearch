@@ -30,4 +30,38 @@ const revocarAccesoSchema = z.object({
   motivo: z.string().trim().max(200).optional(),
 });
 
-module.exports = { crearAccesoSchema, revocarAccesoSchema };
+/** «Mis fuentes»: su biblioteca por páginas. */
+const fuentesSchema = z.object({
+  acostaiaId,
+  pagina: z.coerce.number().int().min(1).max(10_000).default(1),
+  origen: z.enum(['todas', 'zotero', 'mendeley', 'subidas']).default('todas'),
+});
+
+/** «Mis documentos»: sus trabajos. */
+const documentosSchema = z.object({ acostaiaId });
+
+/** Un enlace de descarga recién firmado. */
+const enlaceSchema = z.object({
+  acostaiaId,
+  productCode,
+  que: z.enum(['word', 'documento']).default('word'),
+});
+
+/** Conectores (Zotero y Mendeley). */
+const cual = z.enum(['zotero', 'mendeley']);
+const conectoresSchema = z.object({ acostaiaId });
+const conectorSchema = z.object({ acostaiaId, cual });
+const elegirColeccionSchema = z.object({ acostaiaId, cual, clave: z.string().trim().min(1).max(200) });
+const irSchema = z.object({ pase: z.string().trim().min(20).max(100) });
+
+module.exports = {
+  crearAccesoSchema,
+  revocarAccesoSchema,
+  fuentesSchema,
+  documentosSchema,
+  enlaceSchema,
+  conectoresSchema,
+  conectorSchema,
+  elegirColeccionSchema,
+  irSchema,
+};

@@ -5,6 +5,7 @@ const { ok } = require('../../shared/http/apiResponse');
 const env = require('../../config/env');
 const logger = require('../../config/logger');
 const servicio = require('./mendeley.service');
+const acostaiaConectores = require('../acostaia/acostaia.conectores');
 
 /**
  * La cookie que ata el intercambio con Mendeley al navegador que lo empezó.
@@ -40,20 +41,24 @@ const mendeleyController = {
    */
   vuelta: asyncHandler(async (req, res) => {
     const { code: codigo, state, error } = req.query;
+    // Si el intercambio salió de AcostaIA, se vuelve allí y no al perfil.
+    const deAcostaIA = acostaiaConectores.esDeAcostaIA('mendeley', state);
+    const destino = (resultado) =>
+      deAcostaIA ? acostaiaConectores.urlDeVuelta('mendeley', resultado) : servicio.urlDelPanel(resultado);
 
     const stateDelNavegador = req.cookies?.[COOKIE_MENDELEY];
     res.clearCookie(COOKIE_MENDELEY, opcionesDeCookie());
 
     if (error || !codigo || !state) {
-      return res.redirect(servicio.urlDelPanel('cancelado'));
+      return res.redirect(destino('cancelado'));
     }
 
     try {
       await servicio.terminar({ codigo, state, stateDelNavegador });
-      return res.redirect(servicio.urlDelPanel('ok'));
+      return res.redirect(destino('ok'));
     } catch (fallo) {
       logger.error({ err: fallo }, 'Falló la vuelta del OAuth de Mendeley');
-      return res.redirect(servicio.urlDelPanel('error'));
+      return res.redirect(destino('error'));
     }
   }),
 
@@ -91,3 +96,5 @@ const mendeleyController = {
 };
 
 module.exports = mendeleyController;
+/** La cookie del intercambio, para que AcostaIA la deje igual (ver acostaia.routes). */
+module.exports.cookieDelIntercambio = () => ({ nombre: COOKIE_MENDELEY, opciones: opcionesDeCookie() });

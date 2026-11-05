@@ -88,6 +88,9 @@ const schema = z.object({
   // revocar las licencias de sus usuarios (`modules/acostaia`). Va en la
   // cabecera `Authorization: Bearer`. Vacía = la ruta no acepta nada.
   ACOSTAIA_CLAVE_INTERNA: vacioComoAusente(z.string().min(32)),
+  // Dirección de la web de AcostaIA: a ella vuelve quien conectó Zotero o
+  // Mendeley desde allí. Vacía = conectar desde AcostaIA está apagado.
+  ACOSTAIA_URL: vacioComoAusente(z.string().url()),
 
   // ── Reescritor académico (Claude) ───────────────────────────────────────
   ANTHROPIC_API_KEY: vacioComoAusente(z.string()),

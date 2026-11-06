@@ -216,10 +216,11 @@ async function etiquetasDeReferencias(obras) {
 
 /**
  * Los DOI de una búsqueda de Scopus, de los más citados a los menos, hasta el
- * tope. Devuelve también cuántos resultados tiene la búsqueda y cuántos de los
+ * tope (el del mapeo si no se dice otro; el corpus de una revisión pide el
+ * suyo). Devuelve también cuántos resultados tiene la búsqueda y cuántos de los
  * recorridos no traen DOI.
  */
-async function doisDeLaBusqueda({ ecuacion, accessToken }) {
+async function doisDeLaBusqueda({ ecuacion, accessToken, tope = TOPE_DEL_MAPEO }) {
   const porPagina = cliente.POR_PAGINA;
   const pedir = (desde) =>
     cliente.buscar({ ecuacion, desde, cuantas: porPagina, orden: 'citas', accessToken });
@@ -227,7 +228,7 @@ async function doisDeLaBusqueda({ ecuacion, accessToken }) {
   // La primera dice cuántos hay; el resto se pide por tandas, en orden.
   const primera = await pedir(0);
   const total = primera.total;
-  const hasta = Math.min(total, TOPE_DEL_MAPEO);
+  const hasta = Math.min(total, tope);
   const paginas = [primera];
 
   const desdes = [];
@@ -236,7 +237,7 @@ async function doisDeLaBusqueda({ ecuacion, accessToken }) {
     paginas.push(...(await Promise.all(desdes.slice(i, i + PAGINAS_A_LA_VEZ).map(pedir))));
   }
 
-  const fichas = paginas.flatMap((p) => p.fichas).slice(0, TOPE_DEL_MAPEO);
+  const fichas = paginas.flatMap((p) => p.fichas).slice(0, tope);
   const dois = fichas.map((f) => openalex.limpiarDoi(f['prism:doi'])).filter(Boolean);
   return { dois: [...new Set(dois)], total, recorridos: fichas.length };
 }

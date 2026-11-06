@@ -221,4 +221,4 @@ async function buscar({
   };
 }
 
-module.exports = { buscar, POR_PAGINA, TOPE_DE_DESPLAZAMIENTO, ORDENES };
+module.exports = { buscar, cabeceras, comoFallo, POR_PAGINA, TOPE_DE_DESPLAZAMIENTO, ORDENES };

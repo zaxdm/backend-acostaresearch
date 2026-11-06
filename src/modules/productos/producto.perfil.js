@@ -204,4 +204,15 @@ function verificaCitas(productCode) {
   return (perfil === ARTICULO && !/REVIEW/i.test(codigo)) || perfil === TALLER;
 }
 
-module.exports = { perfilDe, esTesisDelMetodo, traeHerramientas, verificaCitas, TESIS, ARTICULO, INFORME, TSP, TALLER, DOCENTE };
+/**
+ * ¿Es la ruta del artículo de REVISIÓN (`ARTICULOS_REVIEW`)? (5-nov-2026)
+ *
+ * Comparte perfil con el artículo empírico; lo que es solo suyo —armar el
+ * corpus de la búsqueda desde la conversación— se decide aquí.
+ */
+function esRevision(productCode) {
+  const codigo = String(productCode ?? '');
+  return perfilDe(codigo) === ARTICULO && /REVIEW/i.test(codigo);
+}
+
+module.exports = { perfilDe, esTesisDelMetodo, traeHerramientas, verificaCitas, esRevision, TESIS, ARTICULO, INFORME, TSP, TALLER, DOCENTE };

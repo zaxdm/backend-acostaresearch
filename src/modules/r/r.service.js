@@ -830,6 +830,18 @@ async function leerArchivoDeSesion(sesion, archivo) {
   return m.leerArchivo(sesion, archivo);
 }
 
+/**
+ * Deja en la sesión del proyecto archivos que arma el backend (el corpus de una
+ * revisión: CSV y RIS) para bajarlos con el enlace de `descargar`. Lanza
+ * `MotorNoDisponible` si R no está; quien llama lo dice con sus palabras.
+ */
+async function dejarArchivos({ userId, productCode, archivos }) {
+  const m = motorActual();
+  if (!m || !(await m.listo())) throw new MotorNoDisponible('El motor de R está apagado o sin instalar.');
+  const proyecto = await projectRepository.asegurar(userId, productCode);
+  for (const { nombre, bytes } of archivos) await m.guardarArchivo(proyecto.id, nombre, bytes);
+}
+
 /** Un archivo de la sesión, para la ruta de descarga. */
 async function leerArchivo({ userId, productCode, archivo }) {
   const m = motorActual();
@@ -846,6 +858,7 @@ module.exports = {
   motorActual,
   subirDatos,
   leerArchivo,
+  dejarArchivos,
   leerArchivoDeSesion,
   figurasDeSesion,
   disponible,

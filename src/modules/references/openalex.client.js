@@ -996,6 +996,79 @@ async function obrasCompletasPorDoi(dois) {
 }
 const obrasPorIds = (ids, campos) => obrasPorLotes('ids.openalex', ids.map(soloElId), campos);
 
+/** Lo más que se trae de una búsqueda para el corpus de una revisión. */
+const TOPE_DEL_CORPUS = 2000;
+
+/**
+ * Las obras de una búsqueda, enteras, para el corpus de una revisión
+ * (`references/corpus.revision`).
+ *
+ * Como `obrasParaMapa` —por cursor, doscientas por página, en título y
+ * resumen—, pero con los campos de `CAMPOS_BIBLIOMETRICOS`, que son los que
+ * escribe el CSV que leen bibliometrix y el script del cribado. Devuelve
+ * también el filtro tal como se mandó: va literal al registro de la búsqueda,
+ * porque es lo que otro tiene que pegar para repetirla.
+ *
+ * `soloScielo` deja solo lo publicado en revistas de SciELO (ver
+ * `buscarEnScielo`). `caida` solo si la PRIMERA página no llegó.
+ */
+async function obrasDeUnaBusqueda({
+  consulta,
+  desdeAnio = null,
+  hastaAnio = null,
+  tipos = null,
+  idiomas = null,
+  soloScielo = false,
+  cuantas = 500,
+}) {
+  const quiero = Math.min(Math.max(Math.trunc(cuantas) || 1, 1), TOPE_DEL_CORPUS);
+  // Sin `*` ni `?`: el campo busca por raíz y OpenAlex rechaza el truncamiento
+  // (400, «Wildcards require the exact field», probado el 5-nov-2026). La raíz
+  // ya cubre los plurales, que es para lo que se trunca.
+  const sinTruncar = String(consulta).replace(/,/g, ' ').replace(/[*?]/g, '').trim();
+  const filtros = [`title_and_abstract.search:${sinTruncar}`];
+  if (soloScielo) filtros.push('primary_location.source.listed_in:scielo');
+  if (tipos?.length) filtros.push(`type:${tipos.join('|')}`);
+  if (idiomas?.length) filtros.push(`language:${idiomas.join('|')}`);
+  if (desdeAnio) filtros.push(`from_publication_date:${desdeAnio}-01-01`);
+  if (hastaAnio) filtros.push(`to_publication_date:${hastaAnio}-12-31`);
+  const filtro = filtros.join(',');
+
+  const obras = [];
+  let total = 0;
+  let cursor = '*';
+
+  while (cursor && obras.length < quiero) {
+    const url = new URL(BASE);
+    url.searchParams.set('filter', filtro);
+    // `biblio` (volumen, número, páginas) es para el RIS del gestor de referencias.
+    url.searchParams.set('select', `${CAMPOS_BIBLIOMETRICOS},biblio`);
+    url.searchParams.set('sort', 'cited_by_count:desc');
+    url.searchParams.set('per_page', String(Math.min(200, quiero - obras.length)));
+    url.searchParams.set('cursor', cursor);
+    firmar(url);
+
+    const res = await pedirConReintento(url).catch((error) => {
+      logger.warn({ err: error }, 'OpenAlex no respondió al armar un corpus');
+      return null;
+    });
+
+    if (!res || !res.ok) {
+      if (res) avisarRechazo(res, {}, 'OpenAlex rechazó la búsqueda de un corpus');
+      if (obras.length === 0) return { obras: [], total: 0, caida: true, filtro };
+      break;
+    }
+
+    const datos = await res.json().catch(() => null);
+    const pagina = datos?.results ?? [];
+    total = datos?.meta?.count ?? total;
+    obras.push(...pagina);
+    cursor = pagina.length > 0 ? datos?.meta?.next_cursor ?? null : null;
+  }
+
+  return { obras: obras.slice(0, quiero), total, caida: false, filtro };
+}
+
 /** «https://openalex.org/W123» → «W123». El filtro quiere el corto. */
 const soloElId = (id) => String(id).replace(/^https?:\/\/openalex\.org\//i, '');
 
@@ -1016,6 +1089,8 @@ module.exports = {
   obrasParaMapa,
   obrasPorDoi,
   obrasCompletasPorDoi,
+  obrasDeUnaBusqueda,
+  TOPE_DEL_CORPUS,
   obrasPorIds,
   limpiarDoi,
   nombreApa,

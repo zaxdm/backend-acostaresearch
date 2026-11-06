@@ -912,6 +912,23 @@ async function destinosDelMapeo(userId) {
 }
 
 /**
+ * Los DOI de una búsqueda de Scopus, para el corpus de una revisión
+ * (`references/corpus.revision`, herramienta "armar_corpus_de_busqueda").
+ *
+ * Mismo criterio que el mapeo: de Scopus solo la lista de DOI y las cuentas;
+ * los datos de cada documento llegan de OpenAlex. La ecuación va TAL CUAL, sin
+ * la cláusula de artículos del mapeo: en una revisión los filtros son parte de
+ * la ecuación que se declara, y los pone quien la escribe.
+ */
+async function doisParaCorpus(userId, { ecuacion, tope }) {
+  exigirQueEsteEncendido();
+  const conexion = await conexionParaUsar(userId);
+  const hecho = await mapeo.doisDeLaBusqueda({ ecuacion, accessToken: await tokenDe(conexion), tope });
+  await repositorio.anotarBusqueda(userId).catch(() => {});
+  return hecho;
+}
+
+/**
  * La búsqueda, a la sesión de R del proyecto: de Scopus los DOI, de OpenAlex lo
  * demás, y bibliometrix lo lee como si hubiera subido un exporte.
  */
@@ -971,6 +988,7 @@ async function mapear(userId, { ecuacion, productCode }) {
 module.exports = {
   destinosDelMapeo,
   mapear,
+  doisParaCorpus,
   empezar,
   terminar,
   buscar,

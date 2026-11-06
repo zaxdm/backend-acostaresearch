@@ -47,8 +47,11 @@ const etapas = require('../projects/project.etapas');
 const esquemaDeCapitulos = require('../projects/project.esquema');
 const bloquesDeAnalisis = require('../projects/project.bloques');
 const rService = require('../r/r.service');
-const { perfilDe, verificaCitas } = require('../productos/producto.perfil');
+const { perfilDe, verificaCitas, esRevision } = require('../productos/producto.perfil');
 const scopusService = require('../scopus/scopus.service');
+const corpusRevision = require('../references/corpus.revision');
+const revistasScopus = require('../scopus/scopus.revistas');
+const { MotorNoDisponible } = require('../r/r.motor');
 const {
   REGLAS_DE_CONVERSACION,
   INSTRUCCIONES_DEL_SERVIDOR,
@@ -237,7 +240,7 @@ const fechaCorta = (iso) =>
     ? new Date(iso).toLocaleDateString('es-PE', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Lima' })
     : 'fecha desconocida';
 
-const { ESQUEMA_FUENTES, ESQUEMA_ANADIR, ESQUEMA_MIS_FUENTES, ESQUEMA_BOLA, ESQUEMA_LITERATURA, ESQUEMA_SCOPUS, ESQUEMA_GUARDAR_SCOPUS, GUARDAR_AVANCE, ESQUEMA_GUARDAR_AVANCE, ESQUEMA_GUARDAR_AVANCE_TSP, ESQUEMA_GUARDAR_AVANCE_INFORME, GUARDAR_CAPITULO, ESQUEMA_GUARDAR_CAPITULO, ESQUEMA_GUARDAR_CAPITULO_INFORME, ESQUEMA_GUARDAR_ANALISIS, ESQUEMA_VER_ANALISIS, ESQUEMA_TRABAJAR_EN_R, ESQUEMA_VER_CAPITULO, ESQUEMA_REVISAR_EVIDENCIA, ESQUEMA_VERIFICAR_CITAS, ESQUEMA_REDACTAR, ESQUEMA_GUARDAR_AVANCE_DOCENTE, ESQUEMA_GUARDAR_CAPITULO_DOCENTE, ESQUEMA_VER_CAPITULO_DOCENTE } = require('./mcp.esquemas');
+const { ESQUEMA_FUENTES, ESQUEMA_ANADIR, ESQUEMA_MIS_FUENTES, ESQUEMA_BOLA, ESQUEMA_LITERATURA, ESQUEMA_SCOPUS, ESQUEMA_GUARDAR_SCOPUS, ESQUEMA_CORPUS, ESQUEMA_REVISTA, GUARDAR_AVANCE, ESQUEMA_GUARDAR_AVANCE, ESQUEMA_GUARDAR_AVANCE_TSP, ESQUEMA_GUARDAR_AVANCE_INFORME, GUARDAR_CAPITULO, ESQUEMA_GUARDAR_CAPITULO, ESQUEMA_GUARDAR_CAPITULO_INFORME, ESQUEMA_GUARDAR_ANALISIS, ESQUEMA_VER_ANALISIS, ESQUEMA_TRABAJAR_EN_R, ESQUEMA_VER_CAPITULO, ESQUEMA_REVISAR_EVIDENCIA, ESQUEMA_VERIFICAR_CITAS, ESQUEMA_REDACTAR, ESQUEMA_GUARDAR_AVANCE_DOCENTE, ESQUEMA_GUARDAR_CAPITULO_DOCENTE, ESQUEMA_VER_CAPITULO_DOCENTE } = require('./mcp.esquemas');
 
 const NOMBRE_SERVIDOR = 'acosta-research-tesis';
 const VERSION_SERVIDOR = '1.0.0';
@@ -2633,6 +2636,229 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
           `${lineas.join(N)}${N}${N}` +
             'Ya se pueden citar: búscalas con "buscar_fuentes" cuando redactes, y usa la clave ' +
             'AR que te devuelva. NO escribas la cita a mano.',
+        );
+      },
+    );
+  }
+
+  // ── El corpus de una revisión, armado aquí ───────────────────────────────
+  //
+  // La segunda vía de la Fase 3 de la ruta de revisión: en vez de exportar de
+  // cada base y subir los archivos, Claude corre la búsqueda aquí y el tesista
+  // baja un CSV o un RIS por base, más uno con todo para su gestor. Solo en la
+  // ruta del artículo de revisión (ver `producto.perfil.esRevision`).
+  if (esRevision(licencia.productCode)) {
+    server.registerTool(
+      'armar_corpus_de_busqueda',
+      {
+        title: 'Armar el corpus de la revisión (CSV y RIS)',
+        description:
+          'Corre la búsqueda de una REVISIÓN (sistemática, de alcance, bibliométrica o híbrida) en ' +
+          'varias bases a la vez —Scopus, OpenAlex, SciELO, PubMed, ERIC, DOAJ…— y deja para bajar ' +
+          'un archivo por base (CSV para Scopus, OpenAlex y SciELO; RIS para las demás), un ' +
+          '_todo.ris sin repetidos para Zotero o Mendeley y el registro de la búsqueda (fecha, ' +
+          'ecuación literal y cuántos hay en cada base) para el PRISMA. Trae cientos de registros ' +
+          'con su resumen, no 25. ' +
+          'ÚSALA en la Fase 3 de la revisión cuando el tesista elija que la búsqueda la hagas tú, ' +
+          'en vez de exportar él de cada base. ANTES, prueba la ecuación con "buscar_en_scopus" y ' +
+          'afínala si da miles. Los archivos los lee "corpus.py identificar" tal cual: dile que ' +
+          'los baje y te los suba al chat, y el _todo.ris, a su gestor. ' +
+          'Para un análisis de cocitación completo sigue siendo mejor el exporte de Scopus con ' +
+          'referencias; dilo si la revisión es bibliométrica.',
+        inputSchema: ESQUEMA_CORPUS,
+      },
+      async (args) => {
+        const prompt = args.ecuacionScopus ?? args.consulta ?? '';
+        const cupo = await cupoDePrueba('armar_corpus_de_busqueda', prompt);
+        if (cupo.bloqueo) return cupo.bloqueo;
+
+        const avisos = [];
+        let bases = [...new Set(args.bases)];
+        if (bases.includes('scopus') && !env.scopusApiEnabled) {
+          bases = bases.filter((b) => b !== 'scopus');
+          avisos.push('Scopus no está activo en este servidor: no se buscó ahí.');
+        }
+        if (bases.includes('scopus') && !puedeIrAScopus(licencia.userId)) {
+          await licenseService.releaseLimits(cupo.reserva);
+          return texto(SCOPUS_SIN_CUPO);
+        }
+        if (bases.length === 0) {
+          await licenseService.releaseLimits(cupo.reserva);
+          return texto(`${avisos.join(' ')} Elige otra base (openalex, scielo…).`);
+        }
+
+        await licenseService.recordUsage({ licenseId: licencia.id, tool: 'armar_corpus_de_busqueda', prompt });
+
+        let hecho;
+        try {
+          hecho = await corpusRevision.armar({
+            ...args,
+            bases,
+            doisDeScopus: (opciones) => scopusService.doisParaCorpus(licencia.userId, opciones),
+          });
+          await rService.dejarArchivos({
+            userId: licencia.userId,
+            productCode: licencia.productCode,
+            archivos: hecho.archivos,
+          });
+        } catch (error) {
+          await licenseService.releaseLimits(cupo.reserva);
+          logger.warn({ err: error, licenseId: licencia.id }, 'Conector: no se armó el corpus');
+          if (error instanceof MotorNoDisponible) {
+            return texto(
+              'No se pudieron dejar los archivos para bajar: el espacio de trabajo del servidor no ' +
+                'está disponible ahora mismo. Díselo tal cual y ofrécele la otra vía: exportar él de ' +
+                'cada base.',
+            );
+          }
+          return texto(
+            'No se armó el corpus: ' +
+              (error?.isOperational ? error.message : 'una de las bases no contestó bien.') +
+              ' Díselo tal cual; no des la búsqueda por hecha.',
+          );
+        }
+
+        const filas = hecho.bases.map((b) => {
+          const estado = b.caida && b.bajados === 0 ? 'no respondió' : `${b.bajados} de ${b.total}`;
+          const notas = b.notas.length ? ` (${b.notas.join('; ')})` : '';
+          return `· ${b.nombre}: ${estado}${notas}`;
+        });
+        const incompletas = hecho.bases.filter((b) => b.total > b.bajados && b.bajados > 0);
+
+        const enlaces = [];
+        for (const { nombre } of hecho.archivos) {
+          const { url, minutos } = rEnlaces.enlaceDeDescarga({
+            userId: licencia.userId,
+            productCode: licencia.productCode,
+            archivo: nombre,
+          });
+          enlaces.push(`${nombre}: ${await darEnlace({ texto: `Bajar ${nombre}`, url, minutos })}`);
+        }
+
+        const conArchivo = hecho.bases.filter((b) => b.archivo);
+        const orden =
+          `python3 corpus.py identificar --clave ${hecho.clave} ` +
+          conArchivo.map((b) => `--archivo "${b.nombre}=${b.archivo}"`).join(' ') +
+          ' ' +
+          conArchivo.map((b) => `--fecha "${b.nombre}=${hecho.fecha}"`).join(' ') +
+          ` --out CRIBADO_${hecho.clave}.xlsx` +
+          '  (más un --ecuacion "Base=…" por base, con la consulta literal del registro)';
+
+        return texto(
+          [
+            avisos.join(' '),
+            `Búsqueda del ${hecho.fecha}. Registros bajados de cada base (los más citados primero):`,
+            filas.join(N),
+            incompletas.length > 0
+              ? `OJO: en ${incompletas.map((b) => b.nombre).join(', ')} hay más registros que los bajados ` +
+                `(tope ${hecho.cuantas}). Para un PRISMA la búsqueda tiene que estar entera: afina la ` +
+                'ecuación o sube "maximoPorBase" y vuelve a armarla. No la presentes como completa.'
+              : null,
+            `${hecho.unicos} registros distintos entre todas las bases (por DOI). Los duplicados del ` +
+              'PRISMA los cuenta corpus.py, no esta cifra.',
+            `Archivos (los enlaces duran 30 minutos; después se piden con "trabajar_en_r" y descargar):${N}` +
+              enlaces.join(N),
+            'QUÉ HACER AHORA: pídele que baje los CSV y RIS de cada base y te los SUBA AL CHAT tal ' +
+              'cual, para correr corpus.py; el _todo.ris es para importarlo en Zotero o Mendeley; el ' +
+              '_registro.txt tiene la consulta literal de cada base para la hoja Búsqueda y los Métodos.',
+            `Orden para la identificación, con estos archivos:${N}${orden}`,
+            `EN LOS MÉTODOS se declara: búsqueda hecha el ${hecho.fecha} con el conector de Acosta | ` +
+              'IA & Research; en Scopus, la lista de documentos de Scopus con sus metadatos de OpenAlex ' +
+              'por el DOI; SciELO consultada por OpenAlex. Los registros de Scopus sin DOI no entran ' +
+              'al archivo: si son muchos, recomiéndale exportar de Scopus.',
+          ]
+            .filter(Boolean)
+            .join(`${N}${N}`),
+        );
+      },
+    );
+  }
+
+  // ── Los indicadores de una revista ───────────────────────────────────────
+  //
+  // La Fase 1 de la revisión se trababa al elegir revista: Scimago no se deja
+  // leer y el tesista no sabía sacar la captura. Esto pregunta a Scopus (la
+  // clave de la casa) y a OpenAlex. Ver `scopus.revistas`.
+  if (esRevision(licencia.productCode) && env.scopusApiEnabled) {
+    server.registerTool(
+      'consultar_revista',
+      {
+        title: 'Consultar los indicadores de una revista',
+        description:
+          'Los indicadores de una revista EN SCOPUS, consultados ahora: SJR, SNIP, CiteScore y el ' +
+          'CUARTIL DE SCOPUS (por percentil de CiteScore) en cada categoría, con su año; editorial, ' +
+          'ISSN y enlace; y de OpenAlex, si está en DOAJ y su APC. Por nombre o por ISSN. ' +
+          'ÚSALA al elegir la revista destino de una revisión, para cada candidata, EN VEZ de leer ' +
+          'Scimago (no se deja leer). Si no aparece, no está en Scopus: búscala en SciELO, Latindex ' +
+          'o DOAJ. El cuartil SJR de Scimago se calcula distinto: si su universidad pide ese, dilo y ' +
+          'que lo confirme él en scimagojr.com. NUNCA des un cuartil de memoria.',
+        inputSchema: ESQUEMA_REVISTA,
+      },
+      async ({ revista }) => {
+        const cupo = await cupoDePrueba('consultar_revista', revista);
+        if (cupo.bloqueo) return cupo.bloqueo;
+        if (!puedeIrAScopus(licencia.userId)) {
+          await licenseService.releaseLimits(cupo.reserva);
+          return texto(SCOPUS_SIN_CUPO);
+        }
+        await licenseService.recordUsage({ licenseId: licencia.id, tool: 'consultar_revista', prompt: revista });
+
+        let r;
+        try {
+          r = await revistasScopus.consultar({ revista });
+        } catch (error) {
+          await licenseService.releaseLimits(cupo.reserva);
+          logger.warn({ err: error, licenseId: licencia.id }, 'Conector: no se consultó la revista');
+          return texto(
+            (error?.isOperational ? error.message : 'Scopus no contestó bien.') +
+              ' Prueba otra vez en un momento. Si sigue igual, deja el cuartil como [POR CONFIRMAR] y ' +
+              'SIGUE con la fase: la revista se puede confirmar después, no bloquea.',
+          );
+        }
+
+        if (r.revistas.length === 0) {
+          return texto(
+            `Scopus no tiene ninguna revista que se llame «${revista}». O no está en Scopus, o el ` +
+              'nombre es otro: prueba con su ISSN. Si es regional, verifica en SciELO, Latindex ' +
+              'Catálogo 2.0 o DOAJ; que no esté en Scopus no la hace mala.',
+          );
+        }
+
+        const fichas = r.revistas.map((v, i) => {
+          const lineas = [`${i + 1}. ${v.titulo}${v.editorial ? ` (${v.editorial})` : ''}`];
+          lineas.push(`   ISSN ${v.issn ?? '—'}${v.eissn ? ` · e-ISSN ${v.eissn}` : ''}${v.enlace ? ` · ${v.enlace}` : ''}`);
+          const metricas = [
+            v.sjr && `SJR ${v.sjr.valor} (${v.sjr.anio})`,
+            v.snip && `SNIP ${v.snip.valor} (${v.snip.anio})`,
+            v.citeScore && `CiteScore ${v.citeScore.valor} (${v.citeScore.anio})`,
+          ].filter(Boolean);
+          lineas.push(`   ${metricas.length ? metricas.join(' · ') : 'Sin métricas recientes en Scopus: puede estar discontinuada. Dilo.'}`);
+          const ultimo = Math.max(Number(v.sjr?.anio) || 0, Number(v.citeScore?.anio) || 0);
+          if (ultimo > 0 && ultimo < new Date().getFullYear() - 2) {
+            lineas.push(`   OJO: sus últimas métricas son de ${ultimo}. Puede estar DISCONTINUADA en Scopus: no la recomiendes sin confirmarlo.`);
+          }
+          for (const c of v.categorias.slice(0, 4)) {
+            lineas.push(
+              `   ${c.cuartil ?? '—'} en ${c.categoria} (percentil ${c.percentil ?? '—'}, puesto ${c.puesto ?? '—'}, CiteScore ${v.citeScore?.anio ?? ''})`,
+            );
+          }
+          const a = v.abierta;
+          if (a) {
+            lineas.push(
+              `   ${a.enDoaj ? 'En DOAJ' : 'No está en DOAJ'} · ${a.accesoAbierto ? 'acceso abierto' : 'no es de acceso abierto'}` +
+                ` · APC: ${a.apcUsd != null ? `${a.apcUsd} USD (dato de OpenAlex; confírmalo en su web)` : 'OpenAlex no lo registra; míralo en su web'}` +
+                `${a.web ? ` · ${a.web}` : ''}`,
+            );
+          }
+          return lineas.join(N);
+        });
+
+        return texto(
+          `Revistas en Scopus para «${revista}», consultado el ${r.consultado}:${N}${N}${fichas.join(`${N}${N}`)}${N}${N}` +
+            'El cuartil es el de SCOPUS (percentil de CiteScore del último año completo), con su categoría. ' +
+            'Escríbelo así en la Ficha: «Q1 en Education, CiteScore 2025, Scopus, consultado el ' +
+            `${r.consultado}». Antes de enviar, el autor revisa en la web de la revista que la URL sea la que ` +
+            'registra Scopus (hay sitios que suplantan revistas).',
         );
       },
     );

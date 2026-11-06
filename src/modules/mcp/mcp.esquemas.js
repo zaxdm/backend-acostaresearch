@@ -231,6 +231,92 @@ const ESQUEMA_GUARDAR_SCOPUS = fromJsonSchema({
   additionalProperties: false,
 });
 
+/**
+ * Armar el corpus de una revisión desde la conversación (`corpus.revision`).
+ * Las bases que se aceptan son las de `externas` más Scopus, OpenAlex y SciELO.
+ */
+const ESQUEMA_CORPUS = fromJsonSchema({
+  type: 'object',
+  properties: {
+    clave: {
+      type: 'string',
+      minLength: 2,
+      maxLength: 30,
+      description: 'La palabra del tema de la ruta (p. ej. «tecnoestres»): da nombre a los archivos.',
+    },
+    bases: {
+      type: 'array',
+      minItems: 1,
+      maxItems: 8,
+      items: {
+        type: 'string',
+        enum: [
+          'scopus', 'openalex', 'scielo', 'pubmed', 'europepmc', 'eric', 'doaj', 'latinoamerica',
+          'crossref', 'openaire', 'hal', 'zenodo', 'arxiv', 'core', 'semanticscholar',
+        ],
+      },
+      description:
+        'Dónde buscar. Lo corriente en una revisión: ["scopus", "openalex", "scielo"]. Salud: ' +
+        'añade "pubmed". Educación: "eric". «latinoamerica» son tesis de LA Referencia.',
+    },
+    ecuacionScopus: {
+      type: 'string',
+      minLength: 3,
+      maxLength: 2000,
+      description:
+        'La ecuación de Scopus, en inglés y con su sintaxis, CON los filtros dentro: ' +
+        'TITLE-ABS-KEY(...) AND PUBYEAR > 2018 AND PUBYEAR < 2026 AND (DOCTYPE(ar) OR DOCTYPE(re)). ' +
+        'Va literal al registro del PRISMA. Obligatoria si "bases" lleva scopus.',
+    },
+    consulta: {
+      type: 'string',
+      minLength: 3,
+      maxLength: 1000,
+      description:
+        'La consulta para las demás bases, booleana y en inglés (añade sinónimos en español si ' +
+        'busca en SciELO): ("technostress" OR "techno-stress") AND (teacher* OR faculty). Se busca ' +
+        'en título y resumen. Los años, el tipo y el idioma van en sus campos, no aquí.',
+    },
+    desdeAnio: { type: 'integer', minimum: 1900, maximum: 2100, description: 'Año inicial (no Scopus).' },
+    hastaAnio: { type: 'integer', minimum: 1900, maximum: 2100, description: 'Año final (no Scopus).' },
+    soloArticulos: {
+      type: 'boolean',
+      description: 'Solo artículos y revisiones en OpenAlex y SciELO. Por omisión, sí.',
+    },
+    idiomas: {
+      type: 'array',
+      maxItems: 6,
+      items: { type: 'string', pattern: '^[a-z]{2}$' },
+      description: 'Códigos ISO de idioma para OpenAlex y SciELO: ["en", "es", "pt"]. Por omisión, todos.',
+    },
+    maximoPorBase: {
+      type: 'integer',
+      minimum: 25,
+      maximum: 2000,
+      description:
+        'Cuántos registros bajar por base, los más citados primero. Por omisión 500. Si una base ' +
+        'tiene más que esto, la búsqueda no está completa para un PRISMA: afina antes la ecuación.',
+    },
+  },
+  required: ['clave', 'bases'],
+  additionalProperties: false,
+});
+
+/** Consultar una revista en Scopus, por nombre o ISSN (`scopus.revistas`). */
+const ESQUEMA_REVISTA = fromJsonSchema({
+  type: 'object',
+  properties: {
+    revista: {
+      type: 'string',
+      minLength: 3,
+      maxLength: 200,
+      description: 'El nombre de la revista tal como se publica («Comunicar») o su ISSN («1134-3478»).',
+    },
+  },
+  required: ['revista'],
+  additionalProperties: false,
+});
+
 const GUARDAR_AVANCE = {
   type: 'object',
   properties: {
@@ -966,4 +1052,4 @@ const ESQUEMA_VERIFICAR_CITAS = fromJsonSchema({
   additionalProperties: false,
 });
 
-module.exports = { ESQUEMA_FUENTES, ESQUEMA_ANADIR, ESQUEMA_MIS_FUENTES, ESQUEMA_BOLA, ESQUEMA_LITERATURA, ESQUEMA_SCOPUS, ESQUEMA_GUARDAR_SCOPUS, GUARDAR_AVANCE, ESQUEMA_GUARDAR_AVANCE, ESQUEMA_GUARDAR_AVANCE_TSP, ESQUEMA_GUARDAR_AVANCE_INFORME, GUARDAR_CAPITULO, ESQUEMA_GUARDAR_CAPITULO, ESQUEMA_GUARDAR_CAPITULO_INFORME, ESQUEMA_GUARDAR_ANALISIS, ESQUEMA_VER_ANALISIS, ESQUEMA_TRABAJAR_EN_R, ESQUEMA_VER_CAPITULO, ESQUEMA_REVISAR_EVIDENCIA, ESQUEMA_VERIFICAR_CITAS, ESQUEMA_REDACTAR, ESQUEMA_GUARDAR_AVANCE_DOCENTE, ESQUEMA_GUARDAR_CAPITULO_DOCENTE, ESQUEMA_VER_CAPITULO_DOCENTE };
+module.exports = { ESQUEMA_FUENTES, ESQUEMA_ANADIR, ESQUEMA_MIS_FUENTES, ESQUEMA_BOLA, ESQUEMA_LITERATURA, ESQUEMA_SCOPUS, ESQUEMA_GUARDAR_SCOPUS, ESQUEMA_CORPUS, ESQUEMA_REVISTA, GUARDAR_AVANCE, ESQUEMA_GUARDAR_AVANCE, ESQUEMA_GUARDAR_AVANCE_TSP, ESQUEMA_GUARDAR_AVANCE_INFORME, GUARDAR_CAPITULO, ESQUEMA_GUARDAR_CAPITULO, ESQUEMA_GUARDAR_CAPITULO_INFORME, ESQUEMA_GUARDAR_ANALISIS, ESQUEMA_VER_ANALISIS, ESQUEMA_TRABAJAR_EN_R, ESQUEMA_VER_CAPITULO, ESQUEMA_REVISAR_EVIDENCIA, ESQUEMA_VERIFICAR_CITAS, ESQUEMA_REDACTAR, ESQUEMA_GUARDAR_AVANCE_DOCENTE, ESQUEMA_GUARDAR_CAPITULO_DOCENTE, ESQUEMA_VER_CAPITULO_DOCENTE };

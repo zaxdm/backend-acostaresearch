@@ -1188,7 +1188,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
             revision +
             controlTexto +
             'DALE AQUÍ MISMO EL WORD con "enlace_del_word": sale con todos los capítulos que ' +
-            (esRevision(licencia.productCode)
+            (perfil.tipo === 'articulo'
               ? 'llevéis, en orden, como manuscrito de revista (el título arriba, sin portada, sin ' +
                 'índice y sin nombres de autor: la autoría entra en la Fase 8; no le preguntes a ' +
                 'nombre de quién va) y con las referencias en la norma del proyecto. '
@@ -5313,8 +5313,9 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
       title: 'Enlace para descargar la tesis en Word',
       description:
         'Da un enlace para descargar la tesis en Word, armada por el servidor con todo lo ' +
-        (esRevision(licencia.productCode)
-          ? 'guardado, como manuscrito de revista (título, secciones en orden, sin portada ni índice), ' +
+        (perfil.tipo === 'articulo'
+          ? 'guardado, como manuscrito de revista (título, secciones en orden, sin portada, sin ' +
+            'índice y sin nombre de autor: ya va anónimo para la revisión a doble ciego), ' +
             'y las citas y las referencias ya '
           : 'guardado: portada, índice, capítulos en orden, y las citas y las referencias ya ') +
         'escritas en la norma del proyecto —en notas al pie si la norma lo pide, y ' +

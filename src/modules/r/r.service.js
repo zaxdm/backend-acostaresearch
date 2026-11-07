@@ -861,12 +861,14 @@ function deLaSintaxisDelMotor(texto) {
     }
     const tabla = t.match(/^\[TABLA\s+(\d+)\]\s*(.*)$/i);
     if (tabla) {
-      lineas.push('', `**Tabla ${tabla[1]}**`, '', `*${tabla[2].trim()}*`, '');
+      // Rótulo, título, tabla y nota van juntos, sin líneas en blanco: así los
+      // toma `tablaApa` (número en negrita, título en cursiva, sin sangría).
+      lineas.push('', `**Tabla ${tabla[1]}**`, `*${tabla[2].trim()}*`);
       continue;
     }
     const nota = t.match(/^\[NOTA\]\s*(.*)$/i);
     if (nota) {
-      lineas.push('', `*Nota.* ${nota[1].trim()}`, '');
+      lineas.push(`*Nota.* ${nota[1].trim()}`);
       continue;
     }
     if (/^#\s/.test(t)) {

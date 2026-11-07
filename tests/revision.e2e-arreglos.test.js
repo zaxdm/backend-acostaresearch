@@ -87,6 +87,7 @@ test('la Ficha escrita para el script de la skill sale sin marcas en el Word del
   assert.equal(titulo, 'FICHA DE ORIENTACIÓN DEL ARTÍCULO');
   assert.doesNotMatch(texto, /\[(TITULO|TABLA|NOTA|SIN SANGR)/);
   assert.match(texto, /\n\n## 1\. Perfil\n\n/);
-  assert.match(texto, /\*\*Tabla 1\*\*\n\n\*Perfil del estudio\*/);
+  // Rótulo, título y tabla juntos: así los toma `tablaApa`.
+  assert.match(texto, /\*\*Tabla 1\*\*\n\*Perfil del estudio\*\n\| Campo/);
   assert.match(texto, /\*Nota\.\* Elaboración propia\./);
 });

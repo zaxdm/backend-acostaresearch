@@ -268,16 +268,15 @@ function autoresDeLaFicha(autores, idioma) {
  *
  * En APA el «&» es solo para dentro del paréntesis: en la frase va la palabra.
  * citeproc no distingue los dos casos, así que se cambia aquí.
+ *
+ * `motor` es un motor APARTE, en modo texto y sin citas registradas.
+ * `previewCitationCluster` sobre el motor de las citas rehacía su estado entero
+ * en cada llamada: con 180 citas narrativas eran 4 segundos de servidor parado.
  */
 function autoresNarrativos(motor, clave, fuente, idioma, familia) {
   if (familia === 'autor-fecha') {
     try {
-      const vista = motor.previewCitationCluster(
-        { citationID: `vista-${clave}`, citationItems: [{ id: clave, 'author-only': true }], properties: { noteIndex: 0 } },
-        [],
-        [],
-        'text',
-      );
+      const vista = motor.makeCitationCluster([{ id: clave, 'author-only': true }]);
       const limpio = String(vista ?? '').trim();
       if (limpio !== '' && !limpio.includes(SIN_FORMA)) {
         return limpio.replace(/\s&\s/g, String(idioma).startsWith('en') ? ' and ' : ' y ');
@@ -343,12 +342,25 @@ function renderizar({ norma: idNorma, idioma: idIdioma, capitulos, porClave, uri
     },
   };
 
-  const motor = new CSL.Engine(sys, normas.leerEstilo(norma.id), idioma, true);
+  const estilo = normas.leerEstilo(norma.id);
+  const motor = new CSL.Engine(sys, estilo, idioma, true);
   motor.setOutputFormat('html');
+
+  // Solo para los autores de las citas narrativas (ver `autoresNarrativos`).
+  const motorDeAutores = new CSL.Engine(sys, estilo, idioma, true);
+  motorDeAutores.setOutputFormat('text');
+  const autoresYa = new Map();
+  const autoresDe = (clave) => {
+    if (!autoresYa.has(clave)) {
+      autoresYa.set(clave, autoresNarrativos(motorDeAutores, clave, porClave.get(clave), idioma, norma.familia));
+    }
+    return autoresYa.get(clave);
+  };
 
   const citas = new Map();
   const html = new Map();
-  const previas = [];
+  // Las citas en el orden del documento. Se procesan todas juntas al final.
+  const enOrden = [];
   const usadas = new Map();
   const perdidas = new Set();
   let numero = 0;
@@ -385,8 +397,7 @@ function renderizar({ norma: idNorma, idioma: idIdioma, capitulos, porClave, uri
       // texto ya acaba con sus autores, es narrativa. Solo en autor-fecha: en una
       // norma numérica «Davis [1]» es la forma correcta.
       if (!narrativa && conocidas.length === 1 && norma.familia === 'autor-fecha') {
-        const fuente = porClave.get(conocidas[0].clave);
-        const autores = autoresNarrativos(motor, conocidas[0].clave, fuente, idioma, norma.familia);
+        const autores = autoresDe(conocidas[0].clave);
         if (terminaConPalabra(resultado, autores)) narrativa = true;
       }
 
@@ -402,19 +413,13 @@ function renderizar({ norma: idNorma, idioma: idIdioma, capitulos, porClave, uri
         properties: { noteIndex: esNota ? nota : 0 },
       };
 
-      const [, cambios] = motor.processCitationCluster(cita, [...previas], []);
-      // Una cita nueva puede cambiar las anteriores —«ibid.», desambiguar dos
-      // autores con el mismo apellido—, así que se guarda lo último de cada una.
-      for (const [, salida, id] of cambios) html.set(id, salida);
-      previas.push([cita.citationID, cita.properties.noteIndex]);
+      enOrden.push(cita);
 
       // Si el texto ya trae los autores justo antes de la marca («Sah y Füredi-Fülöp
       // [AR…:n]»), no se vuelven a escribir: saldría «Sah y Füredi-Fülöp Sah y
       // Füredi-Fülöp (2022)». Pasa en el documento subido, donde el nombre es del
       // tesista, y cuando el modelo escribe el nombre pese a la instrucción.
-      const autoresNarrados = narrativa
-        ? autoresNarrativos(motor, conocidas[0].clave, porClave.get(conocidas[0].clave), idioma, norma.familia)
-        : null;
+      const autoresNarrados = narrativa ? autoresDe(conocidas[0].clave) : null;
       const yaEstanAntes = narrativa && terminaCon(resultado, autoresNarrados);
 
       const antes =
@@ -434,6 +439,19 @@ function renderizar({ norma: idNorma, idioma: idIdioma, capitulos, porClave, uri
 
     return resultado + texto.slice(desde);
   });
+
+  /**
+   * Todas las citas de una vez, en el orden del documento.
+   *
+   * Una cita nueva puede cambiar las anteriores —«ibid.», desambiguar dos
+   * autores con el mismo apellido—, y esto devuelve ya la forma final de cada
+   * una. Antes iban de una en una con `processCitationCluster` y la lista de
+   * las previas: citeproc volvía a registrar las fuentes en cada llamada, y una
+   * tesis de 373 citas tenía el servidor parado 18 segundos sin atender a nadie.
+   */
+  if (enOrden.length > 0) {
+    for (const [id, , salida] of motor.rebuildProcessorState(enOrden, 'html', [])) html.set(id, salida);
+  }
 
   for (const cita of citas.values()) {
     cita.tramos = comoTramos(html.get(cita.id) ?? '');

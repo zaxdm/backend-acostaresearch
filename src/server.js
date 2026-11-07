@@ -8,6 +8,7 @@ const { verifyTransport } = require('./lib/mailer');
 const { avisarAlProgramador } = require('./lib/notify');
 const comprobarBase = require('./lib/comprobarBase');
 const { INTERVALO_MS, crearVigia } = require('./lib/vigiaBase');
+const { vigilarBloqueos } = require('./lib/vigiaBloqueo');
 const ventasService = require('./modules/ventas/ventas.service');
 const paymentService = require('./modules/payments/payment.service');
 const avisosService = require('./modules/avisos/avisos.service');
@@ -45,6 +46,20 @@ async function bootstrap() {
   const server = app.listen(env.PORT, () => {
     logger.info(`API escuchando en http://localhost:${env.PORT}${env.API_PREFIX} [${env.NODE_ENV}]`);
   });
+
+  /**
+   * Las conexiones con Caddy se mantienen abiertas MÁS que en Caddy.
+   *
+   * Caddy reutiliza una conexión libre hasta 2 minutos; Node, por defecto, la
+   * cierra a los 5 segundos. Si Caddy manda una petición justo cuando Node la
+   * cierra, la conexión se corta y el cliente recibe un 502. Pasaba sobre todo en
+   * el conector. Con más margen en Node, siempre cierra Caddy primero.
+   */
+  server.keepAliveTimeout = 130_000;
+  server.headersTimeout = 131_000;
+
+  // Si algo deja el hilo parado más de 2 segundos, se avisa al programador.
+  const bloqueos = vigilarBloqueos(logger);
 
   // El vigilante de la base: pregunta cada medio minuto aunque no haya nadie en
   // la web, y avisa al móvil si deja de contestar. El `catch` no sobra: una
@@ -121,6 +136,7 @@ async function bootstrap() {
   const shutdown = (signal) => async () => {
     logger.info(`${signal} recibido, cerrando servidor…`);
     clearInterval(vigia);
+    clearInterval(bloqueos);
     clearInterval(avisosDeAvance);
     clearInterval(cierreDeMes);
     clearInterval(ordenesAbandonadas);

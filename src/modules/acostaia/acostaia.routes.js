@@ -151,6 +151,13 @@ router.post(
   asyncHandler(async (req, res) => ok(res, await acostaiaDatos.subida(req.body))),
 );
 
+/** POST /acostaia/datos/subida — el permiso (token de media hora) para subir su base de datos a R/SPSS. */
+router.post(
+  '/datos/subida',
+  validate({ body: subidaSchema }),
+  asyncHandler(async (req, res) => ok(res, await acostaiaDatos.datosR(req.body))),
+);
+
 /** GET /acostaia/conectores — cómo están su Zotero y su Mendeley. */
 router.get(
   '/conectores',

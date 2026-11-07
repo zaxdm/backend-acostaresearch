@@ -167,6 +167,21 @@ const acostaiaDatos = {
     return { token: url.split('/').pop(), minutos };
   },
 
+  /**
+   * El permiso para subir su base de datos (Excel, CSV o SPSS) a la sesión de
+   * análisis desde AcostaIA (7-nov-2026): el MISMO token del enlace de subida
+   * de `trabajar_en_r` (media hora). El servidor de AcostaIA manda el archivo a
+   * `POST /r/subir/:token`, la subida de siempre. Null si no tiene ese producto.
+   */
+  async datosR({ acostaiaId, productCode }) {
+    const titular = await cuentaDelProducto(acostaiaId, productCode);
+    if (!titular) return null;
+    if (!(await productosActivos(titular.id)).has(productCode)) return null;
+    const { enlaceDeSubida } = require('../r/r.enlaces');
+    const { url, minutos } = enlaceDeSubida({ userId: titular.id, productCode });
+    return { token: url.split('/').pop(), minutos };
+  },
+
   async enlace({ acostaiaId, productCode, que }) {
     const titular = await cuentaDelProducto(acostaiaId, productCode);
     if (!titular) return null;

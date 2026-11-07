@@ -123,6 +123,8 @@ test('arma un CSV por cada base de OpenAlex, un RIS por cada externa, el _todo.r
       'busqueda_tecnoestres-docente_openalex.csv',
       'busqueda_tecnoestres-docente_pubmed.ris',
       'busqueda_tecnoestres-docente_registro.txt',
+      // La copia con fecha, que no se pisa al repetir la búsqueda otro día.
+      'busqueda_tecnoestres-docente_registro_2026-11-05.txt',
       'busqueda_tecnoestres-docente_scopus.csv',
       'busqueda_tecnoestres-docente_todo.ris',
     ],

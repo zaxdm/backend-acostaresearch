@@ -413,6 +413,43 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
   const SU_OBRA = perfil.obra;
 
   /**
+   * La Ficha de la Fase 1 del artículo o de la revisión, en Word y aparte.
+   *
+   * No va dentro del Word del artículo (`NUNCA_EN_EL_DOCUMENTO`). Sin esto, al
+   * pedirla otra vez Claude daba el Word del artículo diciendo que la traía, y
+   * luego la armaba él a mano (E2E de la revisión, 7-nov-2026). Devuelve el
+   * enlace listo para el chat, o null si no hay Ficha o el motor no está.
+   */
+  const enlaceDeLaFicha = async () => {
+    if (perfil.tipo !== 'articulo') return null;
+    const codigo = esRevision(licencia.productCode)
+      ? 'revision-fase0-tema-y-orientacion'
+      : 'articulo-fase0-tema-y-orientacion';
+    const leida = await projectService.textoDeCapitulo(licencia.user.id, licencia.productCode, codigo);
+    if (!leida || leida.vacio) return null;
+    const partes = [leida.texto];
+    for (let parte = 2; parte <= (leida.partes ?? 1); parte += 1) {
+      const otra = await projectService.textoDeCapitulo(licencia.user.id, licencia.productCode, codigo, { parte });
+      if (otra?.texto) partes.push(otra.texto);
+    }
+    try {
+      const { url, minutos } = await rService.fichaEnWord({
+        userId: licencia.user.id,
+        productCode: licencia.productCode,
+        titulo: esRevision(licencia.productCode) ? 'Ficha de la revisión' : 'Ficha del artículo',
+        texto: partes.join(N + N),
+        archivo: 'FICHA.docx',
+      });
+      return darEnlace({ texto: 'Haz clic aquí para descargar tu Ficha en Word', url, minutos });
+    } catch (error) {
+      if (!(error instanceof MotorNoDisponible)) {
+        logger.error({ err: error, licenseId: licencia.id }, 'No se pudo armar la Ficha en Word');
+      }
+      return null;
+    }
+  };
+
+  /**
    * En un conector de prueba, las herramientas que trabajan también gastan cupo.
    *
    * A un comprador solo le descuenta `redactar`: lo demás es su proyecto y ya lo
@@ -2781,7 +2818,8 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         const incompletas = hecho.bases.filter((b) => b.total > b.bajados && b.bajados > 0);
 
         const enlaces = [];
-        for (const { nombre } of hecho.archivos) {
+        for (const { nombre, copia } of hecho.archivos) {
+          if (copia) continue;
           const { url, minutos } = rEnlaces.enlaceDeDescarga({
             userId: licencia.userId,
             productCode: licencia.productCode,
@@ -2818,6 +2856,9 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
               `(${PLANTILLA_PRISMA}), que prisma_word.py necesita al final: así no hay que pedirla ` +
               'aparte. El _todo.ris es para importarlo en Zotero o Mendeley; el ' +
               '_registro.txt tiene la consulta literal de cada base para la hoja Búsqueda y los Métodos.',
+            `El registro queda además como busqueda_${hecho.clave}_registro_${hecho.fecha}.txt en su ` +
+              'carpeta y no se pisa si la búsqueda se repite otro día: para recuperar la consulta ' +
+              'de una búsqueda anterior, pídelo con "trabajar_en_r" (descargar ese archivo).',
             'PARA EL TEXTO COMPLETO: los CSV traen «open_access.oa_url» y «best_oa_location.pdf_url» ' +
               '(y los RIS la línea L1): de ahí sale qué estudio tiene copia gratis y su enlace directo. ' +
               'Usa esas columnas al armar la lista de PDF por conseguir; no abras cada DOI en la web.',
@@ -5126,6 +5167,10 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         'llevaría la norma ni los campos de Zotero, y podría no coincidir con las fichas. ' +
         'Si el tesista SUBIÓ su propio documento, el enlace es el de ese documento con las citas ' +
         'y los párrafos humanizados puestos. ' +
+        (perfil.tipo === 'articulo'
+          ? 'La FICHA de la Fase 1 no va dentro de ese Word: esta herramienta da también su enlace ' +
+            'aparte. Úsala igual si solo pide la Ficha, y NO la armes tú. '
+          : '') +
         'El enlace caduca a la media hora; si ya pasó, pide otro.',
       inputSchema: fromJsonSchema({ type: 'object', properties: {}, additionalProperties: false }),
     },
@@ -5164,6 +5209,20 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         );
       }
 
+      // La Ficha del artículo, aparte (ver `enlaceDeLaFicha`).
+      const ficha = await enlaceDeLaFicha();
+      const conFicha = ficha
+        ? `${N}${N}LA FICHA DE LA FASE 1 VA APARTE (no está dentro del Word del ${SU_OBRA}); dale ` +
+          `también este enlace:${N}${ficha}`
+        : '';
+
+      if (!resultado && ficha) {
+        return texto(
+          `Todavía no hay ningún apartado del ${SU_OBRA} guardado, así que no hay Word del ` +
+            `manuscrito. La Ficha de la Fase 1 sí: dale este enlace y NO la armes tú:${N}${ficha}`,
+        );
+      }
+
       if (!resultado) {
         /**
          * Y se le dice POR QUÉ, o vuelve a llamar.
@@ -5194,7 +5253,8 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
             ? ''
             : 'Si su universidad pide otra norma, pregúntale cuál y guárdala con ' +
               '"guardar_avance" (estiloCitas) antes de que lo descargue. ') +
-          'NO le prepares tú otro documento.',
+          'NO le prepares tú otro documento.' +
+          conFicha,
       );
     },
   );

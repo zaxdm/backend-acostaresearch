@@ -423,6 +423,10 @@ async function armar({
 
   const registro = registroDeLaBusqueda({ fecha, informe, cuantas, soloArticulos, idiomas, unicos: unicos.length });
   archivos.push({ nombre: `busqueda_${k}_registro.txt`, bytes: Buffer.from(registro, 'utf8') });
+  // Y una copia con la fecha, que no se pisa al repetir la búsqueda otro día:
+  // la consulta literal de la búsqueda del PRISMA no se puede perder (E2E de la
+  // revisión, 7-nov-2026: al rehacerla, el registro del día anterior se borró).
+  archivos.push({ nombre: `busqueda_${k}_registro_${fecha}.txt`, bytes: Buffer.from(registro, 'utf8'), copia: true });
 
   return { archivos, bases: informe, fecha, clave: k, unicos: unicos.length, cuantas };
 }

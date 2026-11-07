@@ -1359,7 +1359,7 @@ async function controlAlGuardar(userId, productCode, capitulo) {
     }
   }
 
-  if (claves.length > rotas.length) {
+  if (claves.length > rotas.length && !esquemaDeCapitulos.NUNCA_EN_EL_DOCUMENTO.has(capitulo)) {
     const registro = await almacen.leerVerificacion(proyecto.id);
     const items = verificacion.inventario([{ code: capitulo, titulo: capitulo, texto }], porClave, registro);
     const c = verificacion.recuento(items);
@@ -2257,8 +2257,14 @@ async function auditar(userId, productCode) {
   // Lo que el autor ya leyó y confirmó (ver `project.verificacion`). Solo en el
   // artículo empírico, que además exige el análisis guardado (ver `verificaCitas`).
   const conVerificacion = verificaCitas(productCode);
+  // Sin la Ficha ni la Matriz, como en "verificar_citas": el repaso contaba
+  // como «no leídas» sus citas, que no van al artículo (E2E del 7-nov-2026).
   const verificadas = conVerificacion
-    ? verificacion.inventario(capitulos, porClave, await almacen.leerVerificacion(proyecto.id))
+    ? verificacion.inventario(
+        capitulos.filter((c) => !esquemaDeCapitulos.NUNCA_EN_EL_DOCUMENTO.has(c.code)),
+        porClave,
+        await almacen.leerVerificacion(proyecto.id),
+      )
     : [];
 
   return auditoria.auditar({

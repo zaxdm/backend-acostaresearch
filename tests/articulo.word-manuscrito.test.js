@@ -49,6 +49,7 @@ sustituir('../src/modules/skills/skill.service', {
 
 sustituir('../src/modules/references/reference.service', { porClaves: async () => [] });
 sustituir('../src/modules/zotero/biblioteca.repository', { deUsuario: async () => null });
+sustituir('../src/modules/mendeley/mendeley.repository', { deUsuario: async () => null });
 
 const projectService = require('../src/modules/projects/project.service');
 
@@ -136,4 +137,21 @@ test('con las secciones de la revista guardadas, el Word usa su nombre', async (
   const { textos } = await textosDelWord();
   assert.ok(textos.includes('Marco teórico e hipótesis'));
   assert.ok(!textos.includes('Matriz de Estrategia'));
+});
+
+test('al guardar la Matriz no pide verificar sus citas; al guardar la Introducción, sí', async () => {
+  empezar();
+  const referencias = require('../src/modules/references/reference.service');
+  const antes = referencias.porClaves;
+  referencias.porClaves = async (claves) => claves.map((ref) => ({ ref, authors: 'Kock, N.', year: 2016, title: 'T' }));
+  try {
+    estado.textos['articulo-fase1-matriz-de-estrategia'] = '| Muestra | Kock [AR0A1B2C3D] |';
+    estado.textos['articulo-fase2-introduccion'] = 'Crece la dependencia [AR0A1B2C3D].';
+    const matriz = await projectService.controlAlGuardar('u1', 'ARTICULO_SCIENTIFICOS', 'articulo-fase1-matriz-de-estrategia');
+    assert.ok(!matriz.some((a) => /no las ha verificado/.test(a)), matriz.join(' | '));
+    const intro = await projectService.controlAlGuardar('u1', 'ARTICULO_SCIENTIFICOS', 'articulo-fase2-introduccion');
+    assert.ok(intro.some((a) => /no las ha verificado/.test(a)));
+  } finally {
+    referencias.porClaves = antes;
+  }
 });

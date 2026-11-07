@@ -856,7 +856,10 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
 
       // El texto guardado, cuando se pide. Es lo que Claude necesita para
       // escribir un capítulo sobre otro sin que el tesista tenga que pegarlo.
-      if (conTexto && numerado && !aparte) {
+      // Numerado también en los capítulos propios de su facultad y en las
+      // secciones aparte: hasta el 7-nov se les ignoraba "numerado" y salían
+      // sin ningún ¶ (caso de un TFM de 6.715 palabras).
+      if (conTexto && numerado) {
         const numerados = await redaccion.capituloNumerado(licencia.user.id, licencia.productCode, capitulo, { desde });
         if (!numerados) {
           return texto(`«${skill.displayName}» todavía no tiene texto guardado.`);
@@ -1255,8 +1258,11 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
     },
     async ({ capitulo, parrafos }) => {
       await licenseService.recordUsage({ licenseId: licencia.id, tool: 'reescribir_parrafos' });
-      const skill = await skillService.findByCode(capitulo);
-      if (!skill || !skillService.perteneceAlGrupo(skill, licencia.productCode)) {
+      // Como en ver_capitulo y guardar_capitulo: también los capítulos propios
+      // de su facultad y las secciones aparte, que no están en el catálogo.
+      const aparte = await projectService.seccionDelDocumento(licencia.user.id, licencia.productCode, capitulo);
+      const skill = aparte ?? (await skillService.findByCode(capitulo));
+      if (!skill || (!aparte && !skillService.perteneceAlGrupo(skill, licencia.productCode))) {
         return texto(`No existe ningún capítulo con la clave "${capitulo}". Usa mi_proyecto para ver las claves.`);
       }
       try {

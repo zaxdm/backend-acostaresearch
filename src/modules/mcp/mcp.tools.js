@@ -118,8 +118,9 @@ const PLANTILLA_PRISMA = 'https://acostaresearch.com/plantillas/PRISMA_2020_flow
 function resumenCorto(texto, largo = 400) {
   const t = String(texto ?? '');
   return t.length > largo
-    ? `${t.slice(0, largo)}… [recortado aquí: el resumen sigue, no es que falte; entero con ` +
-        '"mis_fuentes" y "detalle": true cuando esté guardada]'
+    ? `${t.slice(0, largo)}… [recortado aquí: el resumen sigue, no es que falte. Una vez ` +
+        'guardada, léelo entero con "mis_fuentes" y "detalle": true ANTES de citarla solo por el ' +
+        'título o de decir que solo tienes el resumen recortado]'
     : t;
 }
 

@@ -1166,7 +1166,7 @@ async function armarBibtex(userId, productCode) {
   const claves = [...new Set(textos.flatMap((texto) => citas.clavesDe(texto)))];
   if (claves.length === 0) return null;
 
-  const fuentes = await referenceService.porClaves(claves, userId);
+  const fuentes = await referenceService.porClaves(claves, userId, { conResumen: true });
   if (fuentes.length === 0) return null;
 
   // Las claves que no resuelven se anotan pero no cortan la descarga: es el
@@ -1267,7 +1267,9 @@ async function verificarCitas(userId, productCode, { capitulo = null, confirmar 
   if (capitulos.length === 0) return null;
 
   const claves = [...new Set(capitulos.flatMap((c) => citas.clavesDe(c.texto)))];
-  const fuentes = claves.length > 0 ? await referenceService.porClaves(claves, userId) : [];
+  // Con el resumen: la ficha que lee el autor lo enseña (`verificacion.ficha`).
+  const fuentes =
+    claves.length > 0 ? await referenceService.porClaves(claves, userId, { conResumen: true }) : [];
   const porClave = new Map(fuentes.map((f) => [f.ref, f]));
 
   // Leer, aplicar y escribir en serie: dos confirmaciones seguidas no se pisan.

@@ -407,7 +407,7 @@ async function buscarParaLicencia({
 const listarParaPanel = (opciones) => referenceRepository.listarParaPanel(opciones);
 
 /** Las fuentes de unas claves de cita, para armar la bibliografía del Word. */
-const porClaves = (claves, ownerUserId) => referenceRepository.porClaves(claves, ownerUserId);
+const porClaves = (claves, ownerUserId, opciones) => referenceRepository.porClaves(claves, ownerUserId, opciones);
 
 /**
  * Busca en la literatura abierta, en vivo.

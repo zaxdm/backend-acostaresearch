@@ -443,7 +443,14 @@ async function buscar({ palabras, productCode, ownerUserId = null, limite = 8 })
  * comprobarlo igual —adivinar ocho caracteres es improbable, no imposible, y
  * «improbable» no es un permiso—.
  */
-function porClaves(claves, ownerUserId = null) {
+/**
+ * `conResumen` trae además el resumen y la nota de Acosta. Solo lo piden quien
+ * los enseña o los exporta (`verificar_citas`, el .bib): sin esto, la ficha que
+ * ve el autor al verificar decía «No tenemos su resumen» de TODAS las fuentes,
+ * aunque estuvieran completas en su biblioteca (E2E del 7-nov-2026). El Word no
+ * los necesita y no los carga.
+ */
+function porClaves(claves, ownerUserId = null, { conResumen = false } = {}) {
   if (claves.length === 0) return Promise.resolve([]);
 
   return prisma.reference.findMany({
@@ -474,6 +481,7 @@ function porClaves(claves, ownerUserId = null) {
       ownerUserId: true,
       zoteroKey: true,
       origin: true,
+      ...(conResumen ? { abstract: true, notes: true } : {}),
     },
   });
 }

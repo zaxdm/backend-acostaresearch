@@ -128,3 +128,21 @@ test('la trazabilidad lleva cada cita con su fuente, su frase y lo que respondi�
   const zip = new AdmZip(libro([traza, resumen]));
   assert.match(textoDeExcel(zip), /AR0A1B2C3D \| Wang, L\., & Li, M\. \| 2026/);
 });
+
+test('una cita dentro de una tabla de la Matriz sale sin las barras de la tabla', () => {
+  const items = verificacion.inventario(
+    [
+      {
+        code: 'articulo-fase1-matriz-de-estrategia',
+        titulo: 'Fase 1 — Matriz',
+        texto: '| Campo | Contenido |\n|---|---|\n| Tamaño de muestra | 275, según Kock y Hadaya [AR0A1B2C3D] |',
+      },
+    ],
+    new Map([['AR0A1B2C3D', { ref: 'AR0A1B2C3D', authors: 'Kock, N.', year: 2016, title: 'Minimum sample size' }]]),
+    {},
+  );
+  const [traza] = verificacion.hojasDeTrazabilidad(items);
+  const frase = traza.filas[1][7];
+  assert.doesNotMatch(frase, /^\||\|$/);
+  assert.match(frase, /Tamaño de muestra · 275, según Kock y Hadaya/);
+});

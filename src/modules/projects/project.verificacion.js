@@ -246,7 +246,8 @@ function hojasDeTrazabilidad(items) {
       f?.title ?? '',
       f?.source ?? '',
       enlaceDe(f) ?? '',
-      item.frases.map((frase) => recortar(frase, 600)).join(' · '),
+      // Una cita dentro de una tabla (la Matriz) llega como la fila entera, con sus barras.
+      item.frases.map((frase) => recortar(frase.replace(/^\s*\|\s*|\s*\|\s*$/g, '').replace(/\s*\|\s*/g, ' · '), 600)).join(' · '),
       item.paginas.join(', '),
       NOMBRE_ESTADO[item.estado] ?? item.estado,
       item.nota ?? '',

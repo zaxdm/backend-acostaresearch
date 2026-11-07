@@ -1,11 +1,13 @@
 [Unit]
 Description=Respaldo de la base de datos, skills, comprobantes y configuración
-# Si falla el respaldo o su subida a Drive, aviso al móvil.
+# Si falla el respaldo o su subida a la Storage Box, aviso al móvil.
 OnFailure=acostaresearch-aviso@%n.service
 
 [Service]
 Type=oneshot
 ExecStart=/opt/acostaresearch/respaldar.sh
-# La copia fuera del VPS, cifrada, en Google Drive (ver subir-respaldo.sh).
-ExecStartPost=/opt/acostaresearch/subir-respaldo.sh
+# La copia fuera del VPS, cifrada con restic, en la Storage Box de Hetzner
+# (ver subir-respaldo-caja.sh). Hasta el 7-nov-2026 iba a Google Drive
+# (subir-respaldo.sh), que se llenó el 24-oct.
+ExecStartPost=/opt/acostaresearch/subir-respaldo-caja.sh
 TimeoutStartSec=3600

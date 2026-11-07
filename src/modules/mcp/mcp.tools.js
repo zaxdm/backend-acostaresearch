@@ -2879,8 +2879,10 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
   //
   // La Fase 1 de la revisión se trababa al elegir revista: Scimago no se deja
   // leer y el tesista no sabía sacar la captura. Esto pregunta a Scopus (la
-  // clave de la casa) y a OpenAlex. Ver `scopus.revistas`.
-  if (esRevision(licencia.productCode) && env.scopusApiEnabled) {
+  // clave de la casa) y a OpenAlex. Ver `scopus.revistas`. El 7-nov-2026 el
+  // artículo empírico se trabó igual (cuartiles «por confirmar» y Scimago a
+  // mano): va en los dos productos de artículo.
+  if (perfil.tipo === 'articulo' && env.scopusApiEnabled) {
     server.registerTool(
       'consultar_revista',
       {
@@ -2889,7 +2891,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
           'Los indicadores de una revista EN SCOPUS, consultados ahora: SJR, SNIP, CiteScore y el ' +
           'CUARTIL DE SCOPUS (por percentil de CiteScore) en cada categoría, con su año; editorial, ' +
           'ISSN y enlace; y de OpenAlex, si está en DOAJ y su APC. Por nombre o por ISSN. ' +
-          'ÚSALA al elegir la revista destino de una revisión, para cada candidata, EN VEZ de leer ' +
+          `ÚSALA al elegir la revista destino ${esRevision(licencia.productCode) ? 'de una revisión' : 'del artículo'}, para cada candidata, EN VEZ de leer ` +
           'Scimago (no se deja leer). Si no aparece, no está en Scopus: búscala en SciELO, Latindex ' +
           'o DOAJ. El cuartil SJR de Scimago se calcula distinto: si su universidad pide ese, dilo y ' +
           'que lo confirme él en scimagojr.com. NUNCA des un cuartil de memoria.',

@@ -971,6 +971,7 @@ async function armarWord(userId, productCode) {
     ...(perfil.tipo === 'informe' ? { portadaInforme: datosDePortadaInforme(proyecto, autor) } : {}),
     // El logo y las hojas de jurado, dedicatoria y agradecimientos son de tesis.
     ...(perfil.tipo === 'tesis' ? { paginasDeTesis: true } : {}),
+    ...(perfil.modalidad === 'tsp' ? { modalidad: 'Trabajo de Suficiencia Profesional' } : {}),
     // Las sesiones: «Docente:» en la portada, sin asesor, y una sesión por página.
     ...(perfil.tipo === 'docente' ? { rotuloAutor: 'Docente: ', asesor: null, seccionPorPagina: true } : {}),
     // Un artículo (empírico o revisión) sale como manuscrito de revista: título,

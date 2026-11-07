@@ -983,7 +983,7 @@ function comoParrafos(texto, contexto = {}) {
  * «Autor:» y «Asesor:» delante de cada nombre, y el año al pie. Lo que no se
  * sabe —el grado, la mención, la ciudad— no se pone: se inventaría.
  */
-function portada({ tema, carrera, universidad, nombre, asesor, hoy = new Date(), conLogo = false, rotuloAutor = 'Autor: ' }) {
+function portada({ tema, carrera, universidad, nombre, asesor, hoy = new Date(), conLogo = false, rotuloAutor = 'Autor: ', modalidad = null }) {
   const centrado = (texto, opciones = {}, rotulo = null) =>
     new Paragraph({
       // El rótulo en su propia corrida: el nombre queda entero y solo, como
@@ -1004,6 +1004,9 @@ function portada({ tema, carrera, universidad, nombre, asesor, hoy = new Date(),
     hojas.push(hueco(4));
   }
   hojas.push(centrado(tema ?? 'Tesis', { bold: true }));
+  // El TSP lo dice debajo del título: sin la línea, el jurado no sabe qué
+  // modalidad está leyendo (E2E del 7-nov-2026).
+  if (modalidad) hojas.push(hueco(1), centrado(modalidad));
   hojas.push(hueco(4));
   if (nombre) hojas.push(centrado(nombre, {}, rotuloAutor));
   if (asesor) hojas.push(centrado(`Asesor: ${asesor}`));
@@ -1329,6 +1332,8 @@ async function armar({
   // instrumento o material (sus `##`) en su propia página, porque la jefatura
   // las pide sueltas.
   rotuloAutor = 'Autor: ',
+  // Solo el TSP: «Trabajo de Suficiencia Profesional» debajo del título.
+  modalidad = null,
   seccionPorPagina = false,
   /**
    * Solo el artículo de revisión: sale como manuscrito para una revista, no
@@ -1421,7 +1426,7 @@ async function armar({
                 indent: { firstLine: 0 },
               }),
             ]
-          : portada({ tema, carrera, universidad, nombre, asesor, hoy, conLogo: paginasDeTesis, rotuloAutor })),
+          : portada({ tema, carrera, universidad, nombre, asesor, hoy, conLogo: paginasDeTesis, rotuloAutor, modalidad })),
     ...(paginasDeTesis ? paginasPreliminares() : []),
     ...(manuscrito
       ? []

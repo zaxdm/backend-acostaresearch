@@ -49,6 +49,8 @@ const licenseSelect = {
   revokedReason: true,
   variasTesis: true,
   expiresAt: true,
+  // Si es el conector de AcostaIA atado a una licencia comprada (7-nov-2026).
+  acostaiaDeId: true,
   createdAt: true,
 };
 
@@ -304,7 +306,8 @@ const licenseRepository = {
 
   listForUser(userId) {
     return prisma.license.findMany({
-      where: { userId },
+      // Sin los conectores de AcostaIA atados a una compra: no son otra compra.
+      where: { userId, acostaiaDeId: null },
       select: {
         ...licenseSelect,
         counter: {

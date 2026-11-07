@@ -61,6 +61,52 @@ function normalizarCodigo(codigo) {
   return codigo.trim().toUpperCase().replace(/\s+/g, '');
 }
 
+/**
+ * El conector de AcostaIA atado a una compra (7-nov-2026) vale lo que valga la
+ * comprada, en cada llamada: si se revoca, caduca o se renueva, este la sigue
+ * sin tocarlo. Sale con la caducidad, los topes y el modo de entrega de la
+ * comprada, para que el cupo y `estado_licencia` digan lo mismo que en Claude.
+ */
+async function conLaComprada(licencia) {
+  const comprada = await prisma.license.findUnique({
+    where: { id: licencia.acostaiaDeId },
+    select: {
+      status: true,
+      expiresAt: true,
+      callsPerDay: true,
+      callsPerMonth: true,
+      costCentsPerMonth: true,
+      callsLimitTotal: true,
+      costCentsLimitTotal: true,
+      delivery: true,
+      variasTesis: true,
+    },
+  });
+  if (!comprada || comprada.status !== 'ACTIVE') {
+    throw new AppError(
+      'Tu acceso a este método en acostaresearch.com está desactivado. Escríbenos si crees que es un error.',
+      { statusCode: 403, code: ERROR_CODES.LICENSE_REVOKED },
+    );
+  }
+  if (comprada.expiresAt && comprada.expiresAt <= new Date()) {
+    throw new AppError(
+      'Tu acceso a este método caducó. Renuévalo en acostaresearch.com y AcostaIA seguirá donde lo dejaste.',
+      { statusCode: 403, code: ERROR_CODES.LICENSE_REVOKED },
+    );
+  }
+  const { status: _status, ...deLaComprada } = comprada;
+  return { ...licencia, ...deLaComprada };
+}
+
+/** De qué licencia es el contador de cupo (ver `license.limits`). */
+async function claveDelCupo(licenseId) {
+  const fila = await prisma.license.findUnique({
+    where: { id: licenseId },
+    select: { acostaiaDeId: true },
+  });
+  return fila?.acostaiaDeId ?? licenseId;
+}
+
 function urlDelConector(token) {
   return `${env.MCP_PUBLIC_URL.replace(/\/+$/, '')}/${token}`;
 }
@@ -1005,8 +1051,14 @@ const licenseService = {
     //
     // Una revocada no cuenta: canjear no deshace una revocación por uso
     // compartido. En ese caso se emite una limpia, como hasta ahora.
+    // Sin el conector de AcostaIA atado a una compra: renovar es de la comprada.
     const vigente = await prisma.license.findFirst({
-      where: { userId, productCode: registro.productCode, status: { not: 'REVOKED' } },
+      where: {
+        userId,
+        productCode: registro.productCode,
+        status: { not: 'REVOKED' },
+        acostaiaDeId: null,
+      },
       orderBy: { createdAt: 'desc' },
       select: { id: true, expiresAt: true },
     });
@@ -1121,8 +1173,9 @@ const licenseService = {
     // Una revocada no cuenta: pagar de nuevo no puede deshacer una revocación
     // por uso compartido. En ese caso se emite una limpia y la vieja se queda
     // como está, con su motivo.
+    // Sin el conector de AcostaIA atado a una compra: renovar es de la comprada.
     const vigente = await prisma.license.findFirst({
-      where: { userId, productCode, status: { not: 'REVOKED' } },
+      where: { userId, productCode, status: { not: 'REVOKED' }, acostaiaDeId: null },
       orderBy: { createdAt: 'desc' },
       select: { id: true, expiresAt: true },
     });
@@ -1215,6 +1268,8 @@ const licenseService = {
       );
     }
 
+    if (licencia.acostaiaDeId) return conLaComprada(licencia);
+
     return licencia;
   },
 
@@ -1258,10 +1313,10 @@ const licenseService = {
       // Las consultas baratas (catálogo, estado) se registran pero no gastan
       // cupo: sería absurdo que alguien se quedara sin capítulos por haber
       // mirado la lista tres veces.
-      if (cupoReservado) {
-        await limites.anotarCoste(licenseId, costCents);
-      } else if (cuentaParaElTope) {
-        await limites.registrar(licenseId, { costCents });
+      if (cupoReservado || cuentaParaElTope) {
+        const cupo = await claveDelCupo(licenseId);
+        if (cupoReservado) await limites.anotarCoste(cupo, costCents);
+        else await limites.registrar(cupo, { costCents });
       }
     } catch (error) {
       logger.error({ err: error, licenseId }, 'No se pudo registrar el uso de la licencia');
@@ -1655,7 +1710,7 @@ const licenseService = {
       license: licencia,
       diagnostico: analizar(usos, {
         variasTesis: licencia.variasTesis,
-        deAcostaIA: Boolean(titular?.acostaiaId),
+        deAcostaIA: Boolean(titular?.acostaiaId || licencia.acostaiaDeId),
       }),
       usosRecientes: await licenseRepository.recentUsages(id),
       historial: await historialDe(id),
@@ -1679,7 +1734,7 @@ const licenseService = {
       const usos = await licenseRepository.usagesSince(licencia.id, desde);
       const diagnostico = analizar(usos, {
         variasTesis: licencia.variasTesis,
-        deAcostaIA: Boolean(licencia.user?.acostaiaId),
+        deAcostaIA: Boolean(licencia.user?.acostaiaId || licencia.acostaiaDeId),
       });
 
       if (diagnostico.nivel !== NIVELES.NORMAL) {

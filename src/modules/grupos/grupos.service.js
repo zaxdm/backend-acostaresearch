@@ -274,7 +274,7 @@ const gruposService = {
     if (!grupo) throw new NotFoundError('Este enlace de grupo no existe. Revisa que esté bien copiado.');
 
     const suya = await prisma.license.findFirst({
-      where: { userId, productCode: grupo.productCode, status: { not: 'REVOKED' } },
+      where: { userId, productCode: grupo.productCode, status: { not: 'REVOKED' }, acostaiaDeId: null },
       select: { id: true, grupoId: true },
     });
     if (suya?.grupoId === grupo.id) {

@@ -50,8 +50,14 @@ function limpiar(mapa, ahora) {
   }
 }
 
-/** El titular espejo, o un error claro si aún no abrió ningún chat. */
+/**
+ * La cuenta cuyo Zotero/Mendeley se conecta: la del comprador si vinculó su
+ * compra (7-nov-2026; así el chat usa las mismas fuentes que en Claude), si no
+ * el titular espejo. Un error claro si aún no abrió ningún chat.
+ */
 async function titularDe(acostaiaId) {
+  const [vinculo] = await require('./acostaia.vinculos').vigentes(acostaiaId);
+  if (vinculo) return { id: vinculo.userId };
   const titular = await prisma.user.findUnique({ where: { acostaiaId }, select: { id: true } });
   if (!titular) {
     throw new ValidationError('Abre tu primer chat en AcostaIA y vuelve aquí para conectar tus fuentes.');
@@ -62,7 +68,7 @@ async function titularDe(acostaiaId) {
 const conectores = {
   /** Cómo está cada uno. Sin titular todavía: ninguno conectado. */
   async estado({ acostaiaId }) {
-    const titular = await prisma.user.findUnique({ where: { acostaiaId }, select: { id: true } });
+    const titular = await titularDe(acostaiaId).catch(() => null);
     if (!titular) {
       return {
         zotero: { disponible: env.zoteroOauthEnabled, conectado: false },

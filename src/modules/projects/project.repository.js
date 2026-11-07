@@ -204,6 +204,8 @@ async function productosConLicencia(userId) {
     where: {
       userId,
       status: 'ACTIVE',
+      // El conector de AcostaIA no caduca solo: lo que cuenta es la comprada.
+      acostaiaDeId: null,
       OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
     },
     select: { productCode: true },
@@ -222,6 +224,7 @@ async function productosConVariasTesis(userId) {
       userId,
       status: 'ACTIVE',
       variasTesis: true,
+      acostaiaDeId: null,
       OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
     },
     select: { productCode: true },

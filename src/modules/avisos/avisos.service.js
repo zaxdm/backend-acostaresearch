@@ -84,6 +84,8 @@ function licenciasCandidatas(ahora) {
     where: {
       status: 'ACTIVE',
       revokedAt: null,
+      // El conector de AcostaIA atado a una compra no es otro cliente.
+      acostaiaDeId: null,
       OR: [{ expiresAt: null }, { expiresAt: { gt: ahora } }],
       user: { role: 'USER', status: 'ACTIVE', trialLinkId: null, avisosApagadosAt: null },
     },

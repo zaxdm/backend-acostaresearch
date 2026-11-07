@@ -932,6 +932,15 @@ model License {
   variasTesis    Boolean   @default(false)
   /// Caducidad del acceso. Nula = mientras no se revoque.
   expiresAt      DateTime?
+  /// AcostaIA (7-nov-2026): si es el conector que usa AcostaIA en nombre de una
+  /// licencia comprada, esa licencia. Es del mismo comprador y producto, así que
+  /// ve su misma tesis; vale mientras la comprada valga y gasta de sus topes. El
+  /// detector la vigila con la regla de AcostaIA (abre una sesión por mensaje).
+  acostaiaDeId     String?   @db.Char(36)
+  acostaiaDe       License?  @relation("VinculoAcostaIA", fields: [acostaiaDeId], references: [id], onDelete: Cascade)
+  vinculosAcostaIA License[] @relation("VinculoAcostaIA")
+  /// El usuario de AcostaIA que la vinculó (su id en aquel sistema).
+  acostaiaId       String?   @db.VarChar(64)
   /// Cuándo se avisó al comprador de que su acceso estaba por caducar. Guarda
   /// la fecha y no un booleano para que se vea, meses después, si el aviso
   /// salió a tiempo o el día antes.
@@ -951,6 +960,8 @@ model License {
 
   @@index([userId, status])
   @@index([grupoId])
+  @@index([acostaiaDeId])
+  @@index([acostaiaId])
   @@map("licenses")
 }
 

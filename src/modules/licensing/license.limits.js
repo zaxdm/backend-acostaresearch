@@ -42,6 +42,16 @@ function selloMes(fecha = new Date()) {
   return selloDia(fecha).slice(0, 7); // YYYY-MM
 }
 
+/**
+ * De qué licencia es el contador. El conector de AcostaIA atado a una compra
+ * (7-nov-2026) gasta del cupo de la comprada: lo que haga en AcostaIA y lo que
+ * haga en Claude salen del mismo sitio. Sus topes ya vienen de la comprada
+ * (los pone `authenticate`).
+ */
+function claveDelCupo(licencia) {
+  return licencia.acostaiaDeId ?? licencia.id;
+}
+
 /** Contador vacío, para una licencia que aún no ha hecho ninguna llamada. */
 function contadorVacio(dia, mes) {
   return {
@@ -93,7 +103,7 @@ async function estado(licenseId, ahora = new Date()) {
  * de su Claude: un código de error no le sirve de nada.
  */
 async function comprobar(licencia, ahora = new Date()) {
-  const contador = await estado(licencia.id, ahora);
+  const contador = await estado(claveDelCupo(licencia), ahora);
 
   // El total va primero: si se agotó, decírselo es más útil que hablarle del
   // cupo de hoy, porque mañana seguirá agotado.
@@ -243,7 +253,7 @@ async function reservar(licencia, ahora = new Date()) {
   const previo = await comprobar(licencia, ahora);
   if (!previo.permitido) return previo;
 
-  const licenseId = licencia.id;
+  const licenseId = claveDelCupo(licencia);
   const dia = selloDia(ahora);
   const mes = selloMes(ahora);
 
@@ -325,7 +335,7 @@ async function anotarCoste(licenseId, costCents, ahora = new Date()) {
 
 /** Resumen para el panel del comprador y el del administrador. */
 async function resumen(licencia) {
-  const contador = await estado(licencia.id);
+  const contador = await estado(claveDelCupo(licencia));
 
   return {
     callsToday: contador.callsToday,
@@ -386,6 +396,7 @@ function describirCupo(uso) {
 }
 
 module.exports = {
+  claveDelCupo,
   comprobar,
   registrar,
   reservar,

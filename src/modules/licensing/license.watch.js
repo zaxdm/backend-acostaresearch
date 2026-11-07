@@ -279,7 +279,8 @@ async function evaluar(licenseId, { forzar = false } = {}) {
 
     const diagnostico = analizar(usos, {
       variasTesis: licencia.variasTesis,
-      deAcostaIA: Boolean(licencia.user?.acostaiaId),
+      // También el conector de AcostaIA atado a una compra (7-nov-2026).
+      deAcostaIA: Boolean(licencia.user?.acostaiaId || licencia.acostaiaDeId),
     });
     const señales = [...diagnostico.senales];
 

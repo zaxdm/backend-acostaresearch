@@ -187,3 +187,17 @@ test('el coste se suma aparte y no cuenta otra consulta', async () => {
   assert.equal(fila.costCentsToday, 12);
   assert.equal(fila.costCentsLifetime, 12);
 });
+
+test('el conector de AcostaIA atado a una compra gasta del cupo de la comprada', async () => {
+  const comprada = licencia({ callsPerDay: 3 });
+  const deAcostaIA = { ...licencia({ callsPerDay: 3 }), acostaiaDeId: comprada.id };
+
+  await limites.reservar(comprada, MEDIODIA);
+  await limites.reservar(deAcostaIA, MEDIODIA);
+  await limites.reservar(deAcostaIA, MEDIODIA);
+  const cuarta = await limites.reservar(deAcostaIA, MEDIODIA);
+
+  assert.equal(cuarta.permitido, false, 'las tres de hoy ya se gastaron entre Claude y AcostaIA');
+  assert.equal(filas.get(comprada.id).callsToday, 3);
+  assert.equal(filas.has(deAcostaIA.id), false, 'la de AcostaIA no lleva contador propio');
+});

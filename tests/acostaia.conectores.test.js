@@ -26,9 +26,17 @@ const envFalso = {
 };
 sustituir('../src/config/env', envFalso);
 
+// El registro de eventos, mudo: lee el env de verdad, que aquí se sustituye.
+sustituir('../src/config/logger', { info() {}, warn() {}, error() {}, debug() {} });
+
+// Vínculos con una compra (7-nov-2026): vacío salvo en la prueba que lo llena.
+const vinculos = [];
 sustituir('../src/lib/prisma', {
   user: {
     findUnique: async ({ where }) => (where.acostaiaId === 'usr_12345678' ? { id: 'espejo-1' } : null),
+  },
+  license: {
+    findMany: async ({ where }) => vinculos.filter((v) => v.acostaiaId === where.acostaiaId),
   },
 });
 
@@ -97,5 +105,39 @@ test('sin ACOSTAIA_URL, conectar desde AcostaIA está apagado', async () => {
     await assert.rejects(conectores.pase({ acostaiaId: 'usr_12345678', cual: 'zotero' }), /no está configurado/);
   } finally {
     envFalso.ACOSTAIA_URL = antes;
+  }
+});
+
+test('con su compra vinculada, conecta el Zotero de su cuenta de comprador (7-nov-2026)', async () => {
+  empezados.length = 0;
+  vinculos.push({
+    acostaiaId: 'usr_12345678',
+    userId: 'comprador-1',
+    productCode: 'METODO_TESIS',
+    acostaiaDe: { status: 'ACTIVE', expiresAt: null },
+  });
+  try {
+    const { url } = await conectores.pase({ acostaiaId: 'usr_12345678', cual: 'zotero' });
+    await conectores.ir(paseDe(url));
+    assert.deepEqual(empezados, ['comprador-1']);
+  } finally {
+    vinculos.length = 0;
+  }
+});
+
+test('si la compra vinculada caducó, vuelve al titular espejo', async () => {
+  empezados.length = 0;
+  vinculos.push({
+    acostaiaId: 'usr_12345678',
+    userId: 'comprador-1',
+    productCode: 'METODO_TESIS',
+    acostaiaDe: { status: 'ACTIVE', expiresAt: new Date(Date.now() - 1000) },
+  });
+  try {
+    const { url } = await conectores.pase({ acostaiaId: 'usr_12345678', cual: 'zotero' });
+    await conectores.ir(paseDe(url));
+    assert.deepEqual(empezados, ['espejo-1']);
+  } finally {
+    vinculos.length = 0;
   }
 });

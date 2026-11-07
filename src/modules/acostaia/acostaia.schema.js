@@ -57,7 +57,32 @@ const conectorSchema = z.object({ acostaiaId, cual });
 const elegirColeccionSchema = z.object({ acostaiaId, cual, clave: z.string().trim().min(1).max(200) });
 const irSchema = z.object({ pase: z.string().trim().min(20).max(100) });
 
+/** Vincular su compra pegando el enlace del conector (7-nov-2026). */
+const vincularEnlaceSchema = z.object({
+  acostaiaId,
+  enlace: z.string({ required_error: 'Pega el enlace de tu conector.' }).trim().min(20).max(500),
+});
+
+/** Buscar sus compras por el correo (verificado) de su cuenta de AcostaIA. */
+const buscarVinculoSchema = z.object({
+  email: z.string({ required_error: 'Falta el correo.' }).trim().toLowerCase().email().max(255),
+});
+
+/** Vincular una de las compras encontradas por correo. */
+const vincularCorreoSchema = z.object({
+  acostaiaId,
+  email: z.string({ required_error: 'Falta el correo.' }).trim().toLowerCase().email().max(255),
+  licenseId: z.string({ required_error: 'Falta la licencia.' }).trim().min(8).max(64),
+});
+
+/** Desvincular la de un producto. */
+const quitarVinculoSchema = z.object({ acostaiaId, productCode });
+
 module.exports = {
+  vincularEnlaceSchema,
+  buscarVinculoSchema,
+  vincularCorreoSchema,
+  quitarVinculoSchema,
   crearAccesoSchema,
   revocarAccesoSchema,
   fuentesSchema,

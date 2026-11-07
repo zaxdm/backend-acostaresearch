@@ -1,6 +1,7 @@
 'use strict';
 
 const prisma = require('../../lib/prisma');
+const vinculos = require('./acostaia.vinculos');
 
 /**
  * Lo que AcostaIA enseña fuera del chat: «Mis fuentes» y «Mis documentos».
@@ -19,6 +20,24 @@ async function titularDe(acostaiaId) {
   return prisma.user.findUnique({ where: { acostaiaId }, select: { id: true } });
 }
 
+/**
+ * De qué cuenta se leen los datos de ese producto: la del comprador si vinculó
+ * su compra (7-nov-2026, ver `acostaia.vinculos`), si no la del titular espejo.
+ * Así la pantalla enseña la misma tesis que trabaja el chat.
+ */
+async function cuentaDelProducto(acostaiaId, productCode) {
+  const vinculo = (await vinculos.vigentes(acostaiaId)).find((v) => v.productCode === productCode);
+  if (vinculo) return { id: vinculo.userId };
+  return titularDe(acostaiaId);
+}
+
+/** Para lo que no es de un producto (sus fuentes): la del último vínculo, o la espejo. */
+async function cuentaPrincipal(acostaiaId) {
+  const [vinculo] = await vinculos.vigentes(acostaiaId);
+  if (vinculo) return { id: vinculo.userId };
+  return titularDe(acostaiaId);
+}
+
 /** Los productos de los que tiene licencia activa: solo esos se enseñan. */
 async function productosActivos(userId) {
   const licencias = await prisma.license.findMany({
@@ -31,7 +50,7 @@ async function productosActivos(userId) {
 const acostaiaDatos = {
   /** Su biblioteca propia (Zotero, Mendeley, Scopus, por DOI…), por páginas. */
   async fuentes({ acostaiaId, pagina = 1, origen = 'todas' }) {
-    const titular = await titularDe(acostaiaId);
+    const titular = await cuentaPrincipal(acostaiaId);
     if (!titular) return { total: 0, pagina: 1, paginas: 1, fuentes: [] };
 
     const propiasService = require('../references/propias.service');
@@ -63,22 +82,34 @@ const acostaiaDatos = {
    */
   async documentos({ acostaiaId }) {
     const titular = await titularDe(acostaiaId);
-    if (!titular) return [];
+    const vinculados = await vinculos.vigentes(acostaiaId);
+    if (!titular && !vinculados.length) return [];
 
     const projectRepository = require('../projects/project.repository');
     const skillService = require('../skills/skill.service');
     const projectService = require('../projects/project.service');
     const documentoService = require('../projects/documento.service');
 
-    const activos = await productosActivos(titular.id);
-    const proyectos = await projectRepository.listarDeUsuario(titular.id);
+    // De qué cuenta sale cada producto: los vinculados, de la del comprador;
+    // el resto, de la espejo.
+    const cuentas = [];
+    const deComprador = new Set(vinculados.map((v) => v.productCode));
+    if (titular) {
+      const activos = await productosActivos(titular.id);
+      for (const codigo of deComprador) activos.delete(codigo);
+      cuentas.push({ userId: titular.id, productos: activos });
+    }
+    for (const v of vinculados) cuentas.push({ userId: v.userId, productos: new Set([v.productCode]) });
 
     // Uno por producto: el activo (el que se trabaja en el chat).
     const porProducto = new Map();
-    for (const p of proyectos) {
-      if (!activos.has(p.productCode)) continue;
-      const otro = porProducto.get(p.productCode);
-      if (!otro || p.activadaAt > otro.activadaAt) porProducto.set(p.productCode, p);
+    for (const cuenta of cuentas) {
+      const proyectos = await projectRepository.listarDeUsuario(cuenta.userId);
+      for (const p of proyectos) {
+        if (!cuenta.productos.has(p.productCode)) continue;
+        const otro = porProducto.get(p.productCode);
+        if (!otro || p.activadaAt > otro.activadaAt) porProducto.set(p.productCode, { ...p, userId: cuenta.userId });
+      }
     }
 
     const salida = [];
@@ -96,8 +127,8 @@ const acostaiaDatos = {
       });
 
       const [word, subido] = await Promise.all([
-        projectService.enlaceDelWord(titular.id, proyecto.productCode).catch(() => null),
-        documentoService.enlace(titular.id, proyecto.productCode).catch(() => null),
+        projectService.enlaceDelWord(proyecto.userId, proyecto.productCode).catch(() => null),
+        documentoService.enlace(proyecto.userId, proyecto.productCode).catch(() => null),
       ]);
 
       salida.push({
@@ -128,7 +159,7 @@ const acostaiaDatos = {
    * formato de su Word y capítulos a sus fases). Null si no tiene ese producto.
    */
   async subida({ acostaiaId, productCode }) {
-    const titular = await titularDe(acostaiaId);
+    const titular = await cuentaDelProducto(acostaiaId, productCode);
     if (!titular) return null;
     if (!(await productosActivos(titular.id)).has(productCode)) return null;
     const subidaDocumento = require('../projects/project.subida-documento');
@@ -137,7 +168,7 @@ const acostaiaDatos = {
   },
 
   async enlace({ acostaiaId, productCode, que }) {
-    const titular = await titularDe(acostaiaId);
+    const titular = await cuentaDelProducto(acostaiaId, productCode);
     if (!titular) return null;
     if (!(await productosActivos(titular.id)).has(productCode)) return null;
 

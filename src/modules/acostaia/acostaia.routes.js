@@ -17,10 +17,15 @@ const {
   conectorSchema,
   elegirColeccionSchema,
   irSchema,
+  vincularEnlaceSchema,
+  buscarVinculoSchema,
+  vincularCorreoSchema,
+  quitarVinculoSchema,
 } = require('./acostaia.schema');
 const acostaiaService = require('./acostaia.service');
 const acostaiaDatos = require('./acostaia.datos');
 const acostaiaConectores = require('./acostaia.conectores');
+const acostaiaVinculos = require('./acostaia.vinculos');
 
 const router = Router();
 
@@ -81,6 +86,34 @@ router.post(
   '/accesos',
   validate({ body: crearAccesoSchema }),
   asyncHandler(async (req, res) => created(res, await acostaiaService.crearAcceso(req.body))),
+);
+
+/** POST /acostaia/vinculos/enlace — vincula su compra con el enlace del conector que pegó. */
+router.post(
+  '/vinculos/enlace',
+  validate({ body: vincularEnlaceSchema }),
+  asyncHandler(async (req, res) => created(res, await acostaiaVinculos.porEnlace(req.body))),
+);
+
+/** POST /acostaia/vinculos/buscar — sus compras vigentes, por el correo de su cuenta. */
+router.post(
+  '/vinculos/buscar',
+  validate({ body: buscarVinculoSchema }),
+  asyncHandler(async (req, res) => ok(res, await acostaiaVinculos.buscar(req.body))),
+);
+
+/** POST /acostaia/vinculos/correo — vincula una de las compras encontradas por correo. */
+router.post(
+  '/vinculos/correo',
+  validate({ body: vincularCorreoSchema }),
+  asyncHandler(async (req, res) => created(res, await acostaiaVinculos.porCorreo(req.body))),
+);
+
+/** POST /acostaia/vinculos/quitar — desvincula la de un producto (la compra no se toca). */
+router.post(
+  '/vinculos/quitar',
+  validate({ body: quitarVinculoSchema }),
+  asyncHandler(async (req, res) => ok(res, await acostaiaVinculos.quitar(req.body))),
 );
 
 /** POST /acostaia/accesos/revocar — corta sus licencias (de un producto o todas). */

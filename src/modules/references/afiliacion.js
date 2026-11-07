@@ -18,4 +18,19 @@ function pareceAfiliacion(texto) {
   return LUGAR.test(t) && t.split(',').length >= 3;
 }
 
-module.exports = { pareceAfiliacion };
+/**
+ * Una universidad o facultad sin comas («University Tun Hussein Onn Malaysia»)
+ * también es la afiliación cuando va entre personas: ningún artículo lo firman
+ * «Ahmad, Zabri y la universidad». Sola sí puede ser la autora (un informe de la
+ * Universidad Nacional de Trujillo), y entonces se queda.
+ */
+const CENTRO = /\b(universit\S*|universidad\S*|department|departamento|faculty|facultad|college|school of)\b/i;
+
+/** Los autores de una ficha («Apellido, N.» o institución), sin las afiliaciones. */
+function quitarAfiliaciones(personas) {
+  const limpias = personas.filter((persona) => persona && !pareceAfiliacion(persona));
+  const hayPersonas = limpias.some((persona) => persona.includes(','));
+  return hayPersonas ? limpias.filter((persona) => persona.includes(',') || !CENTRO.test(persona)) : limpias;
+}
+
+module.exports = { pareceAfiliacion, quitarAfiliaciones };

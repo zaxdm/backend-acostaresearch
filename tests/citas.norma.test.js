@@ -294,3 +294,54 @@ test('APA: una tesis de ALICIA sale con su grado y su universidad', () => {
 test('una tesis sin grado conocido no se inventa el grado', () => {
   assert.equal(csl.comoCsl({ ref: 'X', itemType: 'thesis', title: 'T' }).genre, undefined);
 });
+
+// ── Autores acortados en el texto y afiliaciones como autor (7-nov, Antonio) ──
+
+const FERRETERIA = {
+  ref: 'AR44444444',
+  itemType: 'journalArticle',
+  title: 'Gestión de inventarios en la ferretería GAMAGI',
+  authors: 'Peñaherrera Chipre, J.; Yoza Rodríguez, M.',
+  year: 2024,
+  source: 'Revista',
+};
+
+const MALASIA = {
+  ref: 'AR55555555',
+  itemType: 'journalArticle',
+  title: 'Inventory management practices in microenterprises',
+  authors: 'University Tun Hussein Onn Malaysia; Ahmad, K.; Zabri, S. M.',
+  year: 2018,
+  source: 'Journal',
+};
+
+const conEstas = new Map([FERRETERIA, MALASIA].map((f) => [f.ref, f]));
+const enApa = (t) => csl.renderizar({ norma: 'apa', idioma: 'es-ES', porClave: conEstas, capitulos: [{ texto: t }] });
+
+test('narrativa: si el texto acortó los apellidos, van una sola vez y completos', () => {
+  const r = enApa('En Ecuador, Peñaherrera y Yoza [AR44444444:n] tomaron como caso GAMAGI.');
+
+  assert.equal(r.textos[0].startsWith('En Ecuador, ⟦C1⟧'), true, r.textos[0]);
+  assert.equal(texto(r.citas.get(1).antes), 'Peñaherrera Chipre y Yoza Rodríguez ');
+  assert.equal(cita(r, 1), '(2024)');
+});
+
+test('sin «:n», los apellidos acortados antes de la marca también la vuelven narrativa', () => {
+  const r = enApa('Según Peñaherrera y Yoza [AR44444444] la rotación mejora.');
+
+  assert.equal(r.textos[0].startsWith('Según ⟦C1⟧'), true, r.textos[0]);
+  assert.equal(texto(r.citas.get(1).antes), 'Peñaherrera Chipre y Yoza Rodríguez ');
+});
+
+test('si el texto solo trae uno de los dos autores, no se le quita nada', () => {
+  const r = enApa('Lo dijo Yoza [AR44444444:n] en su estudio.');
+  assert.equal(r.textos[0].startsWith('Lo dijo Yoza ⟦C1⟧'), true, r.textos[0]);
+});
+
+test('la universidad que Crossref pone entre los autores no sale en la cita', () => {
+  const r = enApa('Ahmad y Zabri [AR55555555:n] estudiaron microempresas (ver [AR55555555]).');
+
+  assert.equal(texto(r.citas.get(1).antes), '');
+  assert.equal(cita(r, 1), '(2018)');
+  assert.equal(cita(r, 2), '(Ahmad & Zabri, 2018)');
+});

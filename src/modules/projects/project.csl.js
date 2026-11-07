@@ -34,7 +34,7 @@
 const CSL = require('citeproc');
 
 const normas = require('./project.normas');
-const { pareceAfiliacion } = require('../references/afiliacion');
+const { quitarAfiliaciones } = require('../references/afiliacion');
 const { MARCA, modificadoresDe, hueco } = require('./project.citas');
 
 const SIN_FORMA = '[NO_PRINTED_FORM]';
@@ -88,10 +88,10 @@ const CON_CONTINENTE = new Set([
 
 /** «Apellido, N.; Apellido, N.» → personas de CSL. Sin coma, es una institución. */
 function personasCsl(autores) {
-  return String(autores ?? '')
+  const personas = String(autores ?? '')
     .split(/\s*;\s*/)
-    .map((persona) => persona.trim())
-    .filter((persona) => persona && !pareceAfiliacion(persona))
+    .map((persona) => persona.trim());
+  return quitarAfiliaciones(personas)
     .map((persona) => {
       const coma = persona.indexOf(',');
       if (coma === -1) return { literal: persona };
@@ -252,8 +252,7 @@ function entradaDeHtml(html) {
  */
 function autoresDeLaFicha(autores, idioma) {
   const conjuncion = String(idioma).startsWith('en') ? 'and' : 'y';
-  const personas = String(autores ?? '')
-    .split(/\s*;\s*/)
+  const personas = quitarAfiliaciones(String(autores ?? '').split(/\s*;\s*/).map((persona) => persona.trim()))
     .map((persona) => persona.split(',')[0].trim())
     .filter(Boolean);
 
@@ -310,6 +309,41 @@ function terminaConPalabra(texto, autores) {
   if (quienes === '' || !final.endsWith(quienes)) return false;
   const previo = final.slice(0, final.length - quienes.length);
   return previo === '' || /[^a-z0-9]$/.test(previo);
+}
+
+/** Letra a letra sin tilde y en minúscula; mide lo mismo que el original, para cortarlo. */
+const plano = (texto) =>
+  String(texto ?? '')
+    .split('')
+    .map((c) => c.normalize('NFD')[0].toLowerCase()[0])
+    .join('');
+
+const escapar = (texto) => texto.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Dónde empiezan los autores que el texto ya escribió antes de la marca, aunque
+ * los haya acortado: «Peñaherrera y Yoza [AR…:n]» por «Peñaherrera Chipre y
+ * Yoza Rodríguez». Cada apellido del texto tiene que ser el comienzo del de la
+ * ficha, y tienen que estar todos, unidos por «y» o la coma (o «et al.»). Si no
+ * los trae, -1.
+ */
+function inicioDeLosAutores(texto, autores) {
+  let quienes = plano(autores).replace(/\s+/g, ' ').trim();
+  const etAl = /\set al\.?$/.test(quienes);
+  quienes = quienes.replace(/\s*et al\.?$/, '');
+  const nombres = quienes.split(/\s*,\s*|\s+(?:y|e|and|&)\s+/).filter(Boolean);
+  if (nombres.length === 0) return -1;
+
+  const nombre = (completo) =>
+    completo
+      .split(' ')
+      .map(escapar)
+      .reduceRight((resto, palabra, i) => (i === 0 ? `${palabra}${resto}` : `(?:\\s+${palabra}${resto})?`), '');
+  const union = String.raw`(?:\s*,\s*|\s+(?:y|e|and|&)\s+)`;
+  const cuerpo = nombres.map(nombre).join(union) + (etAl ? String.raw`\s+et\s+al\.?` : '');
+
+  const encontrado = new RegExp(String.raw`(?:^|[^\p{L}\p{N}])(` + cuerpo + String.raw`)\s*$`, 'du').exec(plano(texto));
+  return encontrado ? encontrado.indices[1][0] : -1;
 }
 
 // ── El documento ───────────────────────────────────────────────────────────
@@ -398,7 +432,7 @@ function renderizar({ norma: idNorma, idioma: idIdioma, capitulos, porClave, uri
       // norma numérica «Davis [1]» es la forma correcta.
       if (!narrativa && conocidas.length === 1 && norma.familia === 'autor-fecha') {
         const autores = autoresDe(conocidas[0].clave);
-        if (terminaConPalabra(resultado, autores)) narrativa = true;
+        if (terminaConPalabra(resultado, autores) || inicioDeLosAutores(resultado, autores) >= 0) narrativa = true;
       }
 
       const citationItems = conocidas.map((item) => ({
@@ -421,6 +455,14 @@ function renderizar({ norma: idNorma, idioma: idIdioma, capitulos, porClave, uri
       // tesista, y cuando el modelo escribe el nombre pese a la instrucción.
       const autoresNarrados = narrativa ? autoresDe(conocidas[0].clave) : null;
       const yaEstanAntes = narrativa && terminaCon(resultado, autoresNarrados);
+
+      // Si los trae acortados («Peñaherrera y Yoza»), se quitan del texto y van
+      // los de la ficha. Si no, saldría «Peñaherrera y Yoza Peñaherrera Chipre y
+      // Yoza Rodríguez (2024)».
+      if (narrativa && !yaEstanAntes) {
+        const inicio = inicioDeLosAutores(resultado, autoresNarrados);
+        if (inicio >= 0) resultado = resultado.slice(0, inicio);
+      }
 
       const antes =
         narrativa && !yaEstanAntes

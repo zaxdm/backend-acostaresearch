@@ -14,3 +14,10 @@ test('una institución autora de verdad se conserva', () => {
     assert.equal(pareceAfiliacion(nombre), false, nombre);
   }
 });
+
+test('una universidad entre personas es la afiliación; sola, es la autora', () => {
+  const { quitarAfiliaciones } = require('../src/modules/references/afiliacion');
+  assert.deepEqual(quitarAfiliaciones(['University Tun Hussein Onn Malaysia', 'Ahmad, K.', 'Zabri, S. M.']), ['Ahmad, K.', 'Zabri, S. M.']);
+  assert.deepEqual(quitarAfiliaciones(['Universidad Nacional de Trujillo']), ['Universidad Nacional de Trujillo']);
+  assert.deepEqual(quitarAfiliaciones(['World Health Organization', 'Pérez, J.']), ['World Health Organization', 'Pérez, J.']);
+});

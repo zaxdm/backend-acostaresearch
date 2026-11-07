@@ -2,7 +2,7 @@
 
 const env = require('../../config/env');
 const logger = require('../../config/logger');
-const { pareceAfiliacion } = require('./afiliacion');
+const { pareceAfiliacion, quitarAfiliaciones } = require('./afiliacion');
 
 const BASE = 'https://api.crossref.org/works';
 
@@ -67,7 +67,7 @@ function textoDelResumen(jats) {
 
 /** «Hernández, R.; Fernández, C.», que es como lo espera el resto del código. */
 function autores(lista = []) {
-  return lista
+  const personas = lista
     .map((persona) => {
       const apellido = String(persona.family ?? '').trim();
       const nombre = String(persona.given ?? '').trim();
@@ -77,8 +77,8 @@ function autores(lista = []) {
       }
       return nombre ? `${apellido}, ${nombre.charAt(0)}.` : apellido;
     })
-    .filter(Boolean)
-    .join('; ');
+    .filter(Boolean);
+  return quitarAfiliaciones(personas).join('; ');
 }
 
 function anio(mensaje) {

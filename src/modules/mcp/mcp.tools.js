@@ -13,6 +13,7 @@ const referenceService = require('../references/reference.service');
 const propiasService = require('../references/propias.service');
 const projectService = require('../projects/project.service');
 const verificacion = require('../projects/project.verificacion');
+const libroXlsx = require('../projects/project.libro');
 const documentoService = require('../projects/documento.service');
 const redaccion = require('../projects/redaccion.service');
 const subidaFormato = require('../projects/project.subida-formato');
@@ -410,6 +411,16 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
   const perfil = perfilDe(licencia.productCode);
   // Solo el artículo empírico verifica citas (ver `verificaCitas`).
   const conVerificacion = verificaCitas(licencia.productCode);
+
+  // En el artículo y la revisión, un informe o una página sin DOI que Claude
+  // abrió en la sesión entra por "anadir_a_mis_fuentes" (sinDoi): mandarlo a la
+  // web dejaba [FALTA FUENTE] en la Introducción (E2E del 7-nov-2026).
+  const sinBuscarEnLaWeb =
+    SIN_BUSCAR_EN_LA_WEB +
+    (perfil.tipo === 'articulo'
+      ? 'Si la fuente sin DOI ESTÁ EN LÍNEA y la abriste en esta sesión (un informe, una encuesta ' +
+        'oficial), no lo mandes a la web: guárdala tú con "anadir_a_mis_fuentes" en "sinDoi". '
+      : '');
   const SU_OBRA = perfil.obra;
 
   /**
@@ -444,6 +455,73 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
     } catch (error) {
       if (!(error instanceof MotorNoDisponible)) {
         logger.error({ err: error, licenseId: licencia.id }, 'No se pudo armar la Ficha en Word');
+      }
+      return null;
+    }
+  };
+
+  /**
+   * La Matriz de Estrategia del artículo empírico (Fase 1), en Excel y aparte.
+   *
+   * La armaba Claude con el script de la skill, que por el conector no existe:
+   * lo reescribía en claude.ai, el archivo se quedaba en ese chat y en ChatGPT
+   * o Grok no salía (E2E del 7-nov-2026). Sale de lo guardado: una hoja por
+   * título «##» con su tabla. Null si no hay Matriz o no hay dónde guardarla.
+   */
+  const enlaceDeLaMatriz = async () => {
+    if (perfil.tipo !== 'articulo' || esRevision(licencia.productCode)) return null;
+    const codigo = 'articulo-fase1-matriz-de-estrategia';
+    const leida = await projectService.textoDeCapitulo(licencia.user.id, licencia.productCode, codigo);
+    if (!leida || leida.vacio) return null;
+    const partes = [leida.texto];
+    for (let parte = 2; parte <= (leida.partes ?? 1); parte += 1) {
+      const otra = await projectService.textoDeCapitulo(licencia.user.id, licencia.productCode, codigo, { parte });
+      if (otra?.texto) partes.push(otra.texto);
+    }
+    const hojas = libroXlsx.hojasDeMarkdown(partes.join(N + N));
+    if (hojas.length === 0) return null;
+    try {
+      const { url, minutos } = await rService.libroEnExcel({
+        userId: licencia.user.id,
+        productCode: licencia.productCode,
+        hojas,
+        archivo: 'MATRIZ.xlsx',
+      });
+      return darEnlace({ texto: 'Haz clic aquí para descargar tu Matriz en Excel', url, minutos });
+    } catch (error) {
+      if (!(error instanceof MotorNoDisponible)) {
+        logger.error({ err: error, licenseId: licencia.id }, 'No se pudo armar la Matriz en Excel');
+      }
+      return null;
+    }
+  };
+
+  /**
+   * La matriz de trazabilidad de las citas (qué fuente sostiene qué frase y si
+   * el autor la leyó), en Excel. Sale de lo que guarda "verificar_citas", así
+   * que no se pierde al cambiar de chat. Null si no hay citas o no hay dónde.
+   */
+  const enlaceDeLaTrazabilidad = async (items = null) => {
+    if (!conVerificacion) return null;
+    let lista = items;
+    if (lista === null) {
+      const r = await projectService
+        .verificarCitas(licencia.user.id, licencia.productCode, { capitulo: null, confirmar: [] })
+        .catch(() => null);
+      lista = r?.items ?? [];
+    }
+    if (lista.length === 0) return null;
+    try {
+      const { url, minutos } = await rService.libroEnExcel({
+        userId: licencia.user.id,
+        productCode: licencia.productCode,
+        hojas: verificacion.hojasDeTrazabilidad(lista),
+        archivo: 'TRAZABILIDAD.xlsx',
+      });
+      return darEnlace({ texto: 'Haz clic aquí para descargar la trazabilidad de tus citas en Excel', url, minutos });
+    } catch (error) {
+      if (!(error instanceof MotorNoDisponible)) {
+        logger.error({ err: error, licenseId: licencia.id }, 'No se pudo armar la trazabilidad en Excel');
       }
       return null;
     }
@@ -1046,6 +1124,24 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
               enlaceFicha +
               'Esta Ficha NO va en el Word del artículo: es el documento de trabajo que leen las fases ' +
               'siguientes. No llames a "enlace_del_word" por ella.',
+          );
+        }
+
+        if (/^articulo-fase1-/.test(entrada.capitulo)) {
+          // Con todo lo guardado, no solo esta llamada: puede venir por partes.
+          const matriz = await enlaceDeLaMatriz();
+          return texto(
+            `Guardado. «${skill.displayName}» lleva ${palabras} palabras.${N}${N}` +
+              revision +
+              (matriz
+                ? `LA MATRIZ EN EXCEL YA ESTÁ ARMADA (no la armes tú ni escribas ningún script): dale ` +
+                  `este enlace:${N}${matriz}${N}${N}` +
+                  'Sale una hoja por cada título «##» con su tabla. Si falta una hoja o una columna, ' +
+                  `corrige el texto y guárdalo otra vez: el Excel se rehace.${N}${N}`
+                : 'La Matriz en Excel no se pudo armar ahora en el servidor: dásela en el chat como ' +
+                  `tablas y dile que la pida otra vez más tarde con "enlace_del_word".${N}${N}`) +
+              'La Matriz NO va en el Word del artículo: es el documento de trabajo que leen las fases ' +
+              'siguientes. Si la vuelve a pedir, "enlace_del_word" la da junto con la Ficha.',
           );
         }
 
@@ -1780,7 +1876,9 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
           'QUE CITA, después de guardarlo, y antes de entregar: es la garantía de que ninguna fuente se ' +
           'cita por algo que no dice. Si una frase cambia, su cita vuelve a pedir lectura. Sin ' +
           '"confirmar" enseña las que faltan; con "confirmar" guarda las respuestas del autor. ' +
-          'NUNCA confirmes tú por él: tú no has leído la fuente, solo su resumen.',
+          'NUNCA confirmes tú por él: tú no has leído la fuente, solo su resumen. Cuando ya no ' +
+          'queda ninguna por leer, devuelve el enlace de la matriz de TRAZABILIDAD en Excel ' +
+          '(todas las citas del proyecto): no la armes tú.',
         inputSchema: ESQUEMA_VERIFICAR_CITAS,
       },
       async ({ capitulo, cuantas, confirmar }) => {
@@ -1835,6 +1933,14 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
             'TODAS LAS CITAS ESTÁN VERIFICADAS POR EL AUTOR. Díselo: cada fuente que cita la ha leído ' +
               'él y dice lo que el texto le atribuye.',
           );
+          // La de todo el proyecto, no solo la de este capítulo: es un solo archivo.
+          const traza = await enlaceDeLaTrazabilidad(capitulo ? null : r.items);
+          if (traza) {
+            partes.push(
+              'LA MATRIZ DE TRAZABILIDAD YA ESTÁ ARMADA (no la armes tú ni escribas ningún script): ' +
+                `dale este enlace. Se rehace sola cada vez, con todas las secciones:${N}${traza}`,
+            );
+          }
           return texto(partes.join(N + N));
         }
 
@@ -2257,7 +2363,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
           'ÚSALA SIEMPRE que haga falta citar: antecedentes, marco teórico, metodología o ' +
           'discusión. NO cites de memoria: los datos bibliográficos que no salen de aquí ' +
           'suelen tener el año o el DOI equivocados, y eso lo comprueba un jurado en segundos. ' +
-          SIN_BUSCAR_EN_LA_WEB +
+          sinBuscarEnLaWeb +
           'EN "tema", EN INGLÉS: la biblioteca de Acosta son artículos indexados en Scopus y ' +
           'Web of Science, con títulos y resúmenes en inglés. El tesista te escribe en español, ' +
           'así que traduce tú el tema antes de buscar («validez de constructo» → «construct ' +
@@ -2488,7 +2594,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         'esta base indexa Scielo, Redalyc y repositorios latinoamericanos. ' +
         'Devuelve autor, año, revista, DOI real, cuántas veces se ha citado y si hay PDF ' +
         'gratis. NO cites de memoria ni completes datos que no vengan de aquí. ' +
-        SIN_BUSCAR_EN_LA_WEB +
+        sinBuscarEnLaWeb +
         'ESTAS FUENTES NO ESTÁN REVISADAS POR ACOSTA: el catálogo es abierto y entra de todo, ' +
         'incluidos repositorios y preprints. Dilo al presentarlas, y recuerda que las de ' +
         '"buscar_fuentes" sí llevan ese criterio.',
@@ -2605,7 +2711,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
           'Para que pueda CITARLAS, primero hay que guardarlas: PREGÚNTALE CUÁLES QUIERE y ' +
           'guárdalas con "guardar_de_scopus" pasando sus EID. Es lo mismo que el botón ' +
           '«Añadir a mis fuentes» de la web, y después salen en "buscar_fuentes" con su clave. ' +
-          SIN_BUSCAR_EN_LA_WEB,
+          sinBuscarEnLaWeb,
         inputSchema: ESQUEMA_SCOPUS,
       },
       async ({ ecuacion, orden, pagina }) => {
@@ -3095,12 +3201,12 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         'PASA SOLO DOI QUE VENGAN DE UNA BÚSQUEDA, nunca uno recordado ni reconstruido: si ' +
         'no tienes el DOI exacto delante, dilo en vez de inventarlo. ' +
         'Lo repetido no se duplica y lo que el catálogo no conozca se te dirá por su nombre.' +
-        (esRevision(licencia.productCode)
+        (perfil.tipo === 'articulo'
           ? ' Una fuente SIN DOI (informe, boletín, tesis de repositorio) que abriste en esta sesión ' +
             'va en "sinDoi" con los datos copiados de su página y su dirección; así se cita con ' +
             'clave y no queda [FALTA FUENTE] ni hay que mandarlo a la web.'
           : ''),
-      inputSchema: esRevision(licencia.productCode) ? ESQUEMA_ANADIR_REVISION : ESQUEMA_ANADIR,
+      inputSchema: perfil.tipo === 'articulo' ? ESQUEMA_ANADIR_REVISION : ESQUEMA_ANADIR,
     },
     async ({ dois = [], sinDoi = [] }) => {
       await licenseService.recordUsage({
@@ -3835,7 +3941,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         '3) Para cada afirmación que necesite respaldo busca fuente: "mis_fuentes" y ' +
         '"buscar_fuentes" (su Zotero y la biblioteca de Acosta, de artículos indexados en Scopus) ' +
         'y "buscar_en_la_literatura" (OpenAlex). ' +
-        SIN_BUSCAR_EN_LA_WEB +
+        sinBuscarEnLaWeb +
         '4) ANTES DE GUARDAR NADA, enséñale un resumen: cuántas citas pondrás y con qué fuentes, ' +
         'qué fuentes nuevas añadirías a su biblioteca —añade con "anadir_a_mis_fuentes" SOLO las ' +
         'que apruebe— y qué afirmaciones quedarían [FALTA FUENTE]. ' +
@@ -5171,7 +5277,11 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         'y los párrafos humanizados puestos. ' +
         (perfil.tipo === 'articulo'
           ? 'La FICHA de la Fase 1 no va dentro de ese Word: esta herramienta da también su enlace ' +
-            'aparte. Úsala igual si solo pide la Ficha, y NO la armes tú. '
+            'aparte. Úsala igual si solo pide la Ficha, y NO la armes tú. ' +
+            (esRevision(licencia.productCode)
+              ? ''
+              : 'Lo mismo con la MATRIZ de Estrategia y la matriz de TRAZABILIDAD de las citas, en ' +
+                'Excel armado por el servidor: pídelas aquí, nunca las armes tú. ')
           : '') +
         'El enlace caduca a la media hora; si ya pasó, pide otro.',
       inputSchema: fromJsonSchema({ type: 'object', properties: {}, additionalProperties: false }),
@@ -5211,17 +5321,26 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         );
       }
 
-      // La Ficha del artículo, aparte (ver `enlaceDeLaFicha`).
-      const ficha = await enlaceDeLaFicha();
-      const conFicha = ficha
-        ? `${N}${N}LA FICHA DE LA FASE 1 VA APARTE (no está dentro del Word del ${SU_OBRA}); dale ` +
-          `también este enlace:${N}${ficha}`
+      // Las fichas de trabajo del artículo, aparte: la Ficha (`enlaceDeLaFicha`),
+      // la Matriz y la trazabilidad de las citas.
+      const aparte = (
+        await Promise.all([
+          enlaceDeLaFicha().then((e) => e && `- Ficha: ${e}`),
+          enlaceDeLaMatriz().then((e) => e && `- Matriz de Estrategia: ${e}`),
+          enlaceDeLaTrazabilidad().then((e) => e && `- Trazabilidad de las citas: ${e}`),
+        ])
+      )
+        .filter(Boolean)
+        .join(N);
+      const conFicha = aparte
+        ? `${N}${N}LAS FICHAS DE TRABAJO VAN APARTE (no están dentro del Word del ${SU_OBRA}); dale ` +
+          `también estos enlaces y NO las armes tú:${N}${aparte}`
         : '';
 
-      if (!resultado && ficha) {
+      if (!resultado && aparte) {
         return texto(
           `Todavía no hay ningún apartado del ${SU_OBRA} guardado, así que no hay Word del ` +
-            `manuscrito. La Ficha de la Fase 1 sí: dale este enlace y NO la armes tú:${N}${ficha}`,
+            `manuscrito. Las fichas de trabajo sí: dale estos enlaces y NO las armes tú:${N}${aparte}`,
         );
       }
 

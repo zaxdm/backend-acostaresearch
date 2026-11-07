@@ -228,6 +228,43 @@ function ficha(item, n) {
   return lineas.join('\n');
 }
 
+/**
+ * La matriz de trazabilidad: cada cita de cada sección, con la frase que la usa,
+ * la fuente y lo que respondió el autor. Antes la armaba Claude en un Excel que
+ * se quedaba en ese chat; esta sale de lo guardado y se puede pedir otra vez.
+ * Devuelve las hojas para `project.libro`.
+ */
+function hojasDeTrazabilidad(items) {
+  const filas = [['Sección', 'Clave', 'Autores', 'Año', 'Título', 'Revista o fuente', 'Enlace', 'Lo que el texto le atribuye', 'Página', 'Estado', 'Nota del autor', 'Fecha']];
+  for (const item of items) {
+    const f = item.fuente;
+    filas.push([
+      item.tituloCapitulo,
+      item.clave,
+      f?.authors ?? '',
+      f?.year ? String(f.year) : '',
+      f?.title ?? '',
+      f?.source ?? '',
+      enlaceDe(f) ?? '',
+      item.frases.map((frase) => recortar(frase, 600)).join(' · '),
+      item.paginas.join(', '),
+      NOMBRE_ESTADO[item.estado] ?? item.estado,
+      item.nota ?? '',
+      item.fecha ? String(item.fecha).slice(0, 10) : '',
+    ]);
+  }
+  const cuenta = recuento(items);
+  const resumen = [
+    ['Estado', 'Citas'],
+    ...Object.keys(NOMBRE_ESTADO).map((estado) => [NOMBRE_ESTADO[estado], String(cuenta[estado] ?? 0)]),
+    ['Total (fuente por sección)', String(cuenta.total)],
+  ];
+  return [
+    { nombre: 'Trazabilidad', filas },
+    { nombre: 'Resumen', filas: resumen },
+  ];
+}
+
 module.exports = {
   ESTADOS,
   NOMBRE_ESTADO,
@@ -238,5 +275,6 @@ module.exports = {
   aplicar,
   ficha,
   enlaceDe,
+  hojasDeTrazabilidad,
   huellaDe,
 };

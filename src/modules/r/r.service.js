@@ -29,6 +29,7 @@ const catalogo = require('./r.catalogo');
 const enlaces = require('./r.enlaces');
 const { enlaceClic } = require('../../shared/utils/enlaceClic');
 const informeWord = require('./r.informe');
+const libroXlsx = require('../projects/project.libro');
 const {
   crearMotor,
   conductorSystemd,
@@ -906,6 +907,20 @@ async function fichaEnWord({ userId, productCode, titulo, texto: cuerpo, archivo
   return enlaces.enlaceDeDescarga({ userId, productCode, archivo });
 }
 
+/**
+ * Un Excel de trabajo (la Matriz de Estrategia, la trazabilidad de las citas),
+ * armado aquí con `project.libro` y dejado en la carpeta del proyecto, como la
+ * Ficha. `hojas`: [{ nombre, filas }]. Devuelve el enlace, o lanza
+ * `MotorNoDisponible` si no hay dónde guardarlo.
+ */
+async function libroEnExcel({ userId, productCode, hojas, archivo }) {
+  const m = motorActual();
+  if (!m || !(await m.listo())) throw new MotorNoDisponible('El motor de R está apagado o sin instalar.');
+  const proyecto = await projectRepository.asegurar(userId, productCode);
+  await m.guardarArchivo(proyecto.id, archivo, libroXlsx.libro(hojas));
+  return enlaces.enlaceDeDescarga({ userId, productCode, archivo });
+}
+
 /** Un archivo de la sesión, para la ruta de descarga. */
 async function leerArchivo({ userId, productCode, archivo }) {
   const m = motorActual();
@@ -924,6 +939,7 @@ module.exports = {
   leerArchivo,
   dejarArchivos,
   fichaEnWord,
+  libroEnExcel,
   deLaSintaxisDelMotor,
   leerArchivoDeSesion,
   figurasDeSesion,

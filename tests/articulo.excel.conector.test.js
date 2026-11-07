@@ -158,3 +158,14 @@ test('la lista de fases dice de qué ruta es, no «Método de tesis»', async ()
   assert.match(await lista('ARTICULOS_REVIEW'), /^Ruta del Artículo de Revisión — Acosta/);
   assert.match(await lista('METODO_DE_TESIS_HUMANIZADOR'), /^Método de tesis — Acosta/);
 });
+
+test('el artículo puede poner los nombres de sección de la revista; la tesis sigue con su herramienta', () => {
+  const articulo = herramientas('ARTICULO_SCIENTIFICOS');
+  assert.ok(articulo.has('secciones_del_articulo'));
+  assert.ok(!articulo.has('estructura_de_la_tesis'));
+  assert.match(articulo.get('secciones_del_articulo').description, /Marco teórico e hipótesis/);
+  const tesis = herramientas('METODO_DE_TESIS_HUMANIZADOR');
+  assert.ok(tesis.has('estructura_de_la_tesis'));
+  assert.ok(!tesis.has('secciones_del_articulo'));
+  assert.ok(!herramientas('INFORME_ESTUDIANTIL').has('secciones_del_articulo'));
+});

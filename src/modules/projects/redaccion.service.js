@@ -175,13 +175,13 @@ const marcasDe = (texto) =>
  * no cambian, y las claves [AR…] y [FALTA FUENTE] salen las mismas. Devuelve
  * null si el capítulo no tiene texto.
  */
-function reescribirParrafos({ userId, productCode, capitulo, parrafos }) {
+function reescribirParrafos({ userId, productCode, capitulo, parrafos, corregirDatos = false }) {
   return enSerie(`redaccion:${userId}:${productCode}:${capitulo}`, () =>
-    reescribirEnSuTurno({ userId, productCode, capitulo, parrafos }),
+    reescribirEnSuTurno({ userId, productCode, capitulo, parrafos, corregirDatos }),
   );
 }
 
-async function reescribirEnSuTurno({ userId, productCode, capitulo, parrafos }) {
+async function reescribirEnSuTurno({ userId, productCode, capitulo, parrafos, corregirDatos }) {
   const proyecto = await projectRepository.buscar(userId, productCode);
   const texto = proyecto ? await almacen.leer(proyecto.id, capitulo) : null;
   if (!texto || !texto.trim()) return null;
@@ -217,7 +217,11 @@ async function reescribirEnSuTurno({ userId, productCode, capitulo, parrafos }) 
       );
       continue;
     }
-    const motivo = reescritura.comprobarReescritura(quitarMarcas(bloque.texto), quitarMarcas(limpio));
+    // Corregir datos deja cambiar cifras (un número de remuestreos que faltaba);
+    // humanizar, nunca. Ver `comprobarReescritura`.
+    const motivo = reescritura.comprobarReescritura(quitarMarcas(bloque.texto), quitarMarcas(limpio), {
+      cifras: !corregirDatos,
+    });
     if (motivo) {
       rechazar(motivo);
       continue;
@@ -230,7 +234,7 @@ async function reescribirEnSuTurno({ userId, productCode, capitulo, parrafos }) 
   }
 
   let palabras = almacen.palabrasDe(texto);
-  if (guardados > 0) {
+  if (guardados > 0 && !corregirDatos) {
     // Lo guardado no vuelve a salir en «humanizar todo».
     const nuevas = parrafos
       .filter(({ p }) => !rechazados.some((r) => r.p === p))
@@ -240,6 +244,8 @@ async function reescribirEnSuTurno({ userId, productCode, capitulo, parrafos }) 
       proyecto.id,
       [...new Set([...previas, ...nuevas])].slice(-TOPE_DE_HUELLAS),
     );
+  }
+  if (guardados > 0) {
     const junto = todos.map((b) => `${b.texto}${b.separador}`).join('');
     ({ palabras } = await almacen.guardar(proyecto.id, capitulo, junto));
     const previa = (proyecto.stages ?? []).find((e) => e.skillCode === capitulo);

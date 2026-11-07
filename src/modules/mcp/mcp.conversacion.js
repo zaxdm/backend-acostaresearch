@@ -34,7 +34,10 @@ const REGLAS_DE_CONVERSACION = [
     'borra o rehace algo ya aprobado, dilo en la misma opción y confirma antes de hacerlo.',
   '5. Al cerrar la fase: guárdala, pregúntale con opciones si la da por terminada (si dice que sí, ' +
     '"guardar_avance" con estado LISTO) y ofrécele seguir AQUÍ MISMO con la siguiente: si acepta, llama a ' +
-    '"continuar" y ábrela con "redactar". No lo mandes a la web a copiar otra frase.',
+    '"continuar" y ábrela con "redactar". No lo mandes a la web a copiar otra frase. PERO si en esta ' +
+    'conversación ya se cerraron dos fases, o hubo un análisis largo en R, recomiéndale en las opciones ' +
+    'abrir un chat nuevo y decir «seguir con la Fase N»: todo está guardado en su proyecto, y una ' +
+    'conversación muy larga se compacta y pierde detalle.',
 ].join('\n');
 
 /**
@@ -73,7 +76,10 @@ const REGLAS_DE_CONVERSACION_DOCENTE = [
     'borra o rehace algo ya aprobado, dilo en la misma opción y confirma antes de hacerlo.',
   '5. Al cerrar la fase: guárdala, pregúntale con opciones si la da por terminada (si dice que sí, ' +
     '"guardar_avance" con estado LISTO) y ofrécele seguir AQUÍ MISMO con la siguiente: si acepta, llama a ' +
-    '"continuar" y ábrela con "redactar". No lo mandes a la web a copiar otra frase.',
+    '"continuar" y ábrela con "redactar". No lo mandes a la web a copiar otra frase. PERO si en esta ' +
+    'conversación ya se cerraron dos fases, o hubo un análisis largo en R, recomiéndale en las opciones ' +
+    'abrir un chat nuevo y decir «seguir con la Fase N»: todo está guardado en su proyecto, y una ' +
+    'conversación muy larga se compacta y pierde detalle.',
 ].join('\n');
 
 const INSTRUCCIONES_DEL_SERVIDOR_DOCENTE = [

@@ -660,17 +660,23 @@ function apellidosCitados(texto) {
  * años de las citas), lo que va entre comillas, los apellidos que se citan y lo
  * que va entre corchetes tienen que seguir ahí. Las marcas de cita [AR…] se
  * comprueban aparte, con las que el párrafo tenía guardadas.
+ *
+ * `{ cifras: false }` deja cambiar las cifras: solo para corregir el contenido
+ * de un capítulo guardado a pedido del autor (`reescribir_parrafos` con
+ * `corregirDatos`), nunca al humanizar. Lo demás se sigue comprobando.
  */
-function comprobarReescritura(original, nuevo) {
+function comprobarReescritura(original, nuevo, { cifras = true } = {}) {
   const limpio = documento.sinMarcas(String(nuevo).replace(APARTE, ' '));
 
-  const antes = contar(original.match(CIFRAS) ?? []);
-  const despues = contar(limpio.match(CIFRAS) ?? []);
-  for (const [cifra, n] of antes) {
-    if ((despues.get(cifra) ?? 0) < n) return `falta la cifra «${cifra}» del original: las cifras y los años no se cambian`;
-  }
-  for (const [cifra, n] of despues) {
-    if ((antes.get(cifra) ?? 0) < n) return `aparece la cifra «${cifra}», que no está en el original: no se añaden datos`;
+  if (cifras) {
+    const antes = contar(original.match(CIFRAS) ?? []);
+    const despues = contar(limpio.match(CIFRAS) ?? []);
+    for (const [cifra, n] of antes) {
+      if ((despues.get(cifra) ?? 0) < n) return `falta la cifra «${cifra}» del original: las cifras y los años no se cambian`;
+    }
+    for (const [cifra, n] of despues) {
+      if ((antes.get(cifra) ?? 0) < n) return `aparece la cifra «${cifra}», que no está en el original: no se añaden datos`;
+    }
   }
 
   const esqueletoNuevo = documento.esqueleto(limpio);

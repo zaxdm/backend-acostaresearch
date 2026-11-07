@@ -37,8 +37,13 @@ const MAXIMO_POR_LISTA = 8;
  * asistente creía haberlo guardado todo y el repaso marcaba después como
  * inventadas cifras que salían del análisis. Se vio así, en uso real: 37
  * cifras mandadas, 8 guardadas, y ningún aviso.
+ *
+ * Y 120 se quedaba corto para un modelo de ecuaciones estructurales: 26 cargas,
+ * fiabilidad y validez por constructo, rutas con su IC, f², R² y PLSpredict
+ * agotaron el tope y Claude tuvo que elegir qué cifras guardar (E2E del
+ * 7-nov-2026). Cada una ocupa unos 50 caracteres: 400 sigue siendo poco.
  */
-const MAXIMO_CIFRAS = 120;
+const MAXIMO_CIFRAS = 400;
 
 /**
  * Los números que devolvió el análisis, tal cual.

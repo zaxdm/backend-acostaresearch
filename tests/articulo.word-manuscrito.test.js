@@ -128,3 +128,12 @@ test('verificar_citas no cuenta las fichas de trabajo, salvo que se pida una por
   });
   assert.deepEqual(matriz.items.map((i) => i.clave), ['AR0A1B2C3D']);
 });
+
+test('con las secciones de la revista guardadas, el Word usa su nombre', async () => {
+  empezar({
+    esquema: { capitulos: [{ titulo: 'Marco teórico e hipótesis', de: ['articulo-fase2-introduccion'] }] },
+  });
+  const { textos } = await textosDelWord();
+  assert.ok(textos.includes('Marco teórico e hipótesis'));
+  assert.ok(!textos.includes('Matriz de Estrategia'));
+});

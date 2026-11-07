@@ -62,6 +62,10 @@ function tipoCsl(itemType) {
   if (tipo.includes('thesis') || tipo.includes('dissertation')) return 'thesis';
   if (tipo.includes('book') || tipo.includes('monograph')) return 'book';
   if (tipo.includes('report')) return 'report';
+  // Un documento suelto (el tipo «otro» de las fuentes a mano, o «Document» de
+  // Zotero) no es un artículo: con la regla de abajo, la institución salía en
+  // cursiva como si fuera la revista (E2E del 7-nov-2026). En APA va como informe.
+  if (tipo === 'document') return 'report';
   if (tipo.includes('webpage') || tipo.includes('website') || tipo.includes('blog')) return 'webpage';
   if (tipo.includes('dataset')) return 'dataset';
   if (tipo.includes('software') || tipo.includes('computerprogram')) return 'software';

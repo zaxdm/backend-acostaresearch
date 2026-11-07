@@ -184,3 +184,15 @@ test('las marcas de cita y el punto y aparte no cuentan como texto añadido', ()
 function escapar(texto) {
   return texto.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
+
+test('al corregir un dato (cifras: false) las cifras pueden cambiar, y lo demás se sigue comprobando', () => {
+  const original = 'Las rutas se estimaron por bootstrapping (Hair et al., 2019).';
+  const corregido = 'Las rutas se estimaron por bootstrapping con 5000 remuestreos (Hair et al., 2019).';
+  assert.match(reescritura.comprobarReescritura(original, corregido), /5000/, 'al humanizar, no');
+  assert.equal(reescritura.comprobarReescritura(original, corregido, { cifras: false }), null);
+  assert.match(
+    reescritura.comprobarReescritura(original, corregido.replace('Hair et al.', 'Ringle'), { cifras: false }),
+    /Hair/,
+    'los apellidos citados siguen protegidos',
+  );
+});

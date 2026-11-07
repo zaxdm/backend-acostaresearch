@@ -188,13 +188,17 @@
   {
     "nombre": "reescribir_parrafos",
     "titulo": "Cambiar párrafos de un capítulo guardado",
-    "descripcion": "Reemplaza párrafos sueltos de un capítulo ya guardado en el proyecto, por su número (¶7), sin reenviar el capítulo entero. Los números salen de \"ver_capitulo\" con \"texto\": true y \"numerado\": true, o de \"ver_lo_marcado\". ÚSALA para humanizar, bajar la similitud o corregir los AVISOS DE REDACCIÓN de \"guardar_capitulo\". Al humanizar, enséñale cada bloque (hasta 10 párrafos, con el antes y el ahora) y guarda lo que apruebe. Manda el texto NUEVO completo de cada párrafo. El servidor rechaza el párrafo si cambian las cifras o los años, si lo que va entre comillas no se copió tal cual, si desaparece un apellido citado o si las claves [AR…] y [FALTA FUENTE] no son las mismas. Títulos, tablas, figuras, listas y rótulos no se aceptan. Un párrafo sale como un párrafo. Hasta 40 por llamada.",
+    "descripcion": "Reemplaza párrafos sueltos de un capítulo ya guardado en el proyecto, por su número (¶7), sin reenviar el capítulo entero. Los números salen de \"ver_capitulo\" con \"texto\": true y \"numerado\": true, o de \"ver_lo_marcado\". ÚSALA para humanizar, bajar la similitud o corregir los AVISOS DE REDACCIÓN de \"guardar_capitulo\". Al humanizar, enséñale cada bloque (hasta 10 párrafos, con el antes y el ahora) y guarda lo que apruebe. Manda el texto NUEVO completo de cada párrafo. El servidor rechaza el párrafo si cambian las cifras o los años, si lo que va entre comillas no se copió tal cual, si desaparece un apellido citado o si las claves [AR…] y [FALTA FUENTE] no son las mismas. Títulos, tablas, figuras, listas y rótulos no se aceptan. Un párrafo sale como un párrafo. Hasta 40 por llamada. Para CORREGIR UN DATO que el autor pidió (añadir el número de remuestreos, cambiar una cifra mal copiada del análisis) pasa \"corregirDatos\": true: entonces las cifras sí pueden cambiar, y lo demás se sigue comprobando. NUNCA lo uses al humanizar.",
     "esquema": {
       "type": "object",
       "properties": {
         "capitulo": {
           "type": "string",
           "description": "Clave del capítulo, como en mi_proyecto: \"marco-teorico\"."
+        },
+        "corregirDatos": {
+          "type": "boolean",
+          "description": "true solo para corregir un dato a pedido del autor: deja cambiar las cifras del párrafo. Nunca al humanizar."
         },
         "parrafos": {
           "type": "array",
@@ -345,7 +349,7 @@
           "items": {
             "type": "string"
           },
-          "description": "Las cifras que van a aparecer en el texto, una por línea y con su etiqueta: «alfa de Cronbach = 0.87», «R2 = 0.4231», «p = 0.003», «beta = -0.31». SÁCALAS DE LA SALIDA que pegó el tesista, no de memoria. A partir de aquí, cualquier número que escribas en el capítulo y no esté en esta lista sale marcado en el repaso. SE SUMAN a las que ya había: manda solo las que falten, no la lista entera. Caben 120 por capítulo, y si pasas se te dice cuáles quedaron fuera."
+          "description": "Las cifras que van a aparecer en el texto, una por línea y con su etiqueta: «alfa de Cronbach = 0.87», «R2 = 0.4231», «p = 0.003», «beta = -0.31». SÁCALAS DE LA SALIDA que pegó el tesista, no de memoria. A partir de aquí, cualquier número que escribas en el capítulo y no esté en esta lista sale marcado en el repaso. SE SUMAN a las que ya había: manda solo las que falten, no la lista entera. Caben 400 por capítulo, y si pasas se te dice cuáles quedaron fuera."
         },
         "reemplazar": {
           "type": "boolean",

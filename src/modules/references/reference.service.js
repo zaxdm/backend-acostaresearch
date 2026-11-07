@@ -331,6 +331,25 @@ function palabrasDe(tema) {
  * con esas palabras. Se juntan las dos respuestas con las suyas primero, que es
  * el mismo orden que ya aplica la consulta.
  */
+/**
+ * La misma obra no sale dos veces: una de la biblioteca de la casa y otra de la
+ * suya, con DOI distintos (Fornell y Larcker, 1981, está en JSTOR y en SAGE; el
+ * asistente tuvo que preguntar cuál citar, E2E del 7-nov-2026). Se queda la
+ * suya, que es la que eligió y la que va enlazada a su Zotero. Se reconoce por
+ * el título sin tildes ni signos y el año.
+ */
+function sinLaMismaObraDosVeces(fuentes) {
+  const claveDeObra = (f) =>
+    `${String(f.title ?? '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim()}|${f.year ?? ''}`;
+  const suyas = new Set(fuentes.filter((f) => f.ownerUserId !== null && f.title).map(claveDeObra));
+  return fuentes.filter((f) => f.ownerUserId !== null || !f.title || !suyas.has(claveDeObra(f)));
+}
+
 async function buscarParaLicencia({
   tema,
   temaOriginal = null,
@@ -371,6 +390,8 @@ async function buscarParaLicencia({
       .filter((fuente) => !vistas.has(fuente.id) && vistas.add(fuente.id))
       .slice(0, limite);
   }
+
+  fuentes = sinLaMismaObraDosVeces(fuentes);
 
   return fuentes.map((fuente) => ({
     /**
@@ -561,4 +582,5 @@ module.exports = {
   listarParaPanel,
   porClaves,
   cita,
+  sinLaMismaObraDosVeces,
 };

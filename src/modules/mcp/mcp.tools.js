@@ -1233,11 +1233,19 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         'rechaza el párrafo si cambian las cifras o los años, si lo que va entre comillas no se copió tal ' +
         'cual, si desaparece un apellido citado o si las claves [AR…] y [FALTA FUENTE] no son las mismas. ' +
         'Títulos, tablas, figuras, listas y rótulos no se aceptan. Un párrafo sale como un párrafo. Hasta 40 ' +
-        'por llamada.',
+        'por llamada. Para CORREGIR UN DATO que el autor pidió (añadir el número de remuestreos, cambiar una ' +
+        'cifra mal copiada del análisis) pasa "corregirDatos": true: entonces las cifras sí pueden cambiar, ' +
+        'y lo demás se sigue comprobando. NUNCA lo uses al humanizar.',
       inputSchema: fromJsonSchema({
         type: 'object',
         properties: {
           capitulo: { type: 'string', description: 'Clave del capítulo, como en mi_proyecto: "marco-teorico".' },
+          corregirDatos: {
+            type: 'boolean',
+            description:
+              'true solo para corregir un dato a pedido del autor: deja cambiar las cifras del párrafo. ' +
+              'Nunca al humanizar.',
+          },
           parrafos: {
             type: 'array',
             minItems: 1,
@@ -1257,7 +1265,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         additionalProperties: false,
       }),
     },
-    async ({ capitulo, parrafos }) => {
+    async ({ capitulo, parrafos, corregirDatos = false }) => {
       await licenseService.recordUsage({ licenseId: licencia.id, tool: 'reescribir_parrafos' });
       // Como en ver_capitulo y guardar_capitulo: también los capítulos propios
       // de su facultad y las secciones aparte, que no están en el catálogo.
@@ -1272,8 +1280,16 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
           productCode: licencia.productCode,
           capitulo,
           parrafos,
+          corregirDatos,
         });
         if (!r) return texto(`«${skill.displayName}» no tiene texto guardado: no hay párrafos que cambiar.`);
+        // Con cifras cambiadas, el mismo control que al guardar el capítulo entero.
+        if (corregirDatos && r.guardados > 0) {
+          const control = await projectService
+            .controlAlGuardar(licencia.user.id, licencia.productCode, capitulo)
+            .catch(() => []);
+          r.avisos.push(...control);
+        }
         const rechazos =
           r.rechazados.length > 0
             ? `${N}${N}RECHAZADOS (${r.rechazados.length}), NO se guardaron:${N}` +
@@ -1442,21 +1458,33 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
   /**
    * La estructura de capítulos que exige su facultad.
    *
-   * Solo en la tesis: es donde hay reglamento. Un artículo lo estructura la
-   * revista y un informe, el docente, y para esos dos el método ya encaja.
+   * En la tesis, por el reglamento. Y en el artículo, por la revista, con otro
+   * nombre ("secciones_del_articulo"): RIED llama «Marco teórico e hipótesis» a
+   * lo que el método llama «Revisión de la literatura», y el autor tenía que
+   * cambiarlo a mano en su Word (E2E del 7-nov-2026). El informe lo estructura
+   * el docente, y ahí el método ya encaja.
    *
    * No entra en `guardar_avance` a propósito. Ahí van datos sueltos que se
    * corrigen sin consecuencias; esto REORDENA el documento entero, y tiene que
    * costar una llamada aparte, con su confirmación y su respuesta enseñando
    * cómo queda.
    */
-  if (perfil.tipo === 'tesis') {
+  if (perfil.tipo === 'tesis' || perfil.tipo === 'articulo') {
+    const enArticulo = perfil.tipo === 'articulo';
+    const herramientaDeEstructura = enArticulo ? 'secciones_del_articulo' : 'estructura_de_la_tesis';
     server.registerTool(
-      'estructura_de_la_tesis',
+      herramientaDeEstructura,
       {
-        title: 'Los capítulos que pide su facultad',
-        description:
-          'Fija CÓMO SE NUMERAN Y SE LLAMAN los capítulos en el Word, cuando el reglamento de ' +
+        title: enArticulo ? 'Las secciones que pide la revista' : 'Los capítulos que pide su facultad',
+        description: enArticulo
+          ? 'Fija CÓMO SE LLAMAN Y EN QUÉ ORDEN VAN las secciones del artículo en el Word, cuando la ' +
+            'revista no usa los nombres del método: «Marco teórico e hipótesis» en vez de «Revisión de ' +
+            'la literatura», «Método» en vez de «Métodos», o Resultados y Discusión juntos. Míralo en el ' +
+            'perfil de la revista (Tabla 5 de la Ficha). PÍDESELO al autor y repíteselo para que lo ' +
+            'confirme ANTES de guardarlo. Manda SIEMPRE la lista completa de secciones, en orden; la ' +
+            'Ficha y la Matriz no se nombran (no van en el artículo) ni las Referencias (las pone el ' +
+            'Word). Las claves para guardar y leer NO cambian.'
+          : 'Fija CÓMO SE NUMERAN Y SE LLAMAN los capítulos en el Word, cuando el reglamento de ' +
           'su facultad no coincide con el método. El método numera III Metodología, IV ' +
           'Resultados y V Discusión; hay universidades que meten un III de Hipótesis y corren ' +
           'las demás, o que juntan Resultados y Discusión en un solo capítulo. ' +
@@ -1484,16 +1512,21 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
                   titulo: {
                     type: 'string',
                     maxLength: 120,
-                    description:
-                      'Cómo se titula en el Word, con su numeración tal cual la pide el ' +
-                      'reglamento: «CAPÍTULO IV: METODOLOGÍA», «Capítulo V. Resultados y discusión».',
+                    description: enArticulo
+                      ? 'Cómo se titula la sección en el Word, tal cual la pide la revista: «Marco ' +
+                        'teórico e hipótesis», «Método», «Resultados y discusión».'
+                      : 'Cómo se titula en el Word, con su numeración tal cual la pide el ' +
+                        'reglamento: «CAPÍTULO IV: METODOLOGÍA», «Capítulo V. Resultados y discusión».',
                   },
                   de: {
                     type: 'array',
                     items: { type: 'string' },
                     maxItems: 4,
-                    description:
-                      'Las claves de las fases del método de las que sale su texto, en orden ' +
+                    description: enArticulo
+                      ? 'Las claves de las fases de las que sale su texto, en orden: ' +
+                        '«articulo-fase3-revision-literatura»; o «articulo-fase5-resultados» y ' +
+                        '«articulo-fase6-discusion» para juntarlas. Cada fase va en una sola sección.'
+                      : 'Las claves de las fases del método de las que sale su texto, en orden ' +
                       '(«metodologia»; o «analisis-datos-rstudio» y «discusion» para juntar ' +
                       'Resultados y Discusión en un capítulo). Cada fase va en un capítulo y solo ' +
                       'en uno. DÉJALO VACÍO si es un capítulo que el método no tiene, como ' +
@@ -1513,7 +1546,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         }),
       },
       async (entrada) => {
-        await licenseService.recordUsage({ licenseId: licencia.id, tool: 'estructura_de_la_tesis' });
+        await licenseService.recordUsage({ licenseId: licencia.id, tool: herramientaDeEstructura });
 
         if (entrada?.quitar === true) {
           const habia = await projectService.quitarEsquema({

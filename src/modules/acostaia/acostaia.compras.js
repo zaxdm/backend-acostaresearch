@@ -28,7 +28,7 @@ async function compradorDe({ email, nombre, apellido }, { crear }) {
   const correo = email.trim().toLowerCase();
   const usuario = await prisma.user.findUnique({
     where: { email: correo },
-    select: { id: true, status: true, deletedAt: true, acostaiaId: true },
+    select: { id: true, status: true, deletedAt: true },
   });
   if (usuario) {
     if (usuario.deletedAt || usuario.status !== 'ACTIVE') {

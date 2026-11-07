@@ -50,3 +50,13 @@ test('la ficha que ve el autor enseña el resumen cuando la fuente lo trae', () 
   assert.match(ficha, /Resumen \(orienta, no sustituye la lectura\): «Resumen entero\.»/);
   assert.doesNotMatch(ficha, /No tenemos su resumen/);
 });
+
+test('la ficha enseña el resumen hasta donde suelen estar los resultados (2.000 caracteres)', () => {
+  const largo = `${'a'.repeat(1500)} RESULTADOS: el efecto indirecto fue significativo.`;
+  const [item] = verificacion.inventario(
+    [{ code: 'articulo-fase2-introduccion', titulo: 'Introducción', texto: 'Algo pasa [AR0A1B2C3D].' }],
+    new Map([['AR0A1B2C3D', { ref: 'AR0A1B2C3D', authors: 'Zhen, Y.', year: 2026, title: 'T', abstract: largo }]]),
+    {},
+  );
+  assert.match(verificacion.ficha(item, 1), /RESULTADOS: el efecto indirecto fue significativo\./);
+});

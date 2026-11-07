@@ -193,6 +193,14 @@ function enlaceDe(fuente) {
   return null;
 }
 
+/**
+ * Lo que se enseña del resumen al verificar. Con 700 caracteres el corte caía
+ * justo antes de los resultados, que es lo que sostiene la frase citada, y
+ * Claude tenía que avisarlo y buscarlo aparte (E2E del 7-nov-2026). Un resumen
+ * estructurado entero cabe en 2.000.
+ */
+const RESUMEN_EN_LA_FICHA = 2000;
+
 function recortar(texto, largo) {
   const limpio = String(texto ?? '').replace(/\s+/g, ' ').trim();
   return limpio.length <= largo ? limpio : `${limpio.slice(0, largo).trimEnd()}…`;
@@ -215,7 +223,7 @@ function ficha(item, n) {
         : `    Sin enlace: búscala por el título en https://scholar.google.com/scholar?q=${encodeURIComponent(f.title ?? '')}`,
     );
     if (item.paginas.length > 0) lineas.push(`    Página que cita el texto: ${item.paginas.join(', ')}`);
-    if (f.abstract) lineas.push(`    Resumen (orienta, no sustituye la lectura): «${recortar(f.abstract, 700)}»`);
+    if (f.abstract) lineas.push(`    Resumen (orienta, no sustituye la lectura): «${recortar(f.abstract, RESUMEN_EN_LA_FICHA)}»`);
     else lineas.push('    No tenemos su resumen: hay que abrirla.');
     if (f.notes) lineas.push(`    Nota de Acosta sobre esta fuente: «${recortar(f.notes, 300)}»`);
   }

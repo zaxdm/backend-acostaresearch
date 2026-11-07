@@ -54,7 +54,7 @@ const skillService = require('../skills/skill.service');
 const referenceService = require('../references/reference.service');
 const { guardarAvanceSchema, guardarCapituloSchema } = require('./project.schema');
 const { fusionarFicha, lineasDeFicha, esDeEmpresa, NOMBRE_DE_TIPO } = require('./project.ficha-informe');
-const { perfilDe, esTesisDelMetodo, verificaCitas, esRevision } = require('../productos/producto.perfil');
+const { perfilDe, esTesisDelMetodo, verificaCitas } = require('../productos/producto.perfil');
 const { lineaDeMaterial } = require('./project.material');
 const esquemaDeCapitulos = require('./project.esquema');
 
@@ -973,8 +973,10 @@ async function armarWord(userId, productCode) {
     ...(perfil.tipo === 'tesis' ? { paginasDeTesis: true } : {}),
     // Las sesiones: «Docente:» en la portada, sin asesor, y una sesión por página.
     ...(perfil.tipo === 'docente' ? { rotuloAutor: 'Docente: ', asesor: null, seccionPorPagina: true } : {}),
-    // La revisión sale como manuscrito de revista: título, sin portada ni índice.
-    ...(esRevision(productCode) ? { manuscrito: true } : {}),
+    // Un artículo (empírico o revisión) sale como manuscrito de revista: título,
+    // sin portada de tesis ni índice. El empírico salía con «Tesis» y «Autor:»
+    // (E2E del 7-nov-2026).
+    ...(perfil.tipo === 'articulo' ? { manuscrito: true } : {}),
     ...armado.documento,
   });
 
@@ -1263,7 +1265,13 @@ async function verificarCitas(userId, productCode, { capitulo = null, confirmar 
   ]);
   if (!proyecto) return null;
 
-  const capitulos = await capitulosConTexto(proyecto, productCode, catalogo, capitulo);
+  // Sin las fichas de trabajo (la Ficha, la Matriz): no van al artículo, y sus
+  // citas se verifican cuando se escriben en las secciones. Contadas, la
+  // trazabilidad daba doce «sin verificar» con la Introducción al día
+  // (E2E del 7-nov-2026). Si se pide una por su clave, sí se verifica.
+  const capitulos = (await capitulosConTexto(proyecto, productCode, catalogo, capitulo)).filter(
+    (c) => capitulo || !esquemaDeCapitulos.NUNCA_EN_EL_DOCUMENTO.has(c.code),
+  );
   if (capitulos.length === 0) return null;
 
   const claves = [...new Set(capitulos.flatMap((c) => citas.clavesDe(c.texto)))];

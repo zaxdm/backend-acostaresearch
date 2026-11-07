@@ -68,6 +68,7 @@ const fuentesDeWord = require('./project.fuentes-word');
 const partesDePlantilla = require('./project.plantilla-partes');
 const indice = require('./project.indice');
 const esquema = require('./project.esquema');
+const { deLaSintaxisDelMotor } = require('./project.marcas');
 
 /** Interlineado doble, en las unidades de OOXML (240 = sencillo). */
 const DOBLE = 480;
@@ -1337,6 +1338,22 @@ async function armar({
    */
   manuscrito = false,
 }) {
+  /**
+   * El manuscrito, con lo escrito para el script de la skill ya limpio.
+   *
+   * La Introducción de un artículo guardada con la sintaxis de `articulo_docx.py`
+   * salía con «[TITULO] …» impreso, y con «Introducción» dos veces: el título de
+   * la sección y el `## Introducción` del texto (E2E del 7-nov-2026). El
+   * `[TITULO]` es el del artículo: va arriba si el proyecto no tiene tema.
+   */
+  let tituloDeLasMarcas = null;
+  if (manuscrito) {
+    capitulos = capitulos.map((c) => {
+      const { titulo, texto } = deLaSintaxisDelMotor(c.texto);
+      tituloDeLasMarcas ??= titulo;
+      return { ...c, texto: sinTituloRepetido(texto, tituloDelCapitulo(c.titulo)) };
+    });
+  }
   const notas = {};
   /** Los pendientes del texto, que van al margen (ver `comoComentario`). */
   const comentarios = [];
@@ -1398,7 +1415,7 @@ async function armar({
         : manuscrito
           ? [
               new Paragraph({
-                text: tema ?? 'Artículo',
+                text: tema ?? tituloDeLasMarcas ?? 'Artículo',
                 heading: HeadingLevel.TITLE,
                 alignment: AlignmentType.CENTER,
                 indent: { firstLine: 0 },
@@ -1880,6 +1897,27 @@ function sacarPreliminaresDelTexto(texto) {
     texto: cuerpo.join('\n').trim(),
     secciones: secciones.map((s) => ({ titulo: s.titulo, texto: s.lineas.join('\n').trim() })),
   };
+}
+
+/**
+ * El texto sin su primer título si repite el de la sección: «## Introducción»
+ * debajo del «Introducción» que ya pone el Word. Se compara sin tildes ni
+ * mayúsculas. Solo el primero: uno más abajo es un subtítulo de verdad.
+ */
+function sinTituloRepetido(texto, tituloDeSeccion) {
+  const plano = (t) =>
+    String(t ?? '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[*_]/g, '')
+      .trim()
+      .toLowerCase();
+  const lineas = String(texto ?? '').split('\n');
+  const primera = lineas.findIndex((l) => l.trim() !== '');
+  if (primera === -1) return texto;
+  const titulo = lineas[primera].match(/^\s*#{1,3}\s+(.+?)\s*#*\s*$/);
+  if (!titulo || plano(titulo[1]) !== plano(tituloDeSeccion)) return texto;
+  return lineas.slice(primera + 1).join('\n');
 }
 
 function tituloDelCapitulo(titulo, { sinCapitulo = false } = {}) {

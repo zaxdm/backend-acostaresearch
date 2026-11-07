@@ -148,3 +148,13 @@ test('anadir_a_mis_fuentes acepta fuentes sin DOI también en el artículo empí
   assert.ok(esquema('ARTICULOS_REVIEW').properties.sinDoi);
   assert.ok(!esquema('METODO_DE_TESIS_HUMANIZADOR').properties.sinDoi, 'la tesis sigue igual');
 });
+
+test('la lista de fases dice de qué ruta es, no «Método de tesis»', async () => {
+  skillService.listCatalog = async () => [
+    { code: 'articulo-fase1-matriz-de-estrategia', displayName: 'Fase 1', summary: 'Matriz' },
+  ];
+  const lista = async (p) => textoDe(await herramientas(p).get('listar_capitulos').manejador({}));
+  assert.match(await lista('ARTICULO_SCIENTIFICOS'), /^Ruta del Artículo Empírico — Acosta/);
+  assert.match(await lista('ARTICULOS_REVIEW'), /^Ruta del Artículo de Revisión — Acosta/);
+  assert.match(await lista('METODO_DE_TESIS_HUMANIZADOR'), /^Método de tesis — Acosta/);
+});

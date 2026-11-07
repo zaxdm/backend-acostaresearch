@@ -611,8 +611,19 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
             'ha activado en el servidor. No sugieras soluciones al usuario ni le pidas datos.'
           : '';
 
+      // El perfil de artículo lo comparten el empírico y la revisión: sin esto la
+      // lista de un artículo se titulaba «Método de tesis» (7-nov-2026).
+      const nombreDeLaRuta =
+        perfil.ruta ??
+        (perfil.tipo === 'informe'
+          ? 'Ruta del informe'
+          : perfil.tipo === 'articulo'
+            ? esRevision(licencia.productCode)
+              ? 'Ruta del Artículo de Revisión'
+              : 'Ruta del Artículo Empírico'
+            : 'Método de tesis');
       return texto(
-        `${perfil.ruta ?? (perfil.tipo === 'informe' ? 'Ruta del informe' : 'Método de tesis')} — Acosta | IA & Research\n\n${lineas.join('\n\n')}${aviso}\n\n` +
+        `${nombreDeLaRuta} — Acosta | IA & Research\n\n${lineas.join('\n\n')}${aviso}\n\n` +
           'Para trabajar un capítulo usa la herramienta "redactar" con la clave correspondiente.',
       );
     },

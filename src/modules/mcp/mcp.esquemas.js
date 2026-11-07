@@ -56,21 +56,66 @@ const ESQUEMA_FUENTES = fromJsonSchema({
  * tesis acabarían con el año que le pareció y con un DOI que no resuelve, que
  * es exactamente lo que este producto existe para evitar.
  */
+const DOIS_A_ANADIR = {
+  type: 'array',
+  minItems: 1,
+  maxItems: 60,
+  items: { type: 'string', minLength: 7 },
+  description:
+    'Los DOI de las fuentes que el tesista quiere guardar, tal como aparecen en la lista ' +
+    'que le enseñaste. NO los inventes ni los completes de memoria: si no tienes el DOI ' +
+    'exacto, no la añadas.',
+};
+
 const ESQUEMA_ANADIR = fromJsonSchema({
   type: 'object',
   properties: {
-    dois: {
-      type: 'array',
-      minItems: 1,
-      maxItems: 60,
-      items: { type: 'string', minLength: 7 },
-      description:
-        'Los DOI de las fuentes que el tesista quiere guardar, tal como aparecen en la lista ' +
-        'que le enseñaste. NO los inventes ni los completes de memoria: si no tienes el DOI ' +
-        'exacto, no la añadas.',
-    },
+    dois: DOIS_A_ANADIR,
   },
   required: ['dois'],
+  additionalProperties: false,
+});
+
+/**
+ * Lo mismo en la revisión, más las fuentes sin DOI abiertas en la sesión (un
+ * informe, un boletín): sin esto quedaban como [FALTA FUENTE] y se mandaba al
+ * tesista a añadirlas en la web (E2E de la revisión, 6-nov-2026).
+ */
+const ESQUEMA_ANADIR_REVISION = fromJsonSchema({
+  type: 'object',
+  properties: {
+    dois: DOIS_A_ANADIR,
+    sinDoi: {
+      type: 'array',
+      minItems: 1,
+      maxItems: 10,
+      description:
+        'Fuentes SIN DOI (un informe de un ministerio, un boletín, una tesis de repositorio) ' +
+        'que ABRISTE EN ESTA SESIÓN y de las que copiaste los datos de la propia página: título, ' +
+        'autores o institución, año y la dirección donde está. Nunca una recordada.',
+      items: {
+        type: 'object',
+        properties: {
+          titulo: { type: 'string', minLength: 5, maxLength: 500 },
+          autores: {
+            type: 'string',
+            maxLength: 500,
+            description: 'Para citar: «Apellido, I.; Apellido, I.», o la institución autora.',
+          },
+          anio: { type: 'integer', minimum: 1500, maximum: 2100 },
+          fuente: {
+            type: 'string',
+            maxLength: 300,
+            description: 'Dónde se publicó: la institución, la serie o el repositorio.',
+          },
+          tipo: { type: 'string', enum: ['articulo', 'tesis', 'libro', 'informe', 'otro'] },
+          url: { type: 'string', minLength: 8, maxLength: 500, description: 'La dirección que abriste.' },
+        },
+        required: ['titulo', 'url'],
+        additionalProperties: false,
+      },
+    },
+  },
   additionalProperties: false,
 });
 
@@ -1052,4 +1097,4 @@ const ESQUEMA_VERIFICAR_CITAS = fromJsonSchema({
   additionalProperties: false,
 });
 
-module.exports = { ESQUEMA_FUENTES, ESQUEMA_ANADIR, ESQUEMA_MIS_FUENTES, ESQUEMA_BOLA, ESQUEMA_LITERATURA, ESQUEMA_SCOPUS, ESQUEMA_GUARDAR_SCOPUS, ESQUEMA_CORPUS, ESQUEMA_REVISTA, GUARDAR_AVANCE, ESQUEMA_GUARDAR_AVANCE, ESQUEMA_GUARDAR_AVANCE_TSP, ESQUEMA_GUARDAR_AVANCE_INFORME, GUARDAR_CAPITULO, ESQUEMA_GUARDAR_CAPITULO, ESQUEMA_GUARDAR_CAPITULO_INFORME, ESQUEMA_GUARDAR_ANALISIS, ESQUEMA_VER_ANALISIS, ESQUEMA_TRABAJAR_EN_R, ESQUEMA_VER_CAPITULO, ESQUEMA_REVISAR_EVIDENCIA, ESQUEMA_VERIFICAR_CITAS, ESQUEMA_REDACTAR, ESQUEMA_GUARDAR_AVANCE_DOCENTE, ESQUEMA_GUARDAR_CAPITULO_DOCENTE, ESQUEMA_VER_CAPITULO_DOCENTE };
+module.exports = { ESQUEMA_FUENTES, ESQUEMA_ANADIR, ESQUEMA_ANADIR_REVISION, ESQUEMA_MIS_FUENTES, ESQUEMA_BOLA, ESQUEMA_LITERATURA, ESQUEMA_SCOPUS, ESQUEMA_GUARDAR_SCOPUS, ESQUEMA_CORPUS, ESQUEMA_REVISTA, GUARDAR_AVANCE, ESQUEMA_GUARDAR_AVANCE, ESQUEMA_GUARDAR_AVANCE_TSP, ESQUEMA_GUARDAR_AVANCE_INFORME, GUARDAR_CAPITULO, ESQUEMA_GUARDAR_CAPITULO, ESQUEMA_GUARDAR_CAPITULO_INFORME, ESQUEMA_GUARDAR_ANALISIS, ESQUEMA_VER_ANALISIS, ESQUEMA_TRABAJAR_EN_R, ESQUEMA_VER_CAPITULO, ESQUEMA_REVISAR_EVIDENCIA, ESQUEMA_VERIFICAR_CITAS, ESQUEMA_REDACTAR, ESQUEMA_GUARDAR_AVANCE_DOCENTE, ESQUEMA_GUARDAR_CAPITULO_DOCENTE, ESQUEMA_VER_CAPITULO_DOCENTE };

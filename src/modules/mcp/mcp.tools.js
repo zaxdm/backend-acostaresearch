@@ -105,6 +105,23 @@ const SCOPUS_SIN_CUPO =
  */
 const N = '\n';
 
+/** La plantilla oficial del PRISMA 2020, que el tesista sube con los archivos del corpus. */
+const PLANTILLA_PRISMA = 'https://acostaresearch.com/plantillas/PRISMA_2020_flow_diagram_new_SRs_v1.docx';
+
+/**
+ * Un resumen recortado para las listas, diciendo que lo está.
+ *
+ * Cortado sin aviso, Claude creía que la fuente traía solo eso y le pedía al
+ * tesista abrir cada DOI y pegar el resumen (E2E de la revisión, 6-nov-2026).
+ */
+function resumenCorto(texto, largo = 400) {
+  const t = String(texto ?? '');
+  return t.length > largo
+    ? `${t.slice(0, largo)}… [recortado aquí: el resumen sigue, no es que falte; entero con ` +
+        '"mis_fuentes" y "detalle": true cuando esté guardada]'
+    : t;
+}
+
 const SIN_ARGUMENTOS = fromJsonSchema({ type: 'object', properties: {}, additionalProperties: false });
 
 /**
@@ -240,7 +257,7 @@ const fechaCorta = (iso) =>
     ? new Date(iso).toLocaleDateString('es-PE', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Lima' })
     : 'fecha desconocida';
 
-const { ESQUEMA_FUENTES, ESQUEMA_ANADIR, ESQUEMA_MIS_FUENTES, ESQUEMA_BOLA, ESQUEMA_LITERATURA, ESQUEMA_SCOPUS, ESQUEMA_GUARDAR_SCOPUS, ESQUEMA_CORPUS, ESQUEMA_REVISTA, GUARDAR_AVANCE, ESQUEMA_GUARDAR_AVANCE, ESQUEMA_GUARDAR_AVANCE_TSP, ESQUEMA_GUARDAR_AVANCE_INFORME, GUARDAR_CAPITULO, ESQUEMA_GUARDAR_CAPITULO, ESQUEMA_GUARDAR_CAPITULO_INFORME, ESQUEMA_GUARDAR_ANALISIS, ESQUEMA_VER_ANALISIS, ESQUEMA_TRABAJAR_EN_R, ESQUEMA_VER_CAPITULO, ESQUEMA_REVISAR_EVIDENCIA, ESQUEMA_VERIFICAR_CITAS, ESQUEMA_REDACTAR, ESQUEMA_GUARDAR_AVANCE_DOCENTE, ESQUEMA_GUARDAR_CAPITULO_DOCENTE, ESQUEMA_VER_CAPITULO_DOCENTE } = require('./mcp.esquemas');
+const { ESQUEMA_FUENTES, ESQUEMA_ANADIR, ESQUEMA_ANADIR_REVISION, ESQUEMA_MIS_FUENTES, ESQUEMA_BOLA, ESQUEMA_LITERATURA, ESQUEMA_SCOPUS, ESQUEMA_GUARDAR_SCOPUS, ESQUEMA_CORPUS, ESQUEMA_REVISTA, GUARDAR_AVANCE, ESQUEMA_GUARDAR_AVANCE, ESQUEMA_GUARDAR_AVANCE_TSP, ESQUEMA_GUARDAR_AVANCE_INFORME, GUARDAR_CAPITULO, ESQUEMA_GUARDAR_CAPITULO, ESQUEMA_GUARDAR_CAPITULO_INFORME, ESQUEMA_GUARDAR_ANALISIS, ESQUEMA_VER_ANALISIS, ESQUEMA_TRABAJAR_EN_R, ESQUEMA_VER_CAPITULO, ESQUEMA_REVISAR_EVIDENCIA, ESQUEMA_VERIFICAR_CITAS, ESQUEMA_REDACTAR, ESQUEMA_GUARDAR_AVANCE_DOCENTE, ESQUEMA_GUARDAR_CAPITULO_DOCENTE, ESQUEMA_VER_CAPITULO_DOCENTE } = require('./mcp.esquemas');
 
 const NOMBRE_SERVIDOR = 'acosta-research-tesis';
 const VERSION_SERVIDOR = '1.0.0';
@@ -904,7 +921,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
       title: 'Guardar el capítulo escrito',
       description:
         'Guarda el texto de un capítulo en el servidor, para que el tesista se lo pueda ' +
-        'descargar en Word con todos los demás, en orden y con su portada. ' +
+        `descargar en Word con todos los demás, en orden${esRevision(licencia.productCode) ? '' : ' y con su portada'}. ` +
         'GUÁRDALO EN CUANTO el tesista dé por bueno lo redactado, sin que te lo pida: no ' +
         'sabe que esto existe, y lo que no se guarde aquí lo tendrá que copiar y pegar él. ' +
         'Manda el texto limpio, sin comentarios tuyos.',
@@ -961,6 +978,40 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
 
         // La propuesta de tema (y las fichas de trabajo) no van al Word: mandar a
         // pedir el enlace aquí contradecía a la propia skill.
+        // La Ficha del artículo sí se entrega en Word, pero aparte y armada aquí:
+        // con el script de la skill, en claude.ai, tardaba siete minutos.
+        if (/^(articulo|revision)-fase0-/.test(entrada.capitulo)) {
+          const titulo = entrada.capitulo.startsWith('revision') ? 'Ficha de la revisión' : 'Ficha del artículo';
+          let enlaceFicha;
+          try {
+            const { url, minutos } = await rService.fichaEnWord({
+              userId: licencia.user.id,
+              productCode: licencia.productCode,
+              titulo,
+              texto: entrada.texto,
+              archivo: 'FICHA.docx',
+            });
+            enlaceFicha =
+              `LA FICHA EN WORD YA ESTÁ ARMADA (no la armes tú ni copies ningún script): dale este enlace:${N}` +
+              (await darEnlace({ texto: 'Haz clic aquí para descargar tu Ficha en Word', url, minutos })) +
+              `${N}${N}`;
+          } catch (error) {
+            if (!(error instanceof MotorNoDisponible)) {
+              logger.error({ err: error, licenseId: licencia.id }, 'No se pudo armar la Ficha en Word');
+            }
+            enlaceFicha =
+              'La Ficha en Word no se pudo armar ahora en el servidor: dásela en el chat como Markdown ' +
+              `y dile que la pida otra vez más tarde. No copies el script de la skill.${N}${N}`;
+          }
+          return texto(
+            `Guardado. «${skill.displayName}» lleva ${palabras} palabras.${N}${N}` +
+              revision +
+              enlaceFicha +
+              'Esta Ficha NO va en el Word del artículo: es el documento de trabajo que leen las fases ' +
+              'siguientes. No llames a "enlace_del_word" por ella.',
+          );
+        }
+
         if (NUNCA_EN_EL_DOCUMENTO.has(entrada.capitulo)) {
           return texto(
             `Guardado. «${skill.displayName}» lleva ${palabras} palabras.\n\n` +
@@ -989,7 +1040,11 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
             revision +
             controlTexto +
             'DALE AQUÍ MISMO EL WORD con "enlace_del_word": sale con todos los capítulos que ' +
-            'llevéis, en orden, con su portada y con las referencias en la norma del proyecto. ' +
+            (esRevision(licencia.productCode)
+              ? 'llevéis, en orden, como manuscrito de revista (el título arriba, sin portada, sin ' +
+                'índice y sin nombres de autor: la autoría entra en la Fase 8; no le preguntes a ' +
+                'nombre de quién va) y con las referencias en la norma del proyecto. '
+              : 'llevéis, en orden, con su portada y con las referencias en la norma del proyecto. ') +
             `En su perfil de la web NO hay ninguna descarga de ${SU_OBRA}: no lo mandes allí a ` +
             'buscarla.',
         );
@@ -2254,7 +2309,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
             if (f.pdfLibre) señas.push('PDF gratis');
             if (f.idioma) señas.push(`en ${f.idioma}`);
             if (señas.length > 0) lineas.push(`   [${señas.join(' · ')}]`);
-            if (f.resumen) lineas.push(`   Resumen: ${f.resumen.slice(0, 400)}`);
+            if (f.resumen) lineas.push(`   Resumen: ${resumenCorto(f.resumen)}`);
             return lineas.join('\n');
           });
 
@@ -2284,7 +2339,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
           // para vender su artículo; la nota la escribió Acosta diciendo para
           // qué sirve la fuente.
           if (f.nota) lineas.push(`   Nota de Acosta: ${f.nota.slice(0, 400)}`);
-          else if (f.resumen) lineas.push(`   Resumen: ${f.resumen.slice(0, 400)}`);
+          else if (f.resumen) lineas.push(`   Resumen: ${resumenCorto(f.resumen)}`);
           // De dónde salió. Va en cada ficha y no en un encabezado porque las
           // dos procedencias se mezclan en la misma lista, y el tesista tiene
           // derecho a distinguir las que eligió él de las que le pusimos.
@@ -2474,7 +2529,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         if (f.idioma) señas.push(`en ${f.idioma}`);
         if (señas.length > 0) lineas.push(`   [${señas.join(' · ')}]`);
 
-        if (f.resumen) lineas.push(`   Resumen: ${f.resumen.slice(0, 400)}`);
+        if (f.resumen) lineas.push(`   Resumen: ${resumenCorto(f.resumen)}`);
         return lineas.join('\n');
       });
 
@@ -2759,8 +2814,13 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
             `Archivos (los enlaces duran 30 minutos; después se piden con "trabajar_en_r" y descargar):${N}` +
               enlaces.join(N),
             'QUÉ HACER AHORA: pídele que baje los CSV y RIS de cada base y te los SUBA AL CHAT tal ' +
-              'cual, para correr corpus.py; el _todo.ris es para importarlo en Zotero o Mendeley; el ' +
+              'cual, para correr corpus.py, Y EN LA MISMA SUBIDA la plantilla oficial del PRISMA ' +
+              `(${PLANTILLA_PRISMA}), que prisma_word.py necesita al final: así no hay que pedirla ` +
+              'aparte. El _todo.ris es para importarlo en Zotero o Mendeley; el ' +
               '_registro.txt tiene la consulta literal de cada base para la hoja Búsqueda y los Métodos.',
+            'PARA EL TEXTO COMPLETO: los CSV traen «open_access.oa_url» y «best_oa_location.pdf_url» ' +
+              '(y los RIS la línea L1): de ahí sale qué estudio tiene copia gratis y su enlace directo. ' +
+              'Usa esas columnas al armar la lista de PDF por conseguir; no abras cada DOI en la web.',
             `Orden para la identificación, con estos archivos:${N}${orden}`,
             `EN LOS MÉTODOS se declara: búsqueda hecha el ${hecho.fecha} con el conector de Acosta | ` +
               'IA & Research; en Scopus, la lista de documentos de Scopus con sus metadatos de OpenAlex ' +
@@ -2933,7 +2993,7 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         if (f.source) lineas.push(`   ${f.source}`);
         if (f.doi) lineas.push(`   DOI: ${f.doi}`);
         if (senal) lineas.push(`   [${senal}]`);
-        if (f.abstract) lineas.push(`   Resumen: ${f.abstract.slice(0, 300)}`);
+        if (f.abstract) lineas.push(`   Resumen: ${resumenCorto(f.abstract, 300)}`);
         return lineas.join('\n');
       };
 
@@ -2991,18 +3051,39 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
         'PREGÚNTASELO ANTES: no guardes lo que no te ha pedido. ' +
         'PASA SOLO DOI QUE VENGAN DE UNA BÚSQUEDA, nunca uno recordado ni reconstruido: si ' +
         'no tienes el DOI exacto delante, dilo en vez de inventarlo. ' +
-        'Lo repetido no se duplica y lo que el catálogo no conozca se te dirá por su nombre.',
-      inputSchema: ESQUEMA_ANADIR,
+        'Lo repetido no se duplica y lo que el catálogo no conozca se te dirá por su nombre.' +
+        (esRevision(licencia.productCode)
+          ? ' Una fuente SIN DOI (informe, boletín, tesis de repositorio) que abriste en esta sesión ' +
+            'va en "sinDoi" con los datos copiados de su página y su dirección; así se cita con ' +
+            'clave y no queda [FALTA FUENTE] ni hay que mandarlo a la web.'
+          : ''),
+      inputSchema: esRevision(licencia.productCode) ? ESQUEMA_ANADIR_REVISION : ESQUEMA_ANADIR,
     },
-    async ({ dois }) => {
+    async ({ dois = [], sinDoi = [] }) => {
       await licenseService.recordUsage({
         licenseId: licencia.id,
         tool: 'anadir_a_mis_fuentes',
       });
 
-      const parte = await propiasService.importarPorDoi({ userId: licencia.userId, dois });
+      if (dois.length === 0 && sinDoi.length === 0) {
+        return texto('No llegó nada que guardar: pasa "dois" o "sinDoi".');
+      }
 
       const lineas = [];
+      if (sinDoi.length > 0) {
+        const aMano = await propiasService.importarAMano({ userId: licencia.userId, fuentes: sinDoi });
+        lineas.push(
+          `${aMano.guardadas} sin DOI guardadas${aMano.repetidas > 0 ? ` (${aMano.repetidas} ya estaban)` : ''}; ` +
+            'búscalas con "buscar_fuentes" para tener su clave.',
+        );
+        if (dois.length === 0) {
+          lineas.push(`Ahora tiene ${aMano.total} fuentes propias.`);
+          return texto(lineas.join(N));
+        }
+      }
+
+      const parte = await propiasService.importarPorDoi({ userId: licencia.userId, dois });
+
       if (parte.guardadas > 0) lineas.push(`${parte.guardadas} fuentes nuevas en su biblioteca.`);
       if (parte.repetidas > 0) lineas.push(`${parte.repetidas} ya las tenía: se refrescó la ficha.`);
       if (parte.noEncontrados.length > 0) {
@@ -5032,7 +5113,10 @@ function construirServidor(licencia, { cliente = 'otro' } = {}) {
       title: 'Enlace para descargar la tesis en Word',
       description:
         'Da un enlace para descargar la tesis en Word, armada por el servidor con todo lo ' +
-        'guardado: portada, índice, capítulos en orden, y las citas y las referencias ya ' +
+        (esRevision(licencia.productCode)
+          ? 'guardado, como manuscrito de revista (título, secciones en orden, sin portada ni índice), ' +
+            'y las citas y las referencias ya '
+          : 'guardado: portada, índice, capítulos en orden, y las citas y las referencias ya ') +
         'escritas en la norma del proyecto —en notas al pie si la norma lo pide, y ' +
         'enlazadas a Zotero si el tesista lo conectó—. ' +
         'ÚSALA cuando pida su Word, su documento o descargar, y después de guardar un ' +

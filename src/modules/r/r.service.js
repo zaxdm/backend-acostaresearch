@@ -842,6 +842,23 @@ async function dejarArchivos({ userId, productCode, archivos }) {
   for (const { nombre, bytes } of archivos) await m.guardarArchivo(proyecto.id, nombre, bytes);
 }
 
+/**
+ * El Word de una ficha de trabajo (la Ficha del artículo), armado aquí.
+ *
+ * Antes lo armaba Claude con el script de la skill, que en claude.ai no existe:
+ * lo reescribía entero (94 KB) y tardaba siete minutos. Aquí sale en segundos,
+ * con las citas en la norma del proyecto, y queda en la carpeta del proyecto
+ * para bajarlo con un enlace. Devuelve el enlace, o lanza `MotorNoDisponible`.
+ */
+async function fichaEnWord({ userId, productCode, titulo, texto: cuerpo, archivo }) {
+  const m = motorActual();
+  if (!m || !(await m.listo())) throw new MotorNoDisponible('El motor de R está apagado o sin instalar.');
+  const proyecto = await projectRepository.asegurar(userId, productCode);
+  const { buffer } = await armarWord({ userId, proyecto, titulo, texto: cuerpo, norma: null, figuras: new Map() });
+  await m.guardarArchivo(proyecto.id, archivo, buffer);
+  return enlaces.enlaceDeDescarga({ userId, productCode, archivo });
+}
+
 /** Un archivo de la sesión, para la ruta de descarga. */
 async function leerArchivo({ userId, productCode, archivo }) {
   const m = motorActual();
@@ -859,6 +876,7 @@ module.exports = {
   subirDatos,
   leerArchivo,
   dejarArchivos,
+  fichaEnWord,
   leerArchivoDeSesion,
   figurasDeSesion,
   disponible,

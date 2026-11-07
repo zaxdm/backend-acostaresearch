@@ -967,6 +967,10 @@ const CAMPOS_BIBLIOMETRICOS = [
   'referenced_works',
   'referenced_works_count',
   'abstract_inverted_index',
+  // Si hay copia gratis y dónde: la Fase 3 de la revisión pide los PDF a texto
+  // completo, y sin esto Claude tenía que abrir cada DOI en la web.
+  'open_access',
+  'best_oa_location',
 ].join(',');
 
 /**

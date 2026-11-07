@@ -54,7 +54,7 @@ const skillService = require('../skills/skill.service');
 const referenceService = require('../references/reference.service');
 const { guardarAvanceSchema, guardarCapituloSchema } = require('./project.schema');
 const { fusionarFicha, lineasDeFicha, esDeEmpresa, NOMBRE_DE_TIPO } = require('./project.ficha-informe');
-const { perfilDe, esTesisDelMetodo, verificaCitas } = require('../productos/producto.perfil');
+const { perfilDe, esTesisDelMetodo, verificaCitas, esRevision } = require('../productos/producto.perfil');
 const { lineaDeMaterial } = require('./project.material');
 const esquemaDeCapitulos = require('./project.esquema');
 
@@ -973,6 +973,8 @@ async function armarWord(userId, productCode) {
     ...(perfil.tipo === 'tesis' ? { paginasDeTesis: true } : {}),
     // Las sesiones: «Docente:» en la portada, sin asesor, y una sesión por página.
     ...(perfil.tipo === 'docente' ? { rotuloAutor: 'Docente: ', asesor: null, seccionPorPagina: true } : {}),
+    // La revisión sale como manuscrito de revista: título, sin portada ni índice.
+    ...(esRevision(productCode) ? { manuscrito: true } : {}),
     ...armado.documento,
   });
 

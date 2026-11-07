@@ -92,6 +92,11 @@ const COLUMNAS = [
   'referenced_works',
   'referenced_works_count',
   'abstract',
+  // Al final, para no mover las que lee bibliometrix: si hay copia gratis y el
+  // enlace directo al PDF, para conseguir el texto completo en la revisión.
+  'open_access.is_oa',
+  'open_access.oa_url',
+  'best_oa_location.pdf_url',
 ];
 
 /** Una celda: sin «|» ni saltos dentro, que partirían el valor o la fila. */
@@ -155,6 +160,9 @@ function filaDe(w, etiquetas = new Map()) {
     referenced_works: juntar((w.referenced_works ?? []).map((r) => etiquetas.get(r) ?? r)),
     referenced_works_count: w.referenced_works_count ?? (w.referenced_works ?? []).length,
     abstract: limpio(openalex.resumenDelIndice(w.abstract_inverted_index)),
+    'open_access.is_oa': w.open_access ? (w.open_access.is_oa ? 'true' : 'false') : '',
+    'open_access.oa_url': w.open_access?.oa_url ?? '',
+    'best_oa_location.pdf_url': w.best_oa_location?.pdf_url ?? '',
   };
 }
 

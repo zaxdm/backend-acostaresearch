@@ -1329,6 +1329,13 @@ async function armar({
   // las pide sueltas.
   rotuloAutor = 'Autor: ',
   seccionPorPagina = false,
+  /**
+   * Solo el artículo de revisión: sale como manuscrito para una revista, no
+   * como tesis. Arriba el título, sin portada con «Autor:» (la revista evalúa
+   * sin nombres) ni índice, y las secciones seguidas, sin salto de página. La
+   * portada de una plantilla subida, si la trae, se respeta.
+   */
+  manuscrito = false,
 }) {
   const notas = {};
   /** Los pendientes del texto, que van al margen (ver `comoComentario`). */
@@ -1388,21 +1395,34 @@ async function armar({
         ? portadaInforme.ambito === 'empresa'
           ? portadaDeEmpresa(portadaInforme)
           : portadaDeInforme(portadaInforme)
-        : portada({ tema, carrera, universidad, nombre, asesor, hoy, conLogo: paginasDeTesis, rotuloAutor })),
+        : manuscrito
+          ? [
+              new Paragraph({
+                text: tema ?? 'Artículo',
+                heading: HeadingLevel.TITLE,
+                alignment: AlignmentType.CENTER,
+                indent: { firstLine: 0 },
+              }),
+            ]
+          : portada({ tema, carrera, universidad, nombre, asesor, hoy, conLogo: paginasDeTesis, rotuloAutor })),
     ...(paginasDeTesis ? paginasPreliminares() : []),
-    new Paragraph({ text: '', pageBreakBefore: true }),
-    // «TOC Heading» y no Título 1: se ve como un Título 1 pero no entra en el
-    // índice. Con Título 1, el índice se listaba a sí mismo como primera
-    // entrada. Es el mismo estilo que usa Word; ver `conTituloDelIndice`.
-    new Paragraph({ text: 'Índice', style: 'TOCHeading' }),
-    // Word lo rellena al abrir el documento y pedir «actualizar campos». No se
-    // puede calcular aquí: los números de página los decide Word al maquetar,
-    // no nosotros.
-    new TableOfContents('Índice', {
-      hyperlink: true,
-      headingStyleRange: '1-3',
-      stylesWithLevels: [new StyleLevel('Heading1', 1), new StyleLevel('Heading2', 2)],
-    }),
+    ...(manuscrito
+      ? []
+      : [
+          new Paragraph({ text: '', pageBreakBefore: true }),
+          // «TOC Heading» y no Título 1: se ve como un Título 1 pero no entra en el
+          // índice. Con Título 1, el índice se listaba a sí mismo como primera
+          // entrada. Es el mismo estilo que usa Word; ver `conTituloDelIndice`.
+          new Paragraph({ text: 'Índice', style: 'TOCHeading' }),
+          // Word lo rellena al abrir el documento y pedir «actualizar campos». No se
+          // puede calcular aquí: los números de página los decide Word al maquetar,
+          // no nosotros.
+          new TableOfContents('Índice', {
+            hyperlink: true,
+            headingStyleRange: '1-3',
+            stylesWithLevels: [new StyleLevel('Heading1', 1), new StyleLevel('Heading2', 2)],
+          }),
+        ]),
   ];
 
   /** Un Título 1 de los que abren página: capítulo, referencias o anexo. */
@@ -1410,7 +1430,7 @@ async function armar({
     new Paragraph({
       text: texto,
       heading: HeadingLevel.HEADING_1,
-      pageBreakBefore: true,
+      pageBreakBefore: !manuscrito,
       // Como los subtítulos: el título de un capítulo no se sangra.
       indent: { firstLine: 0 },
       ...espacioDeTitulo,
@@ -1565,7 +1585,7 @@ async function armar({
             ...(pagina?.tamano ? { size: pagina.tamano } : {}),
           },
           // Sin plantilla, la portada no lleva número (ver `numeroDePagina`).
-          ...(plantilla ? {} : { titlePage: true }),
+          ...(plantilla || manuscrito ? {} : { titlePage: true }),
         },
         ...numeroDePagina(plantilla),
         children: cuerpo,

@@ -68,3 +68,25 @@ test('el RIS lleva el PDF gratis en L1', () => {
   const sinPdf = corpus.ris([corpus.deOpenAlex({ ...OBRA, best_oa_location: null }, 'OpenAlex')]);
   assert.doesNotMatch(sinPdf, /L1 {2}-/);
 });
+
+test('la Ficha escrita para el script de la skill sale sin marcas en el Word del servidor', () => {
+  const { deLaSintaxisDelMotor } = require('../src/modules/r/r.service');
+  const md = [
+    '[TITULO] FICHA DE ORIENTACIÓN DEL ARTÍCULO',
+    '',
+    '# 1. Perfil',
+    '[SIN SANGRIA] La Tabla 1 resume el perfil.',
+    '',
+    '[TABLA 1] Perfil del estudio',
+    '| Campo | Dato |',
+    '|---|---|',
+    '| Área | Educación |',
+    '[NOTA] Elaboración propia.',
+  ].join('\n');
+  const { titulo, texto } = deLaSintaxisDelMotor(md);
+  assert.equal(titulo, 'FICHA DE ORIENTACIÓN DEL ARTÍCULO');
+  assert.doesNotMatch(texto, /\[(TITULO|TABLA|NOTA|SIN SANGR)/);
+  assert.match(texto, /\n\n## 1\. Perfil\n\n/);
+  assert.match(texto, /\*\*Tabla 1\*\*\n\n\*Perfil del estudio\*/);
+  assert.match(texto, /\*Nota\.\* Elaboración propia\./);
+});

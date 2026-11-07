@@ -1500,10 +1500,12 @@ async function armar({
       ),
   ];
 
-  // Resumen y abstract: solo en la tesis, delante del Capítulo I (ver
-  // `sacarPreliminaresDelTexto`). Si la plantilla numera los Título 1, van con
-  // el estilo del título del índice para no salir como «Capítulo VII».
-  if (paginasDeTesis) {
+  // Resumen y abstract: en la tesis, delante del Capítulo I (ver
+  // `sacarPreliminaresDelTexto`); en el manuscrito de un artículo, debajo del
+  // título, donde los pide la revista (salían detrás de las Conclusiones, E2E
+  // del 7-nov-2026). Si la plantilla numera los Título 1, van con el estilo del
+  // título del índice para no salir como «Capítulo VII».
+  if (paginasDeTesis || manuscrito) {
     const preliminares = [];
     for (let i = 0; i < delCuerpo.length; i += 1) {
       const { texto, secciones } = sacarPreliminaresDelTexto(delCuerpo[i].texto);

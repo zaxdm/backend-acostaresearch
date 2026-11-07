@@ -155,3 +155,14 @@ test('al guardar la Matriz no pide verificar sus citas; al guardar la Introducci
     referencias.porClaves = antes;
   }
 });
+
+test('el resumen y el abstract van debajo del título, no detrás de las Conclusiones', async () => {
+  empezar();
+  estado.textos['articulo-fase2-introduccion'] =
+    'El uso de la IA creció.\n\n## Resumen\n\nEste estudio analiza la dependencia.\n\n## Abstract\n\nThis study examines dependence.';
+  const { textos } = await textosDelWord();
+  const resumen = textos.indexOf('Resumen');
+  const intro = textos.indexOf('Introducción');
+  assert.ok(resumen > 0 && resumen < intro, `Resumen en ${resumen}, Introducción en ${intro}`);
+  assert.ok(textos.indexOf('Abstract') < intro);
+});

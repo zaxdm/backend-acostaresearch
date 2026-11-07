@@ -21,11 +21,14 @@ const {
   buscarVinculoSchema,
   vincularCorreoSchema,
   quitarVinculoSchema,
+  ordenCompraSchema,
+  cobrarCompraSchema,
 } = require('./acostaia.schema');
 const acostaiaService = require('./acostaia.service');
 const acostaiaDatos = require('./acostaia.datos');
 const acostaiaConectores = require('./acostaia.conectores');
 const acostaiaVinculos = require('./acostaia.vinculos');
+const acostaiaCompras = require('./acostaia.compras');
 
 const router = Router();
 
@@ -86,6 +89,25 @@ router.post(
   '/accesos',
   validate({ body: crearAccesoSchema }),
   asyncHandler(async (req, res) => created(res, await acostaiaService.crearAcceso(req.body))),
+);
+
+/**
+ * Comprar un método desde Epicuro (7-nov-2026), con Culqi y el cobro de
+ * siempre (ver `acostaia.compras`). GET da la llave pública; POST abre la
+ * orden; POST …/cobrar cobra con el token (o tras la verificación 3-D Secure).
+ */
+router.get('/compras/pasarela', (_req, res) => ok(res, acostaiaCompras.pasarela()));
+
+router.post(
+  '/compras/orden',
+  validate({ body: ordenCompraSchema }),
+  asyncHandler(async (req, res) => created(res, await acostaiaCompras.orden(req.body))),
+);
+
+router.post(
+  '/compras/cobrar',
+  validate({ body: cobrarCompraSchema }),
+  asyncHandler(async (req, res) => ok(res, await acostaiaCompras.cobrar(req.body))),
 );
 
 /** POST /acostaia/vinculos/enlace — vincula su compra con el enlace del conector que pegó. */

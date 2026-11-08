@@ -37,6 +37,54 @@ const MARCA = /\[(AR[0-9A-F]{8})(?::([^\]\n]{1,40}))?\]/gi;
 
 const { quitarAfiliaciones } = require('../references/afiliacion');
 
+// Partículas que en un apellido van en minúscula: «de la Cruz», «van Dijk».
+const PARTICULAS = new Set(['de', 'del', 'la', 'las', 'los', 'y', 'e', 'da', 'das', 'do', 'dos', 'van', 'von', 'der', 'den', 'di']);
+
+/**
+ * «PALOMINO-FLORES» → «Palomino-Flores».
+ *
+ * Algunas bases (y algunas fichas escritas a mano) dan el apellido entero en
+ * mayúsculas, y así salía en la cita y en las referencias. Solo se toca lo que
+ * no tiene ninguna minúscula: «McAdams» o «da Silva» se quedan como están.
+ */
+function apellidoLegible(apellido) {
+  const texto = String(apellido ?? '');
+  if (!/\p{Lu}.*\p{Lu}/u.test(texto) || /\p{Ll}/u.test(texto)) return texto;
+  let primera = true;
+  return texto.toLowerCase().replace(/\p{L}+/gu, (palabra) => {
+    const cambio = !primera && PARTICULAS.has(palabra) ? palabra : palabra[0].toUpperCase() + palabra.slice(1);
+    primera = false;
+    return cambio;
+  });
+}
+
+/**
+ * «Ministerio de la Producción (Produce)» → nombre y sigla por separado.
+ *
+ * Con la sigla entre paréntesis, la cita salía con un paréntesis dentro de otro:
+ * «(Ministerio de la Producción (Produce), 2025)». APA pone la sigla entre
+ * corchetes en la cita y la quita de las referencias.
+ */
+function institucionConSigla(autor) {
+  const encontrado = /^(.+?)\s*\(([\p{L}\p{N}.&\- ]{2,20})\)\s*$/u.exec(String(autor ?? '').trim());
+  return encontrado ? { nombre: encontrado[1].trim(), sigla: encontrado[2].trim() } : null;
+}
+
+/** Cómo se nombra un autor en la cita: el apellido, o la institución con su sigla entre corchetes. */
+function nombreParaCita(persona) {
+  const coma = persona.indexOf(',');
+  if (coma >= 0) return apellidoLegible(persona.slice(0, coma).trim());
+  const institucion = institucionConSigla(persona);
+  return institucion ? `${institucion.nombre} [${institucion.sigla}]` : persona.trim();
+}
+
+/** Cómo va un autor en la lista de referencias: apellido legible, institución sin la sigla. */
+function nombreParaReferencias(persona) {
+  const coma = persona.indexOf(',');
+  if (coma >= 0) return `${apellidoLegible(persona.slice(0, coma).trim())}${persona.slice(coma)}`;
+  return institucionConSigla(persona)?.nombre ?? persona;
+}
+
 /**
  * Qué dicen los dos puntos de una marca.
  *
@@ -74,7 +122,7 @@ function autoresParaCita(autores) {
 
   // Sin la universidad que Crossref deposita como autor, igual que en la norma.
   const personas = quitarAfiliaciones(String(autores).split(/\s*;\s*/).map((persona) => persona.trim()))
-    .map((persona) => persona.split(',')[0].trim())
+    .map(nombreParaCita)
     .filter(Boolean);
 
   if (personas.length === 0) return null;
@@ -169,7 +217,9 @@ function tramosDeBibliografia(fuente) {
   const tramos = [];
   const suelta = esObraSuelta(fuente.itemType);
 
-  const autores = fuente.authors ? quitarAfiliaciones(String(fuente.authors).split(/\s*;\s*/).map((p) => p.trim())).join('; ') : '';
+  const autores = fuente.authors
+    ? quitarAfiliaciones(String(fuente.authors).split(/\s*;\s*/).map((p) => p.trim())).map(nombreParaReferencias).join('; ')
+    : '';
   tramos.push({ texto: `${autores || '(Autor no consignado)'} ` });
   tramos.push({ texto: `(${fuente.year ?? 's. f.'}). ` });
 
@@ -317,4 +367,7 @@ module.exports = {
   entradaDeBibliografia,
   datosDeLaPublicacion,
   autoresParaCita,
+  apellidoLegible,
+  institucionConSigla,
+  nombreParaCita,
 };

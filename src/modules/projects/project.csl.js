@@ -35,7 +35,7 @@ const CSL = require('citeproc');
 
 const normas = require('./project.normas');
 const { quitarAfiliaciones } = require('../references/afiliacion');
-const { MARCA, modificadoresDe, hueco } = require('./project.citas');
+const { MARCA, modificadoresDe, hueco, apellidoLegible, institucionConSigla, nombreParaCita } = require('./project.citas');
 
 const SIN_FORMA = '[NO_PRINTED_FORM]';
 const CITA_PERDIDA = '[CITA SIN LOCALIZAR: revísala]';
@@ -98,8 +98,9 @@ function personasCsl(autores) {
   return quitarAfiliaciones(personas)
     .map((persona) => {
       const coma = persona.indexOf(',');
-      if (coma === -1) return { literal: persona };
-      const family = persona.slice(0, coma).trim();
+      // La sigla va en la cita (ver `conSiglas`), no en las referencias.
+      if (coma === -1) return { literal: institucionConSigla(persona)?.nombre ?? persona };
+      const family = apellidoLegible(persona.slice(0, coma).trim());
       const given = persona.slice(coma + 1).trim();
       return given ? { family, given } : { family };
     });
@@ -257,7 +258,7 @@ function entradaDeHtml(html) {
 function autoresDeLaFicha(autores, idioma) {
   const conjuncion = String(idioma).startsWith('en') ? 'and' : 'y';
   const personas = quitarAfiliaciones(String(autores ?? '').split(/\s*;\s*/).map((persona) => persona.trim()))
-    .map((persona) => persona.split(',')[0].trim())
+    .map(nombreParaCita)
     .filter(Boolean);
 
   if (personas.length === 0) return 'Anónimo';
@@ -282,7 +283,7 @@ function autoresNarrativos(motor, clave, fuente, idioma, familia) {
       const vista = motor.makeCitationCluster([{ id: clave, 'author-only': true }]);
       const limpio = String(vista ?? '').trim();
       if (limpio !== '' && !limpio.includes(SIN_FORMA)) {
-        return limpio.replace(/\s&\s/g, String(idioma).startsWith('en') ? ' and ' : ' y ');
+        return conSiglas(limpio.replace(/\s&\s/g, String(idioma).startsWith('en') ? ' and ' : ' y '), [fuente], false);
       }
     } catch {
       // Se cae a los nombres de la ficha.
@@ -291,11 +292,38 @@ function autoresNarrativos(motor, clave, fuente, idioma, familia) {
   return autoresDeLaFicha(fuente.authors, idioma);
 }
 
-/** Sin tildes, mayúsculas ni espacios de sobra, para comparar nombres escritos a mano. */
+/**
+ * «Ministerio de la Producción» → «Ministerio de la Producción [Produce]» en la cita.
+ *
+ * citeproc no sabe de siglas: la institución le llega sin ella (ver
+ * `personasCsl`) para que las referencias salgan como pide APA, y aquí se le
+ * pone en la cita, la primera vez que aparece su nombre.
+ */
+function conSiglas(texto, fuentes, html = true) {
+  let resultado = texto;
+  for (const fuente of fuentes) {
+    for (const persona of String(fuente?.authors ?? '').split(/\s*;\s*/)) {
+      if (persona.includes(',')) continue;
+      const institucion = institucionConSigla(persona);
+      if (!institucion) continue;
+      const nombre = html
+        ? institucion.nombre.replace(/&/g, '&#38;').replace(/</g, '&#60;').replace(/>/g, '&#62;')
+        : institucion.nombre;
+      const donde = resultado.indexOf(nombre);
+      if (donde >= 0 && !resultado.startsWith(' [', donde + nombre.length)) {
+        resultado = `${resultado.slice(0, donde + nombre.length)} [${institucion.sigla}]${resultado.slice(donde + nombre.length)}`;
+      }
+    }
+  }
+  return resultado;
+}
+
+/** Sin tildes, mayúsculas, guiones ni espacios de sobra, para comparar nombres escritos a mano. */
 const sinAdornos = (texto) =>
   String(texto ?? '')
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
+    .replace(/[-‐‑–]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
     .toLowerCase();
@@ -315,11 +343,17 @@ function terminaConPalabra(texto, autores) {
   return previo === '' || /[^a-z0-9]$/.test(previo);
 }
 
-/** Letra a letra sin tilde y en minúscula; mide lo mismo que el original, para cortarlo. */
+/**
+ * Letra a letra sin tilde y en minúscula; mide lo mismo que el original, para cortarlo.
+ *
+ * El guion cuenta como espacio: el modelo escribe «Pizzán Tomanguillo» y la ficha
+ * dice «Pizzan-Tomanguillo», y salía «Pizzán Tomanguillo et al. Pizzan-Tomanguillo
+ * et al. (2022)».
+ */
 const plano = (texto) =>
   String(texto ?? '')
     .split('')
-    .map((c) => c.normalize('NFD')[0].toLowerCase()[0])
+    .map((c) => (/[-‐‑–]/.test(c) ? ' ' : c.normalize('NFD')[0].toLowerCase()[0]))
     .join('');
 
 const escapar = (texto) => texto.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -500,7 +534,9 @@ function renderizar({ norma: idNorma, idioma: idIdioma, capitulos, porClave, uri
   }
 
   for (const cita of citas.values()) {
-    cita.tramos = comoTramos(html.get(cita.id) ?? '');
+    const salida = html.get(cita.id) ?? '';
+    const fuentes = norma.familia === 'autor-fecha' ? cita.items.map((item) => porClave.get(item.id)) : [];
+    cita.tramos = comoTramos(conSiglas(salida, fuentes));
     cita.texto = textoDe(cita.tramos);
     cita.codigo = codigoDeCita(cita, porClave, urisDe);
   }

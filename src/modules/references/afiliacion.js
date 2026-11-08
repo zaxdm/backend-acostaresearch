@@ -26,11 +26,17 @@ function pareceAfiliacion(texto) {
  */
 const CENTRO = /\b(universit\S*|universidad\S*|department|departamento|faculty|facultad|college|school of)\b/i;
 
+/**
+ * «Apellido, N.» es una persona. «University Tun Hussein Onn Malaysia, Malaysia»
+ * también trae coma, pero lo de antes de la coma es la universidad, no un apellido.
+ */
+const esPersona = (persona) => persona.includes(',') && !CENTRO.test(persona.split(',')[0]);
+
 /** Los autores de una ficha («Apellido, N.» o institución), sin las afiliaciones. */
 function quitarAfiliaciones(personas) {
   const limpias = personas.filter((persona) => persona && !pareceAfiliacion(persona));
-  const hayPersonas = limpias.some((persona) => persona.includes(','));
-  return hayPersonas ? limpias.filter((persona) => persona.includes(',') || !CENTRO.test(persona)) : limpias;
+  const hayPersonas = limpias.some(esPersona);
+  return hayPersonas ? limpias.filter((persona) => esPersona(persona) || !CENTRO.test(persona)) : limpias;
 }
 
 module.exports = { pareceAfiliacion, quitarAfiliaciones };

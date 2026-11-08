@@ -21,3 +21,11 @@ test('una universidad entre personas es la afiliación; sola, es la autora', () 
   assert.deepEqual(quitarAfiliaciones(['Universidad Nacional de Trujillo']), ['Universidad Nacional de Trujillo']);
   assert.deepEqual(quitarAfiliaciones(['World Health Organization', 'Pérez, J.']), ['World Health Organization', 'Pérez, J.']);
 });
+
+test('una universidad con el país tras la coma tampoco es un autor', () => {
+  const { quitarAfiliaciones } = require('../src/modules/references/afiliacion');
+  // Ficha real de Crossref (AR71E3CBB2): la universidad va antes y después de las personas.
+  const ficha = 'University Tun Hussein Onn Malaysia, Malaysia; Ahmad, K.; Zabri, S.; University Tun Hussein Onn Malaysia, Malaysia';
+  assert.deepEqual(quitarAfiliaciones(ficha.split('; ')), ['Ahmad, K.', 'Zabri, S.']);
+  assert.deepEqual(quitarAfiliaciones(['Universidad Nacional de Trujillo, Perú']), ['Universidad Nacional de Trujillo, Perú']);
+});

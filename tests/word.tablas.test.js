@@ -99,15 +99,16 @@ test('la cursiva funciona también junto a una cita con clave', async () => {
 });
 
 test('una figura: número en negrita, título en cursiva, marca resaltada y nota, sin sangría', async () => {
+  // La 1: una figura sola se numera 1 en el Word (ver `project.numeracion`).
   const xml = await xmlDe(
-    '**Figura 2**\n*Distribución de la motivación*\n[Insertar aquí la Figura 2: histograma.png]\n*Nota.* Elaboración propia.',
+    '**Figura 1**\n*Distribución de la motivación*\n[Insertar aquí la Figura 1: histograma.png]\n*Nota.* Elaboración propia.',
   );
-  assert.match(xml, /<w:b\/>(?:<w:bCs\/>)?<\/w:rPr><w:t(?: [^>]*)?>Figura 2<\/w:t>/);
+  assert.match(xml, /<w:b\/>(?:<w:bCs\/>)?<\/w:rPr><w:t(?: [^>]*)?>Figura 1<\/w:t>/);
   assert.match(xml, /<w:i\/>(?:<w:iCs\/>)?<\/w:rPr><w:t(?: [^>]*)?>Distribución de la motivación<\/w:t>/);
-  assert.match(xml, /<w:highlight w:val="yellow"\/>(?:[^<]|<(?!\/w:r>))*Insertar aquí la Figura 2: histograma\.png/);
+  assert.match(xml, /<w:highlight w:val="yellow"\/>(?:[^<]|<(?!\/w:r>))*Insertar aquí la Figura 1: histograma\.png/);
   assert.ok(textos(xml).includes('Nota.'));
   // Ningún párrafo del rótulo con la sangría de primera línea del texto normal.
-  const parrafoDelNumero = xml.match(/<w:p>(?:(?!<\/w:p>).)*Figura 2<\/w:t>/)[0];
+  const parrafoDelNumero = xml.match(/<w:p>(?:(?!<\/w:p>).)*Figura 1<\/w:t>/)[0];
   assert.doesNotMatch(parrafoDelNumero, /w:firstLine="[1-9]/, 'la única sangría de primera línea permitida es cero');
 });
 

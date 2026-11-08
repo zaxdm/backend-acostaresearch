@@ -69,6 +69,7 @@ const partesDePlantilla = require('./project.plantilla-partes');
 const indice = require('./project.indice');
 const esquema = require('./project.esquema');
 const { deLaSintaxisDelMotor } = require('./project.marcas');
+const { renumerarRotulos } = require('./project.numeracion');
 
 /** Interlineado doble, en las unidades de OOXML (240 = sencillo). */
 const DOBLE = 480;
@@ -1504,6 +1505,16 @@ async function armar({
           : c,
       ),
   ];
+  // Con los anexos ya al final, las tablas y figuras se numeran por orden de
+  // aparición: las del Anexo 1 del Capítulo I salían como Tablas 1 a 4 detrás
+  // de la 5, 6… del cuerpo (ver `project.numeracion`).
+  const renumerados = renumerarRotulos([...delCuerpo, ...anexos].map((c) => c.texto));
+  delCuerpo.forEach((c, i) => {
+    delCuerpo[i] = { ...c, texto: renumerados[i] };
+  });
+  anexos.forEach((c, i) => {
+    anexos[i] = { ...c, texto: renumerados[delCuerpo.length + i] };
+  });
 
   // Resumen y abstract: en la tesis, delante del Capítulo I (ver
   // `sacarPreliminaresDelTexto`); en el manuscrito de un artículo, debajo del

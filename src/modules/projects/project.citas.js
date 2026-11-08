@@ -35,6 +35,8 @@
 // deja «[CITA SIN LOCALIZAR]» a la vista y se anota en `perdidas`.
 const MARCA = /\[(AR[0-9A-F]{8})(?::([^\]\n]{1,40}))?\]/gi;
 
+const { quitarAfiliaciones } = require('../references/afiliacion');
+
 /**
  * Qué dicen los dos puntos de una marca.
  *
@@ -70,8 +72,8 @@ const HUECO_RE = /⟦C(\d+)⟧/g;
 function autoresParaCita(autores) {
   if (!autores) return null;
 
-  const personas = String(autores)
-    .split(/\s*;\s*/)
+  // Sin la universidad que Crossref deposita como autor, igual que en la norma.
+  const personas = quitarAfiliaciones(String(autores).split(/\s*;\s*/).map((persona) => persona.trim()))
     .map((persona) => persona.split(',')[0].trim())
     .filter(Boolean);
 
@@ -167,7 +169,8 @@ function tramosDeBibliografia(fuente) {
   const tramos = [];
   const suelta = esObraSuelta(fuente.itemType);
 
-  tramos.push({ texto: `${fuente.authors || '(Autor no consignado)'} ` });
+  const autores = fuente.authors ? quitarAfiliaciones(String(fuente.authors).split(/\s*;\s*/).map((p) => p.trim())).join('; ') : '';
+  tramos.push({ texto: `${autores || '(Autor no consignado)'} ` });
   tramos.push({ texto: `(${fuente.year ?? 's. f.'}). ` });
 
   // En una obra suelta, el título ES el continente y va en cursiva.
@@ -226,20 +229,49 @@ function clavesDe(texto) {
  * corchete raro sin entender qué es.
  */
 function resolver(texto, porClave) {
+  // Aquí y no arriba: `project.csl` ya carga este archivo al arrancar.
+  const { terminaCon, terminaConPalabra, inicioDeLosAutores } = require('./project.csl');
   const usadas = new Map();
   const perdidas = new Set();
 
-  const resuelto = texto.replace(MARCA, (original, clave, modificadores) => {
+  let resuelto = '';
+  let desde = 0;
+  for (const [original, clave, modificadores] of texto.matchAll(MARCA)) {
+    const indice = texto.indexOf(original, desde);
+    resuelto += texto.slice(desde, indice);
+    desde = indice + original.length;
+
     // La ficha se guarda con la clave en mayúsculas, que es la forma canónica.
     const canonica = clave.toUpperCase();
     const fuente = porClave.get(canonica);
     if (!fuente) {
       perdidas.add(canonica);
-      return '[CITA SIN LOCALIZAR: revísala]';
+      resuelto += '[CITA SIN LOCALIZAR: revísala]';
+      continue;
     }
     usadas.set(canonica, fuente);
-    return citaConModificadores(fuente, modificadores);
-  });
+
+    // Lo mismo que hace la norma (`project.csl`): si el texto ya escribió los
+    // autores antes de la marca, completos o acortados, no se repiten. Sin
+    // esto salía «Peñaherrera y Yoza Peñaherrera Chipre y Yoza Rodríguez (2024)».
+    const quien = autoresParaCita(fuente.authors) ?? 'Anónimo';
+    const { narrativa: marcada, localizador } = modificadoresDe(modificadores);
+    const inicio = inicioDeLosAutores(resuelto, quien);
+    const narrativa = marcada || terminaConPalabra(resuelto, quien) || inicio >= 0;
+    if (!narrativa) {
+      resuelto += citaConModificadores(fuente, modificadores);
+      continue;
+    }
+
+    const cuando = `(${fuente.year ?? 's. f.'}${localizador ? `, p. ${localizador}` : ''})`;
+    if (terminaCon(resuelto, quien)) {
+      resuelto += cuando;
+    } else {
+      if (inicio >= 0) resuelto = resuelto.slice(0, inicio);
+      resuelto += `${quien} ${cuando}`;
+    }
+  }
+  resuelto += texto.slice(desde);
 
   return { texto: resuelto, usadas, perdidas: [...perdidas] };
 }

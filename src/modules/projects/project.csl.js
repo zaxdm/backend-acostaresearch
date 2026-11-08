@@ -591,6 +591,9 @@ module.exports = {
   tipoCsl,
   personasCsl,
   gruposDeMarcas,
+  terminaCon,
+  terminaConPalabra,
+  inicioDeLosAutores,
   CITA_PERDIDA,
   CODIGO_BIBLIOGRAFIA,
 };

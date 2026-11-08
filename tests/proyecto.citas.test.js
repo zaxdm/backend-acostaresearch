@@ -148,3 +148,52 @@ test('una clave en minúsculas que NO existe sigue avisando', () => {
   assert.match(texto, /CITA SIN LOCALIZAR/);
   assert.deepEqual(perdidas, ['AR99999999']);
 });
+
+// ── El APA de respaldo con los arreglos de la norma (8-nov-2026) ───────────
+// Al proyecto de Antonio la norma le fallaba y el Word salía con este respaldo,
+// que no tenía ni el filtro de afiliaciones ni el de apellidos ya escritos.
+
+const MALASIA = {
+  ref: 'AR55555555',
+  authors: 'University Tun Hussein Onn Malaysia; Ahmad, K.; Zabri, S. M.',
+  year: 2018,
+  title: 'Inventory management practices in microenterprises',
+  source: 'Journal',
+};
+const FERRETERIA = {
+  ref: 'AR44444444',
+  authors: 'Peñaherrera Chipre, S. S.; Yoza Rodríguez, N. R.',
+  year: 2024,
+  title: 'Gestión de inventarios',
+  source: 'Revista',
+};
+const RECUAY = {
+  ref: 'ARC91330C5',
+  authors: 'Aguilar Camones, J.; Melgarejo Ponte, R.',
+  year: 2026,
+  title: 'Control interno y mercadería',
+  source: 'Revista',
+};
+const deAntonio = new Map([MALASIA, FERRETERIA, RECUAY].map((f) => [f.ref, f]));
+
+test('respaldo: la universidad que Crossref pone entre los autores no sale', () => {
+  const { texto } = citas.resolver('Ahmad y Zabri [AR55555555:n] estudiaron (ver [AR55555555]).', deAntonio);
+  assert.equal(texto, 'Ahmad y Zabri (2018) estudiaron (ver (Ahmad y Zabri, 2018)).');
+});
+
+test('respaldo: apellidos acortados en el texto van una sola vez y completos', () => {
+  const { texto } = citas.resolver('En Ecuador, Peñaherrera y Yoza [AR44444444:n] tomaron como caso GAMAGI.', deAntonio);
+  assert.equal(texto, 'En Ecuador, Peñaherrera Chipre y Yoza Rodríguez (2024) tomaron como caso GAMAGI.');
+
+  const otro = citas.resolver('Por último, Aguilar Camones y Melgarejo [ARC91330C5:n] estudiaron.', deAntonio);
+  assert.equal(otro.texto, 'Por último, Aguilar Camones y Melgarejo Ponte (2026) estudiaron.');
+});
+
+test('respaldo: narrativa sin nombres delante los escribe; con un solo autor de dos, no se toca', () => {
+  assert.equal(citas.resolver('Como mostraron [AR44444444:n], sí.', deAntonio).texto, 'Como mostraron Peñaherrera Chipre y Yoza Rodríguez (2024), sí.');
+  assert.equal(citas.resolver('Lo dijo Yoza [AR44444444:n].', deAntonio).texto, 'Lo dijo Yoza Peñaherrera Chipre y Yoza Rodríguez (2024).');
+});
+
+test('respaldo: la lista de referencias tampoco lleva la universidad', () => {
+  assert.match(citas.entradaDeBibliografia(MALASIA), /^Ahmad, K\.; Zabri, S\. M\. \(2018\)/);
+});

@@ -76,7 +76,7 @@ const METODO = [
   },
   {
     archivo: 'conclusiones-abstract.skill',
-    displayName: '9 · Capítulo VI · Conclusiones y resumen',
+    displayName: '9 · Capítulo VI · Conclusiones y recomendaciones',
     summary: 'Conclusiones por objetivo, recomendaciones, resumen en español y abstract en inglés.',
   },
 ];

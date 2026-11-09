@@ -357,9 +357,9 @@ test('los patrones del preámbulo son los que imprime nuestro webR', () => {
   }
 });
 
-test('diez de los catorce patrones son formato de R y no dependen de nosotros', () => {
+test('once de los quince patrones son formato de R y no dependen de nosotros', () => {
   const deR = bloques.BLOQUES.filter((b) => b.origen === 'R');
-  assert.equal(deR.length, 10);
+  assert.equal(deR.length, 11);
 });
 
 // ── El tramo pedido a mano ──────────────────────────────────────────────────

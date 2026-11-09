@@ -29,7 +29,7 @@
  *
  * ESTO ES UN REGISTRO
  * -------------------
- * Añadir una prueba es añadir una entrada aquí. Diez de los catorce patrones
+ * Añadir una prueba es añadir una entrada aquí. Once de los quince patrones
  * son el formato de `print()` de R, que no cambia; los otros cuatro los imprime
  * nuestro propio preámbulo de webR, así que son estables por construcción. Ver
  * `acostaresearch-frontend/src/app/core/r/webr.service.ts`.
@@ -79,7 +79,8 @@ const BLOQUES = [
   {
     clave: 'normalidad',
     nombre: 'Shapiro-Wilk',
-    inicio: /^Shapiro-Wilk sobre/,
+    // El nuestro y, debajo, el de `print(shapiro.test(x))`.
+    inicio: /^Shapiro-Wilk sobre|Shapiro-Wilk normality test/,
     origen: 'preambulo',
   },
   {
@@ -103,13 +104,20 @@ const BLOQUES = [
   {
     clave: 't-student',
     nombre: 't de Student',
-    inicio: /Two Sample t-test/,
+    inicio: /(Two Sample|Paired|One Sample) t-test/,
     origen: 'R',
   },
   {
     clave: 'mann-whitney',
     nombre: 'U de Mann-Whitney',
-    inicio: /^\s*Wilcoxon rank sum test with continuity/,
+    // Con corrección, sin ella y la exacta (muestras pequeñas sin empates).
+    inicio: /^\s*Wilcoxon rank sum (exact )?test/,
+    origen: 'R',
+  },
+  {
+    clave: 'wilcoxon',
+    nombre: 'Wilcoxon de rangos con signo',
+    inicio: /^\s*Wilcoxon signed rank (exact )?test/,
     origen: 'R',
   },
   {
@@ -133,10 +141,78 @@ const BLOQUES = [
   {
     clave: 'chi-cuadrado',
     nombre: 'Chi-cuadrado',
-    inicio: /Chi-squared test with/,
+    // «with Yates' continuity correction» solo sale en las tablas 2×2; en las
+    // demás el encabezado es «Pearson's Chi-squared test» a secas. Y Fisher,
+    // que es lo que se usa cuando el chi-cuadrado no se puede.
+    inicio: /Chi-squared test|Fisher's Exact Test/,
     origen: 'R',
   },
 ];
+
+/**
+ * Las órdenes de R que hacen cada prueba.
+ *
+ * POR QUÉ HACE FALTA
+ * ------------------
+ * Los encabezados de arriba son los de `print()`. Pero cuando Claude corre el
+ * análisis con `trabajar_en_r`, casi nunca imprime la prueba entera: escribe
+ * `s <- shapiro.test(x); cat("W =", s$statistic, …)`, y en la consola no queda
+ * ningún encabezado. En la tesis de prueba del 8-nov-2026, con Shapiro,
+ * Mann-Whitney y Wilcoxon, el índice no reconoció nada; en la del 2-nov solo
+ * el alfa.
+ *
+ * Esa consola sí guarda cada orden, con su «> » delante. La orden es tan
+ * literal como el encabezado: si dice `wilcox.test(…, paired = TRUE)`, lo que
+ * sale debajo es un Wilcoxon. Sigue siendo un catálogo cerrado de funciones,
+ * no una búsqueda de palabras.
+ */
+const ORDENES = [
+  { clave: 'alfa', patron: /\b(?:alfa_de_cronbach|cronbach\.alpha|alpha)\s*\(/ },
+  { clave: 'normalidad', patron: /\b(?:normalidad|shapiro\.test|lillie\.test|ad\.test|ks\.test)\s*\(/ },
+  { clave: 'descriptivos', patron: /\b(?:descriptivos|describe)\s*\(/ },
+  { clave: 'frecuencias', patron: /\b(?:frecuencias|table|prop\.table)\s*\(/ },
+  { clave: 'correlacion', patron: /\bcor\.test\s*\(/ },
+  { clave: 't-student', patron: /\bt\.test\s*\(/ },
+  { clave: 'wilcox', patron: /\bwilcox\.test\s*\(/ },
+  { clave: 'anova', patron: /\b(?:aov|anova|Anova)\s*\(/ },
+  { clave: 'kruskal', patron: /\bkruskal\.test\s*\(/ },
+  { clave: 'post-hoc', patron: /\b(?:pairwise\.\w+|TukeyHSD|dunn\.test|dunnTest)\s*\(/ },
+  { clave: 'chi-cuadrado', patron: /\b(?:chisq\.test|fisher\.test)\s*\(/ },
+  { clave: 'regresion', patron: /\b(?:lm|glm)\s*\(/ },
+];
+
+/**
+ * La prueba que hace una orden, o null.
+ *
+ * Si nombra varias, manda la primera que aparece en el texto. `cor.test` y
+ * `wilcox.test` se separan por sus argumentos: el método y si es pareada.
+ */
+function claveDeOrden(orden) {
+  let primera = null;
+  for (const o of ORDENES) {
+    const m = o.patron.exec(orden);
+    if (m && (!primera || m.index < primera.index)) primera = { clave: o.clave, index: m.index };
+  }
+  if (!primera) return null;
+  if (primera.clave === 'correlacion') {
+    if (/method\s*=\s*["']spearman/.test(orden)) return 'spearman';
+    if (/method\s*=\s*["']kendall/.test(orden)) return null;
+    return 'pearson';
+  }
+  if (primera.clave === 'wilcox') {
+    return /paired\s*=\s*(?:TRUE|T)\b/.test(orden) ? 'wilcoxon' : 'mann-whitney';
+  }
+  return primera.clave;
+}
+
+/**
+ * Una orden que enseña lo que otra calculó: `print(s)`, `cat(… s$p.value …)`,
+ * `summary(modelo)` o el nombre del objeto a secas.
+ */
+const ORDEN_QUE_MUESTRA = /^\s*(?:print|cat|summary|format|round|show|kable|knitr::kable)\s*\(|^\s*[\w.$]+\s*$/;
+
+/** Hasta cuántas órdenes sin salida se espera a la que enseña el resultado. */
+const ESPERA_MAXIMA = 3;
 
 /** Lo más que se sirve de un rango pedido a mano. Los bloques no se recortan. */
 const MAXIMO_LINEAS = 40;
@@ -193,6 +269,8 @@ function detectar(consola) {
   if (typeof consola !== 'string' || consola === '') return [];
 
   const lineas = consola.split('\n');
+  if (lineas.some((l) => /^> /.test(l))) return detectarPorOrdenes(lineas);
+
   const inicios = [];
 
   lineas.forEach((linea, i) => {
@@ -212,6 +290,100 @@ function detectar(consola) {
       texto: lineas.slice(inicio.desde - 1, hasta).join('\n'),
     };
   });
+}
+
+/** Un bloque con su texto, recortada la cola. */
+function bloque(lineas, clave, desde, hasta) {
+  const fin = recortarCola(lineas, desde, hasta);
+  return {
+    clave,
+    nombre: definicionDe(clave).nombre,
+    desde,
+    hasta: fin,
+    texto: lineas.slice(desde - 1, fin).join('\n'),
+  };
+}
+
+/** Si un tramo trae algo impreso, además de la propia orden. */
+function traeSalida(lineas, desde, hasta, finOrden) {
+  return lineas.slice(Math.max(desde, finOrden + 1) - 1, hasta).some((l) => l.trim() !== '');
+}
+
+/**
+ * Los bloques de una consola que guarda las órdenes (la de `trabajar_en_r`, o
+ * un RStudio pegado entero).
+ *
+ * Cada orden va de su «> » hasta antes de la siguiente. Se nombra por su
+ * función o, si no se reconoce, por el encabezado que imprimió. Si imprimió
+ * varios (un bucle con varias pruebas), se parte por ellos.
+ *
+ * Una orden que solo calcula (`s <- shapiro.test(x)`) no enseña nada: el
+ * bloque sigue hasta la orden que lo enseña (`cat(…)`, `print(s)`), si llega
+ * enseguida. Si lo siguiente es otra cosa, no se le cuelga una salida ajena.
+ */
+function detectarPorOrdenes(lineas) {
+  // 1. Las órdenes: su «> », sus «+ » y lo que imprimieron.
+  const ordenes = [];
+  lineas.forEach((linea, i) => {
+    if (/^> /.test(linea) || linea === '>') {
+      ordenes.push({ desde: i + 1, finOrden: i + 1, finSalida: i + 1 });
+    } else if (ordenes.length > 0) {
+      const ultima = ordenes[ordenes.length - 1];
+      if (/^\+ /.test(linea) && ultima.finSalida === ultima.finOrden) ultima.finOrden = i + 1;
+      ultima.finSalida = i + 1;
+    }
+  });
+
+  // 2. Cada orden, con su prueba.
+  const hallados = [];
+  let pendiente = null;
+
+  for (const orden of ordenes) {
+    const texto = lineas
+      .slice(orden.desde - 1, orden.finOrden)
+      .map((l) => l.replace(/^[>+] ?/, ''))
+      .join('\n');
+    const clave = claveDeOrden(texto);
+    const encabezados = [];
+    for (let n = orden.finOrden + 1; n <= orden.finSalida; n += 1) {
+      const definicion = BLOQUES.find((b) => b.inicio.test(lineas[n - 1]));
+      if (definicion) encabezados.push({ clave: definicion.clave, linea: n });
+    }
+
+    if (!traeSalida(lineas, orden.desde, orden.finSalida, orden.finOrden)) {
+      // Calcula sin enseñar: queda a la espera de la orden que lo enseñe.
+      if (clave) pendiente = { clave, desde: orden.desde, esperando: 0 };
+      else if (pendiente && ++pendiente.esperando > ESPERA_MAXIMA) pendiente = null;
+      continue;
+    }
+
+    if (!clave && encabezados.length === 0) {
+      if (pendiente && ORDEN_QUE_MUESTRA.test(texto)) {
+        hallados.push(bloque(lineas, pendiente.clave, pendiente.desde, orden.finSalida));
+      }
+      pendiente = null;
+      continue;
+    }
+
+    // La orden se reconoce, o imprimió encabezados, o las dos cosas.
+    const propia = clave ?? encabezados[0].clave;
+    let inicio = {
+      clave: propia,
+      desde: pendiente && pendiente.clave === propia ? pendiente.desde : orden.desde,
+    };
+    pendiente = null;
+
+    const cortes = encabezados.filter((e, j) => j > 0 || e.clave !== propia);
+    for (const corte of cortes) {
+      if (traeSalida(lineas, inicio.desde, corte.linea - 1, orden.finOrden)) {
+        hallados.push(bloque(lineas, inicio.clave, inicio.desde, corte.linea - 1));
+      }
+      inicio = { clave: corte.clave, desde: corte.linea };
+    }
+    hallados.push(bloque(lineas, inicio.clave, inicio.desde, orden.finSalida));
+  }
+
+  return hallados;
 }
 
 /**

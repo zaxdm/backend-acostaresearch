@@ -12,8 +12,9 @@ function conMiles(numero) {
 }
 
 const AVISO_DE_EVIDENCIA =
-  'ESTE ÍNDICE DICE DÓNDE ESTÁ CADA RESULTADO, NO CUÁL ES: no contiene ni un solo número. ' +
-  'Para escribir una cifra en el capítulo, pide antes su bloque y léelo. Después guárdala ' +
+  'ESTE ÍNDICE DICE DÓNDE ESTÁ CADA RESULTADO, NO CUÁL ES: no copia ningún número de la ' +
+  'consola (las cifras de arriba son las que ya se guardaron). Para escribir una cifra en el ' +
+  'capítulo, pide antes su bloque y léelo. Después guárdala ' +
   'con "guardar_analisis". El repaso de evidencia marca los números del texto que no salgan ' +
   'ni de las cifras guardadas ni de esta consola.';
 /** Las líneas de un texto, sin fingir que un archivo vacío tiene una. */
@@ -57,8 +58,8 @@ function resumenDeAnalisis({ capitulo, script, salida, cifras, fecha }) {
 
   if (hallados.length === 0) {
     partes.push(
-      'No se ha reconocido ningún resultado estadístico en esta consola. Puede que el análisis ' +
-        'venga de un RStudio propio. Pídela entera con ' +
+      'No se ha reconocido ninguna prueba estadística en esta consola, ni por su orden de R ni ' +
+        'por su encabezado. Pídela entera con ' +
         'ver_analisis(bloque: "todo") o por tramos con desde y hasta.',
     );
   } else {

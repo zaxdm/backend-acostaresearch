@@ -99,3 +99,29 @@ test('un PDF o una imagen no es una hoja de datos', () => {
   assert.throws(() => formato.preparar(pdf), formato.ArchivoNoValido);
   assert.throws(() => formato.preparar(Buffer.alloc(0)), formato.ArchivoNoValido);
 });
+
+test('un Excel con varias hojas lo dice en la página y en la consola de R', () => {
+  // E2E de tesis del 8-nov-2026: «Datos» y «Piloto», y la página solo decía
+  // «47 filas». R sigue leyendo la primera; ahora se sabe que hay más.
+  const AdmZip = require('adm-zip');
+  const libro = new AdmZip();
+  libro.addFile(
+    'xl/workbook.xml',
+    Buffer.from(
+      '<workbook><sheets><sheet name="Datos" sheetId="1"/><sheet name="Piloto &amp; jueces" sheetId="2"/></sheets></workbook>',
+    ),
+  );
+  const p = formato.preparar(libro.toBuffer());
+
+  assert.equal(p.tipo, 'xlsx');
+  assert.match(p.aviso, /2 hojas: «Datos», «Piloto & jueces»/);
+  assert.match(p.aviso, /Se cargó la primera, «Datos»/);
+  assert.match(p.lectura, /excel_sheets\("datos\.xlsx"\)/);
+});
+
+test('un Excel de una sola hoja no lleva aviso', () => {
+  const AdmZip = require('adm-zip');
+  const libro = new AdmZip();
+  libro.addFile('xl/workbook.xml', Buffer.from('<workbook><sheets><sheet name="Hoja1" sheetId="1"/></sheets></workbook>'));
+  assert.equal(formato.preparar(libro.toBuffer()).aviso, null);
+});

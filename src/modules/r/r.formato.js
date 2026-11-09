@@ -19,6 +19,8 @@
  * como UTF-8, R corta el archivo en la primera «ñ» y avisa en inglés.
  */
 
+const AdmZip = require('adm-zip');
+
 const bibliografia = require('./r.bibliografia');
 
 /** Los tres bytes con los que Excel marca un CSV en UTF-8. */
@@ -130,6 +132,30 @@ function ordenDeLecturaCsv({ separador, decimal, codificacion }) {
 const NOMBRES_LIMPIOS = 'names(datos) <- make.names(names(datos), unique = TRUE)';
 
 /**
+ * Los nombres de las hojas de un .xlsx, en orden.
+ *
+ * R solo lee la primera. En la tesis de prueba del 8-nov-2026 el Excel traía
+ * «Datos» y «Piloto», la página dijo «47 filas» sin más, y Claude tuvo que
+ * descubrir la hoja del piloto por su cuenta. Si el archivo no se puede abrir
+ * aquí, se devuelve vacío y R lo lee igual que siempre.
+ */
+function hojasDelExcel(bytes) {
+  try {
+    const libro = new AdmZip(bytes).readAsText('xl/workbook.xml');
+    return [...libro.matchAll(/<sheet\b[^>]*\bname="([^"]*)"/g)].map((m) =>
+      m[1]
+        .replace(/&quot;/g, '"')
+        .replace(/&apos;/g, "'")
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&'),
+    );
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Todo lo que hace falta para meter el archivo en R.
  *
  * Devuelve el nombre con el que se guarda —SIEMPRE `datos.*`, se llame como se
@@ -153,12 +179,24 @@ function preparar(bytes) {
 
   if (tipo === 'xlsx' || tipo === 'xls') {
     const archivo = `datos.${tipo}`;
+    const hojas = tipo === 'xlsx' ? hojasDelExcel(bytes) : [];
     return {
       tipo,
       archivo,
       contenido: bytes,
-      lectura: `datos <- as.data.frame(readxl::read_excel("${archivo}"))\n${NOMBRES_LIMPIOS}`,
-      aviso: null,
+      lectura:
+        `datos <- as.data.frame(readxl::read_excel("${archivo}"))\n${NOMBRES_LIMPIOS}\n` +
+        // Para Claude: la consola dice que hay más hojas y cómo leerlas.
+        `.hojas <- readxl::excel_sheets("${archivo}")\n` +
+        `if (length(.hojas) > 1) cat("El Excel tiene", length(.hojas), "hojas:", ` +
+        `paste(.hojas, collapse = " | "), "\\nEn datos va la primera. Otra se lee con ` +
+        `readxl::read_excel(\\"${archivo}\\", sheet = \\"nombre\\")\\n")`,
+      aviso:
+        hojas.length > 1
+          ? `Tu Excel tiene ${hojas.length} hojas: ${hojas.map((h) => `«${h}»`).join(', ')}. ` +
+            `Se cargó la primera, «${hojas[0]}», como tu matriz; las demás también se subieron y ` +
+            'Claude las puede leer (por ejemplo, la del piloto).'
+          : null,
     };
   }
 

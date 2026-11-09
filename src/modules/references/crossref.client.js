@@ -75,6 +75,9 @@ function autores(lista = []) {
         const institucion = String(persona.name ?? '').trim();
         return pareceAfiliacion(institucion) ? '' : institucion;
       }
+      // Un solo nombre que la revista repite como nombre y apellido («Sulemi
+      // Sulemi», de Indonesia): APA lo escribe una vez, sin inicial.
+      if (nombre.toLowerCase() === apellido.toLowerCase()) return apellido;
       return nombre ? `${apellido}, ${nombre.charAt(0)}.` : apellido;
     })
     .filter(Boolean);
@@ -268,4 +271,4 @@ async function buscar({ tema, desdeAnio = null, cuantas = 6 }) {
   return { fuentes, total: cuerpo.message['total-results'] ?? fuentes.length, caida: false };
 }
 
-module.exports = { porDoi, buscar, completar, unir, limpiarDoi };
+module.exports = { porDoi, buscar, completar, unir, limpiarDoi, autores };

@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const { nombreApa } = require('../src/modules/references/openalex.client');
-const { unir } = require('../src/modules/references/crossref.client');
+const { unir, autores: autoresDeCrossref } = require('../src/modules/references/crossref.client');
 
 /**
  * Los autores que acaban en la bibliografía del Word.
@@ -94,4 +94,35 @@ test('si Crossref no tiene autores o no conoce el DOI, se quedan los que había'
     'Fornell, C.; F. Larcker, D.',
   );
   assert.equal(unir(deOpenAlex, null, { preferirSusAutores: true }), deOpenAlex);
+});
+
+// ── E2E de tesis del 8-nov-2026 ─────────────────────────────────────────────
+// En la bibliografía salieron «Alarcón Secaira, L., Silvia Karina, S.» y
+// «Sulemi, S., R., V., S., D.»: una revista de Ecuador que deposita los
+// nombres al revés y una de Indonesia con autores de un solo nombre.
+
+test('un nombre al revés, con los apellidos delante, se da la vuelta', () => {
+  assert.equal(nombreApa('Sierra Quishpe Silvia Karina'), 'Sierra Quishpe, S.');
+  assert.equal(nombreApa('Meza Intriago Laura Patricia', ['EC']), 'Meza Intriago, L.');
+});
+
+test('y el orden normal se queda como estaba', () => {
+  assert.equal(nombreApa('Lourdes Alicia Alarcón Secaira'), 'Alarcón Secaira, L.');
+  assert.equal(nombreApa('Eduví Maribel Cárdenas Freire'), 'Cárdenas Freire, E.');
+  // Solo una palabra final de la lista no basta: «Santiago» también es apellido.
+  assert.equal(nombreApa('Xiomara Gómez Santiago'), 'Gómez Santiago, X.');
+  // Fuera de los países de dos apellidos no se le da la vuelta a nada.
+  assert.equal(nombreApa('Smith Jones Maria Rosa', ['US']), 'Rosa, S.');
+});
+
+test('un autor de un solo nombre, repetido como nombre y apellido, va una vez', () => {
+  assert.equal(nombreApa('Sulemi Sulemi'), 'Sulemi');
+  assert.equal(
+    autoresDeCrossref([
+      { given: 'Sulemi', family: 'Sulemi' },
+      { given: 'Vivid Dratis', family: 'R.' },
+      { given: 'Mujiatiningsih', family: 'Mujiatiningsih' },
+    ]),
+    'Sulemi; R., V.; Mujiatiningsih',
+  );
 });

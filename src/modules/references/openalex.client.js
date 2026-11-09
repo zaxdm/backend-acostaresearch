@@ -149,6 +149,37 @@ const PARTICULAS = new Set(['de', 'del', 'la', 'las', 'los', 'da', 'das', 'do', 
 const INICIAL = /^\p{Lu}\.?(-\p{Lu}\.?)?$/u;
 
 /**
+ * Nombres de pila frecuentes en el Perú, Ecuador y alrededores, sin tildes.
+ *
+ * Solo sirven para ver un nombre AL REVÉS. Algunas revistas (muchas de Ecuador)
+ * depositan «Sierra Quishpe Silvia Karina», con los apellidos delante, y salía
+ * «Silvia Karina, S.» en la bibliografía (E2E de tesis del 8-nov-2026). Se da
+ * la vuelta solo si las dos últimas palabras son nombres de esta lista y la
+ * primera no lo es: un nombre que no esté aquí deja el orden como venía.
+ */
+const NOMBRES_DE_PILA = new Set(
+  (
+    'abel adriana alba alberto alejandra alejandro alexandra alexander alfredo alicia ' +
+    'alonso amanda ana andrea andres angel angela angelica antonio araceli ariana arturo ' +
+    'beatriz carla carlos carmen carolina catalina cecilia cesar claudia cristian ' +
+    'cristina daniel daniela david diana diego dolores eduardo elena elizabeth ' +
+    'emilio enrique erika esteban eva fabiola fatima felipe fernanda fernando ' +
+    'francisco gabriel gabriela gloria guadalupe guillermo gustavo hector hugo ' +
+    'ignacio ines irene isabel jaime javier jessica jesus johanna jorge jose josefina ' +
+    'juan juana julia julio karen karina laura leonardo leticia lorena lourdes lucia ' +
+    'luis luisa luz manuel marcela marco marcos margarita maria mariana mario marisol ' +
+    'marta martha martin mercedes miguel milagros monica natalia nelly nicolas norma ' +
+    'oscar pablo patricia paola pedro rafael raquel raul ricardo roberto rocio rosa ' +
+    'rosario ruth sandra sara sergio silvia sofia sonia susana teresa valeria ' +
+    'vanessa veronica victor victoria viviana ximena yolanda'
+  ).split(' '),
+);
+
+/** «Sílvia» → «silvia», para mirar la lista. */
+const sinTildes = (palabra) => palabra.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+const esNombreDePila = (palabra) => NOMBRES_DE_PILA.has(sinTildes(palabra));
+
+/**
  * Un nombre de OpenAlex, en «Apellido, I.».
  *
  * OpenAlex da el nombre entero —«David F. Larcker»— y no dice dónde empieza el
@@ -172,6 +203,25 @@ function nombreApa(nombreCompleto, paises = []) {
   if (!nombreCompleto) return null;
   const partes = String(nombreCompleto).trim().split(/\s+/);
   if (partes.length === 1) return partes[0];
+  // Un solo nombre repetido —«Sulemi Sulemi», como lo depositan revistas de
+  // Indonesia, donde mucha gente no tiene apellido—: APA lo escribe una vez.
+  if (partes.every((p) => p.toLowerCase() === partes[0].toLowerCase())) return partes[0];
+
+  const conocidos = (paises ?? []).map((p) => String(p).toUpperCase());
+  const dosApellidos = conocidos.length === 0 || conocidos.some((p) => DOS_APELLIDOS.has(p));
+
+  // Al revés: «Sierra Quishpe Silvia Karina». Los apellidos son las dos primeras.
+  if (
+    dosApellidos &&
+    partes.length >= 3 &&
+    !esNombreDePila(partes[0]) &&
+    esNombreDePila(partes.at(-1)) &&
+    esNombreDePila(partes.at(-2)) &&
+    !partes.some((p) => INICIAL.test(p))
+  ) {
+    const corte = partes.length === 3 ? 1 : 2;
+    return `${partes.slice(0, corte).join(' ')}, ${partes[corte].charAt(0)}.`;
+  }
 
   let inicio;
   const ultimaInicial = partes.reduce((i, parte, j) => (INICIAL.test(parte) ? j : i), -1);
@@ -179,9 +229,6 @@ function nombreApa(nombreCompleto, paises = []) {
   if (ultimaInicial >= 0 && ultimaInicial < partes.length - 1) {
     inicio = ultimaInicial + 1;
   } else {
-    const conocidos = (paises ?? []).map((p) => String(p).toUpperCase());
-    const dosApellidos = conocidos.length === 0 || conocidos.some((p) => DOS_APELLIDOS.has(p));
-
     if (!dosApellidos) inicio = partes.length - 1;
     else if (partes.length >= 3 && partes.at(-1).includes('-')) inicio = partes.length - 1;
     else if (partes.length >= 4) inicio = partes.length - 2;

@@ -181,11 +181,23 @@ function esTesisDelMetodo(productCode) {
  * NO cambia su perfil: sigue siendo TESIS a efectos de textos, porque lo que
  * humaniza es un capítulo de tesis. Lo único que decide esto es si el panel le
  * ofrece las herramientas y si el servidor las atiende para ese producto.
+ *
+ * Las sesiones de aprendizaje (SESIONES*, 9-nov-2026) tampoco las traen: el
+ * docente planifica desde su sílabo y no busca fuentes ni analiza datos.
  */
-const SIN_HERRAMIENTAS = /^HUMANIZ/i;
+const SIN_HERRAMIENTAS = /^(HUMANIZ|SESIONES)/i;
 
 function traeHerramientas(productCode) {
   return !SIN_HERRAMIENTAS.test(String(productCode ?? '').trim());
+}
+
+/**
+ * ¿El producto avanza por fases? Todos menos el Humanizador suelto, que trae
+ * un texto ya escrito. Es lo que miran los avisos de atraso: el docente no trae
+ * herramientas, pero sí fases.
+ */
+function tieneFases(productCode) {
+  return !/^HUMANIZ/i.test(String(productCode ?? '').trim());
 }
 
 /**
@@ -215,4 +227,4 @@ function esRevision(productCode) {
   return perfilDe(codigo) === ARTICULO && /REVIEW/i.test(codigo);
 }
 
-module.exports = { perfilDe, esTesisDelMetodo, traeHerramientas, verificaCitas, esRevision, TESIS, ARTICULO, INFORME, TSP, TALLER, DOCENTE };
+module.exports = { perfilDe, esTesisDelMetodo, traeHerramientas, tieneFases, verificaCitas, esRevision, TESIS, ARTICULO, INFORME, TSP, TALLER, DOCENTE };

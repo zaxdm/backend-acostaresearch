@@ -8,7 +8,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { perfilDe, traeHerramientas } = require('../src/modules/productos/producto.perfil');
+const { perfilDe, traeHerramientas, tieneFases } = require('../src/modules/productos/producto.perfil');
 
 test('los productos de tesis siguen siendo tesis', () => {
   for (const codigo of ['METODO_9_SKILLS', 'METODO_DE_TESIS_HUMANIZADOR', 'TESISTA']) {
@@ -93,4 +93,13 @@ test('solo el artículo trae el mapeo bibliométrico', () => {
   assert.equal(perfilDe('INFORME_ESTUDIANTIL').mapeoBibliometrico, false);
   // Un producto nuevo no lo trae mientras no se diga: cae en tesis.
   assert.equal(perfilDe('LO_QUE_VENGA').mapeoBibliometrico, false);
+});
+
+test('las sesiones de aprendizaje no traen herramientas, pero sí fases (9-nov-2026)', () => {
+  for (const codigo of ['SESIONES_SUPERIOR', 'sesiones_superior', 'SESIONES']) {
+    assert.equal(traeHerramientas(codigo), false, codigo);
+    assert.equal(tieneFases(codigo), true, codigo);
+  }
+  assert.equal(tieneFases('HUMANIZADOR_ACADEMICO'), false);
+  assert.equal(tieneFases('METODO_DE_TESIS_HUMANIZADOR'), true);
 });

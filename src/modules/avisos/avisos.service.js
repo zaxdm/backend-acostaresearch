@@ -5,7 +5,7 @@ const env = require('../../config/env');
 const logger = require('../../config/logger');
 const prisma = require('../../lib/prisma');
 const { sendMail } = require('../../lib/mailer');
-const { perfilDe, traeHerramientas } = require('../productos/producto.perfil');
+const { perfilDe, tieneFases } = require('../productos/producto.perfil');
 const plantillas = require('./avisos.plantillas');
 const referidosService = require('../referidos/referidos.service');
 
@@ -108,7 +108,7 @@ function licenciasCandidatas(ahora) {
  */
 function avisosDe(licencia, proyecto, ahora = new Date()) {
   const avisos = [];
-  const conFases = traeHerramientas(licencia.productCode);
+  const conFases = tieneFases(licencia.productCode);
 
   if (licencia.expiresAt && licencia.expiresAt <= dentroDe(ahora, REGLAS.venceEn)) {
     avisos.push({

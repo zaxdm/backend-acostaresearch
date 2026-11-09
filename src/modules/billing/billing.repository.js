@@ -47,11 +47,11 @@ const billingRepository = {
    * La lista pública: la página de precios y el asistente.
    *
    * Sin los planes en prueba (`soloPara`), que están activos pero no se venden:
-   * ver `plan.visibilidad`.
+   * ver `plan.visibilidad`. Sin los de Epicuro.ai, que se venden en Epicuro.
    */
   listPlans({ incluirInactivos = false } = {}) {
     return prisma.plan.findMany({
-      where: incluirInactivos ? {} : { active: true, soloPara: null },
+      where: incluirInactivos ? {} : { active: true, soloPara: null, kind: { not: 'EPICURO' } },
       select: planSelect,
       orderBy: { sortOrder: 'asc' },
     });

@@ -89,7 +89,9 @@ const ordenCompraSchema = z.object({
   apellido: z.string().trim().max(80).optional(),
   planCode: z.string({ required_error: 'Falta el plan.' }).trim().min(1).max(60),
   discountCode: z.string().trim().max(40).optional(),
+  pasarela: z.enum(['CULQI', 'HOTMART']).optional(),
 });
+const planDeCorreoSchema = z.object({ email: correoComprador });
 const cobrarCompraSchema = z.object({
   email: correoComprador,
   orderId: z.string().trim().min(1).max(120),
@@ -118,6 +120,7 @@ module.exports = {
   vincularCorreoSchema,
   quitarVinculoSchema,
   ordenCompraSchema,
+  planDeCorreoSchema,
   cobrarCompraSchema,
   crearAccesoSchema,
   revocarAccesoSchema,

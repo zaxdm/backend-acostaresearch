@@ -10,6 +10,7 @@ const licenseRepository = require('../licensing/license.repository');
 const prepararService = require('../preparar/preparar.service');
 const prepararRepository = require('../preparar/preparar.repository');
 const referidosService = require('../referidos/referidos.service');
+const acostaiaPlanes = require('../acostaia/acostaia.planes');
 const paymentRepository = require('./payment.repository');
 const { etiquetarCliente } = require('../../shared/utils/paisDelCliente');
 const constancia = require('./payment.constancia');
@@ -60,6 +61,13 @@ function avisarAlComprador(payment, entrega) {
       docsPorMes: entrega.membresia.docsPorMes,
       expiresAt: entrega.membresia.expiresAt,
       renovada: Boolean(entrega.renovada),
+    });
+  } else if (entrega.epicuro) {
+    // El plan de Epicuro.ai (10-nov-2026).
+    mensaje = plantillas.epicuroReady({
+      ...datos,
+      expiresAt: entrega.epicuro.expiresAt,
+      renovada: Boolean(entrega.epicuro.renovada),
     });
   } else if (entrega.pack) {
     mensaje = plantillas.wordsReady({
@@ -127,6 +135,7 @@ async function adjuntarConstancia(paymentId) {
 async function entregarPago({ payment, captura, estadoEsperado = 'PENDING', notaBolsa }) {
   const esLicencia = payment.plan.kind === 'LICENSE';
   const esMembresia = payment.plan.kind === 'DOCUMENTO';
+  const esEpicuro = acostaiaPlanes.esPlanDeEpicuro(payment.plan);
 
   const licenciaPreparada = esLicencia
     ? await licenseService.prepareForPurchase({
@@ -229,6 +238,13 @@ async function entregarPago({ payment, captura, estadoEsperado = 'PENDING', nota
           tx,
         );
         return conPlan(membresia, false);
+      }
+
+      if (esEpicuro) {
+        // Sin columna en `payments`: el pago ya dice qué plan era, y la fila de
+        // Epicuro es una por cuenta (ver `acostaia.planes`).
+        const epicuro = await acostaiaPlanes.entregar({ userId: payment.userId, plan: payment.plan }, tx);
+        return { enlace: {}, resultado: { epicuro } };
       }
 
       const pack = await tx.wordPack.create({

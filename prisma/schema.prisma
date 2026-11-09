@@ -104,6 +104,7 @@ model User {
   /// Su membresía de «Preparar documento», si la compró, y los documentos que
   /// ha mandado preparar. Ver `DocPack` y `Preparacion`.
   docPacks      DocPack[]
+  epicuroPlan   EpicuroPlan?
   preparaciones Preparacion[]
 
   /// Lo que opina del servicio. Pueden ser varias, y se van con la cuenta: un
@@ -492,6 +493,7 @@ enum PlanKind {
   WORDS // una bolsa de palabras para el humanizador
   LICENSE // una licencia del conector MCP (el método de las 9 skills)
   DOCUMENTO // una membresía de «Preparar documento»: N documentos al mes
+  EPICURO // un plan de Epicuro.ai (Estándar o Power) por `durationDays`; `productCode` dice cuál
 }
 
 /// Lo que se vende: una bolsa de palabras que caduca a los N días.
@@ -3322,4 +3324,28 @@ model DeclaracionMensual {
 
   @@unique([anio, mes])
   @@map("declaraciones_mensuales")
+}
+
+/// El plan de Epicuro.ai de una persona (10-nov-2026). Una fila por cuenta: comprar
+/// o renovar suma `durationDays` a lo que le quede y deja el nivel del plan comprado.
+/// Epicuro la consulta por el correo (ver `modules/acostaia/acostaia.planes.js`).
+/// La caducidad no es un estado: se compara `expiresAt` al leerla.
+model EpicuroPlan {
+  id String @id @default(uuid()) @db.Char(36)
+
+  userId String @unique @db.Char(36)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// ESTANDAR o POWER: el `productCode` del último plan comprado.
+  nivel    String @db.VarChar(20)
+  /// El código del último plan comprado (EPICURO_ESTANDAR, EPICURO_POWER).
+  planCode String @db.VarChar(40)
+
+  activatedAt DateTime @default(now())
+  expiresAt   DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("epicuro_planes")
 }

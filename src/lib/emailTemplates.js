@@ -1023,6 +1023,40 @@ function documentosReady({ firstName, planName, docsPorMes, expiresAt, via, reno
 }
 
 /**
+ * Al comprador: su plan de Epicuro.ai está activo (10-nov-2026). Va a Epicuro,
+ * no a acostaresearch.com: allí lo usa.
+ */
+function epicuroReady({ firstName, planName, expiresAt, via, renovada }) {
+  const enlace = env.ACOSTAIA_URL || 'https://epicuro.ai';
+  const vence = fecha(expiresAt);
+  const hasta = vence ? ` Vale hasta el ${vence}.` : '';
+  const confirmacion = confirmacionDePago(via, planName);
+  const titulo = renovada ? 'Tu plan de Epicuro.ai está renovado' : 'Tu plan de Epicuro.ai está activo';
+
+  return {
+    subject: `${titulo} · Epicuro.ai`,
+    text: [
+      `Hola ${firstName}:`,
+      '',
+      `${enMayuscula(confirmacion)}. Ya puedes usarlo en Epicuro.ai con tu mismo correo.${hasta}`,
+      '',
+      `Entrar: ${enlace}`,
+    ].join('\n'),
+    html: layout(
+      titulo,
+      `<p style="margin:0 0 20px;font-size:15px;line-height:1.6">Hola ${escapar(firstName)}:
+         ${confirmacionDePago(via, escapar(planName))}. Ya puedes usarlo en Epicuro.ai
+         con tu mismo correo.${hasta}</p>
+
+       <p style="margin:0;font-size:14px">
+         <a href="${enlace}" style="color:#1a56db">Entrar a Epicuro.ai</a>
+       </p>`,
+      { preheader: `Tu plan de Epicuro.ai está listo.${hasta}` },
+    ),
+  };
+}
+
+/**
  * Al cliente: su documento está listo.
  *
  * El aviso de que lo hizo una IA va aquí también, y no solo en la web, porque
@@ -1765,6 +1799,7 @@ module.exports = {
   // «Preparar documento»: la membresía sale de `payment.delivery`; los dos de
   // cada trabajo, de `preparar.service`.
   documentosReady,
+  epicuroReady,
   documentoPreparado,
   documentoFallido,
   manualPaymentRejected,

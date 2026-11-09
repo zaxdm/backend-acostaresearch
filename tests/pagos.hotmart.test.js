@@ -31,7 +31,7 @@ const DIA = 24 * 60 * 60 * 1000;
 const pagos = new Map();
 const usuarios = new Map();
 const licencias = new Map();
-const llamadas = { entregas: [], devoluciones: [], fallos: [], avisos: [], cuentas: [], revocadas: [], acortadas: [] };
+const llamadas = { entregas: [], devoluciones: [], fallos: [], avisos: [], cuentas: [], revocadas: [], acortadas: [], descontados: [] };
 
 falsificar('../src/config/env', { hotmartEnabled: true, HOTMART_HOTTOK: HOTTOK });
 falsificar('../src/config/logger', { info() {}, warn() {}, error() {} });
@@ -47,6 +47,13 @@ falsificar('../src/modules/licensing/license.service', {
   revoke: async (id, motivo) => {
     llamadas.revocadas.push({ id, motivo });
     licencias.get(id).status = 'REVOKED';
+  },
+});
+falsificar('../src/modules/acostaia/acostaia.planes', {
+  esPlanDeEpicuro: (plan) => plan?.kind === 'EPICURO',
+  descontar: async (datos) => {
+    llamadas.descontados.push(datos);
+    return 'acortada';
   },
 });
 falsificar('../src/modules/billing/billing.repository', {
@@ -65,7 +72,7 @@ falsificar('../src/modules/users/user.repository', {
 function conRelaciones(pago) {
   if (!pago) return null;
   const user = [...usuarios.values()].find((u) => u.id === pago.userId) ?? null;
-  return { ...pago, plan: PLAN, user };
+  return { ...pago, plan: pago.plan ?? PLAN, user };
 }
 
 falsificar('../src/modules/payments/payment.repository', {
@@ -296,4 +303,20 @@ test('una orden que Hotmart canceló se entrega si después llega la aprobación
 
   assert.equal(r.resultado, 'entregado');
   assert.equal(llamadas.entregas[0].estadoEsperado, 'FAILED');
+});
+
+test('reembolso de un plan de Epicuro: se le restan sus 30 días, sin tocar licencias', async () => {
+  usuarios.set('rosa@gmail.com', { id: 'user-rosa', email: 'rosa@gmail.com', firstName: 'Rosa' });
+  const EPICURO = { id: 'plan-ep', code: 'EPICURO_ESTANDAR', name: 'Epicuro Estándar', kind: 'EPICURO', durationDays: 30 };
+  pagos.set('pago-ep', {
+    id: 'pago-ep', provider: hotmartProvider.code, providerOrderId: 'ord-ep', providerCaptureId: 'HP-EP',
+    status: 'PAID', paidAt: new Date(), userId: 'user-rosa', plan: EPICURO,
+  });
+
+  const r = await webhook.procesarAviso(aviso('PURCHASE_REFUNDED', { transaccion: 'HP-EP' }));
+
+  assert.equal(r.resultado, 'devuelto');
+  assert.equal(r.acceso, 'acortada');
+  assert.deepEqual(llamadas.descontados, [{ userId: 'user-rosa', dias: 30 }]);
+  assert.equal(llamadas.revocadas.length, 0);
 });

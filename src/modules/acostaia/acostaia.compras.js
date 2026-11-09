@@ -4,6 +4,8 @@ const logger = require('../../config/logger');
 const prisma = require('../../lib/prisma');
 const { AppError, NotFoundError } = require('../../shared/errors/AppError');
 const paymentService = require('../payments/payment.service');
+const { productoDelPlan } = require('../payments/providers/hotmart.productos');
+const acostaiaPlanes = require('./acostaia.planes');
 
 /**
  * Comprar un método desde Epicuro (AcostaIA), sin salir de su página (7-nov-2026).
@@ -22,6 +24,8 @@ const paymentService = require('../payments/payment.service');
  */
 
 const PASARELA = 'CULQI';
+/** Hotmart (10-nov-2026): para los planes de Epicuro. Lleva a su página de pago y vuelve. */
+const HOTMART = 'HOTMART';
 
 /** Su cuenta de acostaresearch.com por el correo; `crear` la hace si no existe. */
 async function compradorDe({ email, nombre, apellido }, { crear }) {
@@ -64,17 +68,22 @@ async function compradorDe({ email, nombre, apellido }, { crear }) {
 }
 
 const acostaiaCompras = {
-  /** Abre la orden: el importe lo calcula el servidor a partir del plan. */
-  async orden({ email, nombre, apellido, planCode, discountCode }) {
+  /**
+   * Abre la orden: el importe lo calcula el servidor a partir del plan. Con
+   * `pasarela: 'HOTMART'` devuelve `approveUrl`, la página de pago de Hotmart
+   * con nuestra referencia; el aviso de Hotmart entrega la compra.
+   */
+  async orden({ email, nombre, apellido, planCode, discountCode, pasarela }) {
     const comprador = await compradorDe({ email, nombre, apellido }, { crear: true });
     const orden = await paymentService.createOrder({
       userId: comprador.id,
       planCode,
-      providerCode: PASARELA,
+      providerCode: pasarela === HOTMART ? HOTMART : PASARELA,
       discountCode,
     });
     return {
       orderId: orden.orderId,
+      ...(pasarela === HOTMART && { approveUrl: orden.approveUrl }),
       amountCents: orden.amountCents,
       currency: orden.currency,
       discount: orden.discount,
@@ -106,7 +115,38 @@ const acostaiaCompras = {
       alreadyProcessed: Boolean(resultado.alreadyProcessed),
       licenseId: resultado.license?.id ?? null,
       productCode: resultado.license?.productCode ?? null,
+      // Plan de Epicuro.ai: el nivel y hasta cuándo, para activarlo al momento.
+      epicuro: resultado.epicuro
+        ? { nivel: resultado.epicuro.nivel, expiresAt: resultado.epicuro.expiresAt }
+        : null,
     };
+  },
+
+  /**
+   * Los planes de Epicuro.ai a la venta, con su precio de la base (nada escrito
+   * a mano en Epicuro) y si se pueden pagar con Hotmart.
+   */
+  async planes() {
+    const filas = await prisma.plan.findMany({
+      where: { kind: 'EPICURO', active: true, soloPara: null },
+      orderBy: { sortOrder: 'asc' },
+      select: { code: true, name: true, productCode: true, priceCents: true, currency: true, durationDays: true },
+    });
+    const hotmartActivo = paymentService.listProviders().some((p) => p.code === HOTMART);
+    return filas.map((p) => ({
+      code: p.code,
+      nombre: p.name,
+      nivel: p.productCode,
+      priceCents: p.priceCents,
+      currency: p.currency,
+      dias: p.durationDays,
+      hotmart: hotmartActivo && Boolean(productoDelPlan(p.code)),
+    }));
+  },
+
+  /** El plan vigente de Epicuro.ai de ese correo, o null. */
+  planDe({ email }) {
+    return acostaiaPlanes.deCorreo(email);
   },
 
   /** La llave pública de Culqi (no protege nada por sí sola), o null si no está activo. */

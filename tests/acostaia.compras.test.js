@@ -39,7 +39,14 @@ let respuestaCobro = { license: { id: 'L9', productCode: 'METODO_TESIS' } };
 sustituir('../src/modules/payments/payment.service', {
   createOrder: async (datos) => {
     estado.ordenes.push(datos);
-    return { orderId: 'cq_1', amountCents: 15900, currency: 'PEN', discount: null, plan: { code: datos.planCode } };
+    return {
+      orderId: 'cq_1',
+      approveUrl: datos.providerCode === 'HOTMART' ? 'https://pay.hotmart.com/X?sck=cq_1' : undefined,
+      amountCents: 15900,
+      currency: 'PEN',
+      discount: null,
+      plan: { code: datos.planCode },
+    };
   },
   captureOrder: async (datos) => {
     estado.cobros.push(datos);
@@ -91,7 +98,13 @@ test('cobrar: con su cuenta, el token y devuelve la licencia; no crea cuentas', 
 
   estado.usuarios.push({ id: 'u-ana', email: 'ana@gmail.com', status: 'ACTIVE', deletedAt: null });
   const r = await compras.cobrar({ email: 'ana@gmail.com', orderId: 'cq_1', token: 'tkn_test_a' });
-  assert.deepEqual(r, { requiresAuthentication: false, alreadyProcessed: false, licenseId: 'L9', productCode: 'METODO_TESIS' });
+  assert.deepEqual(r, {
+    requiresAuthentication: false,
+    alreadyProcessed: false,
+    licenseId: 'L9',
+    productCode: 'METODO_TESIS',
+    epicuro: null,
+  });
   assert.equal(estado.cobros[0].userId, 'u-ana');
   assert.equal(estado.cobros[0].providerCode, 'CULQI');
   assert.equal(estado.cobros[0].datosDelCobro.token, 'tkn_test_a');
@@ -106,4 +119,24 @@ test('3-D Secure: se devuelve que el banco pide verificar, sin licencia', async 
 
 test('la llave pública de Culqi, o null', () => {
   assert.deepEqual(compras.pasarela(), { publicKey: 'pk_test_x' });
+});
+
+test('plan de Epicuro con Hotmart: la orden va por Hotmart y devuelve su página de pago', async () => {
+  estado.usuarios.push({ id: 'u-ana', email: 'ana@gmail.com', status: 'ACTIVE', deletedAt: null });
+  const orden = await compras.orden({ email: 'ana@gmail.com', planCode: 'EPICURO_ESTANDAR', pasarela: 'HOTMART' });
+  assert.equal(estado.ordenes[0].providerCode, 'HOTMART');
+  assert.equal(orden.approveUrl, 'https://pay.hotmart.com/X?sck=cq_1');
+
+  const conCulqi = await compras.orden({ email: 'ana@gmail.com', planCode: 'EPICURO_ESTANDAR' });
+  assert.equal(estado.ordenes[1].providerCode, 'CULQI');
+  assert.equal(conCulqi.approveUrl, undefined, 'Culqi no lleva a otra página');
+});
+
+test('cobrar un plan de Epicuro devuelve el nivel y hasta cuándo', async () => {
+  estado.usuarios.push({ id: 'u-ana', email: 'ana@gmail.com', status: 'ACTIVE', deletedAt: null });
+  const vence = new Date('2026-12-10T00:00:00Z');
+  respuestaCobro = { epicuro: { nivel: 'POWER', expiresAt: vence, renovada: false, userId: 'u-ana' } };
+  const r = await compras.cobrar({ email: 'ana@gmail.com', orderId: 'cq_1', token: 'tkn_test_a' });
+  assert.deepEqual(r.epicuro, { nivel: 'POWER', expiresAt: vence });
+  assert.equal(r.licenseId, null);
 });

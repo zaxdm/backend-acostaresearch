@@ -22,6 +22,7 @@ const {
   vincularCorreoSchema,
   quitarVinculoSchema,
   ordenCompraSchema,
+  planDeCorreoSchema,
   cobrarCompraSchema,
 } = require('./acostaia.schema');
 const acostaiaService = require('./acostaia.service');
@@ -108,6 +109,18 @@ router.post(
   '/compras/cobrar',
   validate({ body: cobrarCompraSchema }),
   asyncHandler(async (req, res) => ok(res, await acostaiaCompras.cobrar(req.body))),
+);
+
+/**
+ * Planes de Epicuro.ai (10-nov-2026). GET da los que están a la venta; POST
+ * …/de-correo, el vigente de esa persona (Epicuro lo pregunta, no se le avisa).
+ */
+router.get('/planes', asyncHandler(async (_req, res) => ok(res, await acostaiaCompras.planes())));
+
+router.post(
+  '/planes/de-correo',
+  validate({ body: planDeCorreoSchema }),
+  asyncHandler(async (req, res) => ok(res, await acostaiaCompras.planDe(req.body))),
 );
 
 /** POST /acostaia/vinculos/enlace — vincula su compra con el enlace del conector que pegó. */

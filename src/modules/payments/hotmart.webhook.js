@@ -12,6 +12,7 @@ const paymentRepository = require('./payment.repository');
 const { entregarPago } = require('./payment.delivery');
 const { hotmartProvider } = require('./providers/hotmart.provider');
 const { planDelProducto } = require('./providers/hotmart.productos');
+const acostaiaPlanes = require('../acostaia/acostaia.planes');
 
 /**
  * El webhook de Hotmart (versión 2.0.0): aquí se confirman los pagos.
@@ -206,10 +207,14 @@ const MISMA_COMPRA_MS = 60 * 1000;
  *   · Renovación (la licencia ya existía): se le restan los días de este plan y
  *     conserva lo que había pagado antes. Si con eso ya caducó, se revoca.
  *
- * Solo licencias, que es lo único que se vende en Hotmart. Lo demás se deja
- * para el administrador, que recibe el aviso igual.
+ * Licencias y planes de Epicuro.ai. Lo demás se deja para el administrador,
+ * que recibe el aviso igual.
  */
 async function quitarAcceso(pago, errorCode) {
+  // Plan de Epicuro.ai (10-nov-2026): se le restan los días de este pago.
+  if (acostaiaPlanes.esPlanDeEpicuro(pago.plan)) {
+    return acostaiaPlanes.descontar({ userId: pago.userId, dias: pago.plan.durationDays });
+  }
   if (!pago.licenseId) return 'sin_licencia';
 
   const licencia = await licenseRepository.findById(pago.licenseId);

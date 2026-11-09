@@ -196,7 +196,8 @@ const paymentRepository = {
       // La entrega va dentro de la misma transacción que el cobro, de modo que
       // no puede quedar un pago cobrado sin nada entregado.
       const { enlace, resultado } = await entregar(tx);
-      await tx.payment.update({ where: { id: paymentId }, data: enlace });
+      // El plan de Epicuro no deja enlace en el pago (ver `acostaia.planes`).
+      if (Object.keys(enlace).length) await tx.payment.update({ where: { id: paymentId }, data: enlace });
 
       return resultado;
     });

@@ -8,6 +8,7 @@ const { enPrueba } = require('../billing/plan.visibilidad');
 const billingService = require('../billing/billing.service');
 const discountService = require('../billing/discount.service');
 const licenseRepository = require('../licensing/license.repository');
+const acostaiaPlanes = require('../acostaia/acostaia.planes');
 const prepararRepository = require('../preparar/preparar.repository');
 const paymentRepository = require('./payment.repository');
 const proofStorage = require('./proof.storage');
@@ -70,6 +71,10 @@ async function entregaDeUnPago(payment) {
     // La URL no se puede reconstruir: del token solo se guarda el hash. El
     // comprador la vuelve a obtener regenerándola desde su cuenta.
     return { license: await licenseRepository.findById(payment.licenseId), connectorUrl: null };
+  }
+  // El plan de Epicuro no deja enlace en el pago: se lee el de la cuenta.
+  if (acostaiaPlanes.esPlanDeEpicuro(payment.plan) && payment.status === 'PAID') {
+    return { epicuro: await acostaiaPlanes.deUsuario(payment.userId) };
   }
   return {};
 }

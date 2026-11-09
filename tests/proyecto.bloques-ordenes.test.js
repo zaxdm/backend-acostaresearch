@@ -81,7 +81,7 @@ test('la consola del 8-nov: Shapiro, Mann-Whitney y Wilcoxon, por sus órdenes',
 test('la del 2-nov: el alfa ya no se come la consola y salen Shapiro y Spearman', () => {
   assert.deepEqual(rangos(CONSOLA_2NOV), [
     { clave: 'alfa', desde: 1, hasta: 3 },
-    { clave: 'normalidad', desde: 8, hasta: 10 },
+    { clave: 'normalidad', desde: 5, hasta: 10 },
     { clave: 'spearman', desde: 12, hasta: 16 },
   ]);
 });
@@ -124,6 +124,84 @@ test('Mann-Whitney exacta y t pareada también se reconocen por su encabezado', 
     bloques.detectar(consola).map((b) => b.clave),
     ['mann-whitney', 't-student'],
   );
+});
+
+/**
+ * La forma del guion real del 8-nov (literal salvo los datos): cada prueba en
+ * una función propia, llamada dentro de un bucle, y las tablas impresas al
+ * final con un título. Con la primera versión del arreglo seguía sin salir
+ * ninguna de las tres.
+ */
+const CONSOLA_FUNCIONES = [
+  '> sw <- function(x) { t <- shapiro.test(x); c(W = round(unname(t$statistic), 3), p = round(t$p.value, 3)) }', //  1
+  '> filas <- list()', //  2
+  '> for (v in c("TOTAL","CVM")) for (g in c("Experimental","Control")) {', //  3
+  '+   r <- sw(datos[[v]]); filas[[length(filas)+1]] <- data.frame(Variable = v, W = r["W"], p = r["p"])', //  4
+  '+ }', //  5
+  '> tab_sw <- do.call(rbind, filas); rownames(tab_sw) <- NULL; print(tab_sw)', //  6
+  '  Variable     W     p', //  7
+  '1    TOTAL 0.967 0.591', //  8
+  '> escribir_csv(tab_sw, "tabla-normalidad.csv")', //  9
+  'Guardado tabla-normalidad.csv - pidele a Claude el enlace para descargarlo. ', // 10
+  '> library(coin)', // 11
+  '> mw <- function(y, g) {', // 12
+  '+   w <- wilcox.test(y ~ g, exact = FALSE, correct = FALSE)', // 13
+  '+   c(U = unname(w$statistic), p = signif(w$p.value, 3))', // 14
+  '+ }', // 15
+  '> wx <- function(pre, post) {', // 16
+  '+   w <- wilcox.test(post, pre, paired = TRUE, exact = FALSE, correct = FALSE)', // 17
+  '+   c(V = unname(w$statistic), p = signif(w$p.value, 3))', // 18
+  '+ }', // 19
+  '> out_mw <- list(); out_wx <- list()', // 20
+  '> for (v in c("TOTAL","CVM")) {', // 21
+  '+   r <- mw(datos[[paste0("POST_",v)]], datos$GRUPO); out_mw[[length(out_mw)+1]] <- t(r)', // 22
+  '+   r <- wx(datos$PRE_TOTAL, datos$POST_TOTAL); out_wx[[length(out_wx)+1]] <- t(r)', // 23
+  '+ }', // 24
+  '> tab_mw <- do.call(rbind, out_mw)', // 25
+  '> tab_wx <- do.call(rbind, out_wx)', // 26
+  '> cat("U de Mann-Whitney (Experimental vs Control), N = 47:\\n"); print(tab_mw)', // 27
+  'U de Mann-Whitney (Experimental vs Control), N = 47:', // 28
+  '      U        p', // 29
+  '[1,] 86 4.88e-05', // 30
+  '> cat("\\nRangos promedio en el postest:\\n")', // 31
+  '', // 32
+  'Rangos promedio en el postest:', // 33
+  '> cat("\\nWilcoxon pretest vs postest por grupo:\\n"); print(tab_wx)', // 34
+  '', // 35
+  'Wilcoxon pretest vs postest por grupo:', // 36
+  '       V        p', // 37
+  '[1,] 300 1.77e-05', // 38
+].join('\n');
+
+test('pruebas dentro de funciones propias y tablas impresas con su título', () => {
+  assert.deepEqual(rangos(CONSOLA_FUNCIONES), [
+    { clave: 'normalidad', desde: 1, hasta: 8 },
+    { clave: 'mann-whitney', desde: 21, hasta: 30 },
+    { clave: 'wilcoxon', desde: 34, hasta: 38 },
+  ]);
+  assert.match(bloques.apariciones(CONSOLA_FUNCIONES, 'mann-whitney')[0].texto, /86 4\.88e-05/);
+  assert.match(bloques.apariciones(CONSOLA_FUNCIONES, 'wilcoxon')[0].texto, /300 1\.77e-05/);
+});
+
+test('un título solo espera a lo que va debajo y se une con su prueba', () => {
+  const consola = [
+    '> cat("\\n== Normalidad ==\\n")',
+    '',
+    '== Normalidad ==',
+    '> for (v in c("V1","V2")) { s <- shapiro.test(d[[v]]); cat(v, ": W =", round(s$statistic, 3), "\\n") }',
+    'V1 : W = 0.975 ',
+    '> cat("\\n== Descriptivos ==\\n")',
+    '',
+    '== Descriptivos ==',
+    '> desc <- data.frame(M = mean(d$V1))',
+    '> print(desc)',
+    '      M',
+    '1 44.22',
+  ].join('\n');
+  assert.deepEqual(rangos(consola), [
+    { clave: 'normalidad', desde: 1, hasta: 5 },
+    { clave: 'descriptivos', desde: 6, hasta: 12 },
+  ]);
 });
 
 test('el índice de la consola del 8-nov ya no dice que no reconoce nada', () => {

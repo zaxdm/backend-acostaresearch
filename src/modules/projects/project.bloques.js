@@ -187,11 +187,16 @@ const ORDENES = [
  * Si nombra varias, manda la primera que aparece en el texto. `cor.test` y
  * `wilcox.test` se separan por sus argumentos: el método y si es pareada.
  */
-function claveDeOrden(orden) {
+function claveDeOrden(orden, propias = new Map()) {
   let primera = null;
   for (const o of ORDENES) {
     const m = o.patron.exec(orden);
     if (m && (!primera || m.index < primera.index)) primera = { clave: o.clave, index: m.index };
+  }
+  // Las funciones que definió Claude con una prueba dentro: `mw(y, g)`.
+  for (const [nombre, clave] of propias) {
+    const m = new RegExp(`(?:^|[^\\w.$])${nombre.replace(/\./g, '\\.')}\\s*\\(`).exec(orden);
+    if (m && (!primera || m.index < primera.index)) primera = { clave, index: m.index };
   }
   if (!primera) return null;
   if (primera.clave === 'correlacion') {
@@ -206,10 +211,57 @@ function claveDeOrden(orden) {
 }
 
 /**
- * Una orden que enseña lo que otra calculó: `print(s)`, `cat(… s$p.value …)`,
- * `summary(modelo)` o el nombre del objeto a secas.
+ * El nombre de una función que define Claude, si dentro hace una prueba:
+ * `mw <- function(y, g) { … wilcox.test(…) … }`. Sus llamadas cuentan como esa
+ * prueba (E2E del 8-nov: `sw`, `mw` y `wx`, llamadas dentro de un bucle).
  */
-const ORDEN_QUE_MUESTRA = /^\s*(?:print|cat|summary|format|round|show|kable|knitr::kable)\s*\(|^\s*[\w.$]+\s*$/;
+function funcionDefinida(orden) {
+  const m = /^\s*([A-Za-z.][\w.]*)\s*(?:<-|=)\s*function\s*\(/.exec(orden);
+  return m ? m[1] : null;
+}
+
+/**
+ * Los títulos con que Claude presenta una salida: `cat("U de Mann-Whitney
+ * (Experimental vs Control):\n"); print(tab_mw)`. Solo se mira el texto
+ * entre comillas del `cat()` con que EMPIEZA la orden, nunca la salida: ahí
+ * es donde «ANOVA» casaba con el veredicto de normalidad.
+ *
+ * El orden importa: el chi-cuadrado «de Pearson» antes que Pearson, y
+ * Mann-Whitney (que R llama «Wilcoxon rank sum») antes que Wilcoxon.
+ */
+const TITULOS = [
+  { clave: 'chi-cuadrado', patron: /chi.?cuadrad|chi.?squared|\bfisher\b/i },
+  { clave: 'mann-whitney', patron: /mann.?whitney|\bU de\b/i },
+  { clave: 'wilcoxon', patron: /wilcoxon/i },
+  { clave: 'normalidad', patron: /normalidad|shapiro|kolmogorov/i },
+  { clave: 'spearman', patron: /spearman/i },
+  { clave: 'pearson', patron: /pearson/i },
+  { clave: 'kruskal', patron: /kruskal/i },
+  { clave: 'post-hoc', patron: /post.?hoc|\bdunn\b|\btukey\b/i },
+  { clave: 'anova', patron: /\banova\b/i },
+  { clave: 't-student', patron: /t de student|\bt-test\b|\bwelch\b/i },
+  { clave: 'regresion', patron: /regresi[oó]n/i },
+  { clave: 'alfa', patron: /cronbach|\balfa\b/i },
+  { clave: 'descriptivos', patron: /descriptiv/i },
+  { clave: 'frecuencias', patron: /frecuencia/i },
+];
+
+/** La prueba que nombra el título de una orden que empieza con `cat("…")`. */
+function claveDeTitulo(orden) {
+  const m = /^\s*cat\s*\(\s*(["'])((?:\\.|(?!\1)[^\\])*)\1/.exec(orden);
+  if (!m) return null;
+  return TITULOS.find((t) => t.patron.test(m[2]))?.clave ?? null;
+}
+
+/** Una orden que solo escribe un título: `cat("\n== Normalidad ==\n")`. */
+const SOLO_TITULO = /^\s*cat\s*\(\s*(["'])(?:\\.|(?!\1)[^\\])*\1\s*\)\s*;?\s*$/;
+
+/**
+ * Una orden que enseña lo que otra calculó: `print(s)`, `cat(… s$p.value …)`,
+ * `summary(modelo)` o el nombre del objeto a secas. Puede ir detrás de una
+ * asignación, en la misma línea: `tab <- do.call(rbind, filas); print(tab)`.
+ */
+const ORDEN_QUE_MUESTRA = /\b(?:print|cat|summary|show|kable)\s*\(|^\s*[\w.$]+\s*$/;
 
 /** Hasta cuántas órdenes sin salida se espera a la que enseña el resultado. */
 const ESPERA_MAXIMA = 3;
@@ -314,7 +366,8 @@ function traeSalida(lineas, desde, hasta, finOrden) {
  * un RStudio pegado entero).
  *
  * Cada orden va de su «> » hasta antes de la siguiente. Se nombra por su
- * función o, si no se reconoce, por el encabezado que imprimió. Si imprimió
+ * función (de R o una que definió Claude con una prueba dentro), si no por el
+ * título de su `cat("…")` y, si no, por el encabezado que imprimió. Si imprimió
  * varios (un bucle con varias pruebas), se parte por ellos.
  *
  * Una orden que solo calcula (`s <- shapiro.test(x)`) no enseña nada: el
@@ -336,23 +389,39 @@ function detectarPorOrdenes(lineas) {
 
   // 2. Cada orden, con su prueba.
   const hallados = [];
+  const propias = new Map();
   let pendiente = null;
+  // Queda a la espera de la orden que lo enseñe; si es la misma prueba, desde
+  // donde empezó a calcularse.
+  const esperar = (clave, desde) => {
+    pendiente =
+      pendiente && pendiente.clave === clave
+        ? { ...pendiente, esperando: 0 }
+        : { clave, desde, esperando: 0 };
+  };
 
   for (const orden of ordenes) {
     const texto = lineas
       .slice(orden.desde - 1, orden.finOrden)
       .map((l) => l.replace(/^[>+] ?/, ''))
       .join('\n');
-    const clave = claveDeOrden(texto);
+    const deLaOrden = claveDeOrden(texto, propias);
+    const nombre = funcionDefinida(texto);
+    if (nombre && deLaOrden) propias.set(nombre, deLaOrden);
+    const titulo = deLaOrden ? null : claveDeTitulo(texto);
+    const clave = deLaOrden ?? titulo;
     const encabezados = [];
     for (let n = orden.finOrden + 1; n <= orden.finSalida; n += 1) {
       const definicion = BLOQUES.find((b) => b.inicio.test(lineas[n - 1]));
       if (definicion) encabezados.push({ clave: definicion.clave, linea: n });
     }
 
-    if (!traeSalida(lineas, orden.desde, orden.finSalida, orden.finOrden)) {
-      // Calcula sin enseñar: queda a la espera de la orden que lo enseñe.
-      if (clave) pendiente = { clave, desde: orden.desde, esperando: 0 };
+    if (
+      !traeSalida(lineas, orden.desde, orden.finSalida, orden.finOrden) ||
+      (titulo && SOLO_TITULO.test(texto) && encabezados.length === 0)
+    ) {
+      // Calcula sin enseñar, o solo pone el título: lo que importa viene después.
+      if (clave) esperar(clave, orden.desde);
       else if (pendiente && ++pendiente.esperando > ESPERA_MAXIMA) pendiente = null;
       continue;
     }
@@ -383,7 +452,18 @@ function detectarPorOrdenes(lineas) {
     hallados.push(bloque(lineas, inicio.clave, inicio.desde, orden.finSalida));
   }
 
-  return hallados;
+  // 3. Dos bloques de la misma prueba, sin nada entre ellos, son uno.
+  const unidos = [];
+  for (const b of hallados) {
+    const anterior = unidos[unidos.length - 1];
+    const entre = anterior ? lineas.slice(anterior.hasta, b.desde - 1) : null;
+    if (anterior && anterior.clave === b.clave && entre.every((l) => l.trim() === '')) {
+      unidos[unidos.length - 1] = bloque(lineas, b.clave, anterior.desde, b.hasta);
+    } else {
+      unidos.push(b);
+    }
+  }
+  return unidos;
 }
 
 /**

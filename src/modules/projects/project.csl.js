@@ -35,7 +35,7 @@ const CSL = require('citeproc');
 
 const normas = require('./project.normas');
 const { quitarAfiliaciones } = require('../references/afiliacion');
-const { MARCA, modificadoresDe, hueco, apellidoLegible, institucionConSigla, nombreParaCita } = require('./project.citas');
+const { MARCA, modificadoresDe, hueco, apellidoLegible, tituloLegible, institucionConSigla, nombreParaCita } = require('./project.citas');
 
 const SIN_FORMA = '[NO_PRINTED_FORM]';
 const CITA_PERDIDA = '[CITA SIN LOCALIZAR: revísala]';
@@ -123,7 +123,7 @@ function generoDeTesis(itemType) {
 /** Una ficha de la biblioteca, tal como la entiende citeproc (y Zotero). */
 function comoCsl(fuente) {
   const type = tipoCsl(fuente.itemType);
-  const item = { id: fuente.ref, type, title: fuente.title || '(sin título)' };
+  const item = { id: fuente.ref, type, title: tituloLegible(fuente.title) || '(sin título)' };
 
   const autores = personasCsl(fuente.authors);
   if (autores.length > 0) item.author = autores;

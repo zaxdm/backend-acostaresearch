@@ -302,8 +302,10 @@ function lineaDeAutor(proyecto) {
   if (proyecto.autor) return `Autor (portada): ${proyecto.autor}`;
   return (
     'Autor (portada): sin dato. La portada del Word saldrá con el nombre de la CUENTA. ' +
-    'Confírmaselo UNA vez antes de que descargue —«¿la tesis sale a tu nombre?»— y, si el ' +
-    'nombre es otro, guárdalo con "guardar_avance" (autor). No vuelvas a preguntarlo después.'
+    'Confírmaselo UNA vez antes de que descargue —«¿la tesis sale a tu nombre?»— y GUARDA LA ' +
+    'RESPUESTA con "guardar_avance" (autor) aunque sea que sí: su nombre completo tal como sale en ' +
+    'la portada, o el de quien firme si es otro. Mientras no se guarde, cada chat nuevo vuelve a ' +
+    'preguntarlo (E2E del 9-nov-2026: cuatro veces en una misma tesis).'
   );
 }
 

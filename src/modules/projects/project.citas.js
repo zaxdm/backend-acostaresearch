@@ -59,6 +59,87 @@ function apellidoLegible(apellido) {
 }
 
 /**
+ * Siglas que se quedan en mayúsculas cuando un título entero llega en mayúsculas.
+ * Solo las que salen en tesis peruanas y en las revistas que las citan: una
+ * palabra corta cualquiera («LOS», «SALUD») no se puede distinguir de una sigla,
+ * así que se pone en minúscula salvo que esté aquí.
+ */
+const SIGLAS = new Set([
+  'ai', 'ia', 'tic', 'tics', 'ods', 'onu', 'oms', 'ops', 'ocde', 'oecd', 'unesco', 'unicef', 'cepal',
+  'minsa', 'minedu', 'essalud', 'ugel', 'sunat', 'sunedu', 'inei', 'servir', 'cas', 'mype', 'mypes',
+  'pyme', 'pymes', 'ong', 'ongs', 'usa', 'eeuu', 'ee', 'uu', 'ue', 'tdah', 'tea', 'vih', 'sida', 'hiv',
+  'aids', 'covid', 'sars', 'spss', 'sem', 'pls', 'erp', 'crm', 'bim', 'gps', 'iot', 'stem', 'steam',
+  'abp', 'pbl', 'ebr', 'eba', 'ebe', 'ie', 'iiee', 'ii', 'iii', 'iv', 'vi', 'vii', 'viii', 'ix', 'xx', 'xxi',
+]);
+
+/**
+ * Nombres propios que vuelven a su forma cuando el título se pasa a minúsculas.
+ * Se buscan como frase entera, en minúsculas y con o sin tilde. Sin esto,
+ * «CLIMA … EN AREQUIPA, PERÚ» quedaría «… en arequipa, perú», que es otro error.
+ */
+const PROPIOS = [
+  'Ministerio de Salud', 'Ministerio de Educación', 'Ministerio de Trabajo', 'Ministerio de Economía',
+  'Madre de Dios', 'La Libertad', 'San Martín', 'América Latina', 'Latinoamérica', 'Estados Unidos',
+  'Perú', 'Peru', 'Lima', 'Callao', 'Arequipa', 'Trujillo', 'Cusco', 'Cuzco', 'Piura', 'Chiclayo',
+  'Lambayeque', 'Puno', 'Juliaca', 'Junín', 'Huancayo', 'Ica', 'Tacna', 'Moquegua', 'Cajamarca',
+  'Ayacucho', 'Huánuco', 'Huancavelica', 'Apurímac', 'Loreto', 'Iquitos', 'Ucayali', 'Pucallpa',
+  'Áncash', 'Ancash', 'Huaraz', 'Chimbote', 'Tumbes', 'Amazonas', 'Pasco', 'Tarapoto',
+  'Ecuador', 'Colombia', 'Bolivia', 'Chile', 'Argentina', 'Brasil', 'Brazil', 'México', 'Mexico',
+  'Venezuela', 'Paraguay', 'Uruguay', 'Panamá', 'Guatemala', 'Honduras', 'Cuba', 'España', 'Spain',
+  'Europa', 'Europe', 'Latin America', 'América', 'America', 'Asia', 'África', 'Africa', 'China',
+  'Indonesia', 'Malasia', 'Malaysia', 'India', 'Corea', 'Korea', 'Japón', 'Japan', 'Omán', 'Oman',
+];
+
+function sinTilde(texto) {
+  return texto.normalize('NFD').replace(/\p{M}/gu, '');
+}
+
+/**
+ * «ANÁLISIS PSICOMÉTRICO DEL INSTRUMENTO … DEL PERÚ» → «Análisis psicométrico
+ * del instrumento … del Perú».
+ *
+ * Algunas revistas depositan el título entero en mayúsculas y así salía en las
+ * referencias (E2E de tesis del 9-nov-2026: cuatro de 42). APA lo pide en tipo
+ * oración: mayúscula al principio, después de los dos puntos y en los nombres
+ * propios. Solo se toca un título SIN NINGUNA minúscula; uno escrito a mano con
+ * sus mayúsculas, aunque sean raras, se queda como está. La ficha no cambia: es
+ * solo cómo se escribe en la referencia.
+ */
+function tituloLegible(titulo) {
+  const texto = String(titulo ?? '');
+  const letras = texto.match(/\p{L}/gu) ?? [];
+  if (letras.length < 12 || /\p{Ll}/u.test(texto)) return texto;
+
+  let resultado = texto.toLowerCase();
+
+  // Las siglas conocidas y lo que lleva cifras («COVID-19», «SARS-COV-2») vuelven a mayúsculas.
+  resultado = resultado.replace(/[\p{L}\p{N}]+(?:-[\p{L}\p{N}]+)*/gu, (palabra) => {
+    if (/\p{N}/u.test(palabra) && /\p{L}/u.test(palabra)) return palabra.toUpperCase();
+    return SIGLAS.has(sinTilde(palabra)) ? palabra.toUpperCase() : palabra;
+  });
+
+  for (const propio of PROPIOS) {
+    const patron = new RegExp(`(?<![\\p{L}])${sinTilde(propio).toLowerCase().replace(/ /g, '\\s+')}(?![\\p{L}])`, 'gu');
+    // Se compara sin tildes para que «PERU» y «PERÚ» den lo mismo, y se
+    // conserva la tilde que traía el título.
+    const plano = sinTilde(resultado);
+    let salida = '';
+    let desde = 0;
+    for (const m of plano.matchAll(patron)) {
+      const original = resultado.slice(m.index, m.index + m[0].length);
+      // «PERÚ» → «Perú», «PERU» → «Peru»: la tilde, si la traía el título.
+      const forma = original !== sinTilde(original) ? propio : sinTilde(propio);
+      salida += resultado.slice(desde, m.index) + forma;
+      desde = m.index + m[0].length;
+    }
+    if (salida) resultado = salida + resultado.slice(desde);
+  }
+
+  // Mayúscula al principio y después de dos puntos, punto, «¿» o «¡».
+  return resultado.replace(/(^|[:.?!]\s+|[¿¡])(\p{Ll})/gu, (_, antes, letra) => antes + letra.toUpperCase());
+}
+
+/**
  * «Ministerio de la Producción (Produce)» → nombre y sigla por separado.
  *
  * Con la sigla entre paréntesis, la cita salía con un paréntesis dentro de otro:
@@ -224,7 +305,7 @@ function tramosDeBibliografia(fuente) {
   tramos.push({ texto: `(${fuente.year ?? 's. f.'}). ` });
 
   // En una obra suelta, el título ES el continente y va en cursiva.
-  tramos.push({ texto: `${fuente.title}`, cursiva: suelta });
+  tramos.push({ texto: tituloLegible(fuente.title), cursiva: suelta });
   tramos.push({ texto: '. ' });
 
   if (fuente.source) {
@@ -368,6 +449,7 @@ module.exports = {
   datosDeLaPublicacion,
   autoresParaCita,
   apellidoLegible,
+  tituloLegible,
   institucionConSigla,
   nombreParaCita,
 };

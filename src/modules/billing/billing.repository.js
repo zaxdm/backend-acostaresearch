@@ -18,6 +18,10 @@ const planSelect = {
   priceUsdCents: true,
   listPriceCents: true,
   durationDays: true,
+  // Plan de tesis + IA (10-nov-2026): la tarjeta de venta dice «incluye el
+  // primer mes de IA» y «luego S/99,90 al mes».
+  incluyeEpicuro: true,
+  renuevaCon: true,
 };
 
 const packSelect = {
@@ -47,11 +51,12 @@ const billingRepository = {
    * La lista pública: la página de precios y el asistente.
    *
    * Sin los planes en prueba (`soloPara`), que están activos pero no se venden:
-   * ver `plan.visibilidad`. Sin los de Epicuro.ai, que se venden en Epicuro.
+   * ver `plan.visibilidad`. Desde el 10-nov-2026 incluye los de IA (Epicuro +
+   * Huella IA), que también se venden aquí.
    */
   listPlans({ incluirInactivos = false } = {}) {
     return prisma.plan.findMany({
-      where: incluirInactivos ? {} : { active: true, soloPara: null, kind: { not: 'EPICURO' } },
+      where: incluirInactivos ? {} : { active: true, soloPara: null },
       select: planSelect,
       orderBy: { sortOrder: 'asc' },
     });

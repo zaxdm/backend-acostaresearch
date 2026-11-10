@@ -88,6 +88,10 @@ const schema = z.object({
   // revocar las licencias de sus usuarios (`modules/acostaia`). Va en la
   // cabecera `Authorization: Bearer`. Vacía = la ruta no acepta nada.
   ACOSTAIA_CLAVE_INTERNA: vacioComoAusente(z.string().min(32)),
+  // Huella IA (10-nov-2026): secreto compartido con huella.acostaresearch.com para
+  // firmar el enlace con el que entra quien tiene la IA. Vacío = sin enlace.
+  HUELLA_SECRETO: vacioComoAusente(z.string().min(32)),
+  HUELLA_URL: vacioComoAusente(z.string().url()),
   // Dirección de la web de AcostaIA: a ella vuelve quien conectó Zotero o
   // Mendeley desde allí. Vacía = conectar desde AcostaIA está apagado.
   ACOSTAIA_URL: vacioComoAusente(z.string().url()),

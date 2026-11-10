@@ -79,6 +79,17 @@ function avisarAlComprador(payment, entrega) {
     return;
   }
 
+  // La IA que venía incluida en un plan de licencia (oferta de tesis + IA) lleva
+  // su propio correo, sin constancia: la constancia ya va con el de la licencia.
+  if (entrega.license && entrega.epicuro) {
+    sendMail({
+      to: usuario.email,
+      ...plantillas.epicuroReady({ ...datos, expiresAt: entrega.epicuro.expiresAt, renovada: false }),
+    }).catch((error) => {
+      logger.error({ err: error, paymentId: payment.id }, 'No se pudo enviar el correo de la IA incluida');
+    });
+  }
+
   adjuntarConstancia(payment.id)
     .then((attachments) => sendMail({ to: usuario.email, ...mensaje, attachments }))
     .catch((error) => {
@@ -132,6 +143,21 @@ async function adjuntarConstancia(paymentId) {
  * dos cosas. Lo único que se hace fuera es preparar la licencia, porque su
  * token tiene que generarse una sola vez para poder devolver la URL.
  */
+/**
+ * La IA que un plan incluye además de lo suyo (`incluyeEpicuro`), o null. Se
+ * entrega con los días y el nivel de ese plan de Epicuro.
+ */
+async function entregarIaIncluida(payment, tx) {
+  const codigo = payment.plan.incluyeEpicuro;
+  if (!codigo) return null;
+  const planIa = await tx.plan.findUnique({ where: { code: codigo } });
+  if (!acostaiaPlanes.esPlanDeEpicuro(planIa)) {
+    logger.warn({ plan: payment.plan.code, incluyeEpicuro: codigo }, 'El plan incluido no es de Epicuro: no se entrega');
+    return null;
+  }
+  return acostaiaPlanes.entregar({ userId: payment.userId, plan: planIa }, tx);
+}
+
 async function entregarPago({ payment, captura, estadoEsperado = 'PENDING', notaBolsa }) {
   const esLicencia = payment.plan.kind === 'LICENSE';
   const esMembresia = payment.plan.kind === 'DOCUMENTO';
@@ -179,6 +205,10 @@ async function entregarPago({ payment, captura, estadoEsperado = 'PENDING', nota
       }
 
       if (esLicencia) {
+        // Plan de tesis + IA (10-nov-2026): la oferta entrega además un plan de
+        // Epicuro (la IA del primer mes). Dentro de la transacción, como todo.
+        const epicuro = await entregarIaIncluida(payment, tx);
+
         // Renovar alarga la licencia que ya tiene; comprar por primera vez
         // emite una nueva. La diferencia la decidió `prepareForPurchase`.
         //
@@ -191,14 +221,14 @@ async function entregarPago({ payment, captura, estadoEsperado = 'PENDING', nota
           const license = await licenseRepository.extend(licenseId, { expiresAt, topes }, tx);
           return {
             enlace: { licenseId: license.id },
-            resultado: { license, renovada: true },
+            resultado: { license, renovada: true, ...(epicuro && { epicuro }) },
           };
         }
 
         const license = await licenseRepository.create(licenciaPreparada.data, tx);
         return {
           enlace: { licenseId: license.id },
-          resultado: { license, connectorUrl: licenciaPreparada.connectorUrl },
+          resultado: { license, connectorUrl: licenciaPreparada.connectorUrl, ...(epicuro && { epicuro }) },
         };
       }
 

@@ -69,6 +69,20 @@ const paymentController = {
    * El aviso de Hotmart. Sin el Hottok correcto no se toca nada. Un error al
    * entregar sube como 500 a propósito: Hotmart reintenta lo que no recibe 200.
    */
+  // Siempre 200: un error nuestro no se arregla con reintentos de Culqi, y la
+  // revisión diaria (`conciliarTodas`) recupera lo que se pierda aquí.
+  culqi: asyncHandler(async (req, res) => {
+    const suscripcionService = require('../suscripciones/suscripcion.service');
+    try {
+      const resultado = await suscripcionService.webhook(req.body);
+      logger.info({ evento: req.body?.id, ...resultado }, 'Culqi: aviso procesado');
+      return ok(res, resultado);
+    } catch (error) {
+      logger.error({ err: error, evento: req.body?.id }, 'Culqi: el aviso falló');
+      return ok(res, { resultado: 'error' });
+    }
+  }),
+
   hotmart: asyncHandler(async (req, res) => {
     // La 2.0 lo manda en la cabecera; la 1.0, en el cuerpo.
     const firma = req.get('X-HOTMART-HOTTOK') ?? req.body?.hottok;

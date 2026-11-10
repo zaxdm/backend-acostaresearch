@@ -104,6 +104,16 @@ async function bootstrap() {
   ordenesAbandonadas.unref();
   setTimeout(cerrarAbandonadas, 60_000).unref();
 
+  // Las cuotas mensuales de Culqi: el webhook las anota al momento; esta pasada
+  // diaria recupera las que se hayan perdido. La primera, a los tres minutos.
+  const conciliarSuscripciones = () =>
+    require('./modules/suscripciones/suscripcion.service')
+      .conciliarTodas()
+      .catch((error) => logger.error({ err: error }, 'No se conciliaron las suscripciones'));
+  const suscripciones = setInterval(conciliarSuscripciones, 24 * 60 * 60 * 1000);
+  suscripciones.unref();
+  setTimeout(conciliarSuscripciones, 180_000).unref();
+
   // Las conversaciones de WhatsApp se guardan WHATSAPP_RETENCION_DIAS y se
   // borran solas. Una vez al día basta; la primera, a los dos minutos.
   const purgarWhatsapp = () =>

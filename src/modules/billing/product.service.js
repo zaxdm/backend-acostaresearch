@@ -42,6 +42,8 @@ const grupoSelect = {
   mcpCostCentsTotal: true,
   mcpDelivery: true,
   soloPara: true,
+  incluyeEpicuro: true,
+  renuevaCon: true,
 };
 
 /**
@@ -53,6 +55,21 @@ const grupoSelect = {
  *
  * `null` explícito es quitar la oferta; `undefined` es no tocarla.
  */
+/**
+ * Los planes de IA nombrados (`incluyeEpicuro`, `renuevaCon`) tienen que existir
+ * y ser de Epicuro: un código mal escrito dejaría la oferta cobrando sin
+ * entregar la IA (10-nov-2026).
+ */
+async function comprobarPlanesDeIa(datos) {
+  for (const campo of ['incluyeEpicuro', 'renuevaCon']) {
+    if (!datos[campo]) continue;
+    const ia = await prisma.plan.findUnique({ where: { code: datos[campo] }, select: { kind: true } });
+    if (ia?.kind !== 'EPICURO') {
+      throw new ConflictError(`«${datos[campo]}» no es un plan de IA (Epicuro).`);
+    }
+  }
+}
+
 function precioAnterior(valor, precioVigente) {
   if (valor === undefined) return undefined;
   if (valor === null) return null;
@@ -102,6 +119,7 @@ const productService = {
     if (existente) {
       throw new ConflictError(`Ya hay un grupo con el código «${code}».`);
     }
+    await comprobarPlanesDeIa(datos);
 
     const ultimo = await prisma.plan.findFirst({
       where: { kind: 'LICENSE' },
@@ -124,6 +142,8 @@ const productService = {
         active: datos.active ?? true,
         // Con correos, el grupo está en prueba: activo solo para ellos.
         soloPara: correosEnPrueba(datos.soloPara),
+        incluyeEpicuro: datos.incluyeEpicuro ?? null,
+        renuevaCon: datos.renuevaCon ?? null,
         sortOrder: (ultimo?.sortOrder ?? 0) + 1,
         // Un plan de licencia no reparte palabras: eso es de las bolsas del
         // humanizador. La columna es obligatoria, así que va a cero.
@@ -156,6 +176,8 @@ const productService = {
     });
     if (!existente) throw new NotFoundError('Ese grupo no existe.');
 
+    await comprobarPlanesDeIa(cambios);
+
     // El «antes» se revisa en cada edición, no solo cuando llega uno nuevo:
     // subir el precio sin tocarlo dejaría guardada una oferta al revés, con el
     // tachado por debajo de lo que se cobra.
@@ -183,6 +205,8 @@ const productService = {
         ...(cambios.mcpCallsPerDay === undefined ? {} : { mcpCallsPerDay: cambios.mcpCallsPerDay }),
         // Vaciar la lista es sacarlo de la prueba y ponerlo a la venta.
         ...(cambios.soloPara === undefined ? {} : { soloPara: correosEnPrueba(cambios.soloPara) }),
+        ...(cambios.incluyeEpicuro === undefined ? {} : { incluyeEpicuro: cambios.incluyeEpicuro }),
+        ...(cambios.renuevaCon === undefined ? {} : { renuevaCon: cambios.renuevaCon }),
       },
       select: grupoSelect,
     });

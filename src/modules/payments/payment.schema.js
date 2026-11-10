@@ -80,6 +80,19 @@ const captureBodySchema = z
     email: z.string().trim().toLowerCase().email('Correo no válido.').max(50).optional(),
     deviceFingerprint: z.string().trim().max(100).optional(),
     authentication3DS: autenticacion3DS.optional(),
+    // Cobro mensual con tarjeta (10-nov-2026): solo en los planes que se
+    // renuevan. `acepta` es la casilla «autorizo el cobro de cada mes»; los
+    // demás datos los exige Culqi para guardar la tarjeta.
+    suscripcion: z
+      .object({
+        acepta: z.literal(true),
+        nombre: z.string().trim().min(2).max(50),
+        apellido: z.string().trim().min(2).max(50),
+        telefono: z.string().trim().min(6).max(20),
+        ciudad: z.string().trim().min(2).max(30),
+        direccion: z.string().trim().min(3).max(100),
+      })
+      .optional(),
   })
   .default({});
 

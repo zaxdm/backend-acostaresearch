@@ -105,6 +105,7 @@ model User {
   /// ha mandado preparar. Ver `DocPack` y `Preparacion`.
   docPacks      DocPack[]
   epicuroPlan   EpicuroPlan?
+  suscripciones Suscripcion[]
   preparaciones Preparacion[]
 
   /// Lo que opina del servicio. Pueden ser varias, y se van con la cuenta: un
@@ -564,14 +565,73 @@ model Plan {
   /// la lista. Ver `billing/plan.visibilidad.js`.
   soloPara String? @db.VarChar(1000)
 
+  /// Plan de tesis + IA (10-nov-2026): código de un plan EPICURO que se entrega
+  /// además de lo propio de este plan, con los días de ese plan. Nulo = nada más.
+  /// Así la oferta de S/159 da la licencia de 1 año Y el primer mes de IA.
+  incluyeEpicuro String? @db.VarChar(40)
+  /// Código del plan que se cobra cada mes con la tarjeta guardada, después de
+  /// esta compra (suscripción de Culqi). Nulo = pago único, como siempre.
+  renuevaCon     String? @db.VarChar(40)
+  /// Id del plan recurrente en Culqi (`pln_…`), en el plan que SE COBRA cada mes.
+  /// Se crea solo la primera vez que alguien se suscribe y se guarda aquí.
+  culqiPlanId    String? @db.VarChar(40)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  packs    WordPack[]
-  payments Payment[]
-  docPacks DocPack[]
+  packs         WordPack[]
+  payments      Payment[]
+  docPacks      DocPack[]
+  suscripciones Suscripcion[]
 
   @@map("plans")
+}
+
+enum SuscripcionEstado {
+  PENDIENTE // tarjeta guardada; falta el primer cobro o crear la suscripción en Culqi
+  ACTIVA // Culqi cobra cada mes
+  CANCELADA // el cliente (o un admin) la canceló: lo pagado dura hasta su fecha
+  FALLIDA // no se pudo crear en Culqi o la tarjeta dejó de pasar; ver `ultimoError`
+}
+
+/// Cobro mensual automático con la tarjeta guardada en Culqi (10-nov-2026).
+///
+/// El primer cobro es un cargo normal con la tarjeta guardada (pasa por
+/// `payments` y se entrega como siempre). Después se crea la suscripción en
+/// Culqi, que cobra a los 30 días y cada mes. Cada cuota cobrada se anota como un
+/// pago nuevo del plan `plan` y alarga el servicio (ver `suscripcion.service`).
+/// La tarjeta no la vemos nunca: Culqi la guarda y nos da su id (`crd_…`).
+model Suscripcion {
+  id String @id @default(uuid()) @db.Char(36)
+
+  userId String @db.Char(36)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// El plan que se cobra cada mes (p. ej. EPICURO_ESTANDAR, S/99,90).
+  planId String @db.Char(36)
+  plan   Plan   @relation(fields: [planId], references: [id])
+
+  /// El pago que la abrió (el primer cobro). Único: un pago, una suscripción.
+  primerPagoId String @unique @db.Char(36)
+
+  estado SuscripcionEstado @default(PENDIENTE)
+
+  culqiCustomerId     String  @db.VarChar(40)
+  culqiCardId         String  @db.VarChar(40)
+  culqiSubscriptionId String? @unique @db.VarChar(40)
+  /// Para enseñar «Visa •••• 1111» sin guardar nada sensible.
+  tarjeta             String? @db.VarChar(60)
+
+  proximoCobro DateTime?
+  canceladaEn  DateTime?
+  ultimoError  String?   @db.VarChar(500)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([estado])
+  @@map("suscripciones")
 }
 
 enum WordPackStatus {

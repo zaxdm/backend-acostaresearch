@@ -83,6 +83,16 @@ const soloParaSchema = z
  * la URL del conector y en cada licencia emitida: conviene que sea legible de
  * un vistazo en un log y que no dependa de si alguien escribió mayúsculas.
  */
+/** Un código de plan, o vacío/nulo para quitarlo. */
+const codigoDePlanOpcional = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .max(40)
+  .nullable()
+  .optional()
+  .transform((v) => (v === '' ? null : v));
+
 const createProductSchema = z.object({
   code: z
     .string({ required_error: 'Ponle un código al grupo.' })
@@ -106,6 +116,8 @@ const createProductSchema = z.object({
   mcpDelivery: z.enum(['INSTRUCTIONS', 'EXECUTED']).optional(),
   active: z.coerce.boolean().optional(),
   soloPara: soloParaSchema,
+  incluyeEpicuro: codigoDePlanOpcional,
+  renuevaCon: codigoDePlanOpcional,
 });
 
 const updateProductSchema = z
@@ -119,6 +131,10 @@ const updateProductSchema = z
     durationDays: z.coerce.number().int().min(0).max(3650).optional(),
     mcpCallsPerDay: z.coerce.number().int().min(0).max(100000).optional(),
     active: z.boolean().optional(),
+    // Plan de tesis + IA (10-nov-2026): el plan de Epicuro que incluye y el que
+    // se cobra cada mes con tarjeta después. Nulo o vacío = nada.
+    incluyeEpicuro: codigoDePlanOpcional,
+    renuevaCon: codigoDePlanOpcional,
   })
   .refine((datos) => Object.keys(datos).length > 0, 'No hay nada que cambiar.');
 

@@ -6,6 +6,8 @@ const userRoutes = require('./modules/users/user.routes');
 const rewriteRoutes = require('./modules/rewrite/rewrite.routes');
 const billingRoutes = require('./modules/billing/billing.routes');
 const paymentRoutes = require('./modules/payments/payment.routes');
+const suscripcionRoutes = require('./modules/suscripciones/suscripcion.routes');
+const huellaRoutes = require('./modules/huella/huella.routes');
 const ventasRoutes = require('./modules/ventas/ventas.routes');
 const cajaRoutes = require('./modules/caja/caja.routes');
 const sunatRoutes = require('./modules/sunat/sunat.routes');
@@ -67,6 +69,10 @@ router.use('/users', userRoutes);
 router.use('/rewrites', rewriteRoutes);
 router.use('/billing', billingRoutes);
 router.use('/payments', paymentRoutes);
+// Cobro mensual automático con Culqi (ver `modules/suscripciones`).
+router.use('/suscripciones', suscripcionRoutes);
+// Huella IA: el enlace para entrar con la IA vigente (ver `modules/huella`).
+router.use('/huella', huellaRoutes);
 // Cierres de ventas mensuales en PDF (solo ADMIN).
 router.use('/ventas', ventasRoutes);
 // Flujo de caja día por día (solo ADMIN, ver `modules/caja`).

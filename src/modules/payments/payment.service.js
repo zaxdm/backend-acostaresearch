@@ -19,6 +19,7 @@ const { comprobarRenovacion } = require('./payment.renovacion');
 const { avisarAlAdmin } = require('../../lib/notify');
 const { getProvider, enabledProviders } = require('./providers');
 const { AppError, NotFoundError, ValidationError } = require('../../shared/errors/AppError');
+const suscripcionService = require('../suscripciones/suscripcion.service');
 
 /**
  * Cuánto se deja abierta una orden de pasarela antes de darla por abandonada.
@@ -526,13 +527,26 @@ const paymentService = {
       });
     }
 
+    // Cobro mensual (10-nov-2026): con tarjeta y la casilla aceptada, primero se
+    // guarda la tarjeta en Culqi y el cargo se hace con ella; así después se
+    // puede suscribir. Sin la casilla, o con Yape, es el pago único de siempre.
+    const conSuscripcion = suscripcionService.aplica({ provider, payment, datosDelCobro });
+    let datosParaCobrar = datosDelCobro;
+    if (conSuscripcion) {
+      const tarjeta = await suscripcionService.prepararTarjeta({ payment, ...datosDelCobro });
+      if (tarjeta.requiresAuthentication) {
+        return { alreadyProcessed: false, requiresAuthentication: true };
+      }
+      datosParaCobrar = { ...datosDelCobro, token: tarjeta.cardId };
+    }
+
     const captura = await cobrar({
       provider,
       orderId,
       userId,
       pagoParaPasarela: payment,
       filas: [payment],
-      datosDelCobro,
+      datosDelCobro: datosParaCobrar,
     });
 
     if (captura.requiresAuthentication) {
@@ -564,6 +578,10 @@ const paymentService = {
       { userId, orderId, captureId: captura.captureId, plan: payment.plan.code },
       'Cobro confirmado y bolsa entregada',
     );
+
+    // Entregado el primer mes, se crea la suscripción en Culqi. No lanza: si
+    // Culqi falla, queda anotado y se avisa al administrador.
+    if (conSuscripcion) await suscripcionService.activar(payment.id);
 
     return { alreadyProcessed: false, ...(await resultadoDeCompra(userId, entrega)) };
   },

@@ -26,6 +26,10 @@ router.use('/manual', manualRoutes);
 // El webhook de Hotmart: sin sesión, lo protege el Hottok. Ver `hotmart.webhook`.
 router.post('/hotmart/webhook', paymentController.hotmart);
 
+// El webhook de Culqi (cuotas de las suscripciones): sin sesión. No viene
+// firmado, así que solo se usa el id del evento y el evento se lee de Culqi.
+router.post('/culqi/webhook', paymentController.culqi);
+
 // Público: la web de venta necesita saber si hay pago en línea sin pedir sesión.
 router.get('/providers', paymentController.providers);
 

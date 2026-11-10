@@ -98,6 +98,8 @@ const schema = z.object({
   // Dirección de la web de AcostaIA: a ella vuelve quien conectó Zotero o
   // Mendeley desde allí. Vacía = conectar desde AcostaIA está apagado.
   ACOSTAIA_URL: vacioComoAusente(z.string().url()),
+  // La web de Epicuro.ai, adonde lleva «Abrir Epicuro.ai» del panel (11-nov-2026).
+  EPICURO_WEB_URL: z.string().url().default('https://epicuro.ai'),
 
   // ── Reescritor académico (Claude) ───────────────────────────────────────
   ANTHROPIC_API_KEY: vacioComoAusente(z.string()),

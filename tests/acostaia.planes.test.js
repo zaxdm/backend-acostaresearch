@@ -33,7 +33,7 @@ sustituir('../src/lib/prisma', {
   user: {
     findUnique: async ({ where }) => {
       const u = usuarios.get(where.email);
-      return u ? { epicuroPlan: filas.get(u.id) ?? null } : null;
+      return u ? { role: u.role ?? 'USER', epicuroPlan: filas.get(u.id) ?? null } : null;
     },
   },
 });
@@ -103,4 +103,18 @@ test('Epicuro solo ve un plan vigente, por el correo', async () => {
   filas.get('u1').expiresAt = new Date(Date.now() - 1000);
   assert.equal(await planes.deCorreo('ana@gmail.com'), null, 'vencido');
   assert.equal(await planes.deCorreo('nadie@gmail.com'), null);
+});
+
+test('un ADMIN sin plan comprado entra a Epicuro con Power, por un día', async () => {
+  usuarios.set('jefe@acosta.pe', { id: 'a1', role: 'ADMIN' });
+  const plan = await planes.deCorreo('jefe@acosta.pe');
+  assert.equal(plan.nivel, 'POWER');
+  assert.equal(plan.planCode, 'ADMIN');
+  assert.equal(dias(plan.expiresAt), 1);
+
+  await planes.entregar({ userId: 'a1', plan: ESTANDAR }, tx);
+  assert.equal((await planes.deCorreo('jefe@acosta.pe')).planCode, 'EPICURO_ESTANDAR', 'si compró, manda lo comprado');
+
+  usuarios.set('pais@acosta.pe', { id: 'p1', role: 'ADMIN_PAIS' });
+  assert.equal(await planes.deCorreo('pais@acosta.pe'), null, 'solo el ADMIN');
 });

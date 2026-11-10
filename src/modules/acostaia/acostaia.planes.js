@@ -1,6 +1,7 @@
 'use strict';
 
 const prisma = require('../../lib/prisma');
+const { ROLES } = require('../../config/constants');
 
 /**
  * Los planes de Epicuro.ai (10-nov-2026): Estándar y Power, de 30 días, que se
@@ -49,13 +50,19 @@ const acostaiaPlanes = {
     return { ...fila, renovada: vigente };
   },
 
-  /** El plan vigente de quien tiene ese correo en acostaresearch.com. */
+  /**
+   * El plan vigente de quien tiene ese correo en acostaresearch.com. Un ADMIN
+   * sin plan comprado entra con Power (11-nov-2026), por un día que Epicuro
+   * renueva solo al volver a preguntar: así deja de valer si pierde el rol.
+   */
   async deCorreo(email) {
     const usuario = await prisma.user.findUnique({
       where: { email: email.trim().toLowerCase() },
-      select: { epicuroPlan: true },
+      select: { role: true, epicuroPlan: true },
     });
-    return vista(usuario?.epicuroPlan);
+    const comprado = vista(usuario?.epicuroPlan);
+    if (comprado || usuario?.role !== ROLES.ADMIN) return comprado;
+    return { nivel: 'POWER', planCode: 'ADMIN', expiresAt: new Date(Date.now() + DIA_MS) };
   },
 
   /** El de una cuenta, para volver a enseñar lo entregado en un reintento. */

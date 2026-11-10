@@ -17,10 +17,13 @@ const sustituir = (ruta, exports) => {
 };
 
 const SECRETO = 's'.repeat(40);
-sustituir('../src/config/env', { HUELLA_SECRETO: SECRETO, HUELLA_URL: 'https://huella.prueba/' });
+const ENV = { HUELLA_SECRETO: SECRETO, HUELLA_URL: 'https://huella.prueba/' };
+sustituir('../src/config/env', ENV);
 
 let plan = null;
 sustituir('../src/modules/acostaia/acostaia.planes', { deUsuario: async () => plan });
+let matriculas = 0;
+sustituir('../src/lib/prisma', { license: { count: async () => matriculas } });
 let documento = null;
 sustituir('../src/modules/projects/project.service', { armarWord: async () => documento });
 
@@ -35,6 +38,8 @@ function leer(token) {
 }
 
 test.beforeEach(() => {
+  ENV.HUELLA_GRATIS_HASTA = undefined;
+  matriculas = 0;
   plan = { nivel: 'ESTANDAR', expiresAt: new Date(Date.now() + 86400000) };
   documento = { buffer: Buffer.from('docx'), nombreArchivo: 'Tesis de Ana.docx' };
 });
@@ -93,4 +98,18 @@ test('un administrador entra sin plan comprado', async () => {
   assert.equal(r.id, 'abcdefghijklmnopqr');
   const { url } = await huella.enlace({ userId: 'u1', email: 'jefe@acosta.pe', esAdmin: true });
   assert.match(url, /\?t=/);
+});
+
+test('promoción: con HUELLA_GRATIS_HASTA en el futuro entra quien tiene matrícula, y vence con ella', async () => {
+  plan = null;
+  const hasta = new Date(Date.now() + 3600 * 1000);
+  ENV.HUELLA_GRATIS_HASTA = hasta.toISOString();
+  await assert.rejects(huella.enlace({ userId: 'u9', email: 'cliente@gmail.com' }), (e) => e.code === 'SIN_PLAN_IA', 'sin matrícula, no');
+  matriculas = 1;
+  const { url } = await huella.enlace({ userId: 'u9', email: 'cliente@gmail.com' });
+  const t = decodeURIComponent(url.match(/t=([^&]+)/)[1]);
+  assert.equal(leer(t).planHasta, hasta.getTime(), 'la sesión de Huella no pasa de la promoción');
+
+  ENV.HUELLA_GRATIS_HASTA = new Date(Date.now() - 1000).toISOString();
+  await assert.rejects(huella.enlace({ userId: 'u9', email: 'cliente@gmail.com' }), (e) => e.code === 'SIN_PLAN_IA');
 });

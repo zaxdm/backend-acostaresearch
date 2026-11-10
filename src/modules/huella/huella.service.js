@@ -2,6 +2,7 @@
 
 const crypto = require('node:crypto');
 const env = require('../../config/env');
+const prisma = require('../../lib/prisma');
 const { AppError } = require('../../shared/errors/AppError');
 const acostaiaPlanes = require('../acostaia/acostaia.planes');
 
@@ -30,12 +31,26 @@ const base = () => env.HUELLA_URL.replace(/\/$/, '');
 /** Un administrador entra sin plan comprado (para probar y ayudar), por un día. */
 const PLAN_DE_ADMIN = () => ({ nivel: 'POWER', expiresAt: new Date(Date.now() + 24 * 3600 * 1000) });
 
+/**
+ * Promoción (10-nov-2026): con HUELLA_GRATIS_HASTA en el futuro, quien ya tiene
+ * matrícula (una licencia vigente de un método) entra hasta esa hora. La sesión
+ * de Huella vence con ella (planHasta).
+ */
+async function planGratis(userId, ahora = new Date()) {
+  const hasta = env.HUELLA_GRATIS_HASTA ? new Date(env.HUELLA_GRATIS_HASTA) : null;
+  if (!hasta || hasta <= ahora) return null;
+  const matriculas = await prisma.license.count({
+    where: { userId, status: 'ACTIVE', OR: [{ expiresAt: null }, { expiresAt: { gt: ahora } }] },
+  });
+  return matriculas > 0 ? { nivel: 'ESTANDAR', expiresAt: hasta } : null;
+}
+
 /** El plan de IA vigente, o un error que la web sabe enseñar. */
 async function planVigente(userId, esAdmin = false) {
   if (!env.HUELLA_SECRETO || !env.HUELLA_URL) {
     throw new AppError('Huella IA todavía no está conectada a tu cuenta. Inténtalo más tarde.', { statusCode: 503 });
   }
-  const plan = (await acostaiaPlanes.deUsuario(userId)) ?? (esAdmin ? PLAN_DE_ADMIN() : null);
+  const plan = (await acostaiaPlanes.deUsuario(userId)) ?? (esAdmin ? PLAN_DE_ADMIN() : null) ?? (await planGratis(userId));
   if (!plan) {
     throw new AppError('Huella IA viene con el plan de IA (Epicuro + Huella IA). Actívalo en Planes.', {
       statusCode: 403,

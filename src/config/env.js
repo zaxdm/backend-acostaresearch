@@ -92,6 +92,9 @@ const schema = z.object({
   // firmar el enlace con el que entra quien tiene la IA. Vacío = sin enlace.
   HUELLA_SECRETO: vacioComoAusente(z.string().min(32)),
   HUELLA_URL: vacioComoAusente(z.string().url()),
+  // Huella IA gratis para todos hasta esta fecha (ISO, p. ej. 2026-11-11T05:00:00Z = fin del
+  // 10-nov en Lima). Vacía = solo con plan de IA. Promoción puntual del dueño (10-nov-2026).
+  HUELLA_GRATIS_HASTA: vacioComoAusente(z.string().datetime()),
   // Dirección de la web de AcostaIA: a ella vuelve quien conectó Zotero o
   // Mendeley desde allí. Vacía = conectar desde AcostaIA está apagado.
   ACOSTAIA_URL: vacioComoAusente(z.string().url()),

@@ -4,6 +4,7 @@ const { Router } = require('express');
 const authenticate = require('../../middlewares/authenticate');
 const asyncHandler = require('../../shared/http/asyncHandler');
 const { ok } = require('../../shared/http/apiResponse');
+const { ROLES } = require('../../config/constants');
 const huellaService = require('./huella.service');
 
 const router = Router();
@@ -12,7 +13,10 @@ const router = Router();
 router.get(
   '/enlace',
   authenticate,
-  asyncHandler(async (req, res) => ok(res, await huellaService.enlace({ userId: req.user.id, email: req.user.email }))),
+  asyncHandler(async (req, res) => ok(
+      res,
+      await huellaService.enlace({ userId: req.user.id, email: req.user.email, esAdmin: req.user.role === ROLES.ADMIN }),
+    )),
 );
 
 // Mandar a Huella el avance de su proyecto (11-nov-2026) y abrirlo allí.
@@ -26,6 +30,7 @@ router.post(
         userId: req.user.id,
         email: req.user.email,
         productCode: String(req.params.productCode).slice(0, 60),
+        esAdmin: req.user.role === ROLES.ADMIN,
       }),
     ),
   ),

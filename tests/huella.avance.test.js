@@ -85,3 +85,12 @@ test('el tope diario de Huella llega como 429 con su mensaje', async () => {
     (e) => e.statusCode === 429 && e.message === 'Ya usaste tus 5 análisis de hoy.',
   );
 });
+
+test('un administrador entra sin plan comprado', async () => {
+  plan = null;
+  const pedir = async () => ({ ok: true, status: 200, json: async () => ({ id: 'abcdefghijklmnopqr', restantes: 4 }) });
+  const r = await huella.analizarAvance({ userId: 'u1', email: 'jefe@acosta.pe', productCode: 'METODO', esAdmin: true }, { pedir });
+  assert.equal(r.id, 'abcdefghijklmnopqr');
+  const { url } = await huella.enlace({ userId: 'u1', email: 'jefe@acosta.pe', esAdmin: true });
+  assert.match(url, /\?t=/);
+});

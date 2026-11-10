@@ -27,12 +27,15 @@ function firmar(datos) {
 
 const base = () => env.HUELLA_URL.replace(/\/$/, '');
 
+/** Un administrador entra sin plan comprado (para probar y ayudar), por un día. */
+const PLAN_DE_ADMIN = () => ({ nivel: 'POWER', expiresAt: new Date(Date.now() + 24 * 3600 * 1000) });
+
 /** El plan de IA vigente, o un error que la web sabe enseñar. */
-async function planVigente(userId) {
+async function planVigente(userId, esAdmin = false) {
   if (!env.HUELLA_SECRETO || !env.HUELLA_URL) {
     throw new AppError('Huella IA todavía no está conectada a tu cuenta. Inténtalo más tarde.', { statusCode: 503 });
   }
-  const plan = await acostaiaPlanes.deUsuario(userId);
+  const plan = (await acostaiaPlanes.deUsuario(userId)) ?? (esAdmin ? PLAN_DE_ADMIN() : null);
   if (!plan) {
     throw new AppError('Huella IA viene con el plan de IA (Epicuro + Huella IA). Actívalo en Planes.', {
       statusCode: 403,
@@ -54,8 +57,8 @@ const huellaService = {
   firmar,
 
   /** El enlace para abrir Huella IA, si la persona tiene la IA vigente. */
-  async enlace({ userId, email }) {
-    const plan = await planVigente(userId);
+  async enlace({ userId, email, esAdmin = false }) {
+    const plan = await planVigente(userId, esAdmin);
     return { url: `${base()}/?t=${encodeURIComponent(tokenPara(email, plan))}` };
   },
 
@@ -65,8 +68,8 @@ const huellaService = {
    * trabajos» (11-nov-2026). Huella lo cuenta en su tope de 5 al día: el
    * backend entra con la misma sesión firmada que el enlace, que dura 2 minutos.
    */
-  async analizarAvance({ userId, email, productCode }, { pedir = fetch } = {}) {
-    const plan = await planVigente(userId);
+  async analizarAvance({ userId, email, productCode, esAdmin = false }, { pedir = fetch } = {}) {
+    const plan = await planVigente(userId, esAdmin);
     const projectService = require('../projects/project.service');
     const documento = await projectService.armarWord(userId, productCode);
     if (!documento) {

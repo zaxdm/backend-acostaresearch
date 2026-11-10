@@ -15,4 +15,20 @@ router.get(
   asyncHandler(async (req, res) => ok(res, await huellaService.enlace({ userId: req.user.id, email: req.user.email }))),
 );
 
+// Mandar a Huella el avance de su proyecto (11-nov-2026) y abrirlo allí.
+router.post(
+  '/avance/:productCode',
+  authenticate,
+  asyncHandler(async (req, res) =>
+    ok(
+      res,
+      await huellaService.analizarAvance({
+        userId: req.user.id,
+        email: req.user.email,
+        productCode: String(req.params.productCode).slice(0, 60),
+      }),
+    ),
+  ),
+);
+
 module.exports = router;

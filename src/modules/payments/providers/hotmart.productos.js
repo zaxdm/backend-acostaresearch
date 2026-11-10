@@ -28,6 +28,9 @@ const PRODUCTOS = Object.freeze({
   INFORME_PRUEBA01: { productId: 8690462, checkout: 'F107951946A' },
   PREPARAR_MENSUAL: { productId: 8690476, checkout: 'N107951965N' },
   PREPARAR_TRIMESTRAL: { productId: 8690506, checkout: 'M107952016E' },
+  // Planes de Epicuro.ai (10-nov-2026): 30 días, se entregan en `acostaia.planes`.
+  EPICURO_ESTANDAR: { productId: 8930471, checkout: 'N108417774Q' },
+  EPICURO_POWER: { productId: 8930564, checkout: 'B108417968U' },
 });
 
 /**

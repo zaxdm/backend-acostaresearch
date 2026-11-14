@@ -46,6 +46,8 @@ const acostaiaRoutes = require('./modules/acostaia/acostaia.routes');
 const comprobarBase = require('./lib/comprobarBase');
 
 const router = Router();
+router.use('/social-bot/admin', require('./modules/social-bot/social.admin'));
+router.use('/social-bot', require('./modules/social-bot/social.routes'));
 
 router.get('/health', (_req, res) =>
   res.json({ success: true, data: { status: 'ok', uptime: process.uptime() } }),

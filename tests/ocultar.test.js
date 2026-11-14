@@ -12,6 +12,11 @@ const { ocultarSecretosEnUrl, ocultarConsulta, ocultarParams } = require('../src
  */
 
 const TOKEN = 'lbfnkXSmFZvZNLXSHv7ebWDjoh4_IMtyfXsWCMnh180';
+test('el secreto de verificación de Meta no queda en URL ni consulta del registro', () => {
+  assert.equal(ocultarSecretosEnUrl('/webhook?hub.mode=subscribe&hub.verify_token=secreto&hub.challenge=123'), '/webhook?hub.mode=subscribe&hub.verify_token=…&hub.challenge=123');
+  assert.equal(ocultarConsulta({ 'hub.verify_token': 'secreto' })['hub.verify_token'], '…');
+  assert.equal(ocultarSecretosEnUrl('/webhook?hubXverify_token=visible'), '/webhook?hubXverify_token=visible');
+});
 
 test('la licencia del conector no llega al registro, solo una pista', () => {
   const limpia = ocultarSecretosEnUrl(`/mcp/${TOKEN}`);

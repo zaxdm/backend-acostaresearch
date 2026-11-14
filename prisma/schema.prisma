@@ -22,6 +22,63 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model SocialConversacion {
+  id String @id @default(uuid()) @db.Char(36)
+  clave String @unique @db.Char(64)
+  humano Boolean @default(false)
+  historial Json
+  lease String? @db.Char(36)
+  busyUntil DateTime? @db.DateTime(3)
+  updatedAt DateTime @updatedAt
+  canal String @default("externo") @db.VarChar(20)
+  cuenta String @default("") @db.VarChar(100)
+  contacto String @default("") @db.VarChar(100)
+  nombre String @default("") @db.VarChar(120)
+  noLeidos Int @default(0)
+  ultimoMensajeAt DateTime @default(now()) @db.DateTime(3)
+  ultimoDelClienteAt DateTime? @db.DateTime(3)
+  revision Int @default(0)
+  queueLease String? @db.Char(36)
+  queueUntil DateTime? @db.DateTime(3)
+  trabajos SocialTrabajo[]
+  @@index([ultimoMensajeAt])
+}
+
+model SocialTrabajo {
+  id String @id @default(uuid()) @db.Char(36)
+  clave String @unique @db.Char(64)
+  conversacionId String @db.Char(36)
+  conversacion SocialConversacion @relation(fields: [conversacionId], references: [id], onDelete: Cascade)
+  autor String @db.VarChar(12)
+  texto String @db.Text
+  evento Json
+  respuesta String? @db.Text
+  estado String @default("PENDIENTE") @db.VarChar(20)
+  intentos Int @default(0)
+  proximoAt DateTime @default(now()) @db.DateTime(3)
+  metaId String? @db.VarChar(200)
+  error String? @db.VarChar(300)
+  revision Int @default(0)
+  createdAt DateTime @default(now()) @db.DateTime(3)
+  updatedAt DateTime @updatedAt
+  @@index([estado, proximoAt])
+  @@index([conversacionId, createdAt])
+  @@index([metaId])
+}
+
+model SocialEvento {
+  clave String @id @db.Char(64)
+  respuesta Json
+  createdAt DateTime @default(now())
+}
+
+model SocialPrueba {
+  contacto String @id @db.Char(64)
+  url String @db.VarChar(500)
+  expiresAt DateTime @db.DateTime(3)
+  createdAt DateTime @default(now())
+}
+
 model AliciaCache {
   clave     String   @id @db.VarChar(64)
   respuesta Json

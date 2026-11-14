@@ -18,6 +18,8 @@ const tributosService = require('./modules/tributos/tributos.service');
 /** Cada cuánto se mira si toca la pasada diaria de correos de avance. */
 const AVISOS_MS = 60 * 60 * 1000;
 const whatsappService = require('./modules/whatsapp/whatsapp.service');
+const socialService = require('./modules/social-bot/social.service');
+const socialRuntime = require('./modules/social-bot/social.runtime');
 
 /** Cada cuánto se mira si terminó un mes de ventas que haya que cerrar. */
 const CIERRE_DE_MES_MS = 3 * 60 * 60 * 1000;
@@ -123,6 +125,15 @@ async function bootstrap() {
   const purgaWhatsapp = setInterval(purgarWhatsapp, PURGA_WHATSAPP_MS);
   purgaWhatsapp.unref();
   setTimeout(purgarWhatsapp, 120_000).unref();
+  const purgarSocial = () => socialService.purgar().catch((error) =>
+    logger.error({ err: error }, 'No se purgó el historial del bot de redes'));
+  setInterval(purgarSocial, PURGA_WHATSAPP_MS).unref();
+  setTimeout(purgarSocial, 150_000).unref();
+  const procesarRedes = () => socialRuntime.pasar().catch((error) =>
+    logger.error({ codigo: error.code || 'SOCIAL_QUEUE_ERROR' }, 'No se pudo procesar la cola de redes'));
+  const colaRedes = setInterval(procesarRedes, 2000);
+  colaRedes.unref();
+  setTimeout(procesarRedes, 5000).unref();
 
   // Las boletas de SUNAT: cada cinco minutos se emiten las de las ventas nuevas
   // y se reenvían las que no llegaron. Con SUNAT_ACTIVO=false no hace nada.
@@ -151,6 +162,7 @@ async function bootstrap() {
     clearInterval(cierreDeMes);
     clearInterval(ordenesAbandonadas);
     clearInterval(purgaWhatsapp);
+    clearInterval(colaRedes);
     clearInterval(boletas);
     clearInterval(declaracion);
     server.close(async () => {

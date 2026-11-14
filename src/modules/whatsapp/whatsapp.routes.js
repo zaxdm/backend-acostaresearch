@@ -54,15 +54,20 @@ webhook.get('/', (req, res) => {
  * Los mensajes. Se contesta 200 en cuanto la firma vale y se atiende después:
  * Meta reintenta si tarda, y Gemini puede tardar varios segundos.
  */
-webhook.post('/', (req, res) => {
+webhook.post('/', asyncHandler(async (req, res) => {
   if (!meta.firmaValida(req.rawBody, req.get('x-hub-signature-256'))) {
     logger.warn('WhatsApp: aviso con firma inválida, descartado');
     return res.sendStatus(401);
   }
+  const social = require('../social-bot/social.runtime');
+  if (social.usaWhatsapp()) {
+    await social.recibir(req.body);
+    return res.sendStatus(200);
+  }
   res.sendStatus(200);
   whatsappService.recibirAviso(req.body);
   return undefined;
-});
+}));
 
 // ── El panel (solo ADMIN) ────────────────────────────────────────────────────
 

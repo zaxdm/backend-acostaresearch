@@ -25,6 +25,21 @@ function llavesCulqiValidas(publica, secreta) {
 }
 
 const schema = z.object({
+  SOCIAL_BOT_ENABLED: booleanish.default('false'),
+  SOCIAL_META_ENABLED: booleanish.default('false'),
+  SOCIAL_META_APP_SECRET: vacioComoAusente(z.string().min(16)),
+  SOCIAL_META_VERIFY_TOKEN: vacioComoAusente(z.string().min(16)),
+  SOCIAL_META_FACEBOOK_PAGE_ID: vacioComoAusente(z.string().regex(/^\d+$/)),
+  SOCIAL_META_INSTAGRAM_ID: vacioComoAusente(z.string().regex(/^\d+$/)),
+  SOCIAL_META_PAGE_TOKEN: vacioComoAusente(z.string()),
+  SOCIAL_META_WHATSAPP_ID: vacioComoAusente(z.string().regex(/^\d+$/)),
+  SOCIAL_META_WHATSAPP_TOKEN: vacioComoAusente(z.string()),
+  SOCIAL_META_API_VERSION: z.string().regex(/^v\d+\.\d+$/).default('v25.0'),
+  SOCIAL_BOT_SECRET: vacioComoAusente(z.string().min(32)),
+  SOCIAL_BOT_API_KEY: vacioComoAusente(z.string()),
+  SOCIAL_BOT_MODEL: z.string().default('gemini-3.1-flash-lite'),
+  SOCIAL_BOT_TRIAL_PRODUCT: vacioComoAusente(z.string().max(40)),
+  SOCIAL_BOT_MAX_DIARIO: z.coerce.number().int().positive().default(500),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(3000),
   API_PREFIX: z.string().startsWith('/').default('/api/v1'),

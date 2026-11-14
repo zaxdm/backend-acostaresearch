@@ -31,8 +31,8 @@ const RUTAS_CON_SECRETO = [
 ];
 
 /** Parámetros de consulta que llevan una credencial: la vuelta de los OAuth (Zotero, Scopus, Mendeley). */
-const CLAVES_SECRETAS = ['oauth_token', 'oauth_verifier', 'token', 'code', 'state'];
-const PARAMETROS_CON_SECRETO = new RegExp(`([?&](?:${CLAVES_SECRETAS.join('|')})=)[^&#]*`, 'gi');
+const CLAVES_SECRETAS = ['oauth_token', 'oauth_verifier', 'token', 'code', 'state', 'hub.verify_token'];
+const PARAMETROS_CON_SECRETO = new RegExp(`([?&](?:${CLAVES_SECRETAS.map((k) => k.replace(/\./g, '\\.')).join('|')})=)[^&#]*`, 'gi');
 
 const OCULTO = '…';
 

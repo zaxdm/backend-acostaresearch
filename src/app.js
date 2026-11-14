@@ -21,6 +21,7 @@ const errorHandler = require('./middlewares/errorHandler');
 
 /** Donde Meta manda los mensajes de WhatsApp. Ver `modules/whatsapp`. */
 const WHATSAPP_WEBHOOK = `${env.API_PREFIX}/whatsapp/webhook`;
+const SOCIAL_WEBHOOK = `${env.API_PREFIX}/social-bot/webhook`;
 
 function createApp() {
   const app = express();
@@ -60,7 +61,7 @@ function createApp() {
       // El webhook de WhatsApp comprueba la firma de Meta sobre los bytes
       // EXACTOS que llegaron; el JSON ya parseado no sirve para eso.
       verify(req, _res, buffer) {
-        if (req.originalUrl.startsWith(WHATSAPP_WEBHOOK)) req.rawBody = buffer;
+        if (req.originalUrl.startsWith(WHATSAPP_WEBHOOK) || req.originalUrl.startsWith(SOCIAL_WEBHOOK)) req.rawBody = buffer;
       },
     }),
   );
@@ -101,6 +102,7 @@ function createApp() {
   // aviso por mensaje y otro por cada «entregado» y «leído», desde pocas IP.
   // Lo protege la firma. Ver `modules/whatsapp/whatsapp.routes`.
   app.use(WHATSAPP_WEBHOOK, whatsappWebhook);
+  app.use(SOCIAL_WEBHOOK, require('./modules/social-bot/social.webhook'));
 
   app.use(globalLimiter);
 

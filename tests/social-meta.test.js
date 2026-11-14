@@ -138,3 +138,15 @@ test('429 es reintentable y token inválido es permanente sin exponer mensaje de
   await assert.rejects(enviar(e, 'Hola', { token: 'test', fetchImpl: async () => ({ ok: false, status: 429, json: async () => ({ error: { code: 4 } }) }) }), (error) => !error.ambiguo && !error.permanente);
   await assert.rejects(enviar(e, 'Hola', { token: 'test', fetchImpl: async () => ({ ok: false, status: 400, json: async () => ({ error: { code: 190, message: 'SECRETO' } }) }) }), (error) => error.permanente && !error.message.includes('SECRETO'));
 });
+
+test('la respuesta privada a un comentario va a la página con recipient.comment_id', async () => {
+  const calls = [];
+  const opts = { token: 'test', facebookPageId: '111', fetchImpl: async (url, o) => { calls.push({ url, body: JSON.parse(o.body) }); return ok({ message_id: 'm1' }); } };
+  await enviar({ canal: 'instagram', cuenta: '222', contacto: '999', tipo: 'respuesta_privada', comentarioId: '456' }, 'Info', opts);
+  await enviar({ canal: 'facebook', cuenta: '111', contacto: '999', tipo: 'respuesta_privada', comentarioId: '111_456' }, 'Info', opts);
+  assert.equal(calls[0].url, 'https://graph.facebook.com/v25.0/111/messages');
+  assert.deepEqual(calls[0].body, { recipient: { comment_id: '456' }, message: { text: 'Info' } });
+  assert.equal(calls[1].url, 'https://graph.facebook.com/v25.0/111/messages');
+  assert.deepEqual(calls[1].body.recipient, { comment_id: '111_456' });
+  await assert.rejects(() => enviar({ canal: 'instagram', cuenta: '222', contacto: '999', tipo: 'respuesta_privada', comentarioId: '../x' }, 'Info', opts));
+});

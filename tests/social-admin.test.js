@@ -21,7 +21,7 @@ function cargar(archivo, mocks) {
 }
 const ID = '00000000-0000-4000-8000-000000000001';
 
-async function preparar(t, { humano = false, clienteAt = new Date(), activo = true } = {}) {
+async function preparar(t, { humano = false, clienteAt = new Date(), activo = true, existentes = [] } = {}) {
   const c = {
     id: ID, clave: 'hash-privado', canal: 'instagram', cuenta: 'ig1', contacto: 'cliente1',
     nombre: 'Javier', humano, noLeidos: 0, revision: 3, historial: [],
@@ -47,7 +47,15 @@ async function preparar(t, { humano = false, clienteAt = new Date(), activo = tr
     socialTrabajo: {
       async count() { lecturas++; return 0; },
       async create({ data }) { trabajos.push(structuredClone(data)); return data; },
-      async findMany() { return []; },
+      async findFirst({ where }) {
+        return structuredClone(existentes.find((j) => j.id === where.id && j.conversacionId === where.conversacionId && j.autor === where.autor) || null);
+      },
+      async findMany({ where = {} } = {}) {
+        // Las respuestas encoladas por el panel cuentan como PENDIENTE para la regla de «una privada por comentario».
+        const todos = [...existentes, ...trabajos.map((j) => ({ estado: 'PENDIENTE', ...j }))];
+        if (where.autor) return structuredClone(todos.filter((j) => j.autor === where.autor && (!where.estado?.in || where.estado.in.includes(j.estado))));
+        return structuredClone(existentes);
+      },
     },
     socialPrueba: { async findUnique() { return null; } },
     async $transaction(fn) { return fn(db); },
@@ -155,4 +163,53 @@ test('identificadores inválidos y conversaciones inexistentes no permiten accio
   const p = await preparar(t);
   assert.equal((await p.request('/conversaciones/incorrecto/modo', { method: 'PATCH', body: { humano: true } })).status, 422);
   assert.equal((await p.request('/conversaciones/00000000-0000-4000-8000-000000000099/modo', { method: 'PATCH', body: { humano: true } })).status, 404);
+});
+
+const COMENTARIO = '00000000-0000-4000-8000-0000000000c1';
+function comentario(dias = 1) {
+  return {
+    id: COMENTARIO, conversacionId: ID, autor: 'CLIENTE', texto: 'Skill', estado: 'HUMANO', createdAt: new Date(), updatedAt: new Date(), error: null,
+    evento: { canal: 'instagram', cuenta: 'ig1', contacto: 'cliente1', tipo: 'comentario', comentarioId: 'c-123', texto: 'Skill', timestamp: new Date(Date.now() - dias * 86400000).toISOString() },
+  };
+}
+
+test('un comentario se responde por privado aunque no haya ventana de 24 horas, y solo una vez', async (t) => {
+  const p = await preparar(t, { clienteAt: null, existentes: [comentario()] });
+  const ruta = `/conversaciones/${ID}/responder`;
+  const r = await p.request(ruta, { method: 'POST', body: { texto: 'Te paso la info', comentario: COMENTARIO, via: 'privado' } });
+  assert.equal(r.status, 200);
+  assert.equal(p.trabajos[0].evento.tipo, 'respuesta_privada');
+  assert.equal(p.trabajos[0].evento.comentarioId, 'c-123');
+  // El plazo de 7 días se cuenta desde el comentario, no desde la respuesta.
+  assert.ok(Date.now() - new Date(p.trabajos[0].evento.timestamp) > 0.9 * 86400000);
+  const otra = await p.request(ruta, { method: 'POST', body: { texto: 'Otra vez', comentario: COMENTARIO, via: 'privado' } });
+  assert.equal(otra.status, 409); assert.equal(p.trabajos.length, 1);
+  // En público sí se puede responder después.
+  const publica = await p.request(ruta, { method: 'POST', body: { texto: '¡Te escribimos al DM!', comentario: COMENTARIO, via: 'publico' } });
+  assert.equal(publica.status, 200); assert.equal(p.trabajos[1].evento.tipo, 'comentario'); assert.equal(p.trabajos[1].evento.comentarioId, 'c-123');
+});
+
+test('un comentario de hace más de 7 días ya no se puede responder', async (t) => {
+  const p = await preparar(t, { clienteAt: null, existentes: [comentario(8)] });
+  const r = await p.request(`/conversaciones/${ID}/responder`, { method: 'POST', body: { texto: 'Hola', comentario: COMENTARIO, via: 'privado' } });
+  assert.equal(r.status, 409); assert.equal(p.trabajos.length, 0);
+});
+
+test('responder a un comentario exige comentario y vía juntos, y que sea de esa conversación', async (t) => {
+  const p = await preparar(t, { clienteAt: null, existentes: [comentario()] });
+  const ruta = `/conversaciones/${ID}/responder`;
+  assert.equal((await p.request(ruta, { method: 'POST', body: { texto: 'Hola', via: 'privado' } })).status, 422);
+  assert.equal((await p.request(ruta, { method: 'POST', body: { texto: 'Hola', comentario: COMENTARIO } })).status, 422);
+  const ajeno = await p.request(ruta, { method: 'POST', body: { texto: 'Hola', comentario: '00000000-0000-4000-8000-0000000000c9', via: 'publico' } });
+  assert.equal(ajeno.status, 404); assert.equal(p.trabajos.length, 0);
+});
+
+test('el detalle marca los comentarios y si ya tienen respuesta privada', async (t) => {
+  const respondido = { id: '00000000-0000-4000-8000-0000000000a1', conversacionId: ID, autor: 'ADMIN', texto: 'Info', estado: 'ENVIADO', createdAt: new Date(), updatedAt: new Date(), error: null, evento: { tipo: 'respuesta_privada', comentarioId: 'c-123' } };
+  const p = await preparar(t, { clienteAt: null, existentes: [respondido, comentario()] });
+  const r = await p.request(`/conversaciones/${ID}`);
+  assert.equal(r.status, 200);
+  const m = r.body.data.mensajes.find((x) => x.id === COMENTARIO);
+  assert.deepEqual(m.comentario, { vigente: true, privado: true });
+  assert.equal(r.body.data.mensajes.find((x) => x.id === respondido.id).comentario, null);
 });

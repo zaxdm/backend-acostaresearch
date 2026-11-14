@@ -5,6 +5,8 @@ const hash = (...p) => createHash('sha256').update(JSON.stringify(p)).digest('he
 const TERMINADOS = ['ENVIADO', 'HUMANO', 'ERROR', 'INCIERTO', 'IGNORADO'];
 const ACTIVOS = ['PENDIENTE', 'PROCESANDO', 'LISTO', 'ENVIANDO'];
 const ventana = (fecha, ahora) => fecha && new Date(fecha) <= ahora && ahora - new Date(fecha) < 86400000;
+// Responder a un comentario (en público o con la respuesta privada) no depende de la ventana de 24 h, sino de los 7 días del comentario.
+const sobreComentario = (e) => e.tipo === 'comentario' || e.tipo === 'respuesta_privada';
 function limitarTexto(texto, canal) {
   const limite = { facebook: 2000, instagram: 1000, whatsapp: 4000 }[canal] || 1000;
   const tamano = (t) => canal === 'instagram' ? Buffer.byteLength(t, 'utf8') : t.length;
@@ -138,8 +140,8 @@ function crearWorker({ db, engine, transport, config, ahora = () => new Date() }
       if (t.autor !== 'ADMIN' && c.humano && t.estado !== 'LISTO') return await finalizar(t, 'HUMANO');
       if (t.autor !== 'ADMIN' && t.revision !== c.revision) return await finalizar(t, 'IGNORADO', 'La conversación cambió de responsable.');
       if (t.autor === 'ADMIN' && t.revision !== c.revision) return await finalizar(t, 'IGNORADO', 'Otra intervención sustituyó este mensaje pendiente.');
-      if (e.tipo !== 'comentario' && !ventana(c.ultimoDelClienteAt, ahora())) return await finalizar(t, 'HUMANO', 'La ventana de respuesta de 24 horas está cerrada.');
-      if (e.tipo === 'comentario' && ahora() - new Date(e.timestamp) > 7 * 86400000) return await finalizar(t, 'IGNORADO', 'Comentario antiguo.');
+      if (!sobreComentario(e) && !ventana(c.ultimoDelClienteAt, ahora())) return await finalizar(t, 'HUMANO', 'La ventana de respuesta de 24 horas está cerrada.');
+      if (sobreComentario(e) && ahora() - new Date(e.timestamp) > 7 * 86400000) return await finalizar(t, 'IGNORADO', 'Comentario antiguo.');
       let texto = t.respuesta || (t.autor === 'ADMIN' ? t.texto : '');
       if (!texto) {
         if (!e.texto) {
@@ -159,7 +161,7 @@ function crearWorker({ db, engine, transport, config, ahora = () => new Date() }
         const prueba = await db.socialPrueba.findUnique({ where: { contacto: c.clave } });
         if (!prueba || prueba.expiresAt <= ahora()) return await finalizar(t, 'HUMANO', 'La prueba venció mientras el envío estaba pendiente. Necesita revisión del equipo.');
       }
-      if (e.tipo !== 'comentario' && !ventana(c.ultimoDelClienteAt, ahora())) return await finalizar(t, 'HUMANO', 'La ventana de respuesta se cerró antes del envío.');
+      if (!sobreComentario(e) && !ventana(c.ultimoDelClienteAt, ahora())) return await finalizar(t, 'HUMANO', 'La ventana de respuesta se cerró antes del envío.');
       if (!await guardar({ estado: 'ENVIANDO' }, true)) return;
       enviando = true;
       const metaId = await transport.enviar(e, texto, config(e.canal));

@@ -209,3 +209,17 @@ test('el aviso de derivación preparado se puede reintentar aunque el motor ya p
   assert.equal(p.pensamientos(), 0);
   assert.equal(p.envios(), 1);
 });
+
+test('la respuesta privada a un comentario sale sin ventana de 24 horas y caduca a los 7 días', async () => {
+  const enviados = [];
+  const p = preparar({ clienteAt: null, humano: true, enviar: (e) => { enviados.push(e.tipo); return 'meta-privado'; } });
+  Object.assign(p.trabajo, { autor: 'ADMIN', texto: 'Info', evento: { ...p.evento, tipo: 'respuesta_privada', comentarioId: 'c1', timestamp: new Date(NOW.getTime() - 86400000).toISOString() } });
+  await p.worker.procesar(copy(p.trabajo), p.lock());
+  assert.equal(p.trabajo.estado, 'ENVIADO'); assert.equal(p.trabajo.metaId, 'meta-privado');
+  assert.deepEqual(enviados, ['respuesta_privada']);
+
+  const viejo = preparar({ clienteAt: null, humano: true });
+  Object.assign(viejo.trabajo, { autor: 'ADMIN', texto: 'Info', evento: { ...viejo.evento, tipo: 'respuesta_privada', comentarioId: 'c1', timestamp: new Date(NOW.getTime() - 8 * 86400000).toISOString() } });
+  await viejo.worker.procesar(copy(viejo.trabajo), viejo.lock());
+  assert.equal(viejo.trabajo.estado, 'IGNORADO'); assert.equal(viejo.envios(), 0);
+});

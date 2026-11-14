@@ -151,6 +151,12 @@ async function enviar(evento, texto, { token, version = 'v25.0', facebookPageId,
     if (evento.canal === 'whatsapp') throw new MetaError('WhatsApp no admite comentarios.', { permanente: true });
     endpoint = `${segmento(evento.comentarioId)}/${evento.canal === 'instagram' ? 'replies' : 'comments'}`;
     payload = { message: texto };
+  } else if (evento.tipo === 'respuesta_privada') {
+    // Respuesta privada de Meta: un mensaje directo dirigido al comentario, no al usuario.
+    if (evento.canal === 'whatsapp') throw new MetaError('WhatsApp no admite comentarios.', { permanente: true });
+    endpoint = `${segmento(evento.canal === 'instagram' ? facebookPageId : evento.cuenta)}/messages`;
+    payload = { recipient: { comment_id: evento.comentarioId }, message: { text: texto } };
+    segmento(evento.comentarioId);
   } else if (evento.canal === 'whatsapp') {
     endpoint = `${segmento(evento.cuenta)}/messages`;
     payload = { messaging_product: 'whatsapp', recipient_type: 'individual', to: evento.contacto, type: 'text', text: { preview_url: true, body: texto } };

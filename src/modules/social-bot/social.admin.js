@@ -41,7 +41,11 @@ router.get('/estado', asyncHandler(async (_req, res) => {
     inciertos: await db.socialTrabajo.count({ where: { estado: 'INCIERTO' } }),
     errores: await db.socialTrabajo.count({ where: { estado: 'ERROR' } }),
   } : { pendientes: 0, inciertos: 0, errores: 0 };
+  // Conversaciones con mensajes sin leer, por canal: los números de los filtros de la bandeja.
+  const porAtender = Object.fromEntries(await Promise.all(['instagram', 'facebook', 'whatsapp'].map(async (canal) => (
+    [canal, await db.socialConversacion.count({ where: { canal, noLeidos: { gt: 0 } } })]))));
   return ok(res, {
+    porAtender,
     activo, webhookUrl: `${env.apiPublicUrl}${env.API_PREFIX}/social-bot/webhook`,
     ia: env.SOCIAL_BOT_ENABLED && Boolean(env.SOCIAL_BOT_API_KEY), pruebas: Boolean(env.SOCIAL_BOT_ENABLED && env.SOCIAL_BOT_TRIAL_PRODUCT), cola,
     canales: [

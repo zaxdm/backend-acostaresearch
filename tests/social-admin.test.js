@@ -43,6 +43,7 @@ async function preparar(t, { humano = false, clienteAt = new Date(), activo = tr
         update(data); return { count: 1 };
       },
       async findMany() { return [{ ...structuredClone(c), trabajos: [] }]; },
+      async count({ where }) { return where.canal === c.canal && c.noLeidos > 0 ? 1 : 0; },
     },
     socialTrabajo: {
       async count() { lecturas++; return 0; },
@@ -240,4 +241,11 @@ test('el equipo marca si compró y qué producto, y puede deshacerlo', async (t)
   assert.equal((await p.request(ruta, { method: 'PATCH', body: { resultado: 'COMPRO', producto: 'Inventado' } })).status, 422);
   await p.request(ruta, { method: 'PATCH', body: { resultado: null } });
   assert.equal(p.c.resultado, null); assert.equal(p.c.resultadoProducto, null); assert.equal(p.c.resultadoAt, null);
+});
+
+test('el estado cuenta las conversaciones por atender de cada canal', async (t) => {
+  const p = await preparar(t);
+  p.c.noLeidos = 2;
+  const r = await p.request('/estado');
+  assert.deepEqual(r.body.data.porAtender, { instagram: 1, facebook: 0, whatsapp: 0 });
 });

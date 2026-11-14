@@ -14,6 +14,13 @@ const hash = (...partes) => createHash('sha256').update(JSON.stringify(partes)).
 const identidad = (d) => hash(d.canal, d.cuenta, d.contacto);
 const tope = crearTopeDiario(env.SOCIAL_BOT_MAX_DIARIO);
 const resultado = (texto, extra = {}) => ({ success: true, texto, humano: false, pruebaUrl: '', ...extra });
+// Lo que el modelo recibe por un comentario. El comentario y el post son datos del cliente y de la página.
+function pedidoComentario(d) {
+  const post = d.publicacion ? ` que dice: «${d.publicacion}»` : '';
+  return `[Comentario público] La persona comentó «${d.texto}» en nuestra publicación${post}. `
+    + 'Escríbele por mensaje privado el primer mensaje de venta (paso 1, sin precio) del producto del que trata la publicación. '
+    + 'Si el comentario no pide información ni muestra interés (una queja, un insulto, algo personal o sin relación), responde solo [[PERSONA]].';
+}
 
 async function conversacion(d) {
   const clave = identidad(d);
@@ -42,7 +49,16 @@ async function atender(d) {
     let respuesta;
     let contrato;
     if (d.tipo === 'comentario') {
-      respuesta = resultado('¡Hola! Escríbenos por privado y te contamos cómo funciona 😊', { estado: 'comentario' });
+      if (!env.SOCIAL_BOT_API_KEY) throw new ConflictError('Falta configurar la IA del bot.');
+      if (!tope.intentar()) throw new ConflictError('Se alcanzó el límite diario del bot.');
+      const { planes } = await asistente.preciosVigentes();
+      const generado = await generarConRespaldo({
+        modelos: [env.SOCIAL_BOT_MODEL], clave: env.SOCIAL_BOT_API_KEY,
+        sistema: sistema({ planes, appUrl: env.APP_URL, pruebas: Boolean(env.SOCIAL_BOT_TRIAL_PRODUCT) }),
+        mensajes: [{ rol: 'usuario', texto: pedidoComentario(d) }], maxTokens: 600,
+      });
+      const limpio = limpiarTexto(generado.texto, env.APP_URL);
+      respuesta = resultado(limpio.texto.slice(0, 4000), { humano: limpio.humano || !limpio.texto, estado: 'comentario' });
     } else if (d.accion === 'prueba') {
       if (!solicitaPrueba(d.texto)) throw new ValidationError('La persona debe solicitar la prueba explícitamente.');
       if (!env.SOCIAL_BOT_TRIAL_PRODUCT) throw new ConflictError('No hay un producto de prueba configurado.');
@@ -113,4 +129,4 @@ async function purgar() {
     data: { historial: [] },
   });
 }
-module.exports = { atender, modo, purgar, identidad, hash };
+module.exports = { atender, modo, purgar, identidad, hash, pedidoComentario };

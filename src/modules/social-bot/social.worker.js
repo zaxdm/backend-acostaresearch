@@ -7,6 +7,10 @@ const ACTIVOS = ['PENDIENTE', 'PROCESANDO', 'LISTO', 'ENVIANDO'];
 const ventana = (fecha, ahora) => fecha && new Date(fecha) <= ahora && ahora - new Date(fecha) < 86400000;
 // Responder a un comentario (en público o con la respuesta privada) no depende de la ventana de 24 h, sino de los 7 días del comentario.
 const sobreComentario = (e) => e.tipo === 'comentario' || e.tipo === 'respuesta_privada';
+const AVISO_PUBLICO = '¡Te escribimos por mensaje directo! 📩';
+// ¿Ya le llegó por privado la información de otro comentario suyo? Entonces solo el aviso público.
+const yaTienePrivado = (trabajos, id) => trabajos.some((x) => x.id !== id && (
+  (x.autor === 'CLIENTE' && x.evento?.tipo === 'comentario' && x.respuesta) || x.evento?.tipo === 'respuesta_privada'));
 function limitarTexto(texto, canal) {
   const limite = { facebook: 2000, instagram: 1000, whatsapp: 4000 }[canal] || 1000;
   const tamano = (t) => canal === 'instagram' ? Buffer.byteLength(t, 'utf8') : t.length;
@@ -142,14 +146,21 @@ function crearWorker({ db, engine, transport, config, ahora = () => new Date() }
       if (t.autor === 'ADMIN' && t.revision !== c.revision) return await finalizar(t, 'IGNORADO', 'Otra intervención sustituyó este mensaje pendiente.');
       if (!sobreComentario(e) && !ventana(c.ultimoDelClienteAt, ahora())) return await finalizar(t, 'HUMANO', 'La ventana de respuesta de 24 horas está cerrada.');
       if (sobreComentario(e) && ahora() - new Date(e.timestamp) > 7 * 86400000) return await finalizar(t, 'IGNORADO', 'Comentario antiguo.');
+      // Un comentario del cliente se contesta por privado (Meta admite una respuesta privada por comentario)
+      // y con un aviso público corto. Si ya recibió la información antes, solo el aviso.
+      const comentarioDelCliente = t.autor === 'CLIENTE' && e.tipo === 'comentario';
+      const soloAviso = comentarioDelCliente && !t.respuesta && yaTienePrivado(
+        await db.socialTrabajo.findMany({ where: { conversacionId: c.id, estado: { in: ['ENVIADO', 'ENVIANDO', 'INCIERTO'] } } }), t.id);
       let texto = t.respuesta || (t.autor === 'ADMIN' ? t.texto : '');
-      if (!texto) {
+      if (!texto && !soloAviso) {
         if (!e.texto) {
           await db.socialConversacion.update({ where: { id: c.id }, data: { humano: true } });
           return await finalizar(t, 'HUMANO', 'Adjunto: necesita atención del equipo.');
         }
-        const r = await engine.atender({ ...e, accion: e.tipo === 'privado' && solicitaPrueba(e.texto) ? 'prueba' : 'responder' });
+        const publicacion = comentarioDelCliente && transport.publicacion ? await transport.publicacion(e, config(e.canal)) : '';
+        const r = await engine.atender({ ...e, ...(publicacion ? { publicacion } : {}), accion: e.tipo === 'privado' && solicitaPrueba(e.texto) ? 'prueba' : 'responder' });
         if (!r.texto) return await finalizar(t, r.humano || r.estado === 'apagado' ? 'HUMANO' : 'IGNORADO');
+        if (comentarioDelCliente && r.humano) return await finalizar(t, 'HUMANO', 'Comentario para revisar por el equipo.');
         texto = r.texto;
         texto = limitarTexto(texto, e.canal);
         if (!await guardar({ respuesta: texto, estado: 'LISTO' })) return;
@@ -164,8 +175,20 @@ function crearWorker({ db, engine, transport, config, ahora = () => new Date() }
       if (!sobreComentario(e) && !ventana(c.ultimoDelClienteAt, ahora())) return await finalizar(t, 'HUMANO', 'La ventana de respuesta se cerró antes del envío.');
       if (!await guardar({ estado: 'ENVIANDO' }, true)) return;
       enviando = true;
-      const metaId = await transport.enviar(e, texto, config(e.canal));
-      await guardar({ estado: 'ENVIADO', metaId, error: null }, false, t.autor === 'ADMIN' ? { rol: 'asistente', texto } : null);
+      let metaId;
+      let avisoFallido = false;
+      if (comentarioDelCliente) {
+        if (texto) metaId = await transport.enviar({ ...e, tipo: 'respuesta_privada' }, texto, config(e.canal));
+        if (texto) {
+          // Lo importante ya salió por privado: un fallo del aviso público no lo vuelve incierto.
+          try { await transport.enviar(e, AVISO_PUBLICO, config(e.canal)); } catch { avisoFallido = true; }
+        } else {
+          metaId = await transport.enviar(e, AVISO_PUBLICO, config(e.canal));
+        }
+      } else {
+        metaId = await transport.enviar(e, texto, config(e.canal));
+      }
+      await guardar({ estado: 'ENVIADO', metaId, error: avisoFallido ? 'Se envió por privado; el aviso público no se pudo publicar.' : null }, false, t.autor === 'ADMIN' ? { rol: 'asistente', texto } : null);
       await db.socialConversacion.updateMany({ where: { id: c.id, queueLease: lock.lease }, data: { ultimoMensajeAt: ahora() } });
     } catch (error) {
       const intentos = t.intentos + 1;

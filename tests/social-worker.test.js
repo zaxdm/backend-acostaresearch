@@ -223,3 +223,45 @@ test('la respuesta privada a un comentario sale sin ventana de 24 horas y caduca
   await viejo.worker.procesar(copy(viejo.trabajo), viejo.lock());
   assert.equal(viejo.trabajo.estado, 'IGNORADO'); assert.equal(viejo.envios(), 0);
 });
+
+function comentarioDe(p, { texto = 'SKILL', previos = [] } = {}) {
+  Object.assign(p.trabajo, { estado: 'PENDIENTE', texto, evento: { ...p.evento, tipo: 'comentario', comentarioId: 'k1', texto } });
+  p.trabajos.push(...previos);
+}
+
+test('un comentario recibe la información por privado y un aviso público corto', async () => {
+  const salidas = [];
+  const p = preparar({ enviar: (e, texto) => { salidas.push({ tipo: e.tipo, texto }); return `m${salidas.length}`; }, pensar: () => ({ texto: 'Info del Humanizador 🎥' }) });
+  comentarioDe(p);
+  await p.worker.procesar(copy(p.trabajo), p.lock());
+  assert.deepEqual(salidas.map((s) => s.tipo), ['respuesta_privada', 'comentario']);
+  assert.equal(salidas[0].texto, 'Info del Humanizador 🎥');
+  assert.equal(salidas[1].texto, '¡Te escribimos por mensaje directo! 📩');
+  assert.equal(p.trabajo.estado, 'ENVIADO'); assert.equal(p.trabajo.metaId, 'm1'); assert.equal(p.trabajo.error, null);
+});
+
+test('si el aviso público falla, lo enviado por privado no queda incierto', async () => {
+  let n = 0;
+  const p = preparar({ enviar: () => { n++; if (n === 2) throw Object.assign(new Error('x'), { ambiguo: true }); return 'm1'; }, pensar: () => ({ texto: 'Info' }) });
+  comentarioDe(p);
+  await p.worker.procesar(copy(p.trabajo), p.lock());
+  assert.equal(p.trabajo.estado, 'ENVIADO'); assert.equal(p.trabajo.metaId, 'm1');
+  assert.match(p.trabajo.error, /aviso público/);
+});
+
+test('un segundo comentario de quien ya recibió la información solo lleva el aviso público y no gasta IA', async () => {
+  const salidas = [];
+  const previo = { id: 't0', conversacionId: 'c1', autor: 'CLIENTE', estado: 'ENVIADO', respuesta: 'Info', evento: { tipo: 'comentario' }, createdAt: new Date(NOW.getTime() - 1000) };
+  const p = preparar({ enviar: (e) => { salidas.push(e.tipo); return 'm9'; } });
+  comentarioDe(p, { previos: [previo] });
+  await p.worker.procesar(copy(p.trabajo), p.lock());
+  assert.deepEqual(salidas, ['comentario']); assert.equal(p.pensamientos(), 0);
+  assert.equal(p.trabajo.estado, 'ENVIADO'); assert.equal(p.trabajo.respuesta ?? null, null);
+});
+
+test('un comentario que el bot pasa al equipo no recibe nada automático', async () => {
+  const p = preparar({ pensar: () => ({ texto: 'Te paso con una persona del equipo.', humano: true }) });
+  comentarioDe(p, { texto: 'Son unos estafadores' });
+  await p.worker.procesar(copy(p.trabajo), p.lock());
+  assert.equal(p.envios(), 0); assert.equal(p.trabajo.estado, 'HUMANO');
+});

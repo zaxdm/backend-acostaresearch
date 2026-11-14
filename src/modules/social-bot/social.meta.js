@@ -102,6 +102,7 @@ function extraerEventos(body, { facebookPageId, instagramAccountId, whatsappPhon
         eventos.push({
           canal, cuenta: cadena(propia), contacto, evento: `comment-${comment}`,
           comentarioId: comment, texto: cadena(value.message).trim(), nombre: cadena(value.from?.name),
+          ...(value.post_id ? { postId: cadena(value.post_id) } : {}),
           tipo: 'comentario', eco: false, timestamp: fecha(value.created_time || entry.time, 's'),
         });
       } else {
@@ -195,4 +196,26 @@ async function enviar(evento, texto, { token, version = 'v25.0', facebookPageId,
   return id;
 }
 
-module.exports = { firmaValida, extraerEventos, enviar, MetaError, MAX_TEXT, ventanaAbierta };
+/**
+ * El texto de la publicación donde se comentó, para que el bot sepa de qué producto hablar
+ * («Comenta SKILL…» en el reel de Turnitin = Humanizador). Si falla, devuelve '' y el bot
+ * responde sin ese contexto: nunca bloquea la respuesta.
+ */
+async function publicacion(evento, { token, version = 'v25.0', fetchImpl = fetch, timeoutMs = 8000 } = {}) {
+  const instagram = evento?.canal === 'instagram';
+  const id = instagram ? evento?.comentarioId : evento?.postId;
+  if (!token || typeof id !== 'string' || !/^[a-zA-Z0-9_]{1,150}$/.test(id) || !/^v\d+\.\d+$/.test(version)) return '';
+  const campos = instagram ? 'media{caption}' : 'message';
+  try {
+    const response = await fetchImpl(`${GRAPH}/${version}/${encodeURIComponent(id)}?fields=${encodeURIComponent(campos)}`, {
+      headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!response.ok) return '';
+    const body = await response.json();
+    return cadena(instagram ? body?.media?.caption : body?.message).slice(0, 1500);
+  } catch {
+    return '';
+  }
+}
+
+module.exports = { firmaValida, extraerEventos, enviar, publicacion, MetaError, MAX_TEXT, ventanaAbierta };

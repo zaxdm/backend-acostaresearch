@@ -2,7 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
-const { firmaValida, extraerEventos, enviar, MetaError, ventanaAbierta } = require('../src/modules/social-bot/social.meta');
+const { firmaValida, extraerEventos, enviar, MetaError, ventanaAbierta, publicacion } = require('../src/modules/social-bot/social.meta');
 
 const config = { facebookPageId: '111', instagramAccountId: '222', whatsappPhoneNumberId: '333' };
 const tiempo = 1794680000000;
@@ -149,4 +149,15 @@ test('la respuesta privada a un comentario va a la página con recipient.comment
   assert.equal(calls[1].url, 'https://graph.facebook.com/v25.0/111/messages');
   assert.deepEqual(calls[1].body.recipient, { comment_id: '111_456' });
   await assert.rejects(() => enviar({ canal: 'instagram', cuenta: '222', contacto: '999', tipo: 'respuesta_privada', comentarioId: '../x' }, 'Info', opts));
+});
+
+test('lee el texto del post del comentario y nunca bloquea si falla', async () => {
+  const urls = [];
+  const fetchImpl = async (url) => { urls.push(url); return ok({ media: { caption: 'Comenta SKILL' }, message: 'Post de Facebook' }); };
+  assert.equal(await publicacion({ canal: 'instagram', comentarioId: '456' }, { token: 't', fetchImpl }), 'Comenta SKILL');
+  assert.equal(await publicacion({ canal: 'facebook', postId: '111_222' }, { token: 't', fetchImpl }), 'Post de Facebook');
+  assert.match(urls[0], /\/456\?fields=media%7Bcaption%7D$/); assert.match(urls[1], /\/111_222\?fields=message$/);
+  assert.equal(await publicacion({ canal: 'instagram', comentarioId: '456' }, { token: 't', fetchImpl: async () => { throw new Error('red'); } }), '');
+  assert.equal(await publicacion({ canal: 'facebook' }, { token: 't', fetchImpl }), '');
+  assert.equal(await publicacion({ canal: 'instagram', comentarioId: '../x' }, { token: 't', fetchImpl }), '');
 });

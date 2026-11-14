@@ -105,9 +105,16 @@ test('una prueba vencida no genera un enlace nuevo', async () => {
   const b = await p.service.atender({ ...d, evento: 'e2' });
   assert.equal(b.estado, 'prueba_utilizada'); assert.equal(b.pruebaUrl, ''); assert.equal(p.enlaces.length, 1);
 });
-test('los comentarios públicos no emiten pruebas ni consultan IA', async () => {
+test('un comentario nunca emite pruebas: se redacta una sola vez el mensaje privado', async () => {
   const p = preparar(); const r = await p.service.atender({ ...base, tipo: 'comentario', accion: 'prueba', texto: 'Prueba' });
-  assert.equal(r.estado, 'comentario'); assert.equal(p.enlaces.length, 0); assert.equal(p.llamadas(), 0);
+  assert.equal(r.estado, 'comentario'); assert.equal(p.enlaces.length, 0); assert.equal(p.llamadas(), 1);
+  assert.equal(r.humano, false); assert.ok(r.texto);
+});
+test('el pedido al modelo lleva el comentario y el texto del post como datos', () => {
+  const { pedidoComentario } = preparar().service;
+  const texto = pedidoComentario({ texto: 'SKILL', publicacion: 'Turnitin te marca IA. Comenta SKILL' });
+  assert.match(texto, /«SKILL»/); assert.match(texto, /Turnitin te marca IA/); assert.match(texto, /\[\[PERSONA\]\]/);
+  assert.doesNotMatch(pedidoComentario({ texto: 'Hola' }), /que dice/);
 });
 test('la atención humana pausa el bot y se puede devolver', async () => {
   const p = preparar(); await p.service.modo({ ...base, humano: true });

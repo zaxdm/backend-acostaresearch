@@ -30,8 +30,13 @@ const RUTAS_CON_SECRETO = [
   /(\/r\/(?:subir|descarga)\/)([A-Za-z0-9._-]+)/g,
 ];
 
-/** Parámetros de consulta que llevan una credencial: la vuelta de los OAuth (Zotero, Scopus, Mendeley). */
-const CLAVES_SECRETAS = ['oauth_token', 'oauth_verifier', 'token', 'code', 'state', 'hub.verify_token'];
+/**
+ * Parámetros de consulta que llevan una credencial: la vuelta de los OAuth (Zotero, Scopus, Mendeley)
+ * y el secreto con que Meta verifica el webhook. Meta lo manda con punto, pero el 14-nov-2026 la
+ * verificación de Instagram llegó además con guion bajo (`hub_verify_token`) y esa copia quedó entera
+ * en el journal: se ocultan las dos formas.
+ */
+const CLAVES_SECRETAS = ['oauth_token', 'oauth_verifier', 'token', 'code', 'state', 'hub.verify_token', 'hub_verify_token'];
 const PARAMETROS_CON_SECRETO = new RegExp(`([?&](?:${CLAVES_SECRETAS.map((k) => k.replace(/\./g, '\\.')).join('|')})=)[^&#]*`, 'gi');
 
 const OCULTO = '…';

@@ -16,6 +16,13 @@ test('el secreto de verificación de Meta no queda en URL ni consulta del regist
   assert.equal(ocultarSecretosEnUrl('/webhook?hub.mode=subscribe&hub.verify_token=secreto&hub.challenge=123'), '/webhook?hub.mode=subscribe&hub.verify_token=…&hub.challenge=123');
   assert.equal(ocultarConsulta({ 'hub.verify_token': 'secreto' })['hub.verify_token'], '…');
   assert.equal(ocultarSecretosEnUrl('/webhook?hubXverify_token=visible'), '/webhook?hubXverify_token=visible');
+  // La verificación de Instagram llegó también con guion bajo y quedó entera en el journal.
+  assert.equal(
+    ocultarSecretosEnUrl('/webhook?hub.verify_token=a&hub_mode=subscribe&hub_challenge=1&hub_verify_token=secreto'),
+    '/webhook?hub.verify_token=…&hub_mode=subscribe&hub_challenge=1&hub_verify_token=…',
+  );
+  assert.equal(ocultarConsulta({ hub_verify_token: 'secreto', hub_challenge: '1' }).hub_verify_token, '…');
+  assert.equal(ocultarConsulta({ hub_verify_token: 'secreto', hub_challenge: '1' }).hub_challenge, '1');
 });
 
 test('la licencia del conector no llega al registro, solo una pista', () => {

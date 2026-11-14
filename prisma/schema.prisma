@@ -40,8 +40,16 @@ model SocialConversacion {
   revision Int @default(0)
   queueLease String? @db.Char(36)
   queueUntil DateTime? @db.DateTime(3)
+  /// Hasta cuándo es del equipo. Pasado ese momento sin que nadie del equipo escriba, vuelve al bot.
+  /// Null cuando el bot la derivó (pago, queja, error): esas no vuelven solas.
+  humanoHasta DateTime? @db.DateTime(3)
+  /// Lo marca el equipo en la bandeja: COMPRO o NO_COMPRO, y qué compró. Lo usa la skill de aprendizaje de ventas.
+  resultado String? @db.VarChar(12)
+  resultadoProducto String? @db.VarChar(40)
+  resultadoAt DateTime? @db.DateTime(3)
   trabajos SocialTrabajo[]
   @@index([ultimoMensajeAt])
+  @@index([humano, humanoHasta])
 }
 
 model SocialTrabajo {

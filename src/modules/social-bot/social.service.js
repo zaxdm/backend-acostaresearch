@@ -104,7 +104,8 @@ async function atender(d) {
         }
       }
       const historial = [...actual.historial, { rol: 'usuario', texto: d.texto }, { rol: 'asistente', texto: respuesta.texto }].slice(-20);
-      await tx.socialConversacion.update({ where: { id: c.id }, data: { historial, humano: respuesta.humano, lease: null, busyUntil: null } });
+      // Si el bot la deriva (pago, queja), queda con el equipo sin plazo: no vuelve sola al bot.
+      await tx.socialConversacion.update({ where: { id: c.id }, data: { historial, humano: respuesta.humano, ...(respuesta.humano ? { humanoHasta: null } : {}), lease: null, busyUntil: null } });
       await tx.socialEvento.create({ data: { clave: claveEvento, respuesta } });
       return respuesta;
     });

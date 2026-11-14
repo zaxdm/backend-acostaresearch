@@ -213,3 +213,31 @@ test('el detalle marca los comentarios y si ya tienen respuesta privada', async 
   assert.deepEqual(m.comentario, { vigente: true, privado: true });
   assert.equal(r.body.data.mensajes.find((x) => x.id === respondido.id).comentario, null);
 });
+
+test('responder a mano da al equipo un turno de 2 horas', async (t) => {
+  const p = await preparar(t);
+  await p.request(`/conversaciones/${ID}/responder`, { method: 'POST', body: { texto: 'Hola' } });
+  const resto = new Date(p.c.humanoHasta).getTime() - Date.now();
+  assert.ok(resto > 1.9 * 3600000 && resto <= 2 * 3600000);
+});
+
+test('devolver al bot borra el turno del equipo y tomarla lo inicia', async (t) => {
+  const p = await preparar(t);
+  await p.request(`/conversaciones/${ID}/modo`, { method: 'PATCH', body: { humano: true } });
+  assert.ok(p.c.humanoHasta instanceof Date);
+  await p.request(`/conversaciones/${ID}/modo`, { method: 'PATCH', body: { humano: false } });
+  assert.equal(p.c.humanoHasta, null);
+});
+
+test('el equipo marca si compró y qué producto, y puede deshacerlo', async (t) => {
+  const p = await preparar(t);
+  const ruta = `/conversaciones/${ID}/resultado`;
+  const r = await p.request(ruta, { method: 'PATCH', body: { resultado: 'COMPRO', producto: 'Humanizador Académico' } });
+  assert.equal(r.status, 200); assert.equal(p.c.resultado, 'COMPRO'); assert.equal(p.c.resultadoProducto, 'Humanizador Académico');
+  assert.ok(p.c.resultadoAt instanceof Date);
+  assert.equal((await p.request(ruta, { method: 'PATCH', body: { resultado: 'COMPRO' } })).status, 422);
+  assert.equal((await p.request(ruta, { method: 'PATCH', body: { resultado: 'NO_COMPRO', producto: 'TSP' } })).status, 422);
+  assert.equal((await p.request(ruta, { method: 'PATCH', body: { resultado: 'COMPRO', producto: 'Inventado' } })).status, 422);
+  await p.request(ruta, { method: 'PATCH', body: { resultado: null } });
+  assert.equal(p.c.resultado, null); assert.equal(p.c.resultadoProducto, null); assert.equal(p.c.resultadoAt, null);
+});

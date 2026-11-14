@@ -23,7 +23,11 @@ function comentarioVigente(evento, ahora) {
   const fecha = new Date(evento?.timestamp);
   return !Number.isNaN(fecha.getTime()) && ahora - fecha < SIETE_DIAS;
 }
-const resumen = { id: true, clave: true, canal: true, cuenta: true, contacto: true, nombre: true, humano: true, noLeidos: true, ultimoMensajeAt: true, ultimoDelClienteAt: true };
+const resumen = { id: true, clave: true, canal: true, cuenta: true, contacto: true, nombre: true, humano: true, noLeidos: true, ultimoMensajeAt: true, ultimoDelClienteAt: true, humanoHasta: true, resultado: true, resultadoProducto: true };
+// Si nadie del equipo vuelve a escribir en este tiempo, la conversación regresa al bot.
+const TURNO_EQUIPO_MS = 2 * 3600000;
+const turnoEquipo = () => new Date(Date.now() + TURNO_EQUIPO_MS);
+const PRODUCTOS = ['Humanizador Académico', 'Método de Tesis', 'Artículo científico', 'Revisión sistemática', 'TSP', 'Informe', 'Asesoría', 'Otro'];
 function canal(canal, variables) { return { canal, configurado: variables.every((v) => Boolean(env[v])), faltan: variables.filter((v) => !env[v]) }; }
 async function buscar(id, tx = db) {
   const c = await tx.socialConversacion.findUnique({ where: { id } });
@@ -81,8 +85,19 @@ router.get('/conversaciones/:id', validate({ params }), asyncHandler(async (req,
 }));
 router.patch('/conversaciones/:id/modo', validate({ params, body: z.object({ humano: z.boolean() }).strict() }), asyncHandler(async (req, res) => {
   await buscar(req.params.id);
-  await db.socialConversacion.update({ where: { id: req.params.id }, data: { humano: req.body.humano, revision: { increment: 1 }, lease: null, busyUntil: null } });
+  await db.socialConversacion.update({ where: { id: req.params.id }, data: { humano: req.body.humano, humanoHasta: req.body.humano ? turnoEquipo() : null, revision: { increment: 1 }, lease: null, busyUntil: null } });
   return ok(res, { humano: req.body.humano });
+}));
+router.patch('/conversaciones/:id/resultado', validate({ params, body: z.object({
+  resultado: z.enum(['COMPRO', 'NO_COMPRO']).nullable(),
+  producto: z.enum(PRODUCTOS).optional(),
+}).strict().refine((b) => b.resultado === 'COMPRO' ? Boolean(b.producto) : !b.producto, { message: 'Indica qué producto compró.' }) }), asyncHandler(async (req, res) => {
+  await buscar(req.params.id);
+  const { resultado, producto } = req.body;
+  await db.socialConversacion.update({ where: { id: req.params.id }, data: {
+    resultado, resultadoProducto: resultado === 'COMPRO' ? producto : null, resultadoAt: resultado ? new Date() : null,
+  } });
+  return ok(res, { resultado, resultadoProducto: resultado === 'COMPRO' ? producto : null });
 }));
 const cuerpoRespuesta = z.object({
   texto: z.string().trim().min(1).max(1000),
@@ -113,7 +128,7 @@ router.post('/conversaciones/:id/responder', validate({ params, body: cuerpoResp
       throw new ConflictError('No hay una conversación privada abierta en las últimas 24 horas.');
     }
     await tx.socialConversacion.updateMany({ where: { id: c.id, humano: false }, data: { humano: true, revision: { increment: 1 } } });
-    const actualizado = await tx.socialConversacion.update({ where: { id: c.id }, data: { humano: true, noLeidos: 0, lease: null, busyUntil: null, ultimoMensajeAt: new Date() } });
+    const actualizado = await tx.socialConversacion.update({ where: { id: c.id }, data: { humano: true, humanoHasta: turnoEquipo(), noLeidos: 0, lease: null, busyUntil: null, ultimoMensajeAt: new Date() } });
     const evento = randomUUID();
     await tx.socialTrabajo.create({ data: {
       clave: hash('admin', evento), conversacionId: c.id, autor: 'ADMIN', texto: req.body.texto, revision: actualizado.revision,

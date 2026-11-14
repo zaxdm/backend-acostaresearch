@@ -265,3 +265,37 @@ test('un comentario que el bot pasa al equipo no recibe nada automático', async
   await p.worker.procesar(copy(p.trabajo), p.lock());
   assert.equal(p.envios(), 0); assert.equal(p.trabajo.estado, 'HUMANO');
 });
+
+test('tras 2 horas sin el equipo la conversación vuelve al bot y responde lo que quedó pendiente', async () => {
+  const p = preparar({ humano: true });
+  Object.assign(p.conversaciones[0], { humanoHasta: new Date(NOW.getTime() - 1000), revision: 4, queueLease: null, queueUntil: null });
+  Object.assign(p.trabajo, { estado: 'HUMANO', revision: 4 });
+  await p.worker.devolverAlBot();
+  assert.equal(p.conversaciones[0].humano, false);
+  assert.equal(p.conversaciones[0].humanoHasta, null);
+  assert.equal(p.conversaciones[0].revision, 5);
+  assert.equal(p.trabajo.estado, 'PENDIENTE'); assert.equal(p.trabajo.revision, 5);
+  await p.worker.pasar();
+  assert.equal(p.envios(), 1); assert.equal(p.trabajo.estado, 'ENVIADO');
+});
+
+test('no vuelve al bot antes de tiempo ni cuando fue el bot quien la derivó', async () => {
+  const antes = preparar({ humano: true });
+  antes.conversaciones[0].humanoHasta = new Date(NOW.getTime() + 60000);
+  await antes.worker.devolverAlBot();
+  assert.equal(antes.conversaciones[0].humano, true);
+
+  const derivada = preparar({ humano: true });
+  derivada.conversaciones[0].humanoHasta = null;
+  await derivada.worker.devolverAlBot();
+  assert.equal(derivada.conversaciones[0].humano, true);
+});
+
+test('si el último mensaje ya lo contestó el equipo, al volver al bot no se responde nada', async () => {
+  const p = preparar({ humano: true });
+  Object.assign(p.conversaciones[0], { humanoHasta: new Date(NOW.getTime() - 1000), queueLease: null, queueUntil: null });
+  Object.assign(p.trabajo, { autor: 'ADMIN', estado: 'ENVIADO' });
+  await p.worker.devolverAlBot();
+  assert.equal(p.conversaciones[0].humano, false);
+  assert.equal(p.trabajo.estado, 'ENVIADO');
+});

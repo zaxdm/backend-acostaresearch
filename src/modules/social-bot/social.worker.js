@@ -5,6 +5,7 @@ const hash = (...p) => createHash('sha256').update(JSON.stringify(p)).digest('he
 const TERMINADOS = ['ENVIADO', 'HUMANO', 'ERROR', 'INCIERTO', 'IGNORADO'];
 const ACTIVOS = ['PENDIENTE', 'PROCESANDO', 'LISTO', 'ENVIANDO'];
 const ventana = (fecha, ahora) => fecha && new Date(fecha) <= ahora && ahora - new Date(fecha) < 86400000;
+const TURNO_EQUIPO_MS = 2 * 3600000;
 // Responder a un comentario (en público o con la respuesta privada) no depende de la ventana de 24 h, sino de los 7 días del comentario.
 const sobreComentario = (e) => e.tipo === 'comentario' || e.tipo === 'respuesta_privada';
 const AVISO_PUBLICO = '¡Te escribimos por mensaje directo! 📩';
@@ -59,7 +60,8 @@ function crearWorker({ db, engine, transport, config, ahora = () => new Date() }
             ultimoMensajeAt: ahora(),
             ...(!e.eco ? { noLeidos: { increment: 1 } } : {}),
             ...(!e.eco && e.tipo === 'privado' && (!c.ultimoDelClienteAt || mensajeAt > c.ultimoDelClienteAt) ? { ultimoDelClienteAt: mensajeAt } : {}),
-            ...(e.eco ? { humano: true, revision: { increment: 1 }, lease: null, busyUntil: null,
+            // Un eco humano es alguien del equipo escribiendo desde la app de Meta: su turno dura 2 horas.
+            ...(e.eco ? { humano: true, humanoHasta: new Date(ahora().getTime() + TURNO_EQUIPO_MS), revision: { increment: 1 }, lease: null, busyUntil: null,
               historial: [...c.historial, { rol: 'asistente', texto: e.texto || '(Adjunto enviado por el equipo)' }].slice(-20),
             } : {}),
           } });
@@ -86,7 +88,7 @@ function crearWorker({ db, engine, transport, config, ahora = () => new Date() }
           data: { estado: 'INCIERTO', error: 'Envío interrumpido: verifica en Meta antes de volver a responder.' },
         });
         await tx.socialTrabajo.updateMany({ where: { conversacionId: c.id, estado: 'PROCESANDO' }, data: { estado: 'PENDIENTE', proximoAt: ahora() } });
-        if (inciertos.count) await tx.socialConversacion.update({ where: { id: c.id }, data: { humano: true, revision: { increment: 1 } } });
+        if (inciertos.count) await tx.socialConversacion.update({ where: { id: c.id }, data: { humano: true, humanoHasta: null, revision: { increment: 1 } } });
       });
     }
   }
@@ -154,7 +156,7 @@ function crearWorker({ db, engine, transport, config, ahora = () => new Date() }
       let texto = t.respuesta || (t.autor === 'ADMIN' ? t.texto : '');
       if (!texto && !soloAviso) {
         if (!e.texto) {
-          await db.socialConversacion.update({ where: { id: c.id }, data: { humano: true } });
+          await db.socialConversacion.update({ where: { id: c.id }, data: { humano: true, humanoHasta: null } });
           return await finalizar(t, 'HUMANO', 'Adjunto: necesita atención del equipo.');
         }
         const publicacion = comentarioDelCliente && transport.publicacion ? await transport.publicacion(e, config(e.canal)) : '';
@@ -202,10 +204,31 @@ function crearWorker({ db, engine, transport, config, ahora = () => new Date() }
         });
       } else {
         const terminado = await finalizar(t, incierto ? 'INCIERTO' : 'ERROR', incierto ? 'Meta puede haber enviado el mensaje. Revisa la conversación antes de responder.' : 'No se pudo procesar. Revisa configuración y atiende la conversación.');
-        if (terminado) await db.socialConversacion.updateMany({ where: { id: t.conversacionId, queueLease: lock.lease }, data: { humano: true, revision: { increment: 1 } } });
+        if (terminado) await db.socialConversacion.updateMany({ where: { id: t.conversacionId, queueLease: lock.lease }, data: { humano: true, humanoHasta: null, revision: { increment: 1 } } });
       }
     } finally {
       await db.socialConversacion.updateMany({ where: { id: t.conversacionId, queueLease: lock.lease }, data: { queueLease: null, queueUntil: null } });
+    }
+  }
+
+  /**
+   * Devuelve al bot las conversaciones cuyo turno del equipo venció (2 h sin que nadie del equipo
+   * escriba). Si el cliente dejó un mensaje privado sin contestar en ese rato, el bot lo responde.
+   */
+  async function devolverAlBot() {
+    const vencidas = await db.socialConversacion.findMany({ where: { humano: true, humanoHasta: { lt: ahora() } }, take: 20 });
+    for (const c of vencidas) {
+      await db.$transaction(async (tx) => {
+        const devuelta = await tx.socialConversacion.updateMany({
+          where: { id: c.id, humano: true, humanoHasta: { lt: ahora() } },
+          data: { humano: false, humanoHasta: null, revision: { increment: 1 }, lease: null, busyUntil: null },
+        });
+        if (!devuelta.count) return;
+        const ultimo = (await tx.socialTrabajo.findMany({ where: { conversacionId: c.id }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: 1 }))[0];
+        if (ultimo && ultimo.autor === 'CLIENTE' && ultimo.estado === 'HUMANO' && ultimo.evento?.tipo === 'privado' && ventana(c.ultimoDelClienteAt, ahora())) {
+          await tx.socialTrabajo.update({ where: { id: ultimo.id }, data: { estado: 'PENDIENTE', revision: c.revision + 1, proximoAt: ahora(), error: null, respuesta: null } });
+        }
+      });
     }
   }
 
@@ -215,6 +238,7 @@ function crearWorker({ db, engine, transport, config, ahora = () => new Date() }
     ocupado = true;
     try {
       await recuperar();
+      await devolverAlBot();
       const trabajos = await db.socialTrabajo.findMany({ where: { estado: { in: ['PENDIENTE', 'LISTO'] }, proximoAt: { lte: ahora() } }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], take: 20 });
       for (const t of trabajos) {
         const lock = await reclamar(t);
@@ -222,6 +246,6 @@ function crearWorker({ db, engine, transport, config, ahora = () => new Date() }
       }
     } finally { ocupado = false; }
   }
-  return { recibir, pasar, recuperar, procesar, reclamar };
+  return { recibir, pasar, recuperar, procesar, reclamar, devolverAlBot };
 }
 module.exports = { crearWorker, ventana, TERMINADOS, limitarTexto };

@@ -147,7 +147,7 @@ function crearWorker({ db, engine, transport, config, ahora = () => new Date() }
           return await finalizar(t, 'HUMANO', 'Adjunto: necesita atención del equipo.');
         }
         const r = await engine.atender({ ...e, accion: e.tipo === 'privado' && solicitaPrueba(e.texto) ? 'prueba' : 'responder' });
-        if (!r.texto) return await finalizar(t, r.humano ? 'HUMANO' : 'IGNORADO');
+        if (!r.texto) return await finalizar(t, r.humano || r.estado === 'apagado' ? 'HUMANO' : 'IGNORADO');
         texto = r.texto;
         texto = limitarTexto(texto, e.canal);
         if (!await guardar({ respuesta: texto, estado: 'LISTO' })) return;

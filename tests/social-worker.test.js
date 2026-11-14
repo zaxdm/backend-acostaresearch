@@ -129,6 +129,14 @@ test('la ventana privada vencida no llama al modelo ni envía una respuesta libr
   assert.equal(p.envios(), 0);
 });
 
+test('con el bot apagado el mensaje queda visible para atención humana', async () => {
+  const p = preparar({ pensar: () => ({ texto: '', humano: false, estado: 'apagado' }) });
+  await p.worker.procesar(copy(p.trabajo), p.lock());
+  assert.equal(p.trabajo.estado, 'HUMANO');
+  assert.equal(p.conversaciones[0].humano, true);
+  assert.equal(p.envios(), 0);
+});
+
 test('una prueba vencida durante la cola no se entrega como si siguiera disponible', async () => {
   const p = preparar({ pensar: () => ({ texto: 'Prueba: https://acosta.example/prueba/abc' }) });
   p.db.socialPrueba = { findUnique: async () => ({ expiresAt: new Date(0) }) };

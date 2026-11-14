@@ -2,7 +2,8 @@
 const VIDEOS = new Set(['https://www.youtube.com/watch?v=bDs9JrQCG5U', 'https://www.youtube.com/watch?v=jB9ULwMiJTo']);
 function limpiarTexto(texto, appUrl) {
   let rechazado = false;
-  const limpio = texto.replace(/\[\[PERSONA\]\]/g, '').replace(/https?:\/\/[^\s<>\])]+/gi, (enlace) => {
+  // Messenger e Instagram no interpretan Markdown: los ** saldrían tal cual.
+  const limpio = texto.replace(/\[\[PERSONA\]\]/g, '').replace(/\*\*([^*\n]+)\*\*/g, '$1').replace(/^#{1,6}\s+/gm, '').replace(/https?:\/\/[^\s<>\])]+/gi, (enlace) => {
     const url = enlace.replace(/[.,;!]+$/, '');
     try {
       const destino = new URL(url);

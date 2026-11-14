@@ -77,6 +77,13 @@ test('el modelo no puede inventar enlaces de prueba ni dirigir compras a otra we
   assert.equal(limpiarTexto('Ya creé https://acosta.example/prueba/inventada', 'https://acosta.example').humano, true);
   assert.equal(limpiarTexto('Compra https://acosta.example/planes', 'https://acosta.example').humano, false);
 });
+test('quita las negritas de Markdown que Instagram y Messenger mostrarían con asteriscos', () => {
+  assert.equal(limpiarTexto('El **Humanizador Académico** te ayuda', 'https://acosta.example').texto, 'El Humanizador Académico te ayuda');
+});
+test('sin producto de prueba el bot no invita a pedir una', () => {
+  assert.doesNotMatch(sistema({ planes: [], appUrl: 'https://e.com' }), /Quiero probar gratis/);
+  assert.match(sistema({ planes: [], appUrl: 'https://e.com', pruebas: true }), /Quiero probar gratis/);
+});
 test('reintentar un evento devuelve la misma respuesta sin volver a llamar a IA', async () => {
   const p = preparar(); const a = await p.service.atender(base); const b = await p.service.atender(base);
   assert.equal(a.texto, b.texto); assert.equal(p.llamadas(), 1);

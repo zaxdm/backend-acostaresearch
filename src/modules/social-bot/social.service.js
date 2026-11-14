@@ -54,7 +54,7 @@ async function atender(d) {
       const { planes } = await asistente.preciosVigentes();
       const generado = await generarConRespaldo({
         modelos: [env.SOCIAL_BOT_MODEL], clave: env.SOCIAL_BOT_API_KEY,
-        sistema: sistema({ planes, appUrl: env.APP_URL }),
+        sistema: sistema({ planes, appUrl: env.APP_URL, pruebas: Boolean(env.SOCIAL_BOT_TRIAL_PRODUCT) }),
         mensajes: [...actual.historial, { rol: 'usuario', texto: d.texto }], maxTokens: 600,
       });
       // El modelo nunca puede entregar por su cuenta un enlace de prueba.

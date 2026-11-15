@@ -100,16 +100,16 @@ test('un administrador entra sin plan comprado', async () => {
   assert.match(url, /\?t=/);
 });
 
-test('promoción: con HUELLA_GRATIS_HASTA en el futuro entra quien tiene matrícula, y vence con ella', async () => {
+test('con matrícula de un método entra sin plan de IA, con sesión de un día; sin matrícula, no', async () => {
   plan = null;
-  const hasta = new Date(Date.now() + 3600 * 1000);
-  ENV.HUELLA_GRATIS_HASTA = hasta.toISOString();
+  matriculas = 0;
   await assert.rejects(huella.enlace({ userId: 'u9', email: 'cliente@gmail.com' }), (e) => e.code === 'SIN_PLAN_IA', 'sin matrícula, no');
   matriculas = 1;
+  const antes = Date.now();
   const { url } = await huella.enlace({ userId: 'u9', email: 'cliente@gmail.com' });
   const t = decodeURIComponent(url.match(/t=([^&]+)/)[1]);
-  assert.equal(leer(t).planHasta, hasta.getTime(), 'la sesión de Huella no pasa de la promoción');
-
-  ENV.HUELLA_GRATIS_HASTA = new Date(Date.now() - 1000).toISOString();
-  await assert.rejects(huella.enlace({ userId: 'u9', email: 'cliente@gmail.com' }), (e) => e.code === 'SIN_PLAN_IA');
+  const datos = leer(t);
+  assert.equal(datos.nivel, 'ESTANDAR');
+  assert.ok(datos.planHasta >= antes + 24 * 3600 * 1000 - 5000 && datos.planHasta <= Date.now() + 24 * 3600 * 1000);
+  matriculas = 0;
 });

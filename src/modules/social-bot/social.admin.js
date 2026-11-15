@@ -16,6 +16,7 @@ const { ventana } = require('./social.worker');
 const params = z.object({ id: z.string().uuid() });
 const router = Router();
 router.use(authenticate, authorize(ROLES.ADMIN));
+router.use(require('./social.devices'));
 // Meta admite una sola respuesta privada por comentario y solo durante 7 días.
 const SIETE_DIAS = 7 * 86400000;
 const RESPONDIDO = ['PENDIENTE', 'PROCESANDO', 'LISTO', 'ENVIANDO', 'ENVIADO', 'INCIERTO'];

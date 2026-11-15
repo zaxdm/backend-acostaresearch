@@ -22,6 +22,28 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+/// Celulares autorizados para avisos de redes, vinculados a la familia de sesión.
+model SocialDispositivo {
+  tokenHash String @id @db.Char(64)
+  token String @db.VarChar(4096)
+  userId String @db.Char(36)
+  familyId String @db.Char(36)
+  sessionVersion Int
+  updatedAt DateTime @updatedAt
+  @@index([userId])
+}
+
+/// Aviso persistente: se guarda en la misma transacción que el mensaje entrante.
+model SocialAviso {
+  clave String @id @db.Char(64)
+  conversacionId String @db.Char(36)
+  canal String @db.VarChar(20)
+  intentos Int @default(0)
+  proximoAt DateTime @default(now()) @db.DateTime(3)
+  createdAt DateTime @default(now()) @db.DateTime(3)
+  @@index([proximoAt])
+}
+
 model SocialConversacion {
   id String @id @default(uuid()) @db.Char(36)
   clave String @unique @db.Char(64)

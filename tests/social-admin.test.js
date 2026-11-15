@@ -119,6 +119,17 @@ test('el estado devuelve configuración pública sin valores de secretos', async
   assert.doesNotMatch(JSON.stringify(r.body), /secreto-(gemini|meta|verificacion|pagina)-no-exponer/);
 });
 
+test('las altas y bajas de celulares heredan la autenticación y el rol ADMIN', async (t) => {
+  const p = await preparar(t);
+  for (const method of ['PUT', 'DELETE']) {
+    for (const role of [null, 'USER', 'ADMIN_PAIS']) {
+      const response = await p.request('/dispositivos', { method, role, body: { token: 'fcm-device-test-token-12345' } });
+      assert.equal(response.status, role ? 403 : 401);
+    }
+  }
+  assert.equal(p.contadores().lecturas, 0);
+});
+
 test('dos respuestas manuales consecutivas conservan la misma revisión humana y ambas quedan encoladas', async (t) => {
   const p = await preparar(t, { humano: true });
   const ruta = `/conversaciones/${ID}/responder`;

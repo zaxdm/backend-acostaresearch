@@ -27,6 +27,8 @@ function llavesCulqiValidas(publica, secreta) {
 const schema = z.object({
   SOCIAL_BOT_ENABLED: booleanish.default('false'),
   SOCIAL_META_ENABLED: booleanish.default('false'),
+  // Leer por la API los comentarios de Facebook que el webhook no trae (acceso estándar de Meta).
+  SOCIAL_FB_SONDEO: booleanish.default('true'),
   SOCIAL_META_APP_SECRET: vacioComoAusente(z.string().min(16)),
   SOCIAL_META_VERIFY_TOKEN: vacioComoAusente(z.string().min(16)),
   SOCIAL_META_FACEBOOK_PAGE_ID: vacioComoAusente(z.string().regex(/^\d+$/)),

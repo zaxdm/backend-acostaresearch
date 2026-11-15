@@ -2,7 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
-const { firmaValida, extraerEventos, enviar, MetaError, ventanaAbierta, publicacion } = require('../src/modules/social-bot/social.meta');
+const { firmaValida, extraerEventos, enviar, MetaError, ventanaAbierta, publicacion, comentariosRecientes } = require('../src/modules/social-bot/social.meta');
 
 const config = { facebookPageId: '111', instagramAccountId: '222', whatsappPhoneNumberId: '333' };
 const tiempo = 1794680000000;
@@ -160,4 +160,27 @@ test('lee el texto del post del comentario y nunca bloquea si falla', async () =
   assert.equal(await publicacion({ canal: 'instagram', comentarioId: '456' }, { token: 't', fetchImpl: async () => { throw new Error('red'); } }), '');
   assert.equal(await publicacion({ canal: 'facebook' }, { token: 't', fetchImpl }), '');
   assert.equal(await publicacion({ canal: 'instagram', comentarioId: '../x' }, { token: 't', fetchImpl }), '');
+});
+
+test('lee por la API los comentarios de Facebook que el webhook no trae, con la misma clave', async () => {
+  let url = '';
+  const fetchImpl = async (u, o) => { url = u; assert.equal(o.headers.Authorization, 'Bearer tok'); return { ok: true, json: async () => ({ data: [{ id: '111_5', comments: { data: [
+    { id: '5_1', message: 'Skill', created_time: '2026-11-15T19:01:00+0000', can_reply_privately: true },
+    { id: '5_2', message: 'Skill', created_time: '2026-11-15T19:02:00+0000', can_reply_privately: false },
+    { id: '5_3', message: 'Gracias', created_time: '2026-11-15T19:03:00+0000', can_reply_privately: true, from: { id: '111', name: 'Acosta' } },
+    { id: '5_4', message: 'Skill', created_time: '2026-11-10T19:03:00+0000', can_reply_privately: true },
+    { id: '5_5', message: 'Info', created_time: '2026-11-15T19:04:00+0000', can_reply_privately: true, from: { id: '77', name: 'Ana Pérez' } },
+  ] } }] }) }; };
+  const ev = await comentariosRecientes({ token: 'tok', facebookPageId: '111', desde: new Date('2026-11-14T00:00:00Z'), fetchImpl });
+  assert.match(url, /\/111\/posts\?fields=/);
+  assert.deepEqual(ev.map((e) => e.evento), ['comment-5_1', 'comment-5_5']);
+  assert.equal(ev[0].contacto, 'comentario-5_1'); assert.equal(ev[0].postId, '111_5'); assert.equal(ev[0].tipo, 'comentario');
+  assert.equal(ev[0].timestamp, '2026-11-15T19:01:00.000Z');
+  assert.equal(ev[1].contacto, '77'); assert.equal(ev[1].nombre, 'Ana Pérez');
+});
+
+test('si Meta rechaza la lectura de comentarios se avisa con un error, sin token: nada', async () => {
+  assert.deepEqual(await comentariosRecientes({ facebookPageId: '111' }), []);
+  const fetchImpl = async () => ({ ok: false, status: 403, json: async () => ({ error: { message: 'No permitido', code: 10 } }) });
+  await assert.rejects(comentariosRecientes({ token: 't', facebookPageId: '111', fetchImpl }), /No permitido/);
 });

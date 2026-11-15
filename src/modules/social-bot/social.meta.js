@@ -218,4 +218,40 @@ async function publicacion(evento, { token, version = 'v25.0', fetchImpl = fetch
   }
 }
 
-module.exports = { firmaValida, extraerEventos, enviar, publicacion, MetaError, MAX_TEXT, ventanaAbierta };
+/**
+ * Comentarios recientes de la página de Facebook, leídos por la API. Con acceso estándar Meta no
+ * manda el webhook `feed` de quien no tiene rol en la app (ni dice quién comentó), así que se
+ * revisan los últimos posts. El evento usa la misma clave que el webhook (`comment-<id>`): si un
+ * día llegan los dos, el comentario se atiende una sola vez.
+ */
+async function comentariosRecientes({ token, version = 'v25.0', facebookPageId, desde, fetchImpl = fetch, timeoutMs = 10000 } = {}) {
+  const pagina = cadena(facebookPageId);
+  if (!token || !/^\d+$/.test(pagina) || !/^v\d+\.\d+$/.test(version)) return [];
+  const campos = 'id,comments.order(reverse_chronological).limit(25){id,message,created_time,can_reply_privately,from}';
+  const response = await fetchImpl(`${GRAPH}/${version}/${pagina}/posts?fields=${encodeURIComponent(campos)}&limit=10`, {
+    headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(timeoutMs),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new MetaError(body?.error?.message || 'Meta no devolvió los comentarios.', { status: response.status, code: body?.error?.code ?? null });
+  const limite = desde instanceof Date ? desde.getTime() : 0;
+  const eventos = [];
+  for (const post of lista(body?.data)) {
+    for (const c of lista(post?.comments?.data)) {
+      const id = cadena(c?.id);
+      const texto = cadena(c?.message).trim();
+      const momento = new Date(cadena(c?.created_time).replace(/([+-]\d{2})(\d{2})$/, '$1:$2')).getTime();
+      // Sin respuesta privada posible (ya contestado o vencido), de la propia página o sin texto: nada que hacer.
+      if (!id || !texto || c.can_reply_privately !== true || !Number.isFinite(momento) || momento < limite) continue;
+      const autor = cadena(c.from?.id);
+      if (autor === pagina) continue;
+      eventos.push({
+        canal: 'facebook', cuenta: pagina, contacto: autor || `comentario-${id}`, evento: `comment-${id}`,
+        comentarioId: id, texto, nombre: cadena(c.from?.name), postId: cadena(post.id),
+        tipo: 'comentario', eco: false, timestamp: new Date(momento).toISOString(),
+      });
+    }
+  }
+  return eventos;
+}
+
+module.exports = { firmaValida, extraerEventos, enviar, publicacion, comentariosRecientes, MetaError, MAX_TEXT, ventanaAbierta };

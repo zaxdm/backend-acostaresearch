@@ -236,8 +236,17 @@ test('un comentario recibe la información por privado y un aviso público corto
   await p.worker.procesar(copy(p.trabajo), p.lock());
   assert.deepEqual(salidas.map((s) => s.tipo), ['respuesta_privada', 'comentario']);
   assert.equal(salidas[0].texto, 'Info del Humanizador 🎥');
-  assert.equal(salidas[1].texto, '¡Te escribimos por mensaje directo! 📩');
+  assert.match(salidas[1].texto, /privado|directo|mensajes|interno/);
   assert.equal(p.trabajo.estado, 'ENVIADO'); assert.equal(p.trabajo.metaId, 'm1'); assert.equal(p.trabajo.error, null);
+});
+
+test('el comentario público que redacta la IA se publica y queda guardado para un reintento', async () => {
+  const salidas = [];
+  const p = preparar({ enviar: (e, texto) => { salidas.push(texto); return `m${salidas.length}`; }, pensar: () => ({ texto: 'Info del Humanizador 🎥', publico: '¡Gracias! Te pasamos la info del Humanizador por privado 📩' }) });
+  comentarioDe(p);
+  await p.worker.procesar(copy(p.trabajo), p.lock());
+  assert.deepEqual(salidas, ['Info del Humanizador 🎥', '¡Gracias! Te pasamos la info del Humanizador por privado 📩']);
+  assert.equal(p.trabajo.evento.avisoPublico, '¡Gracias! Te pasamos la info del Humanizador por privado 📩');
 });
 
 test('si el aviso público falla, lo enviado por privado no queda incierto', async () => {

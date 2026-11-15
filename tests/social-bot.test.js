@@ -110,6 +110,22 @@ test('un comentario nunca emite pruebas: se redacta una sola vez el mensaje priv
   assert.equal(r.estado, 'comentario'); assert.equal(p.enlaces.length, 0); assert.equal(p.llamadas(), 1);
   assert.equal(r.humano, false); assert.ok(r.texto);
 });
+test('un comentario trae también la respuesta pública, sin precios ni enlaces', async () => {
+  const p = preparar({ generar: () => ({ texto: 'Info del Humanizador 🎥\n[[PUBLICO]] ¡Gracias, Ana! Te pasamos por privado cómo funciona el Humanizador 📩' }) });
+  const r = await p.service.atender({ ...base, tipo: 'comentario', texto: 'SKILL' });
+  assert.equal(r.texto, 'Info del Humanizador 🎥');
+  assert.equal(r.publico, '¡Gracias, Ana! Te pasamos por privado cómo funciona el Humanizador 📩');
+  const conPrecio = preparar({ generar: () => ({ texto: 'Info\n[[PUBLICO]] Cuesta S/ 59.90, te escribimos' }) });
+  assert.equal((await conPrecio.service.atender({ ...base, tipo: 'comentario', texto: 'precio' })).publico, '');
+  const derivado = preparar({ generar: () => ({ texto: 'Te paso con el equipo [[PERSONA]]\n[[PUBLICO]] Hola' }) });
+  const d = await derivado.service.atender({ ...base, tipo: 'comentario', texto: 'Estafa' });
+  assert.equal(d.humano, true); assert.equal(d.publico, '');
+});
+test('el pedido del comentario pide la respuesta pública y usa el nombre solo en Facebook', () => {
+  const { pedidoComentario } = preparar().service;
+  assert.match(pedidoComentario({ canal: 'facebook', nombre: 'Ana Pérez', texto: 'SKILL' }), /\[\[PUBLICO\]\][\s\S]*Ana Pérez/);
+  assert.doesNotMatch(pedidoComentario({ canal: 'instagram', nombre: 'ana_99', texto: 'SKILL' }), /ana_99/);
+});
 test('el pedido al modelo lleva el comentario y el texto del post como datos', () => {
   const { pedidoComentario } = preparar().service;
   const texto = pedidoComentario({ texto: 'SKILL', publicacion: 'Turnitin te marca IA. Comenta SKILL' });

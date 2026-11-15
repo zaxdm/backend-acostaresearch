@@ -8,7 +8,7 @@ const ventana = (fecha, ahora) => fecha && new Date(fecha) <= ahora && ahora - n
 const TURNO_EQUIPO_MS = 2 * 3600000;
 // Responder a un comentario (en público o con la respuesta privada) no depende de la ventana de 24 h, sino de los 7 días del comentario.
 const sobreComentario = (e) => e.tipo === 'comentario' || e.tipo === 'respuesta_privada';
-const AVISO_PUBLICO = '¡Te escribimos por mensaje directo! 📩';
+const { avisoFijo } = require('./social.text');
 // ¿Ya le llegó por privado la información de otro comentario suyo? Entonces solo el aviso público.
 const yaTienePrivado = (trabajos, id) => trabajos.some((x) => x.id !== id && (
   (x.autor === 'CLIENTE' && x.evento?.tipo === 'comentario' && x.respuesta) || x.evento?.tipo === 'respuesta_privada'));
@@ -30,7 +30,7 @@ function limitarTexto(texto, canal) {
 /** Cola persistente. Solo reintenta envíos rechazados de forma inequívoca.
  * Un envío interrumpido tras llamar a Meta queda INCIERTO para revisión humana.
  */
-function crearWorker({ db, engine, transport, config, ahora = () => new Date() }) {
+function crearWorker({ db, engine, transport, config, ahora = () => new Date(), notificar = async () => {} }) {
   async function recibir(eventos) {
     for (const e of eventos) {
       const clave = hash(e.canal, e.cuenta, e.evento);
@@ -65,6 +65,7 @@ function crearWorker({ db, engine, transport, config, ahora = () => new Date() }
               historial: [...c.historial, { rol: 'asistente', texto: e.texto || '(Adjunto enviado por el equipo)' }].slice(-20),
             } : {}),
           } });
+          await notificar(tx, c, e, clave);
         });
       } catch (error) {
         // Un choque en el alta de conversación puede ser de OTRO mensaje.
@@ -154,6 +155,8 @@ function crearWorker({ db, engine, transport, config, ahora = () => new Date() }
       const soloAviso = comentarioDelCliente && !t.respuesta && yaTienePrivado(
         await db.socialTrabajo.findMany({ where: { conversacionId: c.id, estado: { in: ['ENVIADO', 'ENVIANDO', 'INCIERTO'] } } }), t.id);
       let texto = t.respuesta || (t.autor === 'ADMIN' ? t.texto : '');
+      // La IA redacta el comentario público junto con el privado; se guarda en el evento por si hay que reintentar.
+      let aviso = e.avisoPublico || '';
       if (!texto && !soloAviso) {
         if (!e.texto) {
           await db.socialConversacion.update({ where: { id: c.id }, data: { humano: true, humanoHasta: null } });
@@ -165,7 +168,8 @@ function crearWorker({ db, engine, transport, config, ahora = () => new Date() }
         if (comentarioDelCliente && r.humano) return await finalizar(t, 'HUMANO', 'Comentario para revisar por el equipo.');
         texto = r.texto;
         texto = limitarTexto(texto, e.canal);
-        if (!await guardar({ respuesta: texto, estado: 'LISTO' })) return;
+        if (comentarioDelCliente && r.publico) aviso = r.publico;
+        if (!await guardar({ respuesta: texto, estado: 'LISTO', ...(aviso && !e.avisoPublico ? { evento: { ...e, avisoPublico: aviso } } : {}) })) return;
       }
       // Pausar durante la generación invalida la respuesta; el motor puede derivar sin cambiar revisión.
       c = await db.socialConversacion.findUnique({ where: { id: c.id } });
@@ -180,12 +184,13 @@ function crearWorker({ db, engine, transport, config, ahora = () => new Date() }
       let metaId;
       let avisoFallido = false;
       if (comentarioDelCliente) {
+        const publico = aviso || avisoFijo(e);
         if (texto) metaId = await transport.enviar({ ...e, tipo: 'respuesta_privada' }, texto, config(e.canal));
         if (texto) {
           // Lo importante ya salió por privado: un fallo del aviso público no lo vuelve incierto.
-          try { await transport.enviar(e, AVISO_PUBLICO, config(e.canal)); } catch { avisoFallido = true; }
+          try { await transport.enviar(e, publico, config(e.canal)); } catch { avisoFallido = true; }
         } else {
-          metaId = await transport.enviar(e, AVISO_PUBLICO, config(e.canal));
+          metaId = await transport.enviar(e, publico, config(e.canal));
         }
       } else {
         metaId = await transport.enviar(e, texto, config(e.canal));

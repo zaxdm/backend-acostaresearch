@@ -9,7 +9,7 @@ const asistente = require('../asistente/asistente.service');
 const { crearTopeDiario } = require('../asistente/asistente.tope');
 const { sistema } = require('./social.prompt');
 const { solicitaPrueba } = require('./social.schema');
-const { limpiarTexto } = require('./social.text');
+const { limpiarTexto, limpiarAviso } = require('./social.text');
 const hash = (...partes) => createHash('sha256').update(JSON.stringify(partes)).digest('hex');
 const identidad = (d) => hash(d.canal, d.cuenta, d.contacto);
 const tope = crearTopeDiario(env.SOCIAL_BOT_MAX_DIARIO);
@@ -58,9 +58,15 @@ function productoDePrueba(historial, texto, valor) {
 // Lo que el modelo recibe por un comentario. El comentario y el post son datos del cliente y de la página.
 function pedidoComentario(d) {
   const post = d.publicacion ? ` que dice: «${d.publicacion}»` : '';
+  // En Instagram llega el usuario (@algo), no el nombre: mejor no usarlo como saludo.
+  const quien = d.canal === 'facebook' && d.nombre ? `Se llama «${String(d.nombre).slice(0, 60)}»: puedes saludarla por su primer nombre. ` : '';
   return `[Comentario público] La persona comentó «${d.texto}» en nuestra publicación${post}. `
     + 'Escríbele por mensaje privado el primer mensaje de venta (paso 1, sin precio) del producto del que trata la publicación. '
-    + 'Si el comentario no pide información ni muestra interés (una queja, un insulto, algo personal o sin relación), responde solo [[PERSONA]].';
+    + 'Si el comentario no pide información ni muestra interés (una queja, un insulto, algo personal o sin relación), responde solo [[PERSONA]]. '
+    + 'Después del mensaje privado, en una línea aparte, escribe [[PUBLICO]] y la respuesta que quedará en público bajo su comentario: '
+    + 'una o dos frases cortas (máximo 150 caracteres) que respondan a lo que escribió y digan que le escribimos por mensaje privado. '
+    + 'Si solo puso una palabra clave («SKILL», «info», «quiero»), agradécele y nombra el producto que le enviaste. '
+    + `${quien}Un emoji como máximo, sin precios, sin enlaces, y no uses siempre la misma frase.`;
 }
 
 async function conversacion(d) {
@@ -99,8 +105,10 @@ async function atender(d) {
         sistema: sistema({ planes, appUrl: env.APP_URL, pruebas: false }),
         mensajes: [{ rol: 'usuario', texto: pedidoComentario(d) }], maxTokens: 600,
       });
-      const limpio = limpiarTexto(generado.texto, env.APP_URL);
-      respuesta = resultado(limpio.texto.slice(0, 4000), { humano: limpio.humano || !limpio.texto, estado: 'comentario' });
+      const [privado, publico = ''] = generado.texto.split('[[PUBLICO]]');
+      const limpio = limpiarTexto(privado, env.APP_URL);
+      const humano = limpio.humano || !limpio.texto || generado.texto.includes('[[PERSONA]]');
+      respuesta = resultado(limpio.texto.slice(0, 4000), { humano, estado: 'comentario', publico: humano ? '' : limpiarAviso(publico) });
     } else if (d.accion === 'prueba' || (productosDePrueba() && aceptaInvitacion(actual.historial, d.texto))) {
       if (!solicitaPrueba(d.texto) && !aceptaInvitacion(actual.historial, d.texto)) throw new ValidationError('La persona debe solicitar la prueba explícitamente.');
       prueba = productoDePrueba(actual.historial, d.texto);

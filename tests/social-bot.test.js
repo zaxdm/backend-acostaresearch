@@ -143,3 +143,33 @@ test('dos mensajes simultáneos no piensan ni crean pruebas a la vez', async () 
   await primera;
   assert.equal(p.llamadas(), 1);
 });
+
+test('la prueba es del producto del que se habló: Turnitin → Humanizador, tesis → Método', () => {
+  const { productoDePrueba } = preparar().service;
+  const dos = 'humanizador:HUMANIZADOR_ACADEMICO,tesis:METODO_DE_TESIS_HUMANIZADOR';
+  const h = [{ rol: 'asistente', texto: 'El Humanizador Académico quita de tu tesis los patrones de IA que marca Turnitin.' }];
+  assert.equal(productoDePrueba(h, 'Quiero probar gratis', dos).codigo, 'HUMANIZADOR_ACADEMICO');
+  assert.equal(productoDePrueba(h, 'Quiero probar gratis', dos).tema, 'humanizador');
+  const t = [{ rol: 'usuario', texto: 'Necesito hacer mi tesis desde el capítulo I' }];
+  assert.equal(productoDePrueba(t, 'Quiero probar gratis', dos).codigo, 'METODO_DE_TESIS_HUMANIZADOR');
+  // Lo último que se habló manda.
+  assert.equal(productoDePrueba([...t, ...h], 'Quiero probar gratis', dos).codigo, 'HUMANIZADOR_ACADEMICO');
+  // Sin pistas, el primero de la lista; con un solo producto, siempre ese; sin configurar, ninguno.
+  assert.equal(productoDePrueba([], 'Quiero probar gratis', dos).codigo, 'HUMANIZADOR_ACADEMICO');
+  assert.equal(productoDePrueba(t, 'x', 'HUMANIZADOR').codigo, 'HUMANIZADOR');
+  assert.equal(productoDePrueba(t, 'x', 'HUMANIZADOR').tema, null);
+  assert.equal(productoDePrueba(t, 'x', ''), null);
+});
+test('el bot no ofrece la prueba de entrada: solo si la piden o dudan', () => {
+  const texto = sistema({ planes: [], appUrl: 'https://e.com', pruebas: true });
+  assert.match(texto, /NO la ofrezcas en el primer mensaje/);
+  assert.match(texto, /Quiero probar gratis/);
+});
+
+test('un «sí» justo después de ofrecer la prueba la activa; sin oferta previa, no', () => {
+  const { aceptaInvitacion } = preparar().service;
+  const oferta = [{ rol: 'asistente', texto: 'Escribe exactamente «Quiero probar gratis» y te la activamos. ¿Te animas?' }];
+  for (const t of ['Sí', 'si dale', 'Ok', 'Claro que sí!', 'Me animo']) assert.equal(aceptaInvitacion(oferta, t), true, t);
+  for (const t of ['No gracias', 'sí, pero ¿cuánto dura?', 'luego lo veo', 'sí, aunque primero quiero saber si sirve para mi universidad']) assert.equal(aceptaInvitacion(oferta, t), false, t);
+  assert.equal(aceptaInvitacion([{ rol: 'asistente', texto: '¿Te ayudo con el proceso de compra?' }], 'Sí'), false);
+});

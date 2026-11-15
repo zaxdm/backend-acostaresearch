@@ -14,6 +14,47 @@ const hash = (...partes) => createHash('sha256').update(JSON.stringify(partes)).
 const identidad = (d) => hash(d.canal, d.cuenta, d.contacto);
 const tope = crearTopeDiario(env.SOCIAL_BOT_MAX_DIARIO);
 const resultado = (texto, extra = {}) => ({ success: true, texto, humano: false, pruebaUrl: '', ...extra });
+
+// ── Qué producto se prueba ──────────────────────────────────────────────────
+// SOCIAL_BOT_TRIAL_PRODUCT admite un solo productCode o uno por interés
+// («humanizador:HUMANIZADOR_ACADEMICO,tesis:METODO_DE_TESIS_HUMANIZADOR»). Con varios, decide la
+// conversación: lo último que habló de Turnitin/IA → humanizador; de la tesis → tesis.
+const NOMBRE_PRUEBA = { humanizador: 'del Humanizador Académico', tesis: 'del Método de Tesis' };
+const TEMAS = [
+  ['humanizador', /humaniz|turnitin|detector|\bia\b|inteligencia artificial|patron(es)? de ia|porcentaje de ia/],
+  ['tesis', /tesis|cap[ií]tulo|m[eé]todo de tesis|marco te[oó]rico|proyecto de investigaci/],
+];
+/**
+ * «Sí» a la invitación: si lo último que dijo el bot fue ofrecer la prueba («Quiero probar
+ * gratis») y la persona contesta que sí, se crea la prueba sin obligarla a copiar la frase.
+ */
+function aceptaInvitacion(historial, texto) {
+  const ultimo = [...historial].reverse().find((h) => h.rol === 'asistente');
+  if (!ultimo || !/quiero probar gratis/i.test(ultimo.texto || '')) return false;
+  const t = texto.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+  if (t.includes('?') || /\b(no|nunca|despues|luego|otro dia)\b/.test(t) || t.split(/\s+/).length > 6) return false;
+  return /^(si|dale|ok|okey|okay|ya|claro|bueno|va|vale|por favor|porfa|de una|quiero|me animo|listo)\b/.test(t);
+}
+function productosDePrueba(valor = env.SOCIAL_BOT_TRIAL_PRODUCT) {
+  if (!valor) return null;
+  if (!valor.includes(':')) return { unico: valor.trim() };
+  return Object.fromEntries(valor.split(',').map((par) => par.split(':').map((x) => x.trim())).filter(([k, v]) => k && v));
+}
+function productoDePrueba(historial, texto, valor) {
+  const productos = productosDePrueba(valor);
+  if (!productos) return null;
+  if (productos.unico) return { codigo: productos.unico, tema: null };
+  const turnos = [...historial.map((h) => h.texto || ''), texto].reverse();
+  for (const t of turnos) {
+    const bajo = t.toLowerCase();
+    // El bot nombra el producto que ofreció; si en un mismo turno salen los dos, decide el primero que aparezca.
+    const hallados = TEMAS.filter(([tema, re]) => productos[tema] && re.test(bajo))
+      .map(([tema, re]) => [tema, bajo.search(re)]).sort((a, b) => a[1] - b[1]);
+    if (hallados.length) return { codigo: productos[hallados[0][0]], tema: hallados[0][0] };
+  }
+  const [tema, codigo] = Object.entries(productos)[0];
+  return { codigo, tema };
+}
 // Lo que el modelo recibe por un comentario. El comentario y el post son datos del cliente y de la página.
 function pedidoComentario(d) {
   const post = d.publicacion ? ` que dice: «${d.publicacion}»` : '';
@@ -48,21 +89,23 @@ async function atender(d) {
     if (repetido) return repetido.respuesta;
     let respuesta;
     let contrato;
+    let prueba;
     if (d.tipo === 'comentario') {
       if (!env.SOCIAL_BOT_API_KEY) throw new ConflictError('Falta configurar la IA del bot.');
       if (!tope.intentar()) throw new ConflictError('Se alcanzó el límite diario del bot.');
       const { planes } = await asistente.preciosVigentes();
       const generado = await generarConRespaldo({
         modelos: [env.SOCIAL_BOT_MODEL], clave: env.SOCIAL_BOT_API_KEY,
-        sistema: sistema({ planes, appUrl: env.APP_URL, pruebas: Boolean(env.SOCIAL_BOT_TRIAL_PRODUCT) }),
+        sistema: sistema({ planes, appUrl: env.APP_URL, pruebas: false }),
         mensajes: [{ rol: 'usuario', texto: pedidoComentario(d) }], maxTokens: 600,
       });
       const limpio = limpiarTexto(generado.texto, env.APP_URL);
       respuesta = resultado(limpio.texto.slice(0, 4000), { humano: limpio.humano || !limpio.texto, estado: 'comentario' });
-    } else if (d.accion === 'prueba') {
-      if (!solicitaPrueba(d.texto)) throw new ValidationError('La persona debe solicitar la prueba explícitamente.');
-      if (!env.SOCIAL_BOT_TRIAL_PRODUCT) throw new ConflictError('No hay un producto de prueba configurado.');
-      contrato = await contratoDelProducto(env.SOCIAL_BOT_TRIAL_PRODUCT);
+    } else if (d.accion === 'prueba' || (productosDePrueba() && aceptaInvitacion(actual.historial, d.texto))) {
+      if (!solicitaPrueba(d.texto) && !aceptaInvitacion(actual.historial, d.texto)) throw new ValidationError('La persona debe solicitar la prueba explícitamente.');
+      prueba = productoDePrueba(actual.historial, d.texto);
+      if (!prueba) throw new ConflictError('No hay un producto de prueba configurado.');
+      contrato = await contratoDelProducto(prueba.codigo);
       if (!contrato.planId) throw new ConflictError('El producto de prueba no está activo.');
     } else {
       if (!env.SOCIAL_BOT_API_KEY) throw new ConflictError('Falta configurar la IA del bot.');
@@ -94,13 +137,14 @@ async function atender(d) {
         } else {
           const slug = randomBytes(18).toString('hex');
           const enlace = await tx.trialLink.create({ data: {
-            slug, name: 'Prueba individual del bot', productCode: env.SOCIAL_BOT_TRIAL_PRODUCT,
+            slug, name: 'Prueba individual del bot', productCode: prueba.codigo,
             seats: 1, accessMinutes: 20, callsPerDay: 5,
           } });
           const url = `${env.APP_URL.replace(/\/+$/, '')}/prueba/${slug}`;
           const expiresAt = new Date(enlace.createdAt.getTime() + 20 * 60000);
           await tx.socialPrueba.create({ data: { contacto: c.clave, url, expiresAt } });
-          respuesta = resultado(`Aquí tienes tu prueba gratuita de 20 minutos y hasta 5 consultas. El tiempo comienza ahora: ${url}`, { pruebaUrl: url, estado: 'prueba_creada' });
+          const de = NOMBRE_PRUEBA[prueba.tema] ? ` ${NOMBRE_PRUEBA[prueba.tema]}` : '';
+          respuesta = resultado(`Aquí tienes tu prueba gratuita${de}: 20 minutos y hasta 5 consultas. El tiempo empieza ahora 👇\n${url}`, { pruebaUrl: url, estado: 'prueba_creada' });
         }
       }
       const historial = [...actual.historial, { rol: 'usuario', texto: d.texto }, { rol: 'asistente', texto: respuesta.texto }].slice(-20);
@@ -130,4 +174,4 @@ async function purgar() {
     data: { historial: [] },
   });
 }
-module.exports = { atender, modo, purgar, identidad, hash, pedidoComentario };
+module.exports = { atender, modo, purgar, identidad, hash, pedidoComentario, productoDePrueba, aceptaInvitacion };

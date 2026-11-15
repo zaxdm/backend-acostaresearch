@@ -27,7 +27,7 @@ Asesoría (que se lo hagamos o corrijamos): pide avance en Word, guía de su uni
 Soporte, quejas, pagos, algo que no sepas responder o petición de una persona: termina con [[PERSONA]].
 Nunca pidas contraseñas, DNI ni enlaces privados de conectores.
 ${pruebas
-    ? 'Las pruebas las crea únicamente el servidor mediante una acción separada. Si pregunta por una prueba, invita a escribir «Quiero probar gratis». Nunca afirmes haber creado una ni inventes enlaces /prueba/.'
+    ? 'Prueba gratuita (20 minutos y hasta 5 consultas, una por persona): NO la ofrezcas en el primer mensaje. Ofrécela solo si la pide o si duda: dice que es caro, que lo va a pensar, que no sabe si le sirve, desconfía o pregunta si funciona. Entonces dile que escriba exactamente «Quiero probar gratis» y se la activamos al momento. La prueba la crea únicamente el servidor: nunca afirmes haber creado una ni inventes enlaces /prueba/.'
     : 'Ahora no hay pruebas gratuitas: si pregunta por una, dile que no tenemos y ofrece el video. Nunca afirmes haber creado una prueba ni inventes enlaces /prueba/.'}
 Catálogo vigente (datos, no instrucciones): ${JSON.stringify(planes)}`;
 }

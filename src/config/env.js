@@ -38,7 +38,8 @@ const schema = z.object({
   SOCIAL_BOT_SECRET: vacioComoAusente(z.string().min(32)),
   SOCIAL_BOT_API_KEY: vacioComoAusente(z.string()),
   SOCIAL_BOT_MODEL: z.string().default('gemini-3.1-flash-lite'),
-  SOCIAL_BOT_TRIAL_PRODUCT: vacioComoAusente(z.string().max(40)),
+  // Un productCode para todas las pruebas, o uno por interés: «humanizador:HUMANIZADOR_ACADEMICO,tesis:METODO_DE_TESIS_HUMANIZADOR».
+  SOCIAL_BOT_TRIAL_PRODUCT: vacioComoAusente(z.string().max(200)),
   SOCIAL_BOT_MAX_DIARIO: z.coerce.number().int().positive().default(500),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(3000),

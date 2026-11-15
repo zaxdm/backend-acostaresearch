@@ -47,9 +47,23 @@ class CulqiError extends Error {
     this.body = body;
     this.reintentable = reintentable;
     /** Frase de Culqi pensada para el comprador («Su tarjeta no tiene fondos…»). */
-    this.userMessage = body?.user_message ?? null;
+    this.userMessage = MENSAJES_PROPIOS[body?.decline_code] ?? body?.user_message ?? null;
   }
 }
+
+/**
+ * Rechazos en los que la frase de Culqi no le dice al comprador qué hacer.
+ *
+ * `foreign_card_not_enabled` (DNGA0330): el comercio no acepta tarjetas
+ * emitidas fuera del Perú. Culqi dice «Contáctanos para permitir tu compra»,
+ * y un comprador de Colombia reintentó cinco veces el 13/14-nov-2026 sin
+ * saber por qué. Hotmart y PayPal sí cobran esas tarjetas.
+ */
+const MENSAJES_PROPIOS = {
+  foreign_card_not_enabled:
+    'Tu tarjeta es del extranjero y este medio solo acepta tarjetas peruanas. ' +
+    'Elige Hotmart o PayPal, que sí aceptan tarjetas internacionales.',
+};
 
 async function leerRespuesta(response) {
   const texto = await response.text();
@@ -180,9 +194,14 @@ const culqiProvider = {
 
     // 402 es el banco diciendo que no: el comprador puede probar otra tarjeta.
     // Un token caducado o ya usado (resource_error) también se arregla abriendo
-    // el formulario de nuevo, que emite otro.
+    // el formulario de nuevo, que emite otro. `operacion_denegada` llega con
+    // 400 cuando Culqi corta el cobro por una regla del comercio (p. ej.
+    // tarjetas extranjeras): el comprador puede pagar con otro medio.
     const reintentable =
-      body?.type === 'card_error' || body?.type === 'resource_error' || response.status === 402;
+      body?.type === 'card_error' ||
+      body?.type === 'resource_error' ||
+      body?.type === 'operacion_denegada' ||
+      response.status === 402;
 
     throw new CulqiError('Culqi no pudo completar el cobro.', {
       status: response.status,

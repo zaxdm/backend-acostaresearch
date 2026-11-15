@@ -81,16 +81,17 @@ const captureBodySchema = z
     deviceFingerprint: z.string().trim().max(100).optional(),
     authentication3DS: autenticacion3DS.optional(),
     // Cobro mensual con tarjeta (10-nov-2026): solo en los planes que se
-    // renuevan. `acepta` es la casilla «autorizo el cobro de cada mes»; los
-    // demás datos los exige Culqi para guardar la tarjeta.
+    // renuevan. `acepta` es la casilla «autorizo el cobro de cada mes». Los
+    // demás datos son opcionales desde el 10-nov-2026: la web ya no los pide;
+    // el nombre sale de la cuenta y el resto lo rellena `clienteDe`.
     suscripcion: z
       .object({
         acepta: z.literal(true),
-        nombre: z.string().trim().min(2).max(50),
-        apellido: z.string().trim().min(2).max(50),
-        telefono: z.string().trim().min(6).max(20),
-        ciudad: z.string().trim().min(2).max(30),
-        direccion: z.string().trim().min(3).max(100),
+        nombre: z.string().trim().min(2).max(50).optional(),
+        apellido: z.string().trim().min(2).max(50).optional(),
+        telefono: z.string().trim().min(6).max(20).optional(),
+        ciudad: z.string().trim().min(2).max(30).optional(),
+        direccion: z.string().trim().min(3).max(100).optional(),
       })
       .optional(),
   })

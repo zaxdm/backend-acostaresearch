@@ -368,6 +368,68 @@ test('tarjeta rechazada: mensaje del banco, pago abierto y se puede reintentar',
   assert.equal(llamadas.entregas.length, 1);
 });
 
+test('tarjeta extranjera (operacion_denegada): pago abierto y aviso de pagar con Hotmart o PayPal', async () => {
+  const orden = await abrirCulqi();
+  // Respuesta real de producción del 13-nov-2026.
+  respuestasFetch = [
+    {
+      status: 400,
+      body: {
+        object: 'error',
+        type: 'operacion_denegada',
+        charge_id: 'chr_live_Qs7H2l9fVjAcocfF',
+        code: 'DNGA0330',
+        decline_code: 'foreign_card_not_enabled',
+        merchant_message: 'Tarjetas internacionales inhabilitadas',
+        user_message:
+          'Tu tarjeta no puede ser procesada por ser internacional, Contáctanos para permitir tu compra.',
+      },
+    },
+  ];
+
+  await assert.rejects(
+    paymentService.captureOrder({
+      userId: 'user-1',
+      orderId: orden.orderId,
+      providerCode: 'CULQI',
+      datosDelCobro: { token: 'tkn_live_extranjera123456' },
+    }),
+    (error) =>
+      error.statusCode === 402 &&
+      error.code === 'PAYMENT_DECLINED' &&
+      /Hotmart o PayPal/.test(error.message),
+  );
+  assert.equal(llamadas.fail.length, 0);
+  assert.equal(llamadas.noteAttempt[0].errorCode, 'foreign_card_not_enabled');
+});
+
+test('otra operacion_denegada: se muestra la frase de Culqi y el pago sigue abierto', async () => {
+  const orden = await abrirCulqi();
+  respuestasFetch = [
+    {
+      status: 400,
+      body: {
+        object: 'error',
+        type: 'operacion_denegada',
+        code: 'DNGA0999',
+        decline_code: 'otra_regla',
+        user_message: 'Operación denegada por regla del comercio.',
+      },
+    },
+  ];
+
+  await assert.rejects(
+    paymentService.captureOrder({
+      userId: 'user-1',
+      orderId: orden.orderId,
+      providerCode: 'CULQI',
+      datosDelCobro: { token: 'tkn_live_otra_regla_12345' },
+    }),
+    { statusCode: 402, code: 'PAYMENT_DECLINED', message: 'Operación denegada por regla del comercio.' },
+  );
+  assert.equal(llamadas.fail.length, 0);
+});
+
 test('si Culqi cobra otro importe, no se entrega nada y queda registrado', async () => {
   const orden = await abrirCulqi();
   respuestasFetch = [cargoCulqi({ amount: 100 })];

@@ -24,7 +24,7 @@ const db = { suscripciones: [], planes: new Map(), pagos: new Map() };
 const llamadas = [];
 const culqi = {
   respuestas: {},
-  clienteDe: async (d) => (llamadas.push(['cliente', d.email]), 'cus_test_1'),
+  clienteDe: async (d) => (llamadas.push(['cliente', d.email]), (culqi.ultimoCliente = d), 'cus_test_1'),
   guardarTarjeta: async ({ authentication3DS }) => {
     llamadas.push(['tarjeta', Boolean(authentication3DS)]);
     if (culqi.respuestas.tarjeta3DS && !authentication3DS) return { requiresAuthentication: true };
@@ -157,6 +157,20 @@ test('la tarjeta se guarda una vez; con 3-D Secure se repite y no se duplica la 
   const tercera = await servicio.prepararTarjeta({ payment, token: 'tkn_test_abc', suscripcion: DATOS });
   assert.equal(tercera.cardId, 'crd_test_1');
   assert.equal(llamadas.length, antes);
+});
+
+test('con solo la casilla: el esquema la acepta y el nombre sale de la cuenta', async () => {
+  const { captureBodySchema } = require('../src/modules/payments/payment.schema');
+  const leido = captureBodySchema.parse({ token: 'tkn_test_abc', suscripcion: { acepta: true } });
+  assert.deepEqual(leido.suscripcion, { acepta: true });
+  // Sin la casilla sigue sin valer.
+  assert.equal(captureBodySchema.safeParse({ token: 'tkn_test_abc', suscripcion: {} }).success, false);
+
+  const payment = { ...pagoOferta(), user: { email: 'ana@gmail.com', firstName: 'Ana', lastName: 'Pérez' } };
+  await servicio.prepararTarjeta({ payment, token: 'tkn_test_abc', suscripcion: leido.suscripcion });
+  assert.equal(culqi.ultimoCliente.nombre, 'Ana');
+  assert.equal(culqi.ultimoCliente.apellido, 'Pérez');
+  assert.equal(db.suscripciones.length, 1);
 });
 
 test('activar crea el plan de Culqi una sola vez y deja la suscripción ACTIVA', async () => {

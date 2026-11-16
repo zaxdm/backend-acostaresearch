@@ -401,20 +401,20 @@ const uriDeAcosta = (fuente) => [`https://acostaresearch.com/fuentes/${fuente.re
  * nota al pie, con o sin campo de Zotero— sin tener que volver a interpretar
  * las marcas.
  */
-function renderizar({ norma: idNorma, idioma: idIdioma, capitulos, porClave, urisDe = uriDeAcosta }) {
+function renderizar({ norma: idNorma, idioma: idIdioma, capitulos, porClave, urisDe = uriDeAcosta, recursos }) {
   const norma = normas.normaDe(idNorma);
   const idioma = normas.idiomaDe(idIdioma).id;
   const esNota = norma.familia === 'notas';
 
   const sys = {
-    retrieveLocale: (lang) => normas.leerIdioma(lang),
+    retrieveLocale: (lang) => recursos ? (recursos.idiomas[lang] ?? false) : normas.leerIdioma(lang),
     retrieveItem: (id) => {
       const fuente = porClave.get(id);
       return fuente ? comoCsl(fuente) : undefined;
     },
   };
 
-  const estilo = normas.leerEstilo(norma.id);
+  const estilo = recursos ? recursos.estilo : normas.leerEstilo(norma.id);
   const motor = new CSL.Engine(sys, estilo, idioma, true);
   motor.setOutputFormat('html');
 

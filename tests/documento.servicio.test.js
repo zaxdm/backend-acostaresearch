@@ -100,6 +100,17 @@ test('recién subido se descarga tal cual, aunque la norma sea de notas al pie',
   assert.match(guardado.nombreArchivo, /^mi-tesis-guardado-\d{4}-\d{2}-\d{2}\.docx$/);
 });
 
+test('el rechazo de notas al pie conserva su clase al volver del worker', async () => {
+  await servicio.subir({ userId: 'u1', productCode: 'METODO', buffer: docx(['Una idea.']), nombre: 'tesis.docx' });
+  disco.set('p1:citas', { 1: 'Una idea [AR11111111].' });
+  proyecto.estiloCitas = 'chicago-notes-bibliography';
+  await assert.rejects(servicio.armar('u1', 'METODO'), (error) => {
+    assert.ok(error instanceof documento.NormaConNotas);
+    assert.match(error.message, /notas al pie/);
+    return true;
+  });
+});
+
 test('subir, leer, citar con rechazos, y descargar con la cita puesta', async () => {
   const subido = await servicio.subir({
     userId: 'u1',

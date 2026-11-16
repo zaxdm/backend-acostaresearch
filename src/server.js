@@ -9,6 +9,7 @@ const { avisarAlProgramador } = require('./lib/notify');
 const comprobarBase = require('./lib/comprobarBase');
 const { INTERVALO_MS, crearVigia } = require('./lib/vigiaBase');
 const { vigilarBloqueos } = require('./lib/vigiaBloqueo');
+const wordPool = require('./lib/wordPool');
 const ventasService = require('./modules/ventas/ventas.service');
 const paymentService = require('./modules/payments/payment.service');
 const avisosService = require('./modules/avisos/avisos.service');
@@ -166,6 +167,7 @@ async function bootstrap() {
     clearInterval(boletas);
     clearInterval(declaracion);
     server.close(async () => {
+      await wordPool.cerrar();
       await prisma.$disconnect();
       logger.info('Servidor cerrado correctamente');
       process.exit(0);

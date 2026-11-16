@@ -33,6 +33,8 @@ const descarga = require('./project.descarga');
 const referenceService = require('../references/reference.service');
 const { enSerie } = require('../../shared/utils/enSerie');
 const logger = require('../../config/logger');
+const wordPool = require('../../lib/wordPool');
+const { partirCitado } = require('./word.generacion');
 
 /** Caracteres de texto por cada respuesta de `ver`: lo que cabe holgado en una llamada del conector. */
 const POR_TANDA = 24000;
@@ -780,69 +782,6 @@ async function humanizarEnSuTurno(userId, productCode, cambios, deshacer) {
   };
 }
 
-/**
- * Las citas, con los números de párrafo del Word ya humanizado.
- *
- * Partir un párrafo en dos corre un puesto todos los de detrás. Y las marcas del
- * párrafo partido se reparten entre sus partes por caracteres visibles: una
- * marca pegada al final de la primera parte se queda en la primera.
- */
-function recolocarCitas(citados, partes, reescritos) {
-  const partidos = Object.keys(partes)
-    .map(Number)
-    .filter((id) => partes[id] > 1)
-    .sort((a, b) => a - b);
-  const corrimiento = (id) => partidos.filter((x) => x < id).reduce((suma, x) => suma + partes[x] - 1, 0);
-
-  const nuevos = {};
-  for (const [id, texto] of Object.entries(citados)) {
-    const n = Number(id);
-    const destino = n + corrimiento(n);
-    if (!(partes[n] > 1)) {
-      nuevos[destino] = texto;
-      continue;
-    }
-    const largos = reescritura.partesDe(reescritos[n].texto).map((parte) => documento.esqueleto(parte).length);
-    partirCitado(texto, largos).forEach((trozo, i) => {
-      if (contarMarcas(trozo) + contarFaltas(trozo) > 0) nuevos[destino + i] = trozo;
-    });
-  }
-  return nuevos;
-}
-
-const MARCA_AQUI = /\[AR[0-9A-F]{8}(?::[^\]\n]{1,40})?\]|\[FALTA FUENTE\]/iy;
-
-/** Un párrafo con marcas, en trozos de `largos` caracteres visibles cada uno. */
-function partirCitado(texto, largos) {
-  const trozos = [];
-  let actual = '';
-  let cuenta = 0;
-  let i = 0;
-
-  while (i < texto.length) {
-    MARCA_AQUI.lastIndex = i;
-    const marca = MARCA_AQUI.exec(texto);
-    if (marca) {
-      actual += marca[0];
-      i += marca[0].length;
-      continue;
-    }
-    const caracter = String.fromCodePoint(texto.codePointAt(i));
-    if (!/\s/.test(caracter)) {
-      if (trozos.length < largos.length - 1 && cuenta >= largos[trozos.length]) {
-        trozos.push(actual.trim());
-        actual = '';
-        cuenta = 0;
-      }
-      cuenta += 1;
-    }
-    actual += caracter;
-    i += caracter.length;
-  }
-  trozos.push(actual.trim());
-  return trozos;
-}
-
 /** «Tesis final (v3).docx» → «tesis-final-v3-con-referencias-2026-09-14.docx». */
 function nombreCitado(nombre, sufijo = 'con-referencias') {
   const base = String(nombre ?? 'documento')
@@ -869,43 +808,28 @@ async function armar(userId, productCode) {
   const { proyecto } = cargado;
   const ficha = await almacen.leerFichaDeDocumento(proyecto.id);
   const reescritos = await almacen.leerReescritosDeDocumento(proyecto.id);
-  let citados = await almacen.leerCitasDeDocumento(proyecto.id);
-  let { buffer } = cargado;
-  let humanizados = 0;
-
-  if (Object.keys(reescritos).length > 0) {
-    const hecho = reescritura.reescribir(buffer, reescritos);
-    buffer = hecho.buffer;
-    humanizados = Object.keys(hecho.partes).length;
-    citados = recolocarCitas(citados, hecho.partes, reescritos);
-  }
-
-  // Sin citas no pasa por la norma: el panel lo deja bajar desde que se sube,
-  // como la copia guardada de su proyecto, aunque la norma elegida sea de notas.
-  if (Object.keys(citados).length === 0) {
-    return {
-      buffer,
-      parrafos: 0,
-      citas: 0,
-      referencias: 0,
-      faltas: 0,
-      perdidas: 0,
-      humanizados,
-      nombreArchivo: nombreCitado(ficha?.nombre, humanizados > 0 ? 'revisado' : 'guardado'),
-    };
-  }
-
+  const citados = await almacen.leerCitasDeDocumento(proyecto.id);
   const claves = [...new Set(Object.values(citados).flatMap((t) => citas.clavesDe(t)))];
   const fuentes = claves.length > 0 ? await referenceService.porClaves(claves, userId) : [];
+  const recursos = Object.keys(citados).length > 0 ? normas.recursosDe(proyecto.estiloCitas) : null;
 
-  const hecho = documento.citar(buffer, {
-    citados,
-    norma: proyecto.estiloCitas,
-    idioma: proyecto.idiomaCitas,
-    porClave: new Map(fuentes.map((f) => [f.ref, f])),
-  });
-
-  return { ...hecho, humanizados, nombreArchivo: nombreCitado(ficha?.nombre) };
+  let hecho;
+  try {
+    hecho = await wordPool.ejecutar('documento', {
+      buffer: cargado.buffer, reescritos, citados, fuentes,
+      estiloCitas: proyecto.estiloCitas, idiomaCitas: proyecto.idiomaCitas, recursos,
+    });
+  } catch (error) {
+    // Las rutas distinguen esta clase con instanceof, también al volver del worker.
+    const clase = { NormaConNotas: documento.NormaConNotas, DocumentoNoValido: documento.DocumentoNoValido }[error.name];
+    if (clase) Object.setPrototypeOf(error, clase.prototype);
+    throw error;
+  }
+  const { tieneCitas, ...resultado } = hecho;
+  return {
+    ...resultado,
+    nombreArchivo: nombreCitado(ficha?.nombre, tieneCitas ? 'con-referencias' : hecho.humanizados > 0 ? 'revisado' : 'guardado'),
+  };
 }
 
 /** El enlace para descargarlo desde la conversación. Null si no subió ninguno. */

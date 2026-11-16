@@ -87,14 +87,16 @@ sustituir('../src/modules/zotero/biblioteca.repository', {
   deUsuario: async () => estado.cuenta,
 });
 
-// El motor de verdad, con una puerta para hacerlo fallar a propósito.
-const cslReal = require('../src/modules/projects/project.csl');
-sustituir('../src/modules/projects/project.csl', {
-  ...cslReal,
-  renderizar: (...argumentos) => {
-    if (estado.cslRompe) throw new Error('una ficha que citeproc no sabe leer');
-    return cslReal.renderizar(...argumentos);
-  },
+sustituir('../src/modules/mendeley/mendeley.repository', { deUsuario: async () => null });
+
+// El fallo viaja como datos: un mock de require.cache no cruza al worker.
+const normasReales = require('../src/modules/projects/project.normas');
+sustituir('../src/modules/projects/project.normas', {
+  ...normasReales,
+  recursosDe: (id) => ({
+    ...normasReales.recursosDe(id),
+    ...(estado.cslRompe ? { estilo: 'un estilo CSL que citeproc no sabe leer' } : {}),
+  }),
 });
 
 const projectService = require('../src/modules/projects/project.service');

@@ -21,11 +21,10 @@ const documento = require('./project.docx');
 const env = require('../../config/env');
 const normas = require('./project.normas');
 const paises = require('./project.pais');
-const csl = require('./project.csl');
+const wordPool = require('../../lib/wordPool');
 const zoteroCampos = require('./project.zotero-campos');
 const descarga = require('./project.descarga');
 const zoteroRepository = require('../zotero/biblioteca.repository');
-const mendeleyCampos = require('./project.mendeley-campos');
 const mendeleyRepository = require('../mendeley/mendeley.repository');
 const citas = require('./project.citas');
 const bibtex = require('./project.bibtex');
@@ -916,8 +915,6 @@ async function armarWord(userId, productCode) {
    */
   const claves = [...new Set(capitulos.flatMap((c) => citas.clavesDe(c.texto)))];
   const fuentes = await referenceService.porClaves(claves, userId);
-  const porClave = new Map(fuentes.map((f) => [f.ref, f]));
-
   // Los estilos de su facultad, si los subió. Sin ellos sale el formato de
   // tesis por defecto, que es lo que había hasta ahora.
   const estilos = await almacen.leerPlantilla(proyecto.id).catch(() => null);
@@ -927,32 +924,21 @@ async function armarWord(userId, productCode) {
   // Numeración, encabezado, pie y portada, si la plantilla los traía.
   const partes = estilos ? await almacen.leerPartes(proyecto.id).catch(() => null) : null;
 
-  /**
-   * La norma del proyecto, y el APA de siempre si no se puede aplicar.
-   *
-   * Lo segundo no es un adorno: citeproc lee un archivo de estilo, y una ficha
-   * rara puede hacerle lanzar. Una norma que falla no puede dejar a nadie sin su
-   * documento, así que se anota y el Word sale en APA, como salía antes.
-   */
-  let armado;
+  // Toda consulta y lectura termina aquí. Al pool sólo cruzan datos clonables.
+  const cuenta = await zoteroRepository.deUsuario(userId).catch(() => null);
+  const mendeley = cuenta ? null : await mendeleyRepository.deUsuario(userId).catch(() => null);
+  let recursos;
   try {
-    armado = await armarEnLaNorma({ userId, proyecto, capitulos, porClave });
+    recursos = normas.recursosDe(proyecto.estiloCitas);
   } catch (error) {
-    logger.error(
-      { err: error, userId, productCode, norma: proyecto.estiloCitas },
-      'No se pudo aplicar la norma de citas; el Word sale en APA de respaldo',
-    );
-    armado = armarEnApa(capitulos, porClave);
+    // La ausencia del estilo conserva el mismo APA de respaldo que citeproc.
+    recursos = { error: error.message };
   }
-
-  if (armado.perdidas.length > 0) {
-    // No se corta la descarga: el tesista tiene derecho a su documento aunque
-    // una cita esté mal. Pero queda anotado, y en el Word se ve.
-    logger.warn(
-      { userId, productCode, perdidas: armado.perdidas },
-      'Citas del Word que no corresponden a ninguna fuente',
-    );
-  }
+  const uris = fuentes.map((fuente) => [fuente.ref,
+    zoteroCampos.urisDeZotero(fuente, { cuenta, bibliotecaDeLaCasa: env.zoteroLibrary })]);
+  const preferenciasZotero = cuenta ? zoteroCampos.preferencias({
+    norma: proyecto.estiloCitas, idioma: proyecto.idiomaCitas,
+  }) : null;
 
   /**
    * Quién firma la portada: el autor del proyecto y, si no se ha dicho, el
@@ -960,7 +946,7 @@ async function armarWord(userId, productCode) {
    */
   const autor = proyecto.autor?.trim() || nombre;
 
-  const buffer = await documento.armar({
+  const opciones = {
     tema: proyecto.tema,
     carrera: proyecto.carrera,
     universidad: proyecto.universidad,
@@ -980,96 +966,29 @@ async function armarWord(userId, productCode) {
     // sin portada de tesis ni índice. El empírico salía con «Tesis» y «Autor:»
     // (E2E del 7-nov-2026).
     ...(perfil.tipo === 'articulo' ? { manuscrito: true } : {}),
-    ...armado.documento,
+  };
+  const { buffer, usadas, perdidas, norma, normaError } = await wordPool.ejecutar('proyecto', {
+    capitulos, fuentes, estiloCitas: proyecto.estiloCitas, idiomaCitas: proyecto.idiomaCitas,
+    recursos, uris, preferenciasZotero, mendeley: mendeley ? { profileId: mendeley.profileId } : null,
+    opciones,
   });
+  if (normaError) {
+    logger.error(
+      { err: Object.assign(new Error(normaError.message), normaError), userId, productCode, norma: proyecto.estiloCitas },
+      'No se pudo aplicar la norma de citas; el Word sale en APA de respaldo',
+    );
+  }
+  if (perdidas.length > 0) {
+    logger.warn({ userId, productCode, perdidas }, 'Citas del Word que no corresponden a ninguna fuente');
+  }
 
   return {
     buffer,
     nombreArchivo: documento.nombreDeArchivo(proyecto.tema, perfil.archivo ?? (perfil.tipo === 'informe' ? 'informe' : 'tesis')),
     capitulos: capitulos.length,
-    referencias: armado.usadas,
-    citasPerdidas: armado.perdidas,
-    norma: armado.norma,
-  };
-}
-
-/**
- * Citas y referencias en la norma del proyecto.
- *
- * Los campos de Zotero solo si conectó el suyo; si no, las citas de Mendeley
- * Cite si conectó Mendeley. Si esa consulta falla, el Word sale igual y sin
- * campos: no son lo que se descarga, son un extra encima.
- */
-async function armarEnLaNorma({ userId, proyecto, capitulos, porClave }) {
-  const cuenta = await zoteroRepository.deUsuario(userId).catch(() => null);
-
-  const r = csl.renderizar({
-    norma: proyecto.estiloCitas,
-    idioma: proyecto.idiomaCitas,
-    capitulos,
-    porClave,
-    urisDe: (fuente) =>
-      zoteroCampos.urisDeZotero(fuente, { cuenta, bibliotecaDeLaCasa: env.zoteroLibrary }),
-  });
-
-  let zotero = null;
-  if (cuenta) {
-    const codigos = new Map([...r.citas].map(([numero, cita]) => [String(numero), cita.codigo]));
-    if (r.bibliografia) codigos.set('BIB', r.bibliografia.codigo);
-    zotero = {
-      preferencias: zoteroCampos.preferencias({ norma: r.norma.id, idioma: r.idioma }),
-      codigos,
-    };
-  } else {
-    // Sin Zotero pero con Mendeley: las citas salen como las de Mendeley Cite.
-    const mendeley = await mendeleyRepository.deUsuario(userId).catch(() => null);
-    if (mendeley) {
-      zotero = {
-        mendeley: {
-          citas: mendeleyCampos.datosDeCitas(r.citas, porClave, { comoCsl: csl.comoCsl, perfil: mendeley.profileId }),
-          estilo: mendeleyCampos.estiloDe(r.norma.id),
-        },
-      };
-    }
-  }
-
-  return {
-    documento: {
-      capitulos: capitulos.map((capitulo, i) => ({ ...capitulo, texto: r.textos[i] })),
-      citas: r.citas,
-      referencias: r.bibliografia ?? [],
-      zotero,
-      fuentes: [...r.usadas.values()],
-      norma: r.norma.id,
-    },
-    usadas: r.usadas.size,
-    perdidas: r.perdidas,
-    norma: r.norma.id,
-  };
-}
-
-/** El respaldo: APA escrita a mano, como salía el Word antes de poder elegir norma. */
-function armarEnApa(capitulos, porClave) {
-  const usadas = new Map();
-  const perdidas = new Set();
-
-  const resueltos = capitulos.map((capitulo) => {
-    const resuelto = citas.resolver(capitulo.texto, porClave);
-    for (const [clave, fuente] of resuelto.usadas) usadas.set(clave, fuente);
-    for (const clave of resuelto.perdidas) perdidas.add(clave);
-    return { ...capitulo, texto: resuelto.texto };
-  });
-
-  return {
-    documento: {
-      capitulos: resueltos,
-      referencias: citas.bibliografiaConCursivas([...usadas.values()]),
-      fuentes: [...usadas.values()],
-      norma: 'apa',
-    },
-    usadas: usadas.size,
-    perdidas: [...perdidas],
-    norma: 'apa',
+    referencias: usadas,
+    citasPerdidas: perdidas,
+    norma,
   };
 }
 

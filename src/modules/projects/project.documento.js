@@ -851,7 +851,7 @@ function estiloDeTitulo1(nombres) {
  * que ya no coincide con el Word —porque el tesista subió otra versión— se
  * salta en vez de poner la cita en otra frase.
  */
-function citar(buffer, { citados, norma, idioma, porClave }) {
+function citar(buffer, { citados, norma, idioma, porClave, recursos }) {
   const elegida = normas.normaDe(norma);
   if (elegida.familia === 'notas') {
     throw new NormaConNotas(
@@ -875,6 +875,7 @@ function citar(buffer, { citados, norma, idioma, porClave }) {
   const r = csl.renderizar({
     norma: elegida.id,
     idioma,
+    recursos,
     capitulos: marcados.map(({ texto }) => ({ texto })),
     porClave,
   });

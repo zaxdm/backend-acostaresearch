@@ -127,6 +127,14 @@ function leerIdioma(id) {
   return leerUnaVez(path.join(CARPETA, 'idiomas', `locales-${id}.xml`));
 }
 
+/** Textos planos para citeproc: el worker no lee archivos de estilos ni idiomas. */
+function recursosDe(id) {
+  return {
+    estilo: leerEstilo(id),
+    idiomas: Object.fromEntries(IDIOMAS.map(({ id: idioma }) => [idioma, leerIdioma(idioma)])),
+  };
+}
+
 module.exports = {
   NORMAS,
   IDIOMAS,
@@ -138,4 +146,5 @@ module.exports = {
   idiomaDe,
   leerEstilo,
   leerIdioma,
+  recursosDe,
 };

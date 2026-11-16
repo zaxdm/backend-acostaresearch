@@ -62,11 +62,33 @@ test('dos comprobaciones fallidas seguidas avisan, con el código y a prioridad 
   assert.equal(avisos[0].prioridad, 5);
 });
 
-test('un corte largo avisa una vez, no con cada comprobación', async () => {
+test('un corte de menos de diez minutos avisa una vez, no con cada comprobación', async () => {
   const { base, avisos, latido } = montaje();
   base.fallo = P1001;
   for (let t = 0; t < 10 * 60_000; t += 30_000) await latido(t);
   assert.equal(avisos.length, 1);
+});
+
+test('un corte largo recuerda cada diez minutos que sigue caída', async () => {
+  const { base, avisos, latido } = montaje();
+  base.fallo = P1001;
+  // 40 minutos caída, como el 16-nov: aviso a los 30 s y recordatorios a los
+  // 10 min 30 s, 20 min 30 s y 30 min 30 s.
+  for (let t = 0; t < 40 * 60_000; t += 30_000) await latido(t);
+
+  assert.equal(avisos.length, 4);
+  assert.equal(avisos[0].titulo, 'La base de datos no responde');
+  for (const recordatorio of avisos.slice(1)) {
+    assert.equal(recordatorio.titulo, 'La base de datos sigue sin responder');
+    assert.equal(recordatorio.prioridad, 5);
+  }
+  assert.match(avisos[3].mensaje, /Lleva 31 min caída \(P1001\)/);
+
+  base.fallo = null;
+  await latido(40 * 60_000);
+  assert.equal(avisos.length, 5);
+  assert.equal(avisos[4].titulo, 'La base de datos volvió');
+  assert.match(avisos[4].mensaje, /40 min/);
 });
 
 test('cuando la base vuelve se avisa, y un corte nuevo vuelve a sonar', async () => {

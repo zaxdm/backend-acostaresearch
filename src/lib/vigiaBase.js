@@ -17,9 +17,13 @@ const { codigoDe } = require('./dbAlert');
  * base, con sus cinco conexiones, le llega como mucho una consulta más cada
  * treinta segundos.
  *
- * Suena una vez por corte, no una por comprobación fallida, y avisa también
+ * Suena al empezar el corte, no con cada comprobación fallida, y avisa también
  * cuando la base vuelve. Un fallo suelto no avisa: la red parpadea y se recupera
  * sola, y un aviso que suena por eso se silencia a la semana.
+ *
+ * Si el corte se alarga, recuerda cada diez minutos que sigue caída. El 16-nov
+ * la base estuvo 40 minutos sin responder (disco lleno) y el único aviso, el del
+ * principio, no se oyó: nadie se enteró hasta que escribió un alumno.
  *
  * La comprobación y el aviso entran por parámetro para probarlo sin base, sin
  * red y sin ntfy.
@@ -39,6 +43,9 @@ const FALLOS_PARA_AVISAR = 2;
  */
 const TIEMPO_LIMITE_MS = 10 * 1000;
 
+/** Cada cuánto se recuerda que la base sigue caída. */
+const REPETIR_MS = 10 * 60 * 1000;
+
 function duracion(ms) {
   const segundos = Math.round(ms / 1000);
   return segundos < 90 ? `${segundos} s` : `${Math.round(segundos / 60)} min`;
@@ -57,10 +64,12 @@ function crearVigia({
   avisar,
   fallosParaAvisar = FALLOS_PARA_AVISAR,
   tiempoLimiteMs = TIEMPO_LIMITE_MS,
+  repetirMs = REPETIR_MS,
 }) {
   let fallosSeguidos = 0;
   let caidaDesde = null;
   let avisado = false;
+  let ultimoAviso = null;
 
   return async function latido(ahora = Date.now()) {
     try {
@@ -68,10 +77,26 @@ function crearVigia({
     } catch (error) {
       fallosSeguidos += 1;
       caidaDesde ??= ahora;
-      if (avisado || fallosSeguidos < fallosParaAvisar) return;
+      const codigo = codigoDe(error) ?? 'sin respuesta';
+
+      if (avisado) {
+        if (ahora - ultimoAviso < repetirMs) return;
+        ultimoAviso = ahora;
+        logger.error({ err: error, fallosSeguidos }, 'La base de datos sigue sin responder');
+        avisar({
+          titulo: 'La base de datos sigue sin responder',
+          mensaje:
+            `Lleva ${duracion(ahora - caidaDesde)} caída (${codigo}). ` +
+            'La web sigue en la pantalla de mantenimiento. Mira primero: df -h /',
+          etiquetas: ['rotating_light'],
+          prioridad: 5,
+        });
+        return;
+      }
+      if (fallosSeguidos < fallosParaAvisar) return;
 
       avisado = true;
-      const codigo = codigoDe(error) ?? 'sin respuesta';
+      ultimoAviso = ahora;
       logger.error({ err: error, fallosSeguidos }, 'La base de datos no responde');
       avisar({
         titulo: 'La base de datos no responde',
@@ -99,7 +124,8 @@ function crearVigia({
     fallosSeguidos = 0;
     caidaDesde = null;
     avisado = false;
+    ultimoAviso = null;
   };
 }
 
-module.exports = { INTERVALO_MS, FALLOS_PARA_AVISAR, TIEMPO_LIMITE_MS, crearVigia };
+module.exports = { INTERVALO_MS, FALLOS_PARA_AVISAR, TIEMPO_LIMITE_MS, REPETIR_MS, crearVigia };

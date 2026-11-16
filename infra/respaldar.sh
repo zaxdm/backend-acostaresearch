@@ -13,6 +13,8 @@
 #                                            de un cobro: si un comprador
 #                                            reclama, esto es lo que hay que
 #                                            enseñar.
+#   · /var/lib/acosta-cuentas (copia)        Cuentas: deudas, asesorías y pagos
+#                                            del negocio (desde el 11-nov-2026).
 #   · /opt/acostaresearch/app/.env           los secretos. Sin él hay que
 #                                            reconstruir claves y credenciales a
 #                                            mano, y rotar las sesiones de todos.
@@ -34,7 +36,9 @@ DESTINO=${DESTINO:-/var/backups/acostaresearch}
 ENV_APP=/opt/acostaresearch/app/.env
 FECHA=$(date +%F)
 ARCHIVO="$DESTINO/acostaresearch-$FECHA.tar.gz"
-DIAS=14
+# 3 días aquí basta: la Storage Box guarda 14 diarios y 6 mensuales (16-nov-2026,
+# con 14 copias de ~800 MB el disco se llenó y el respaldo falló cinco noches).
+DIAS=3
 
 mkdir -p "$DESTINO"
 chmod 700 "$DESTINO"
@@ -115,12 +119,30 @@ fi
 
 gzip -9 "$VOLCADO"
 
+# ── Cuentas (cuentas.acostaresearch.com) ───────────────────────────────────
+# Sistema aparte, con su propia SQLite: deudas, asesorías y pagos del negocio.
+# VACUUM INTO saca una foto coherente aunque el servicio esté escribiendo.
+# Si falla se avisa, pero el respaldo de la plataforma sigue igual.
+CUENTAS=/var/lib/acosta-cuentas
+EXTRA_CUENTAS=()
+if [ -f "$CUENTAS/cuentas.db" ]; then
+  mkdir -p "$TRABAJO/acosta-cuentas"
+  if node -e 'new (require("node:sqlite").DatabaseSync)(process.argv[1],{readOnly:true}).exec("VACUUM INTO \x27"+process.argv[2]+"\x27")' \
+       "$CUENTAS/cuentas.db" "$TRABAJO/acosta-cuentas/cuentas.db" 2>/dev/null; then
+    [ -d "$CUENTAS/comprobantes" ] && cp -a "$CUENTAS/comprobantes" "$TRABAJO/acosta-cuentas/"
+    EXTRA_CUENTAS=(-C "$TRABAJO" acosta-cuentas)
+  else
+    echo "AVISO: no se pudo copiar la base de Cuentas; el resto del respaldo sigue" >&2
+  fi
+fi
+
 # ── Empaquetado ────────────────────────────────────────────────────────────
 
 tar -czf "$ARCHIVO" \
   -C /var/lib acostaresearch \
   -C /opt/acostaresearch/app .env \
-  -C "$TRABAJO" base-de-datos.sql.gz 2>/dev/null
+  -C "$TRABAJO" base-de-datos.sql.gz \
+  "${EXTRA_CUENTAS[@]}" 2>/dev/null
 
 # Contiene secretos y la base entera: solo root puede leerlo.
 chmod 600 "$ARCHIVO"
@@ -134,7 +156,9 @@ if ! tar -tzf "$ARCHIVO" > /dev/null 2>&1; then
 fi
 
 # Y que la base de datos está dentro de verdad, no solo que el tar se abre.
-if ! tar -tzf "$ARCHIVO" | grep -q 'base-de-datos.sql.gz'; then
+# grep SIN -q: con -q sale al encontrarla, tar recibe SIGPIPE y con pipefail
+# parecía que faltaba la base (falló del 12 al 16-nov, desde que Cuentas va detrás).
+if ! tar -tzf "$ARCHIVO" | grep 'base-de-datos.sql.gz' > /dev/null; then
   echo "ERROR: el respaldo no lleva la base de datos, no se rota nada" >&2
   rm -f "$ARCHIVO"
   exit 1
@@ -142,4 +166,4 @@ fi
 
 find "$DESTINO" -name 'acostaresearch-*.tar.gz' -mtime +$DIAS -delete
 
-echo "$(date +'%F %T')  ok  $(basename "$ARCHIVO")  $(du -h "$ARCHIVO" | cut -f1)  ($TABLAS tablas, $FILAS inserciones)"
+echo "$(date +'%F %T')  ok  $(basename "$ARCHIVO")  $(du -h "$ARCHIVO" | cut -f1)  ($TABLAS tablas, $FILAS inserciones${EXTRA_CUENTAS:+, con Cuentas})"

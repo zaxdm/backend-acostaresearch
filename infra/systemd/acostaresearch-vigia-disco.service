@@ -1,0 +1,6 @@
+[Unit]
+Description=Vigía del disco: avisa por ntfy si el disco pasa del 85 %
+
+[Service]
+Type=oneshot
+ExecStart=/opt/acostaresearch/vigia-disco.sh

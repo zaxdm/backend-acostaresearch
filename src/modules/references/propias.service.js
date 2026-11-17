@@ -519,7 +519,9 @@ const propiasService = {
         source: fuente.fuente,
         url: fuente.url,
         abstract: fuente.resumen,
-        itemType: TIPOS_A_MANO[fuente.tipo] ?? TIPOS_A_MANO.otro,
+        itemType: fuente.tipo === 'tesis' && fuente.grado
+          ? ({ pregrado: 'bachelorThesis', maestria: 'masterThesis', doctorado: 'doctoralThesis' }[fuente.grado] ?? TIPOS_A_MANO.tesis)
+          : TIPOS_A_MANO[fuente.tipo] ?? TIPOS_A_MANO.otro,
       });
       if (!fila || vistas.has(fila.sourceRef)) continue;
       vistas.add(fila.sourceRef);
@@ -752,7 +754,10 @@ const propiasService = {
       authors: recortar(String(ficha.autores ?? '').replace(/\s*;\s*/g, '; '), 500) ?? '',
       year: ficha.anio ?? null,
       source: recortar(ficha.fuente, 300),
-      itemType: TIPOS_A_MANO[ficha.tipo] ?? fila.itemType,
+      // Corregir solo el título de una tesis no debe borrar su grado.
+      itemType: ficha.tipo === 'tesis' && /thesis$/i.test(fila.itemType)
+        ? fila.itemType
+        : TIPOS_A_MANO[ficha.tipo] ?? fila.itemType,
     };
     datos.busqueda = normalizar(
       [datos.title, datos.authors, datos.source, datos.year, fila.abstract, fila.tags]

@@ -8,12 +8,13 @@ const asyncHandler = require('../../shared/http/asyncHandler');
 const { ok } = require('../../shared/http/apiResponse');
 const { z } = require('zod');
 const validate = require('../../middlewares/validate');
-const { scieloLimiter, openalexLimiter, externasLimiter } = require('../../middlewares/rateLimit');
+const { scieloLimiter, openalexLimiter, externasLimiter, aliciaLimiter } = require('../../middlewares/rateLimit');
 const { AppError } = require('../../shared/errors/AppError');
 const { ERROR_CODES } = require('../../config/constants');
 const openalex = require('./openalex.client');
 const { busquedaDeConceptos } = require('../scopus/scopus.cuentas');
 const propiasService = require('./propias.service');
+const identificador = require('./identificar.service');
 const externas = require('../externas');
 
 const router = Router();
@@ -99,6 +100,21 @@ router.post(
  * con su tope cabe en el parser normal aunque vengan varias.
  */
 const texto = (largo) => z.string().trim().max(largo).optional().default('');
+/** Solo datos de carátula: ni bytes, ni texto completo, ni nombre del archivo. */
+router.post(
+  '/identificar',
+  aliciaLimiter,
+  validate({ body: z.object({
+    fuentes: z.array(z.object({
+      titulo: z.string().trim().min(15).max(500),
+      autores: texto(500),
+      anio: z.number().int().min(1500).max(2100).nullish(),
+      tipo: z.enum(['tesis', 'libro', 'informe', 'articulo', 'otro']).default('tesis'),
+    }).strict()).min(1).max(propiasService.MAXIMO_A_MANO),
+  }).strict() }),
+  asyncHandler(async (req, res) => ok(res, { fichas: await identificador.identificar(req.body.fuentes) })),
+);
+
 const aManoSchema = z.object({
   fuentes: z
     .array(
@@ -112,6 +128,7 @@ const aManoSchema = z.object({
         anio: z.coerce.number().int().min(1500).max(2100).nullish(),
         fuente: texto(300),
         tipo: z.enum(Object.keys(propiasService.TIPOS_A_MANO)).default('otro'),
+        grado: z.enum(['', 'pregrado', 'maestria', 'doctorado']).optional(),
         url: texto(500),
         resumen: texto(4000),
       }),

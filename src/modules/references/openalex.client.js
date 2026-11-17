@@ -590,6 +590,19 @@ async function consultar(params) {
   return datos?.results ?? [];
 }
 
+/** Fichas por título, incluidos libros e informes (el buscador de artículos los excluye). */
+async function buscarPorTitulo(titulo) {
+  const obras = await consultar({
+    search: titulo,
+    per_page: '6',
+    select: 'id,title,authorships,publication_year,primary_location,type',
+  });
+  return obras.filter((w) => w.title).map((w) => ({
+    ...comoFicha(w),
+    url: w.primary_location?.landing_page_url ?? null,
+  }));
+}
+
 /**
  * A quién cita cada una de estas fuentes.
  *
@@ -1125,6 +1138,7 @@ const soloElId = (id) => String(id).replace(/^https?:\/\/openalex\.org\//i, '');
 
 module.exports = {
   buscar,
+  buscarPorTitulo,
   buscarEnScielo,
   buscarEnElResto,
   POR_PAGINA_SCIELO,

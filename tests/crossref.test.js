@@ -209,10 +209,7 @@ test('buscar devuelve fichas con la misma forma que las de OpenAlex', async (t) 
   const url = new URL(llamadas[0]);
   assert.equal(url.searchParams.get('query.bibliographic'), 'clima organizacional');
   assert.equal(url.searchParams.get('filter'), 'type:journal-article,from-pub-date:2020');
-  assert.ok(
-    !url.searchParams.get('select').split(',').includes('language'),
-    'Crossref rechaza con 400 un select de «language»',
-  );
+  assert.equal(url.searchParams.has('select'), false, 'journal-issue requiere la obra completa');
 });
 
 test('si Crossref no contesta al buscar, se dice caída', async (t) => {

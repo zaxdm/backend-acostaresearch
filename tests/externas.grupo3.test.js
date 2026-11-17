@@ -133,7 +133,7 @@ const obraCrossref = {
   volume: '3',
 };
 
-test('Crossref: palabras sueltas, rows/offset, años, select y mailto', async (t) => {
+test('Crossref: palabras sueltas, rows/offset, años, ficha completa y mailto', async (t) => {
   const pedidas = fetchFalso(t, { message: { 'total-results': 321, items: [obraCrossref] } });
   const { resultados, total, caida } = await crossref.buscar({
     consulta: '("clima") AND ("desempeño")',
@@ -153,7 +153,7 @@ test('Crossref: palabras sueltas, rows/offset, años, select y mailto', async (t
   assert.equal(url.searchParams.get('offset'), '25');
   assert.equal(url.searchParams.get('filter'), 'from-pub-date:2019,until-pub-date:2023');
   assert.ok(url.searchParams.get('mailto'));
-  assert.match(url.searchParams.get('select'), /is-referenced-by-count/);
+  assert.equal(url.searchParams.has('select'), false, 'journal-issue requiere la obra completa');
 
   const [r] = resultados;
   assert.equal(r.id, '10.5555/Tesis.1');

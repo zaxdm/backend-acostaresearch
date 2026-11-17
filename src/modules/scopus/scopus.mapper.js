@@ -1,6 +1,7 @@
 'use strict';
 
 const { normalizar } = require('../references/zotero.mapper');
+const { anioAlCompletar } = require('../references/crossref.anio');
 
 /**
  * De una ficha de la API de Scopus a lo que entiende esta casa.
@@ -258,7 +259,10 @@ function estaCompleta(ficha) {
  *
  * El RESUMEN lo da OpenAlex, que es el único de los tres que lo trae aquí.
  *
- * Todo lo demás manda SCOPUS y solo se rellena si falta: el título, la revista
+ * El AÑO del número lo manda Crossref si hay volumen/número; Scopus puede
+ * conservar el año anterior de publicación en línea.
+ *
+ * En lo demás manda SCOPUS y solo se rellena si falta: el título, la revista
  * y el tipo de documento son lo que el tesista vio al marcar la casilla, y
  * cambiárselos por detrás por los de otro catálogo haría que la ficha guardada
  * no fuera la que eligió.
@@ -285,6 +289,7 @@ function completar(fila, { deOpenAlex = null, deCrossref = null } = {}) {
 
   return conBusqueda({
     ...fila,
+    year: anioAlCompletar(fila, deCrossref),
     authors: recortar(preferido(deCrossref?.authors, deOpenAlex?.authors, fila.authors), 500) ?? '',
     // `abstract` y `busqueda` son TEXT: no se recortan, y no hace falta.
     abstract: preferido(fila.abstract, deOpenAlex?.abstract, deCrossref?.abstract),

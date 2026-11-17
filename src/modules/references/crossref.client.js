@@ -3,6 +3,7 @@
 const env = require('../../config/env');
 const logger = require('../../config/logger');
 const { pareceAfiliacion, quitarAfiliaciones } = require('./afiliacion');
+const { anioDeCrossref, anioAlCompletar } = require('./crossref.anio');
 
 const BASE = 'https://api.crossref.org/works';
 
@@ -84,16 +85,6 @@ function autores(lista = []) {
   return quitarAfiliaciones(personas).join('; ');
 }
 
-function anio(mensaje) {
-  const partes =
-    mensaje.issued?.['date-parts']?.[0] ??
-    mensaje['published-print']?.['date-parts']?.[0] ??
-    mensaje['published-online']?.['date-parts']?.[0] ??
-    [];
-  const valor = Number(partes[0]);
-  return Number.isInteger(valor) ? valor : null;
-}
-
 /**
  * La ficha de un DOI, o nulo.
  *
@@ -137,7 +128,7 @@ async function porDoi(crudo) {
     doi,
     title: String(titulo).trim(),
     authors: autores(m.author),
-    year: anio(m),
+    year: anioDeCrossref(m),
     // `container-title` es el nombre de la revista o del libro que la contiene.
     source: (Array.isArray(m['container-title']) ? m['container-title'][0] : null) ?? null,
     volume: m.volume ? String(m.volume) : null,
@@ -151,16 +142,17 @@ async function porDoi(crudo) {
 }
 
 /**
- * Rellena los huecos de una ficha, sin pisar nada de lo que ya tenía.
+ * Rellena los huecos de una ficha; el año del número lo manda Crossref.
  *
- * Ese «sin pisar» es la regla y no un detalle: lo que ya está vino del export
- * del tesista o de su Zotero, donde alguien lo revisó, y Crossref se equivoca
- * a veces con los nombres de las revistas abreviadas. Aquí solo se completa.
+ * Los otros campos pueden venir del export del tesista, donde alguien los
+ * revisó, y Crossref se equivoca con los nombres abreviados. Las fichas de Zotero y
+ * Mendeley se conservan enteras: manda lo que el usuario revisó en su gestor.
  *
  * No se llama si no falta nada: son unos cientos de milisegundos y una petición
  * a un servicio ajeno por cada fuente.
  */
 async function completar(ficha) {
+  if (ficha.origin === 'ZOTERO' || ficha.origin === 'MENDELEY') return ficha;
   const faltan = !ficha.volume || !ficha.pages || !ficha.source;
   if (!faltan || !ficha.doi) return ficha;
 
@@ -170,17 +162,20 @@ async function completar(ficha) {
 /**
  * Junta una ficha con la de Crossref del mismo DOI.
  *
- * Por omisión solo rellena huecos, por lo dicho en `completar`. La excepción son
- * los autores de una ficha de OPENALEX: allí llegan como nombre entero y hubo
+ * Por omisión rellena huecos, salvo el año de una ficha con volumen/número:
+ * Crossref da el del número aunque OpenAlex conserve el del online first.
+ * La otra excepción son los autores de una ficha de OPENALEX: allí llegan como
+ * nombre entero y hubo
  * que adivinar el apellido, mientras que en Crossref el editor los depositó ya
  * separados. Para esas se pide `preferirSusAutores`. Una ficha de Zotero o de un
  * export no lo pide nunca: esos nombres los revisó alguien.
  */
 function unir(ficha, suyo, { preferirSusAutores = false } = {}) {
-  if (!suyo) return ficha;
+  if (!suyo || ficha.origin === 'ZOTERO' || ficha.origin === 'MENDELEY') return ficha;
 
   return {
     ...ficha,
+    year: anioAlCompletar(ficha, suyo),
     authors: preferirSusAutores ? suyo.authors || ficha.authors : ficha.authors || suyo.authors,
     source: ficha.source || suyo.source,
     volume: ficha.volume || suyo.volume,
@@ -189,20 +184,6 @@ function unir(ficha, suyo, { preferirSusAutores = false } = {}) {
     abstract: ficha.abstract || suyo.abstract,
   };
 }
-
-/** Lo que se pide de cada obra al buscar. Sin `select` vienen las referencias enteras. */
-const CAMPOS_DE_BUSQUEDA = [
-  'DOI',
-  'URL',
-  'title',
-  'author',
-  'issued',
-  'published-print',
-  'published-online',
-  'container-title',
-  'is-referenced-by-count',
-  'abstract',
-].join(',');
 
 /**
  * Buscar por tema. SOLO COMO RESPALDO DE OPENALEX.
@@ -223,7 +204,8 @@ async function buscar({ tema, desdeAnio = null, cuantas = 6 }) {
   const url = new URL(BASE);
   url.searchParams.set('query.bibliographic', tema);
   url.searchParams.set('rows', String(Math.min(Math.max(cuantas, 1), 25)));
-  url.searchParams.set('select', CAMPOS_DE_BUSQUEDA);
+  // `journal-issue` no admite `select`: se pide la obra completa para leer
+  // el año del número en esta misma petición, sin otra consulta por DOI.
 
   const filtros = ['type:journal-article'];
   if (desdeAnio) filtros.push(`from-pub-date:${desdeAnio}`);
@@ -256,7 +238,7 @@ async function buscar({ tema, desdeAnio = null, cuantas = 6 }) {
       return {
         titulo,
         autores: autores(m.author) || '(Autor no consignado)',
-        anio: anio(m),
+        anio: anioDeCrossref(m),
         revista: (Array.isArray(m['container-title']) ? m['container-title'][0] : null) ?? null,
         doi: limpiarDoi(m.DOI),
         citas: m['is-referenced-by-count'] ?? 0,

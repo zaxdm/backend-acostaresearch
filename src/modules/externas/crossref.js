@@ -14,30 +14,13 @@
  */
 
 const comun = require('./comun');
+const { anioDeCrossref } = require('../references/crossref.anio');
 
 const BASE = 'https://api.crossref.org/works';
 const NOMBRE = 'Crossref';
 
 /** Crossref no admite `offset` por encima de 10 000 (para más pide cursores). */
 const TOPE_DE_REGISTROS = 10_000;
-
-/** Sin `select` cada obra trae sus referencias enteras: decenas de KB por resultado. */
-const CAMPOS = [
-  'DOI',
-  'URL',
-  'type',
-  'title',
-  'author',
-  'issued',
-  'published-print',
-  'published-online',
-  'container-title',
-  'volume',
-  'issue',
-  'page',
-  'is-referenced-by-count',
-  'abstract',
-].join(',');
 
 /** La forma de un DOI. Sin espacios; la coma se trata aparte en `porIds`. */
 const FORMA_DEL_DOI = /^10\.\d{4,9}\/\S+$/;
@@ -98,15 +81,6 @@ function autoresDe(lista = []) {
   return nombres.join('; ') || '(Autor no consignado)';
 }
 
-function anioDe(m) {
-  const partes =
-    m.issued?.['date-parts']?.[0] ??
-    m['published-print']?.['date-parts']?.[0] ??
-    m['published-online']?.['date-parts']?.[0] ??
-    [];
-  return comun.anioDe(partes[0]);
-}
-
 function comoResultado(m) {
   const doi = comun.limpiarDoi(m?.DOI);
   if (!doi) return null;
@@ -116,7 +90,7 @@ function comoResultado(m) {
     // Los títulos traen a veces cursivas en JATS: «<i>Lima</i>».
     titulo: comun.textoLimpio(primero(m.title)) ?? '(sin título)',
     autores: autoresDe(m.author),
-    anio: anioDe(m),
+    anio: anioDeCrossref(m),
     revista: comun.textoLimpio(primero(m['container-title'])),
     // `language` no se puede pedir en `select` (Crossref responde 400).
     idioma: null,
@@ -165,7 +139,8 @@ async function buscar({ palabras, consulta, pagina = 1, porPagina = 25, desde = 
     url.searchParams.set('query.bibliographic', texto);
     url.searchParams.set('rows', String(tam));
     url.searchParams.set('offset', String(offset));
-    url.searchParams.set('select', CAMPOS);
+    // Sin `select`: Crossref no permite seleccionar `journal-issue`, que
+    // contiene el año del número. Se obtiene sin añadir otra petición.
     const filtros = [];
     if (desde) filtros.push(`from-pub-date:${desde}`);
     if (hasta) filtros.push(`until-pub-date:${hasta}`);
@@ -208,7 +183,7 @@ async function porIds(ids = []) {
       const url = new URL(BASE);
       url.searchParams.set('filter', juntos.map((d) => `doi:${d}`).join(','));
       url.searchParams.set('rows', String(juntos.length));
-      url.searchParams.set('select', CAMPOS);
+      // La ficha completa incluye `journal-issue`, no seleccionable por API.
       const res = await comun.pedir(firmar(url), { base: NOMBRE });
       if (res?.ok) obras.push(...(res.json?.message?.items ?? []));
     }

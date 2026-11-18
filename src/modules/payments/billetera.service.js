@@ -33,6 +33,7 @@ const billeteraSelect = {
   numero: true,
   instrucciones: true,
   active: true,
+  cortesia: true,
   createdAt: true,
   qrPath: true,
   updatedAt: true,
@@ -158,7 +159,7 @@ const billeteraService = {
    * comprobantes y en qué moneda quedó cada pago ya hecho. Si se eligió mal, se
    * apaga y se crea otra.
    */
-  async cambiar(id, { nombre, titular, numero, instrucciones, active }, adminId) {
+  async cambiar(id, { nombre, titular, numero, instrucciones, active, cortesia }, adminId) {
     const existe = await prisma.billetera.findUnique({ where: { id }, select: { id: true } });
     if (!existe) throw new NotFoundError('Esa billetera no existe.');
 
@@ -170,10 +171,14 @@ const billeteraService = {
         ...(numero === undefined ? {} : { numero }),
         ...(instrucciones === undefined ? {} : { instrucciones: instrucciones || null }),
         ...(active === undefined ? {} : { active }),
+        ...(cortesia === undefined ? {} : { cortesia }),
       },
       select: billeteraSelect,
     });
-    logger.warn({ billeteraId: id, adminId, active: cambiada.active }, 'Billetera de país cambiada');
+    logger.warn(
+      { billeteraId: id, adminId, active: cambiada.active, cortesia: cambiada.cortesia },
+      'Billetera de país cambiada',
+    );
     return presentar(cambiada);
   },
 

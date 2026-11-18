@@ -143,6 +143,7 @@ const cambiarBilleteraSchema = z.object({
   numero: texto('El número o la cuenta', 80).optional(),
   instrucciones: z.string().trim().max(500).optional(),
   active: z.boolean().optional(),
+  cortesia: z.boolean().optional(),
 });
 
 /** Los medios de pago de la casa que se pueden tocar desde el panel. */

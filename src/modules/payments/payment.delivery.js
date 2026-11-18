@@ -158,6 +158,13 @@ async function entregarIaIncluida(payment, tx) {
   return acostaiaPlanes.entregar({ userId: payment.userId, plan: planIa }, tx);
 }
 
+/** «Cortesía (antes US$ 46.30)», sin pisar la nota que ya tuviera el pago. */
+function notaDeCortesia(payment) {
+  const simbolo = payment.currency === 'USD' ? 'US$' : 'S/';
+  const nota = `Cortesía (antes ${simbolo} ${(payment.amountCents / 100).toFixed(2)})`;
+  return payment.reviewNote ? `${payment.reviewNote} · ${nota}` : nota;
+}
+
 async function entregarPago({ payment, captura, estadoEsperado = 'PENDING', notaBolsa }) {
   const esLicencia = payment.plan.kind === 'LICENSE';
   const esMembresia = payment.plan.kind === 'DOCUMENTO';
@@ -177,6 +184,9 @@ async function entregarPago({ payment, captura, estadoEsperado = 'PENDING', nota
   const membresiaPreparada = esMembresia
     ? await prepararService.prepararParaCompra({ userId: payment.userId, plan: payment.plan })
     : null;
+
+  // Lo que de verdad cuenta como cobrado: 0 si la billetera es de cortesía.
+  let importeCobrado = payment.amountCents;
 
   const entrega = await paymentRepository.settle({
     paymentId: payment.id,
@@ -199,9 +209,20 @@ async function entregarPago({ payment, captura, estadoEsperado = 'PENDING', nota
       if (payment.billeteraId) {
         const billetera = await tx.billetera.findUnique({
           where: { id: payment.billeteraId },
-          select: { pais: true },
+          select: { pais: true, cortesia: true },
         });
         await etiquetarCliente(payment.userId, billetera?.pais, tx);
+
+        // Billetera de cortesía (17-nov-2026: Deuna, por ahora): el comprador
+        // paga y recibe lo mismo, pero no cuenta como venta. Importe 0 es lo
+        // que ventas, caja, boletas y constancia ya leen como cortesía.
+        if (billetera?.cortesia && importeCobrado > 0) {
+          await tx.payment.update({
+            where: { id: payment.id },
+            data: { amountCents: 0, reviewNote: notaDeCortesia(payment) },
+          });
+          importeCobrado = 0;
+        }
       }
 
       if (esLicencia) {
@@ -262,7 +283,7 @@ async function entregarPago({ payment, captura, estadoEsperado = 'PENDING', nota
             ...membresiaPreparada.data,
             paymentMethod: payment.provider,
             paymentRef: captura.captureId,
-            amountCents: payment.amountCents,
+            amountCents: importeCobrado,
             note: notaBolsa,
           },
           tx,

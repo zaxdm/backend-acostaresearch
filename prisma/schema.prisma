@@ -1410,6 +1410,10 @@ model Billetera {
   /// Apagada deja de ofrecerse al pagar. Lo ya cobrado por ella no se toca.
   active Boolean @default(true)
 
+  /// Lo cobrado por ella se aprueba como cortesía (importe 0): el comprador
+  /// paga y recibe lo mismo, pero no cuenta como venta. 17-nov-2026: Deuna.
+  cortesia Boolean @default(false)
+
   createdById String?  @db.Char(36)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
